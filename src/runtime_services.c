@@ -282,21 +282,45 @@ static int64_t save_list_timeout(void) {
     int64_t seconds = env && *env ? atoll(env) : 300;
     return seconds > 0 ? seconds : 300;
 }
-static char save_labels[33][200], save_icons[33][720];
+static char save_labels[33][320], save_icons[33][720];
+
+static void save_size_label(uint64_t bytes, char *out, size_t out_size) {
+    if (bytes < 1024) {
+        snprintf(out,out_size,"%llu B",(unsigned long long)bytes);
+    } else if (bytes < 1024ull*1024) {
+        snprintf(out,out_size,"%.2f KB",(double)bytes/1024.0);
+    } else if (bytes < 1024ull*1024*1024) {
+        snprintf(out,out_size,"%.2f MB",(double)bytes/(1024.0*1024.0));
+    } else {
+        snprintf(out,out_size,"%.2f GB",(double)bytes/(1024.0*1024.0*1024.0));
+    }
+}
+
+/* Provide the game-generated title, the REAL date and size, plus its original
+ * subtitle. The overlay paints each line in the corresponding PS4-style row.
+ * This only changes presentation; all save identities and results remain as-is. */
 static void save_label(char *out, size_t size, const char *dir) {
     unsigned char param[RUNTIME_SAVE_PARAM_SIZE];
-    if (runtime_savedata_param(USER_ID,dir,param)) { snprintf(out,size,"%s",dir); return; }
+    if (runtime_savedata_param(USER_ID,dir,param)) {
+        snprintf(out,size,"%s",dir);
+        return;
+    }
     int64_t mtime; memcpy(&mtime,param+1288,8);
-    time_t t=(time_t)mtime; struct tm tm;
+    char when[40]="Unknown date";
+    if (mtime>0) {
+        time_t t=(time_t)mtime;
+        struct tm tm;
 #ifdef _WIN32
-    localtime_s(&tm,&t);
+        if (!localtime_s(&tm,&t)) strftime(when,sizeof(when),"%d %b. %Y %H:%M",&tm);
 #else
-    localtime_r(&t,&tm);
+        if (localtime_r(&t,&tm)) strftime(when,sizeof(when),"%d %b. %Y %H:%M",&tm);
 #endif
-    char when[32]; strftime(when,sizeof(when),"%Y-%m-%d %H:%M",&tm);
+    }
+    char size_text[40];
+    save_size_label(runtime_savedata_size(USER_ID,dir),size_text,sizeof(size_text));
     const char *title=(const char *)param, *subtitle=(const char *)param+128;
-    /* Title, subtitle and date on their own lines, beside the save's picture. */
-    snprintf(out,size,"%.60s\n%.60s%s%s",title[0] ? title : dir,subtitle,subtitle[0] ? "\n" : "",when);
+    snprintf(out,size,"%.100s\\n%s  |  %s\\n%.100s",
+             title[0] ? title : dir,when,size_text,subtitle);
 }
 static ABI int32_t save_init(void) { return dialog_init(2); }
 static ABI int32_t save_open(const unsigned char *p) {
