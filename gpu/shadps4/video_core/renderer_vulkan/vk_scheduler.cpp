@@ -34,24 +34,7 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     const char* env = std::getenv("GOW3_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
         record_chunk = AcquireChunk();
-        // Keep desktop and old Android/Linux behavior unchanged. Bionic gets two
-        // Vulkan recording workers by default, with an explicit one-worker fallback.
-#if defined(__ANDROID__)
-        const char* requested = std::getenv("GOW3_VK_RECORD_THREADS");
-        const auto allowed_cpus = Gow3Threads::Available();
-        parallel_recording = requested ? std::atoi(requested) >= 2
-                                       : allowed_cpus >= 8;
-        std::printf("GOW3 Vulkan recorder: affinity_cpus=%u workers=%u%s\n",
-                    allowed_cpus, parallel_recording ? 2u : 1u,
-                    requested ? " (override)" : "");
-#endif
-        recorder_thread = std::jthread(std::bind_front(&Scheduler::RecorderThread, this), 0);
-        if (parallel_recording) {
-            second_recorder_thread =
-                std::jthread(std::bind_front(&Scheduler::RecorderThread, this), 1);
-            std::printf("GOW3: two Vulkan recorders (pass boundaries only, synchronous submit); "
-                        "GOW3_VK_RECORD_THREADS=1 disables\n");
-        }
+        recorder_thread = std::jthread(std::bind_front(&Scheduler::RecorderThread, this));
         recording_threaded = true;
     }
 #if TRACY_GPU_ENABLED
@@ -66,15 +49,8 @@ Scheduler::~Scheduler() {
     if (recorder_thread.joinable()) {
         SyncRecording();
         recorder_thread.request_stop();
-        if (second_recorder_thread.joinable()) {
-            second_recorder_thread.request_stop();
-        }
         recorder_cv.notify_all();
-        second_recorder_cv.notify_all();
         recorder_thread.join();
-        if (second_recorder_thread.joinable()) {
-            second_recorder_thread.join();
-        }
     }
 #if TRACY_GPU_ENABLED
     std::free(profiler_scope);
@@ -86,7 +62,6 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         return;
     }
     EndRendering();
-    MaybeSplitRecording();
     is_rendering = true;
     render_state = new_state;
 
@@ -208,12 +183,6 @@ std::unique_ptr<RecordChunk> Scheduler::AcquireChunk() {
 }
 
 void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
-    if (parallel_recording) {
-        // Fence writes must follow older segments' Vulkan recording.
-        if (active_segment != 0 && IsRecordingDeferred()) {
-            SyncRecording();
-        }
-    }
     if (!IsRecordingDeferred()) {
         WaitHostCopies();
         signal();
@@ -258,130 +227,42 @@ void Scheduler::WaitHostCopies() {
     Gow3Copy::WaitAsync();
 }
 
-void Scheduler::MaybeSplitRecording() {
-    // Never cut an active render pass: on tiled Adreno this would force an
-    // attachment store/load, and splitting queries across command buffers
-    // would change their lifetime. Only one boundary per submission for now.
-    if (!parallel_recording || !recording_threaded || active_segment != 0 ||
-        is_rendering || direct_mode ||
-        Gow3Toggle::Disabled(Gow3Toggle::ThreadedRecording)) {
-        return;
-    }
-    // Distinct command buffers may be RECORDED at once, but their GPU work
-    // stays in order in the one vkQueueSubmit below. Pending host copies do
-    // not need to finish BEFORE recording segment 1: WaitHostCopies() at the
-    // submission ensures the staging data is ready before the GPU reads it.
-    // Any guest-visible copy or fence queued AFTER the split first calls
-    // SyncRecording(), preventing it from overtaking recording of segment 0.
-#if TRACY_GPU_ENABLED
-    // Tracy GPU scopes assume one command buffer for the whole submission.
-    return;
-#endif
-    static const size_t threshold = [] {
-        const char* requested = std::getenv("GOW3_VK_SEGMENT_KB");
-        const int kb = requested ? std::atoi(requested) : 32;
-        return size_t(std::clamp(kb, 16, 512)) * 1024;
-    }();
-    if (segment0_bytes + CurrentChunk().Size() < threshold) {
-        ++parallel_small_boundaries;
-        return;
-    }
-    if (auto* profiler = GpuProfiler::Get(); profiler && profiler->Records(this)) {
-        return;
-    }
-    // Information only: pending copies and deferred signals are permitted
-    // across this split; they still observe their original ordering barriers.
-    if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued ||
-        deferred_signals_done->load(std::memory_order_acquire) <
-            deferred_signals_issued.load(std::memory_order_acquire)) {
-        ++parallel_pending_work_boundaries;
-    }
-    // Close the first worker's command buffer only after its pending draws.
-    Record([](vk::CommandBuffer cmdbuf) { Check(cmdbuf.end()); });
-    KickRecording(true);
-
-    // Each command pool is accessed by only one recording worker (or by the
-    // producer after SyncRecording). Never record the same command buffer
-    // concurrently from two threads.
-    if (!parallel_command_pool) {
-        parallel_command_pool = std::make_unique<CommandPool>(instance, &work_semaphore);
-    }
-    auto next = parallel_command_pool->Commit();
-    Check(next.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit}));
-    segment_cmdbufs[1] = next;
-    current_cmdbuf = next;
-    active_segment = 1;
-    ++parallel_splits;
-    // Optional, low-volume confirmation that the second recorder is actually
-    // used. Disabled by default to avoid logging on the render hot path.
-    static const bool trace_parallel = [] {
-        const char* value = std::getenv("GOW3_VK_PARALLEL_TRACE");
-        return value && value[0] == '1';
-    }();
-    if (trace_parallel) {
-        static std::atomic<u64> n_splits{0};
-        const u64 n = n_splits.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (n == 1 || n % 120 == 0) {
-            std::printf("GOW3 Vulkan parallel: %llu two-buffer submissions prepared\n",
-                        static_cast<unsigned long long>(n));
-        }
-    }
-    // Rasterizer::UpdateDynamicState runs BEFORE BeginRendering(), so the
-    // current draw's state was already emitted to segment 0. Re-emit it now
-    // before recording the render pass and first draw of segment 1, otherwise
-    // the new command buffer would have undefined viewport/scissor/depth state.
-    dynamic_state.Invalidate();
-    dynamic_state.Commit(instance, next);
-}
-
 void Scheduler::KickRecording(bool force) {
     if (!recording_threaded) {
         return;
     }
     std::scoped_lock kick_lock{kick_mutex};
-    // Callers kick only after they have finished using any direct command buffer.
+    // Callers kick where nobody holds the raw command buffer: deferral resumes.
     direct_mode = false;
+    // Batches of tens of KiB keep the queue handoff cheap relative to the work it carries.
     if (!force && full_chunks.empty() && CurrentChunk().Size() < 32 * 1024) {
         return;
     }
     if (full_chunks.empty() && CurrentChunk().Empty()) {
         return;
     }
-    // Acquire the replacement BEFORE the hand-off (Bloodborne issue #100).
+    // Acquire the replacement before handing over the current chunk. This mirrors Bloodborne's
+    // issue #100 fix: record_chunk remains valid throughout the handover, including if another
+    // recording path is entered while the queue lock is held.
     std::unique_ptr<RecordChunk> next_record =
         CurrentChunk().Empty() ? nullptr : AcquireChunk();
-    bool wake = false;
+    bool wake;
     {
         std::scoped_lock lk{recorder_mutex};
-        auto& queue = active_segment == 0 ? recorder_queue : second_recorder_queue;
-        auto& queued = active_segment == 0 ? queued_chunks : second_queued_chunks;
-        const bool sleeping = active_segment == 0 ?
-            recorder_sleeping : second_recorder_sleeping;
         for (auto& chunk : full_chunks) {
-            if (active_segment == 0) {
-                segment0_bytes += chunk->Size();
-            }
-            chunk->segment = static_cast<u8>(active_segment);
-            queue.push_back(std::move(chunk));
+            recorder_queue.push_back(std::move(chunk));
         }
         if (next_record) {
             record_chunk.swap(next_record);
-            if (active_segment == 0) {
-                segment0_bytes += next_record->Size();
-            }
-            next_record->segment = static_cast<u8>(active_segment);
-            queue.push_back(std::move(next_record));
+            recorder_queue.push_back(std::move(next_record));
         }
-        wake = sleeping;
-        queued.store(queue.size(), std::memory_order_release);
+        wake = recorder_sleeping;
+        queued_chunks.store(recorder_queue.size(), std::memory_order_release);
     }
     full_chunks.clear();
+    // A busy recorder picks the new chunks up by itself: waking it is a syscall per draw.
     if (wake) {
-        if (active_segment == 0) {
-            recorder_cv.notify_one();
-        } else {
-            second_recorder_cv.notify_one();
-        }
+        recorder_cv.notify_one();
     }
 }
 
@@ -392,57 +273,47 @@ void Scheduler::SyncRecording() {
     KickRecording(true);
     Gow3Stats::WaitTimer timer{Gow3Stats::sync_recording_ns};
     std::unique_lock lk{recorder_mutex};
-    recorder_idle_cv.wait(lk, [this] {
-        return recorder_queue.empty() && !recorder_busy &&
-               second_recorder_queue.empty() && !second_recorder_busy;
-    });
+    recorder_idle_cv.wait(lk, [this] { return recorder_queue.empty() && !recorder_busy; });
 }
 
-void Scheduler::RecorderThread(std::stop_token stoken, u32 worker_index) {
-    Common::SetCurrentThreadName(worker_index ? "gow3:VkRecorder1" : "gow3:VkRecorder");
-    auto& queue = worker_index ? second_recorder_queue : recorder_queue;
-    auto& cv = worker_index ? second_recorder_cv : recorder_cv;
-    auto& queued = worker_index ? second_queued_chunks : queued_chunks;
-    auto& busy = worker_index ? second_recorder_busy : recorder_busy;
-    auto& sleeping = worker_index ? second_recorder_sleeping : recorder_sleeping;
+void Scheduler::RecorderThread(std::stop_token stoken) {
+    Common::SetCurrentThreadName("gow3:VkRecorder");
     while (true) {
+        // Spin briefly before sleeping: the next chunk usually follows within microseconds,
+        // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
+        // hardware threads (Steam Deck: 8) the spin would take time from guest threads.
         static const auto spin_time = std::chrono::microseconds(
             Gow3Threads::Available() >= 12 ? 200 : 20);
         const auto spin_until = std::chrono::steady_clock::now() + spin_time;
-        // Only spin for the segment currently accepting work. The other worker
-        // sleeps rather than taking CPU time away from FEX.
-        if (!parallel_recording || active_segment == worker_index) {
-            for (u32 spins = 1; queued.load(std::memory_order_acquire) == 0; ++spins) {
-                COMMON_CPU_RELAX();
-                if (!(spins & 255) &&
-                    (stoken.stop_requested() || std::chrono::steady_clock::now() >= spin_until)) {
-                    break;
-                }
+        for (u32 spins = 1; queued_chunks.load(std::memory_order_acquire) == 0; ++spins) {
+            COMMON_CPU_RELAX();
+            // The clock is read every 256 pauses, not per iteration.
+            if (!(spins & 255) &&
+                (stoken.stop_requested() || std::chrono::steady_clock::now() >= spin_until)) {
+                break;
             }
         }
         std::unique_ptr<RecordChunk> chunk;
         {
             std::unique_lock lk{recorder_mutex};
-            sleeping = true;
-            cv.wait(lk, stoken, [&queue] { return !queue.empty(); });
-            sleeping = false;
-            if (queue.empty()) {
-                return;
+            recorder_sleeping = true;
+            recorder_cv.wait(lk, stoken, [this] { return !recorder_queue.empty(); });
+            recorder_sleeping = false;
+            if (recorder_queue.empty()) {
+                return; // stop requested
             }
-            chunk = std::move(queue.front());
-            queue.pop_front();
-            queued.store(queue.size(), std::memory_order_release);
-            busy = true;
+            chunk = std::move(recorder_queue.front());
+            recorder_queue.pop_front();
+            queued_chunks.store(recorder_queue.size(), std::memory_order_release);
+            recorder_busy = true;
         }
-        // Segment 0 and segment 1 use separate command pools and can record
-        // concurrently. Submission below still executes them in stream order.
-        ASSERT(chunk->segment == worker_index);
-        chunk->Execute(segment_cmdbufs[worker_index]);
+        // current_cmdbuf only changes after SyncRecording(), which waits for this thread.
+        chunk->Execute(current_cmdbuf);
         {
             std::scoped_lock lk{recorder_mutex};
             free_chunks.push_back(std::move(chunk));
-            busy = false;
-            if (queue.empty()) {
+            recorder_busy = false;
+            if (recorder_queue.empty()) {
                 recorder_idle_cv.notify_all();
             }
         }
@@ -528,9 +399,6 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 
     current_cmdbuf = command_pool.Commit();
     Check(current_cmdbuf.begin(begin_info));
-    segment_cmdbufs = {current_cmdbuf, vk::CommandBuffer{}};
-    active_segment = 0;
-    segment0_bytes = 0;
 
     // Invalidate dynamic state so it gets applied to the new command buffer.
     dynamic_state.Invalidate();
@@ -609,9 +477,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .waitSemaphoreCount = info.num_wait_semas,
         .pWaitSemaphores = info.wait_semas.data(),
         .pWaitDstStageMask = wait_stage_masks.data(),
-        // The original command order is preserved by this one queue submission.
-        .commandBufferCount = active_segment + 1,
-        .pCommandBuffers = segment_cmdbufs.data(),
+        .commandBufferCount = 1U,
+        .pCommandBuffers = &current_cmdbuf,
         .signalSemaphoreCount = info.num_signal_semas,
         .pSignalSemaphores = info.signal_semas.data(),
     };
@@ -627,20 +494,6 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         work_semaphore.Refresh();
     }
     AllocateWorkerCommandBuffers();
-
-    // A tiny amount of experimental telemetry distinguishes a working
-    // two-thread split from merely starting two workers. No per-draw logging.
-    if (parallel_recording) {
-        ++parallel_submissions;
-        if (parallel_submissions == 300 || parallel_submissions % 900 == 0) {
-            std::printf("GOW3 Vulkan parallel stats: submissions=%llu splits=%llu "
-                        "pending-at-split=%llu short boundaries=%llu\n",
-                        static_cast<unsigned long long>(parallel_submissions),
-                        static_cast<unsigned long long>(parallel_splits),
-                        static_cast<unsigned long long>(parallel_pending_work_boundaries),
-                        static_cast<unsigned long long>(parallel_small_boundaries));
-        }
-    }
 
     // Apply pending operations
     PopPendingOperations();
