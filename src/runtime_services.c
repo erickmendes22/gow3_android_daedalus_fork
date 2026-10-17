@@ -319,7 +319,7 @@ static void save_label(char *out, size_t size, const char *dir) {
     char size_text[40];
     save_size_label(runtime_savedata_size(USER_ID,dir),size_text,sizeof(size_text));
     const char *title=(const char *)param, *subtitle=(const char *)param+128;
-    snprintf(out,size,"%.100s\\n%s  |  %s\\n%.100s",
+    snprintf(out,size,"%.100s\n%s  |  %s\n%.100s",
              title[0] ? title : dir,when,size_text,subtitle);
 }
 static ABI int32_t save_init(void) { return dialog_init(2); }
