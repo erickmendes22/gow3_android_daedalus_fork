@@ -833,7 +833,7 @@ void ChoiceBox() {
     ImGui::Separator();
     // The original controls and explanatory details remain available.
     ImGui::SetWindowFontScale(0.84f);
-    ImGui::TextDisabled("D-pad: choose  |  Cross (A): OK  |  Circle (B): Back");
+    ImGui::TextDisabled("Up/Down or D-pad: choose   Enter or Cross (A): OK   Esc or Circle (B): cancel");
     ImGui::SetWindowFontScale(1.0f);
     const float back_width = 126.0f * scale, back_height = 24.0f * scale;
     const float back_x = ImGui::GetWindowPos().x + ImGui::GetWindowWidth() -
