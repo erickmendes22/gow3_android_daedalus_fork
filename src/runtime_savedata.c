@@ -121,13 +121,65 @@ int runtime_savedata_param(int32_t user, const char *dir, void *param) {
     snprintf(meta,sizeof(meta),"%s/%s.sce_sys",base,dir);
     return read_param(meta,(Param *)param);
 }
-/* Host path of a save's icon0.png (the location picture in the save dialog); 0 when named. */
+/* Sum only the real regular files in the game's save directory; do not include
+ * .sce_sys metadata or follow symbolic links. The size is display-only and
+ * must never influence the mount or restore semantics. */
+static uint64_t save_directory_bytes(const char *path, unsigned depth) {
+    if (depth > 12) return 0;
+    DIR *directory=opendir(path);
+    if (!directory) return 0;
+    uint64_t bytes=0;
+    struct dirent *entry;
+    while ((entry=readdir(directory))) {
+        if (!strcmp(entry->d_name,".") || !strcmp(entry->d_name,"..")) continue;
+        char candidate[900];
+        if (snprintf(candidate,sizeof(candidate),"%s/%s",path,entry->d_name) >=
+            (int)sizeof(candidate)) continue;
+        struct stat info;
+#ifdef _WIN32
+        if (stat(candidate,&info)) continue;
+#else
+        if (lstat(candidate,&info)) continue;
+#endif
+        if (S_ISREG(info.st_mode) && info.st_size>0) {
+            const uint64_t amount=(uint64_t)info.st_size;
+            bytes=UINT64_MAX-bytes < amount ? UINT64_MAX : bytes+amount;
+        } else if (S_ISDIR(info.st_mode)) {
+            const uint64_t amount=save_directory_bytes(candidate,depth+1);
+            bytes=UINT64_MAX-bytes < amount ? UINT64_MAX : bytes+amount;
+        }
+    }
+    closedir(directory);
+    return bytes;
+}
+
+uint64_t runtime_savedata_size(int32_t user, const char *dir) {
+    if (!valid_name(dir,32)) return 0;
+    char base[600], path[700];
+    root(user,NULL,base,sizeof(base));
+    if (snprintf(path,sizeof(path),"%s/%s",base,dir) >= (int)sizeof(path)) return 0;
+    return save_directory_bytes(path,0);
+}
+
+/* An icon can be stored in the host's metadata directory or inside the
+ * save's own sce_sys folder (e.g. imported PS4 saves). Never invent artwork
+ * if the file is absent: the UI draws a neutral placeholder instead. */
 int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size) {
-    if (!valid_name(dir,32)) return -1;
+    if (!out || !size || !valid_name(dir,32)) return -1;
     char base[600];
     root(user,NULL,base,sizeof(base));
-    snprintf(out,size,"%s/%s.sce_sys/icon0.png",base,dir);
-    return 0;
+    const char *const patterns[]={
+        "%s/%s.sce_sys/icon0.png",
+        "%s/%s/sce_sys/icon0.png",
+        "%s/%s/icon0.png"
+    };
+    struct stat info;
+    for (unsigned i=0;i<sizeof(patterns)/sizeof(patterns[0]);++i) {
+        if (snprintf(out,size,patterns[i],base,dir) >= (int)size) return -1;
+        if (!stat(out,&info) && S_ISREG(info.st_mode) && info.st_size>0) return 0;
+    }
+    out[0]=0;
+    return -1;
 }
 static ABI int32_t save_initialize(const void *param) { (void)param; initialized=1; return 0; }
 static ABI int32_t save_terminate(void) {
