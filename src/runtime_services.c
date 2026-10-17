@@ -346,7 +346,7 @@ static ABI int32_t save_open(const unsigned char *p) {
         ++n;
     }
     uint32_t type; memcpy(&type,p+56,4);
-    const char *title=type==1 ? "Save game" : type==2 ? "Load game" : "Delete save";
+    const char *title=type==1 ? "Save" : type==2 ? "Load" : "Delete save";
     if (!n || !gow3gpu_choice_begin(title,labels,icons,n,0)) {
         printf("Runtime: SaveDataDialog list (%s): %s\n",title,n ? "no window, cancelled" : "no saves, cancelled");
         save_dialog.result=SAVE_RESULT_CANCELED;
