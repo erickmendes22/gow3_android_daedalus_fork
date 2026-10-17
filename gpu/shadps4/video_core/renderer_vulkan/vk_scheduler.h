@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -635,9 +634,6 @@ public:
         return used;
     }
 
-    // The command buffer this chunk belongs to. Set at queue hand-off.
-    u8 segment = 0;
-
 private:
     /// The recording thread last read these cache lines: the first write to each has to take
     /// it back from that core. Requesting ownership a few lines ahead overlaps those
@@ -808,13 +804,6 @@ public:
     /// work anyway, so small copies cost no wakeup); WaitHostCopies() covers it.
     template <typename Func>
     void RecordHostCopy(Func&& copy) {
-        if (parallel_recording) {
-            // Guest-memory work after a split must not overtake the old
-            // segment's still-recording draws.
-            if (active_segment != 0 && IsRecordingDeferred()) {
-                SyncRecording();
-            }
-        }
         Record([copy = std::forward<Func>(copy), this,
                 seq = ++host_copies_issued](vk::CommandBuffer) {
             copy();
@@ -908,10 +897,7 @@ private:
         }
     }
 
-    void RecorderThread(std::stop_token stoken, u32 worker_index);
-    // Bionic experimental: split only between completed render passes. In-pass
-    // cuts would require suspend/resume and additional Adreno tile stores.
-    void MaybeSplitRecording();
+    void RecorderThread(std::stop_token stoken);
 
     void SubmitExecution(SubmitInfo& info);
 
@@ -939,19 +925,6 @@ private:
     std::jthread priority_pending_ops_thread;
     RenderState render_state;
     bool is_rendering = false;
-    // Bionic-only parallel Vulkan recording: two independent command pools,
-    // at most two ordered buffers per submission, synchronous vkQueueSubmit.
-    // GOW3_VK_RECORD_THREADS=1 restores the original single worker.
-    bool parallel_recording = false;
-    std::atomic<u32> active_segment{0}; // recorder spin loop observes producer segment
-    size_t segment0_bytes = 0;
-    // Small, bounded experimental telemetry: no logging on the drawing hot path.
-    u64 parallel_submissions = 0;
-    u64 parallel_splits = 0;
-    u64 parallel_pending_work_boundaries = 0;
-    u64 parallel_small_boundaries = 0;
-    std::unique_ptr<CommandPool> parallel_command_pool;
-    std::array<vk::CommandBuffer, 2> segment_cmdbufs{};
     // gow3: threaded recording
     std::unique_ptr<RecordChunk> record_chunk;
     std::vector<std::unique_ptr<RecordChunk>> full_chunks;
@@ -961,15 +934,10 @@ private:
     std::condition_variable_any recorder_cv;
     std::condition_variable_any recorder_idle_cv;
     std::deque<std::unique_ptr<RecordChunk>> recorder_queue;
-    std::deque<std::unique_ptr<RecordChunk>> second_recorder_queue;
-    std::condition_variable_any second_recorder_cv;
     std::vector<std::unique_ptr<RecordChunk>> free_chunks;
     bool recorder_busy = false;
-    bool second_recorder_busy = false;
-    std::atomic<size_t> second_queued_chunks{0};
     std::atomic<size_t> queued_chunks{0}; ///< recorder_queue.size() for lock-free polling
     bool recorder_sleeping = false; ///< waiting on recorder_cv (guarded by recorder_mutex)
-    bool second_recorder_sleeping = false; ///< guarded by recorder_mutex
     bool direct_mode = false; ///< the command buffer is recorded on the caller's thread
     u64 host_copies_issued = 0;
     std::atomic<u64> host_copies_done{0};
@@ -980,7 +948,6 @@ private:
     // compares thread ids, which on Windows (libc++ over winpthreads) costs two system calls.
     bool recording_threaded{false};
     std::jthread recorder_thread;
-    std::jthread second_recorder_thread;
     tracy::VkCtxScope* profiler_scope{};
 };
 
