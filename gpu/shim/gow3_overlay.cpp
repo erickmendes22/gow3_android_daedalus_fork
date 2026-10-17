@@ -798,9 +798,9 @@ void ChoiceBox() {
         }
 
         const std::string& label = choice_items[i];
-        const size_t split1 = label.find('\\n');
+        const size_t split1 = label.find('\n');
         const size_t split2 = split1 == std::string::npos ? std::string::npos :
-                              label.find('\\n', split1 + 1);
+                              label.find('\n', split1 + 1);
         const std::string name = label.substr(0, split1);
         const std::string date_and_size = split1 == std::string::npos ? std::string{} :
             label.substr(split1 + 1, split2 == std::string::npos ?
