@@ -77,10 +77,6 @@ export GOW3_UPSCALER=none
 export GOW3_FSR1=0
 export GOW3_RCAS=0
 eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)"
-# Experimental Bionic A/B: ensure the second Vulkan recorder is actually
-# enabled, even when Android's task affinity exposes fewer than eight CPUs.
-# An explicit GOW3_VK_RECORD_THREADS=1 keeps the tested single-worker path.
-export GOW3_VK_RECORD_THREADS=${GOW3_VK_RECORD_THREADS:-2}
 # Report what will actually be patched into the verified CUSA01715 eboot, not
 # merely the preset selected by the UI. scripts/patches.py checks the signature
 # and original bytes again before writing patches.bin.
