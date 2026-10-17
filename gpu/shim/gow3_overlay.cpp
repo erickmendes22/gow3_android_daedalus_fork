@@ -732,57 +732,125 @@ void TextEntryBox() {
     ImGui::End();
 }
 
+// A save-list panel matching the fuller PS4-style presentation, while keeping
+// the same save names, choice results and keyboard/pad handlers as before.
 void ChoiceBox() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float scale = std::clamp(viewport->WorkSize.y / 830.0f, 0.68f, 1.45f);
+    const float panel_width = viewport->WorkSize.x * 0.68f;
+    const float panel_height = viewport->WorkSize.y * 0.86f;
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
                                    viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(viewport->WorkSize.x * 0.36f, 0.0f),
-                                        ImVec2(viewport->WorkSize.x * 0.8f, viewport->WorkSize.y * 0.8f));
-    ImGui::SetNextWindowBgAlpha(0.94f);
+    ImGui::SetNextWindowSize(ImVec2(panel_width, panel_height), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.97f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * scale, 12.0f * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 2.0f * scale);
     ImGui::Begin("##choice", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
-                     ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%s", choice_title.c_str());
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+
+    const float text_px = ImGui::GetFontSize();
+    ImGui::SetWindowFontScale(1.15f);
+    ImGui::TextUnformatted(choice_title.c_str());
+    ImGui::SetWindowFontScale(1.0f);
     ImGui::Separator();
-    // Save pictures are 228x128; rows without one keep the text aligned when others have one.
-    const bool pictures = std::any_of(choice_textures.begin(), choice_textures.end(),
-                                      [](ImTextureData* tex) { return tex != nullptr; });
-    const ImVec2 picture_size(228.0f * base_scale, 128.0f * base_scale);
+
+    const float footer_height = 44.0f * scale;
+    ImGui::BeginChild("##choice_rows", ImVec2(0.0f, -footer_height),
+                      ImGuiChildFlags_None, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav);
+    const float row_width = ImGui::GetContentRegionAvail().x;
+    const float row_height = 104.0f * scale;
+    const float image_width = 176.0f * scale;
+    const float image_height = 91.0f * scale;
+    const float inset = 10.0f * scale;
+    ImDrawList* draw = ImGui::GetWindowDrawList();
     for (int i = 0; i < int(choice_items.size()); ++i) {
-        const bool selected = i == choice_index;
-        ImGui::BeginGroup();
+        const bool selected = choice_index == i;
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const ImVec2 right(origin.x + row_width, origin.y + row_height);
+        draw->AddRectFilled(origin, right,
+                            selected ? IM_COL32(31, 31, 31, 251) : IM_COL32(18, 18, 18, 245));
+        if (selected) {
+            draw->AddRect(ImVec2(origin.x + 2.0f, origin.y + 2.0f),
+                          ImVec2(right.x - 2.0f, right.y - 2.0f),
+                          IM_COL32(222, 146, 75, 255), 0.0f, 0, 2.0f * scale);
+        }
+
+        const ImVec2 image_pos(origin.x + inset, origin.y + (row_height - image_height) / 2.0f);
         ImTextureData* tex = i < int(choice_textures.size()) ? choice_textures[i] : nullptr;
         if (tex) {
-            ImGui::Image(tex->GetTexRef(), picture_size);
-        } else if (pictures) {
-            ImGui::Dummy(picture_size);
-        }
-        if (pictures) {
-            ImGui::SameLine();
-        }
-        if (selected) {
-            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.55f, 1.0f), "> %s", choice_items[i].c_str());
+            const ImVec2 resume = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(image_pos);
+            ImGui::Image(tex->GetTexRef(), ImVec2(image_width, image_height));
+            ImGui::SetCursorScreenPos(resume);
         } else {
-            ImGui::Text("  %s", choice_items[i].c_str());
+            // An imported save may not provide icon0.png. Use a neutral label,
+            // not fabricated game artwork; actual icons always take precedence.
+            const ImVec2 image_end(image_pos.x + image_width, image_pos.y + image_height);
+            draw->AddRectFilled(image_pos, image_end, IM_COL32(33, 39, 46, 255));
+            draw->AddRect(image_pos, image_end, IM_COL32(85, 91, 101, 255));
+            draw->AddText(ImVec2(image_pos.x + 13.0f * scale, image_pos.y + 24.0f * scale),
+                          IM_COL32(211, 218, 228, 255), "GOD OF WAR III");
+            draw->AddText(ImVec2(image_pos.x + 13.0f * scale, image_pos.y + 51.0f * scale),
+                          IM_COL32(149, 157, 168, 255), "SAVE DATA");
         }
-        ImGui::EndGroup();
-        if (selected) {
-            if (pictures) {
-                const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
-                const float pad = 3.0f * base_scale;
-                ImGui::GetWindowDrawList()->AddRect(ImVec2(min.x - pad, min.y - pad),
-                                                    ImVec2(max.x + pad, max.y + pad),
-                                                    IM_COL32(255, 230, 140, 255), 0.0f, 0,
-                                                    2.0f * base_scale);
-            }
-            ImGui::SetScrollHereY();
+
+        const std::string& label = choice_items[i];
+        const size_t split1 = label.find('\\n');
+        const size_t split2 = split1 == std::string::npos ? std::string::npos :
+                              label.find('\\n', split1 + 1);
+        const std::string name = label.substr(0, split1);
+        const std::string date_and_size = split1 == std::string::npos ? std::string{} :
+            label.substr(split1 + 1, split2 == std::string::npos ?
+                         std::string::npos : split2 - split1 - 1);
+        const std::string subtitle = split2 == std::string::npos ? std::string{} :
+            label.substr(split2 + 1);
+        const float text_x = image_pos.x + image_width + 13.0f * scale;
+        const float text_y = origin.y + 15.0f * scale;
+        const float title_px = text_px * 1.10f;
+        draw->PushClipRect(ImVec2(text_x, origin.y),
+                           ImVec2(right.x - inset, right.y), true);
+        draw->AddText(ImGui::GetFont(), title_px, ImVec2(text_x, text_y),
+                      IM_COL32(237, 237, 237, 255), name.c_str());
+        if (!date_and_size.empty()) {
+            draw->AddText(ImGui::GetFont(), text_px, ImVec2(text_x, text_y + 27.0f * scale),
+                          IM_COL32(193, 193, 193, 255), date_and_size.c_str());
         }
+        if (!subtitle.empty()) {
+            draw->AddText(ImGui::GetFont(), text_px, ImVec2(text_x, text_y + 51.0f * scale),
+                          IM_COL32(180, 180, 180, 255), subtitle.c_str());
+        }
+        draw->PopClipRect();
+
+        ImGui::Dummy(ImVec2(row_width, row_height));
+        if (selected) ImGui::SetScrollHereY(0.25f);
+        ImGui::Dummy(ImVec2(0.0f, 3.0f * scale));
     }
+    ImGui::EndChild();
+
     ImGui::Separator();
-    ImGui::TextDisabled("Up/Down or D-pad: choose   Enter or Cross (A): OK   Esc or Circle (B): cancel");
+    // The original controls and explanatory details remain available.
+    ImGui::SetWindowFontScale(0.84f);
+    ImGui::TextDisabled("D-pad: choose  |  Cross (A): OK  |  Circle (B): Back");
+    ImGui::SetWindowFontScale(1.0f);
+    const float back_width = 126.0f * scale, back_height = 24.0f * scale;
+    const float back_x = ImGui::GetWindowPos().x + ImGui::GetWindowWidth() -
+                         ImGui::GetStyle().WindowPadding.x - back_width;
+    const float back_y = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() -
+                         ImGui::GetStyle().WindowPadding.y - back_height;
+    ImDrawList* footer = ImGui::GetWindowDrawList();
+    footer->AddRectFilled(ImVec2(back_x, back_y),
+                          ImVec2(back_x + back_width, back_y + back_height),
+                          IM_COL32(146, 96, 52, 255));
+    const ImVec2 label_size = ImGui::CalcTextSize("Back");
+    footer->AddText(ImVec2(back_x + (back_width - label_size.x) / 2.0f,
+                           back_y + (back_height - label_size.y) / 2.0f),
+                    IM_COL32(244, 234, 219, 255), "Back");
+
     ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 void LoadingScreen() {
