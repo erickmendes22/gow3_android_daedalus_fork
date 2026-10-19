@@ -28,6 +28,7 @@ class R6(unittest.TestCase):
         self.assertIn(".reset = reset || !temporal_ready,",cpp)
         self.assertIn(".camera_still = temporal_ready ? camera_motion.CameraStill() : true,",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
+        self.assertIn(".vertical_fov = temporal_ready ? camera_motion.VerticalFov() : 1.04719755f,",cpp)
         self.assertIn("if (UseGsr2() && std::getenv(\"GOW3_ANDROID_PORT\") && preset > 3)",cpp)
         glsl=src("gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp")
         self.assertIn("float(params.reset)",glsl)
