@@ -9,6 +9,8 @@ import android.graphics.Typeface;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
+import java.io.File;
+import android.os.SystemClock;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -30,6 +32,28 @@ final class TouchControllerOverlay extends View {
         {327,622},{443,628},{836,628},{952,622}
     };
     private final PadBridge pad;
+    private final File saveDialogFlag;
+    private boolean saveDialogMode;
+    private long lastSaveDialogCheck;
+    private boolean dialogControlAllowed(String name) {
+        return name!=null && (name.equals("dpad") || name.equals("up") ||
+            name.equals("left") || name.equals("right") || name.equals("down") ||
+            name.equals("cross") || name.equals("circle"));
+    }
+    private boolean saveDialogActive() {
+        if (editing) return false;
+        long now=SystemClock.uptimeMillis();
+        if (now-lastSaveDialogCheck > 150) {
+            lastSaveDialogCheck=now;
+            boolean next=saveDialogFlag.isFile();
+            if (next!=saveDialogMode) {
+                saveDialogMode=next;
+                release(); // no sticky held buttons when the modal appears
+            }
+        }
+        return saveDialogMode;
+    }
+
     private final SharedPreferences preferences;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<String,PointF> centers=new LinkedHashMap<>();
@@ -44,6 +68,7 @@ final class TouchControllerOverlay extends View {
 
     TouchControllerOverlay(Context context,PadBridge pad,boolean mouseEnabled) {
         super(context); this.pad=pad; this.mouseEnabled=mouseEnabled;
+        saveDialogFlag=new File(context.getFilesDir(),"gow3port/save-dialog.active");
         preferences=context.getSharedPreferences("gow3",Context.MODE_PRIVATE);
         for (int i=0;i<NAMES.length;i++) {
             String name=NAMES[i];
@@ -71,6 +96,7 @@ final class TouchControllerOverlay extends View {
         return new PointF((u.x+l.x+r.x+d.x)/4f,(u.y+l.y+r.y+d.y)/4f);
     }
     private String hit(float x,float y) {
+        final boolean save=saveDialogActive();
         PointF dpad=dpadCenter();
         if (!editing && distance(x,y,dpad)<112 && distance(center("up").x,center("up").y,dpad)<115 &&
             distance(center("left").x,center("left").y,dpad)<115 &&
@@ -78,6 +104,7 @@ final class TouchControllerOverlay extends View {
             distance(center("down").x,center("down").y,dpad)<115) return "dpad";
         String winner=null; float best=Float.MAX_VALUE;
         for (String name:NAMES) {
+            if (save && !dialogControlAllowed(name)) continue;
             PointF p=center(name);
             float dx=Math.abs(x-p.x),dy=Math.abs(y-p.y);
             boolean inside=rectangle(name) ? dx<(name.equals("touchpad") ? 72 : 62) && dy<38
@@ -234,15 +261,22 @@ final class TouchControllerOverlay extends View {
     }
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c); c.save(); c.translate(offsetX(),offsetY()); c.scale(scale(),scale());
+        final boolean modal=saveDialogActive();
+        if (!modal || editing) {
         rectangle(c,"l2",94,"L2"); rectangle(c,"l1",94,"L1");
         rectangle(c,"r1",94,"R1"); rectangle(c,"r2",94,"R2");
         rectangle(c,"touchpad",116,"TOUCH"); rectangle(c,"options",94,"OPTIONS");
+        }
         circle(c,"up",39,"▲",0xffc6ad76); circle(c,"left",39,"◀",0xffc6ad76);
         circle(c,"right",39,"▶",0xffc6ad76); circle(c,"down",39,"▼",0xffc6ad76);
-        circle(c,"triangle",39,"△",0xff83cdaa); circle(c,"circle",39,"○",0xffe38288);
-        circle(c,"cross",39,"×",0xff88aaff); circle(c,"square",39,"□",0xffd6a0ce);
-        drawStick(c,"leftstick"); drawStick(c,"rightstick");
-        circle(c,"l3",29,"L3",0xffa0aec0); circle(c,"r3",29,"R3",0xffa0aec0);
+        if (!modal || editing) circle(c,"triangle",39,"△",0xff83cdaa);
+        circle(c,"circle",39,"○",0xffe38288);
+        circle(c,"cross",39,"×",0xff88aaff);
+        if (!modal || editing) {
+            circle(c,"square",39,"□",0xffd6a0ce);
+            drawStick(c,"leftstick"); drawStick(c,"rightstick");
+            circle(c,"l3",29,"L3",0xffa0aec0); circle(c,"r3",29,"R3",0xffa0aec0);
+        }
         if (editing) {
             paint.setStyle(Paint.Style.FILL); paint.setColor(0xcc15171d);
             c.drawRoundRect(548,9,732,62,13,13,paint);
