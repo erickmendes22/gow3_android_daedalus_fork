@@ -81,6 +81,45 @@ struct DumpImage {
     vk::ImageAspectFlagBits aspect = vk::ImageAspectFlagBits::eColor;
 };
 
+// A 32x18 RGB thumbnail encoded as plain hex lines in android-game.log.
+// Samples *actual GPU readback bytes*, not dispatch counters. Compare the same
+// quadrants through proxy -> GSR2 output -> UI copy -> final display image.
+static float GsrProbeHalf(const unsigned char* ptr) {
+    const unsigned h = unsigned(ptr[0]) | (unsigned(ptr[1]) << 8);
+    const int exponent = int((h >> 10) & 31u);
+    const unsigned mantissa = h & 1023u;
+    float x = exponent == 31 ? 0.0f : exponent == 0
+        ? std::ldexp(float(mantissa), -24)
+        : std::ldexp(float(1024u + mantissa), exponent - 25);
+    return (h & 0x8000u) ? -x : x;
+}
+static void GsrProbeGrid(const char* name, const char* format,
+                         u32 width, u32 height, u32 bpp, const void* mapped) {
+    if (!mapped || width < 32 || height < 18) return;
+    const auto* p = static_cast<const unsigned char*>(mapped);
+    constexpr u32 gw = 32, gh = 18;
+    std::printf("GSR_STAGE begin=%s size=%ux%u format=%s thumbnail=%ux%u\n",
+                name, width, height, format, gw, gh);
+    for (u32 y = 0; y < gh; ++y) {
+        char hex[gw * 6 + 1]{};
+        const u32 py = std::min(height - 1, (2*y+1)*height/(2*gh));
+        for (u32 x = 0; x < gw; ++x) {
+            const u32 px = std::min(width - 1, (2*x+1)*width/(2*gw));
+            const auto* v = p + (size_t(py)*width + px)*bpp;
+            unsigned rgb[3]{};
+            for (unsigned c = 0; c < 3; ++c) {
+                const float linear = bpp == 8 ? GsrProbeHalf(v+c*2)
+                                             : float(v[std::strcmp(format,"bgra") == 0 ? 2-c : c])/255.0f;
+                rgb[c] = unsigned(std::round(std::clamp(linear, 0.0f, 1.0f)*255.0f));
+            }
+            std::snprintf(hex+x*6, sizeof(hex)-x*6, "%02X%02X%02X",rgb[0],rgb[1],rgb[2]);
+        }
+        std::printf("GSR_STAGE stage=%s y=%02u rgb=%s\n", name, y, hex);
+    }
+    std::printf("GSR_STAGE end=%s\n", name);
+    std::fflush(stdout);
+}
+
 /// Copies `images` into host buffers after the commands recorded so far and writes them to
 /// files once the GPU is done.
 void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
@@ -124,11 +163,16 @@ void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffe
         char path[512];
         std::snprintf(path, sizeof(path), "%s/f%03d_%s_%ux%u_%s.raw", dir.c_str(), frame,
                       image.name, image.width, image.height, image.format);
+        const bool stage_probe = std::getenv("GOW3_GSR2_AUTO_PROBE") != nullptr;
         scheduler.DeferPriorityOperation(
             [allocator = instance.GetAllocator(), buffer, allocation, info, size,
-             file = std::string{path}] {
+             file = std::string{path}, name = std::string{image.name},
+             format = std::string{image.format}, w = image.width, h = image.height,
+             bpp = image.bytes_per_pixel, stage_probe] {
                 vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
-                if (FILE* f = std::fopen(file.c_str(), "wb")) {
+                if (stage_probe && bpp >= 4 && (bpp == 4 || bpp == 8)) {
+                    GsrProbeGrid(name.c_str(),format.c_str(),w,h,bpp,info.pMappedData);
+                } else if (FILE* f = std::fopen(file.c_str(), "wb")) {
                     std::fwrite(info.pMappedData, 1, size, f);
                     std::fclose(f);
                 }
@@ -1901,6 +1945,18 @@ void TemporalUpscaler::RunScaled() {
                     vk::PipelineStageFlagBits2::eColorAttachmentOutput, color_access);
             reset = false;
             dispatched_last_frame = true;
+            // The GOW3 R7 diagnostic automatically captures one actual Vulkan
+            // frame across three stages. It never touches the result and does
+            // not require the user to create or copy any trigger file.
+            static bool gsr_probe_once = false;
+            if (UseGsr2() && !gsr_probe_once &&
+                std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+                gsr_probe_once = true;
+                DumpImages(instance, scheduler, cmdbuf, 0,
+                    {{color_image, source_width, source_height, 4, "scene_proxy", "rgba"},
+                     {vk::Image(output_image), ow, oh, 8, "gsr2_output", "rgba16f"},
+                     {vk::Image(ui_image), ow, oh, 4, "ui_blit", "rgba"}});
+            }
             if (const int dump = DumpFrame(); dump >= 0) {
                 DumpImages(instance, scheduler, cmdbuf, dump,
                            {{color_image, source_width, source_height, 4, "input", "rgba"},
@@ -2158,6 +2214,20 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
             std::printf("GOW3_FSR_STATUS state=TEMPORAL_PRESENTED count=%llu output=%ux%u\n",
                         static_cast<unsigned long long>(presented_temporal_frames),
                         display.width, display.height);
+    }
+    // Capture the actual game display-copy target, after the PS4 draw consumed
+    // ui_image. If GSR2 output and ui_image are sound but this is not, the
+    // defect is after the GSR dispatch, not the Snapdragon compute pipeline.
+    static bool gsr_probe_present_once = false;
+    if (!gsr_probe_present_once && UseGsr2() &&
+        std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        gsr_probe_present_once = true;
+        scheduler.EndRendering();
+        const bool bgra = display.format == vk::Format::eB8G8R8A8Unorm ||
+                          display.format == vk::Format::eB8G8R8A8Srgb;
+        DumpImages(instance, scheduler, scheduler.CommandBuffer(), 0,
+                   {{display.image, display.width, display.height, 4,
+                     "display_final", bgra ? "bgra" : "rgba"}});
     }
     // Diagnostic capture of the actual completed display buffer, including native UI.
     // GOW3_PRESENT_DUMP_COUNT=N: the trigger dumps N consecutive frames (temporal stability).
