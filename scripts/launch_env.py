@@ -58,17 +58,19 @@ def derive(game, config, state_path, env):
     if android_port and 'frames_queued' not in ini:
         graphics_options.write_keys(config, {'frames_queued': '2'})
         ini = graphics_options.read_ini(config)
-    if android_port and ini.get('upscaler') != 'off':
+    # Bionic opt-in Snapdragon GSR2: unlike the broken old FSR3 Android route,
+    # it is an upstream Qualcomm provider. All other upscalers stay disabled.
+    gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'
+    if android_port and ini.get('upscaler') not in ('off', 'gsr2'):
         graphics_options.write_keys(config, {'upscaler': 'off', 'preset': '0',
                                              'fsr1': '0', 'rcas': '0'})
         ini = graphics_options.read_ini(config)
     updates = dict(graphics_options.environment(graphics))
     if android_port:
-        # Off in the guest Vulkan core, not merely hidden from the Android UI.
-        updates['GOW3_UPSCALER'] = 'none'
+        updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'
         updates['GOW3_FSR1'] = '0'
         updates['GOW3_RCAS'] = '0'
-        updates['GOW3_UPSCALER_SOURCE'] = 'disabled-android'
+        updates['GOW3_UPSCALER_SOURCE'] = 'gsr2-opt-in' if gsr2_requested else 'disabled-android'
         updates['GOW3_RESOLUTION_STATUS'] = 'native-game-patch'
     elif 'GOW3_UPSCALER' not in env:
         updates['GOW3_UPSCALER'] = 'none'
