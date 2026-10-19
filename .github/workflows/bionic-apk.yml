@@ -2,7 +2,9 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [android, experimental-bionic]
+    branches: [fix/bionic-r4-unified-positionable-hud-gsr2-20261019]
+    paths:
+      - '.github/r4-build-trigger.txt'
   workflow_dispatch:
 
 permissions:
