@@ -1430,6 +1430,13 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
         image.info.size.width == depth.info.size.width &&
         image.info.size.height == depth.info.size.height) {
         ldr_target = color;
+        // This is a NEW verified scene after the previous PS4 display pass.
+        // End the old GSR2 sample redirect here, not at an arbitrary
+        // intermediate render target during that display pass.
+        if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") &&
+            !FrameCapture::IsDisplayBuffer(image.info.guest_address)) {
+            display_redirect = false;
+        }
     }
 }
 
@@ -2124,14 +2131,29 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
         }
     }
     if (!FrameCapture::IsDisplayBuffer(address)) {
-        display_redirect = false;
+        // GSR2's display-copy phase may include intermediate offscreen draws.
+        // Never let those draws cancel the pending guest display override.
+        // OnColorTarget clears it when a verified NEXT forward scene starts.
+        if (!UseGsr2() || !std::getenv("GOW3_ANDROID_PORT"))
+            display_redirect = false;
         return false;
     }
     std::scoped_lock lock{display_mutex};
     auto& display = displays[address];
     if (!display_redirect) {
-        display.valid = false; // not upscaled: the presenter shows the guest buffer
-        return false;
+        // Distinguish a stale display from a later UI draw in the SAME
+        // upscaled frame. R8 observed valid=0 on all ~10k presenter queries,
+        // even with a successful native GSR2 dispatch each frame. Reuse a
+        // primed host buffer only during a completed GSR2 frame; otherwise
+        // fall back to the real guest buffer, never to stale upscale pixels.
+        const bool keep_this_frame = UseGsr2() &&
+            std::getenv("GOW3_ANDROID_PORT") &&
+            completed_temporal_frame && Active() &&
+            display.valid && bool(display.image);
+        if (!keep_this_frame) {
+            display.valid = false;
+            return false;
+        }
     }
     if (!display.image || display.format != image.info.pixel_format ||
         display.width != ui_width || display.height != ui_height) {
