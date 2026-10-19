@@ -11,16 +11,18 @@ import java.nio.charset.StandardCharsets;
  */
 final class HudConfig {
     static final String ENABLED = "show_fps";
-    static final String ANCHOR = "overlay_corner"; // 0 left, 1 right, 4 center
+    static final String ANCHOR = "overlay_corner"; // horizontal: 0 left, 4 center, 1 right
+    static final String VERTICAL = "overlay_anchor_y"; // 0 top, 1 center, 2 bottom
     static final String DX = "overlay_offset_x";  // dp: -300..300
     static final String DY = "overlay_offset_y";  // dp: 0..300
 
     final boolean enabled;
-    final int anchor, dx, dy;
+    final int anchor, vertical, dx, dy;
 
-    HudConfig(boolean enabled, int anchor, int dx, int dy) {
+    HudConfig(boolean enabled, int anchor, int vertical, int dx, int dy) {
         this.enabled = enabled;
         this.anchor = anchor == 0 || anchor == 4 ? anchor : 1;
+        this.vertical = Math.max(0, Math.min(2, vertical));
         this.dx = Math.max(-300, Math.min(300, dx));
         this.dy = Math.max(0, Math.min(300, dy));
     }
@@ -47,7 +49,7 @@ final class HudConfig {
     static HudConfig load(File file) {
         Map<String,String> m = readValues(file);
         return new HudConfig("1".equals(m.get(ENABLED)),
-                number(m.get(ANCHOR), 1), number(m.get(DX), 0), number(m.get(DY), 0));
+                number(m.get(ANCHOR), 1), number(m.get(VERTICAL), 0), 0, 0);
     }
     static synchronized boolean update(File file, Map<String,String> changes) {
         ArrayList<String> original = new ArrayList<>();
@@ -102,5 +104,5 @@ final class HudConfig {
         }
         prefs.edit().putBoolean("unified_perf_hud_migrated", true).apply();
     }
-    private HudConfig() { this(false, 1, 0, 0); }
+    private HudConfig() { this(false, 1, 0, 0, 0); }
 }
