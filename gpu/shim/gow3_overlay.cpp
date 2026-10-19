@@ -489,6 +489,32 @@ void PerformanceTab() {
 void OverlayTab() {
     namespace P = Gow3PerfStats;
     auto& s = Gow3Settings::Get();
+#ifdef __ANDROID__
+    // Bionic shows ONE HUD: the Android PerfHudOverlay reads gow3.ini live.
+    // The old ImGui FPS overlay is deliberately not drawn here.
+    if (BeginRows("##android_hud_on")) {
+        CheckRow("Performance HUD (FPS / GPU / CPU)", s.show_fps,
+                 "Shows the Android HUD. Applies when the in-game menu is closed.");
+        ImGui::EndTable();
+    }
+    ImGui::BeginDisabled(!s.show_fps);
+    ImGui::SeparatorText("Horizontal position");
+    const int selected = s.overlay_corner.load();
+    if (ImGui::RadioButton("Left", selected == 0)) { s.overlay_corner = 0; dirty = true; }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Center", selected == 4)) { s.overlay_corner = 4; dirty = true; }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Right", selected != 0 && selected != 4)) { s.overlay_corner = 1; dirty = true; }
+    if (BeginRows("##android_hud_position")) {
+        SliderRow("Horizontal shift", s.overlay_offset_x, -300, 300, "%d dp",
+                  "Negative goes left; positive goes right.");
+        SliderRow("Move down", s.overlay_offset_y, 0, 300, "%d dp",
+                  "Distance below the top safe margin.");
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Settings persist when you close this menu; no game restart.");
+#else
     if (BeginRows("##overlay_on")) {
         CheckRow("Show overlay", s.show_fps, "The performance overlay in a corner of the screen.");
         ImGui::EndTable();
@@ -529,6 +555,7 @@ void OverlayTab() {
         ImGui::EndTable();
     }
     ImGui::EndDisabled();
+#endif
     ImGui::SeparatorText("About");
     if (BeginRows("##about")) {
         const auto& elf = Common::ElfInfo::Instance();
@@ -1229,7 +1256,7 @@ void SetLoading(bool active, u32 done, u32 total) {
 bool Visible() {
     const auto& s = Gow3Settings::Get();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
-                           choice_retiring || s.show_fps ||
+                           choice_retiring || (s.show_fps && !std::getenv("GOW3_ANDROID_PORT")) ||
                            (s.actor_watch_supported && s.enemy_health_bar));
 }
 
@@ -1349,8 +1376,8 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (menu_open) {
         Menu();
     }
-    if (Gow3Settings::Get().show_fps && !menu_open) {
-        FpsCounter();
+    if (Gow3Settings::Get().show_fps && !menu_open && !std::getenv("GOW3_ANDROID_PORT")) {
+        FpsCounter(); // Desktop only; Bionic uses the single Android HUD.
     }
     if (!loading && !menu_open) {
         HealthDisplay();
