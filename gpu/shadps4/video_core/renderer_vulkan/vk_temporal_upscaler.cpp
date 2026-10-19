@@ -175,7 +175,12 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
     }
     // Available unless GOW3_UPSCALER=none; on/off and the parameters are the menu's settings.
     const char* env = std::getenv("GOW3_UPSCALER");
-    enabled = !std::getenv("GOW3_ANDROID_PORT") &&
+    // The original Daedalus Android path intentionally disables broken FSR 3.1.
+    // Opt-in Qualcomm GSR2 is a separate upstream Vulkan provider: allow it
+    // only if the launch environment explicitly selected "gsr2".
+    const bool android_port = std::getenv("GOW3_ANDROID_PORT") != nullptr;
+    const bool snapdragon_gsr2 = env && std::strcmp(env, "gsr2") == 0;
+    enabled = (!android_port || snapdragon_gsr2) &&
               !(env && std::strcmp(env, "none") == 0);
     if (const char* hash = std::getenv("GOW3_UPSCALE_BEFORE_CS")) {
         trigger_hash = std::strtoull(hash, nullptr, 16);
