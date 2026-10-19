@@ -50,7 +50,7 @@ fi
 # against). gow3_lsfg_api.h 与上游头仅前缀不同（Bb→Gow3、BB_LSFG→GOW3_LSFG）且带 gow3 归因
 # 注释：剥离注释行、归一化前缀后逐字节比较（只比较声明契约）。
 mkdir -p "$build"
-norm() { perl -pe 's/^\s*\/\/.*$//; s/\bBb/Gow3/g; s/\bBB_LSFG/GOW3_LSFG/g; s/\bbb_lsfg_/gow3_lsfg_/g; s/^\s+$//' "$1"; }
+norm() { perl -pe 's/^\s*\/\/.*$//; s/\bBb/Gow3/g; s/\bBB_LSFG/GOW3_LSFG/g; s/\bbb_lsfg_/gow3_lsfg_/g; s/^\s+$//' "$1" | sed '/^[[:space:]]*$/d'; }
 norm "$src/android/bb_lsfg.h" > "$build/.bb_lsfg.normalized"
 norm tools/android/lsfg/gow3_lsfg_api.h > "$build/.gow3_lsfg_api.normalized"
 cmp -s "$build/.bb_lsfg.normalized" "$build/.gow3_lsfg_api.normalized" ||
