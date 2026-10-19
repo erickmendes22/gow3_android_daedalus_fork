@@ -29,7 +29,7 @@ def main():
         (base/'logs').mkdir()
         for directory,names in {
             'bin':['gow3-probe','gow3-prepare','kgsl-chip-id','orbis-pkg-util'],
-            'lib':['libgow3cpu.so','libgow3gpu.so','libgow3present.so','libc++_shared.so']}.items():
+            'lib':['libgow3cpu.so','libgow3gpu.so','libgow3present.so','libbloodframe.so','libc++_shared.so']}.items():
             (runtime/directory).mkdir(parents=True)
             for name in names:shutil.copy2(source/directory/name,runtime/directory/name)
         shutil.copytree(source/'drivers',runtime/'drivers',ignore=shutil.ignore_patterns('.*'))
