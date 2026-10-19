@@ -2,7 +2,7 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [android, experimental-bionic, fix/bionic-r4-unified-positionable-hud-gsr2-20261019]
+    branches: [android, experimental-bionic]
   workflow_dispatch:
 
 permissions:
