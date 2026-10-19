@@ -1,0 +1,1 @@
+R11 single Bionic build: permit verified GoW3 GSR2 vertex-camera constants from forward rendering; read actual host constant ring; retain safe no-motion GSR2 fallback and HUD/LSFG untouched.
