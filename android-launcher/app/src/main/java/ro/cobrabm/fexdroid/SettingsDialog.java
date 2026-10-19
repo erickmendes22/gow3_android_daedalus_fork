@@ -240,7 +240,9 @@ final class SettingsDialog {
         sharpness.setOnSeekBarChangeListener(sharpText); sharpText.onProgressChanged(sharpness,sharpness.getProgress(),false);
         box.addView(sharpness);
         sharpen.setOnCheckedChangeListener((b,on) -> sharpness.setEnabled(on)); sharpness.setEnabled(sharpen.isChecked());
-        final Switch fps=toggle(box,"Show FPS","1".equals(get("show_fps","0")));
+        // One shared HUD replaces the retired in-game FPS overlay; uses the same
+        // gow3.ini keys as native Overlay tab and the Android drawer (live, no restart).
+        final HudControls hud = new HudControls(activity, file, box, HudConfig.load(file));
         // effect_dynamic_shadows is consumed by launch_env.py to select the
         // SHA-gated Disable Dynamic Shadows eboot patch on the next launch.
         heading(box,"Game effects");
@@ -307,7 +309,7 @@ final class SettingsDialog {
                 changed.put("effect_dynamic_shadows",disableShadows.isChecked() ? "0" : "1");
                 changed.put("sharpen",sharpen.isChecked() ? "1" : "0");
                 changed.put("sharpness",String.format(Locale.ROOT,"%.2f",sharpness.getProgress()/100f));
-                changed.put("show_fps",fps.isChecked() ? "1" : "0");
+                changed.putAll(hud.values());
                 // thor_cpus / effect_* / model_lod 随上面三段一起注释掉了，这里也不写。
                 apply(changed);
             }).show();
@@ -318,7 +320,18 @@ final class SettingsDialog {
         boolean same=true;
         for (Map.Entry<String,String> e:changed.entrySet()) if (!e.getValue().equals(values.get(e.getKey()))) same=false;
         if (same) return;
-        if (save(changed)) restart.run();
+        // Pure HUD edits take effect immediately through GameActivity's native INI watcher.
+        // Only game graphics changes should restart the emulator and risk unsaved progress.
+        boolean gameRestartNeeded = false;
+        for (Map.Entry<String,String> entry : changed.entrySet()) {
+            String key = entry.getKey();
+            if (!entry.getValue().equals(values.get(key)) &&
+                    !key.equals(HudConfig.ENABLED) && !key.equals(HudConfig.ANCHOR) &&
+                    !key.equals(HudConfig.DX) && !key.equals(HudConfig.DY)) {
+                gameRestartNeeded = true;
+            }
+        }
+        if (save(changed)) { if (gameRestartNeeded) restart.run(); }
         else new AlertDialog.Builder(activity).setMessage(UiText.get(activity, "The settings could not be saved.")).setPositiveButton(UiText.get(activity, "OK"),null).show();
     }
 
