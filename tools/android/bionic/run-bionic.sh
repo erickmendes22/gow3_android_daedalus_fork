@@ -72,6 +72,9 @@ mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || true)
 [ -n "$mem_kb" ] && [ "$mem_kb" -gt 0 ] && export GOW3_DEVICE_MEM_MB=${GOW3_DEVICE_MEM_MB:-$((mem_kb/1024))}
 # Select game rendering resolution directly.
 export GOW3_ANDROID_PORT=1
+# R7 forensic probe: one 32x18 RGB readback per GSR2 Vulkan stage, written
+# into android-game.log. No image substitution and no framegen/HUD changes.
+export GOW3_GSR2_AUTO_PROBE=1
 # Upstream in-process bloodframe is opt-in; settings can update this file live.
 export GOW3_LSFG_STATE_FILE="$base/framegen.state"
 export GOW3_LSFG_LIB="$runtime/lib/libbloodframe.so"
