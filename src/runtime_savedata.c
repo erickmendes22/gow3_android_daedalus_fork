@@ -168,10 +168,19 @@ int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size)
     if (!out || !size || !valid_name(dir,32)) return -1;
     char base[600];
     root(user,NULL,base,sizeof(base));
+    // Prefer per-save scene thumbnails from imported/legacy saves over a
+    // common title icon. Never use the game's installation-wide icon here.
+    // Some PS4 exports nest sce_sys under the save dir or use 'preview.png'.
     const char *const patterns[]={
+        "%s/%s.sce_sys/preview.png",
+        "%s/%s/sce_sys/preview.png",
+        "%s/%s/thumbnail.png",
+        "%s/%s.sce_sys/thumbnail.png",
         "%s/%s.sce_sys/icon0.png",
         "%s/%s/sce_sys/icon0.png",
-        "%s/%s/icon0.png"
+        "%s/%s/icon0.png",
+        "%s/%s.sce_sys/ICON0.PNG",
+        "%s/%s/sce_sys/ICON0.PNG"
     };
     struct stat info;
     for (unsigned i=0;i<sizeof(patterns)/sizeof(patterns[0]);++i) {
