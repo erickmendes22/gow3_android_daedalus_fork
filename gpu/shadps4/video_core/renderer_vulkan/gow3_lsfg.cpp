@@ -247,7 +247,20 @@ bool Lsfg::Initialize() {
             std::printf("LSFG: tuning file: chain %d, pace %d, frames %u\n", chain ? 1 : 0, pace ? 1 : 0, frames_cap);
         }
     }
-    sync_host = EnvString("GOW3_LSFG_SYNC") == "host";
+    // Adreno 830/Turnip Gen8: the R2 device log faults in libvulkan_freedreno.so
+    // just after the first bb_lsfg_present(count=0), at the first external
+    // sync-fd handoff. Avoid the driver's import/export path on this GPU until
+    // that driver path has been verified stable. Keep sync-fd on other GPUs.
+    // GOW3_LSFG_SYNC=fd explicitly restores the upstream fast path for A/B tests.
+    const std::string sync_mode = EnvString("GOW3_LSFG_SYNC");
+    const std::string gpu_name = instance.GetPhysicalDevice().getProperties().deviceName.data();
+    const bool turnip_gen8_workaround = gpu_name.find("Adreno (TM) 830") != std::string::npos &&
+                                        sync_mode.empty();
+    sync_host = sync_mode == "host" || turnip_gen8_workaround;
+    if (turnip_gen8_workaround) {
+        std::printf("Bloodframe: Adreno 830 compatibility: CPU fence handoff (avoid Gen8 external sync-fd import); override GOW3_LSFG_SYNC=fd for comparison\n");
+        std::fflush(stdout);
+    }
 
     const auto start = std::chrono::steady_clock::now();
     char error[512] = {};
