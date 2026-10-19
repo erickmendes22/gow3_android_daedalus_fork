@@ -2139,7 +2139,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     const auto* data = constant_ring->Data(ring->offset);
                     if (data)
                         camera_motion->OnConstants(reinterpret_cast<const float*>(data),
-                                                   ring->size / sizeof(float));
+                                                   ring->size / sizeof(float),
+                                                   stage.pgm_hash, buffer_index);
                 }
                 push_data.AddOffset(binding.buffer, 0);
             }
@@ -2203,7 +2204,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 (gbuffer_draw || android_camera_feed) && vsharp.base_address &&
                 memory->IsValidGpuMapping(vsharp.base_address, vsharp.GetSize())) {
                 camera_motion->OnConstants(reinterpret_cast<const float*>(vsharp.base_address),
-                                           vsharp.GetSize() / sizeof(float));
+                                           vsharp.GetSize() / sizeof(float),
+                                           stage.pgm_hash, buffer_index);
             }
             // Object motion research: the vertex shader buffers of G-buffer draws.
             if (FrameCapture::Active() && gbuffer_draw && stage.sw_stage == Shader::SwStage::Vertex &&
