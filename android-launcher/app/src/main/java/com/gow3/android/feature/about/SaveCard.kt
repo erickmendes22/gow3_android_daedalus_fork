@@ -59,7 +59,7 @@ internal fun SaveCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ActionButton(stringResource(R.string.save_export), hasSaves, Modifier.weight(1f), onExport)
-            ActionButton(stringResource(R.string.save_import), false, Modifier.weight(1f), onImport)
+            ActionButton(stringResource(R.string.save_import), true, Modifier.weight(1f), onImport)
         }
         Text(
             stringResource(R.string.save_import_footer),
