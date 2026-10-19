@@ -381,49 +381,7 @@ public final class GameActivity extends Activity {
     /** Upstream bloodframe: state file watched by the Bionic presenter every ~250ms.
      * The imported DLL is user-provided; no DLL is bundled into this APK. */
     private void chooseFrameGeneration() {
-        final File dll=new File(BASE,"Lossless.dll");
-        if (!dll.isFile() || dll.length()==0) {
-            new AlertDialog.Builder(this).setTitle("Frame generation")
-                    .setMessage("Import your Lossless.dll from Settings → General on the Home screen first.")
-                    .setPositiveButton("OK",null).show();
-            return;
-        }
-        final String[] modes={"Off (native frames)","Bloodframe 2x","Bloodframe 3x","Bloodframe 4x"};
-        int now=getSharedPreferences("gow3",MODE_PRIVATE).getInt("framegen_multiplier",0);
-        int checked=now>=2 && now<=4 ? now-1 : 0;
-        new AlertDialog.Builder(this)
-                .setTitle("Native frame generation")
-                .setSingleChoiceItems(modes,checked,(dialog,which)->{
-                    int mult=which==0 ? 0 : which+1;
-                    if (writeFramegenState(mult)) {
-                        getSharedPreferences("gow3",MODE_PRIVATE).edit()
-                                .putInt("framegen_multiplier",mult).apply();
-                        setDetail(frameGenItem,mult>=2 ? mult+"x (native)" : "Off");
-                    } else {
-                        new AlertDialog.Builder(this).setTitle("Frame generation")
-                            .setMessage("Could not update framegen.state; no settings were changed.")
-                            .setPositiveButton("OK",null).show();
-                    }
-                    dialog.dismiss();
-                }).setNegativeButton("Cancel",null).show();
-    }
-
-    private boolean writeFramegenState(int multiplier) {
-        final File file=new File(BASE,"framegen.state");
-        final File tmp=new File(BASE,"framegen.state.tmp");
-        try {
-            if (!new File(BASE).isDirectory() && !new File(BASE).mkdirs()) return false;
-            try (java.io.FileOutputStream output=new java.io.FileOutputStream(tmp)) {
-                String data="multiplier="+(multiplier>=2 && multiplier<=4 ? multiplier : 0)+
-                        "\nflow=0.80\nperformance=1\nfp16=1\n";
-                output.write(data.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-                output.getFD().sync();
-            }
-            return tmp.renameTo(file);
-        } catch(Exception e) {
-            tmp.delete();
-            return false;
-        }
+        new FrameGenDialog(this,new File(BASE),this::refreshDrawer).show();
     }
 
     private void refreshDrawer() {
