@@ -58,6 +58,7 @@ public:
     bool IsPresentable() const { return !zero_extent && !buffers.empty(); }
     u32 GetWidth() const { return width; }
     u32 GetHeight() const { return height; }
+    u32 Generation() const { return generation; }
     u32 GetImageCount() const { return image_count; }
     u32 GetFrameIndex() const { return image_index; }
     vk::Extent2D GetExtent() const { return extent; }
