@@ -9,10 +9,18 @@ def read(path): return (ROOT/path).read_text(encoding="utf-8")
 class BionicR11CameraFeed(unittest.TestCase):
     def test_gsr2_uses_actual_vertex_constants(self):
         src=read("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
-        section=src.split("bool Rasterizer::BindResources(const Pipeline* pipeline)",1)[1]
+        bind_resources=src.split("bool Rasterizer::BindResources(const Pipeline* pipeline)",1)[1]
+        bind_resources=bind_resources.split("void Rasterizer::BindBuffers(",1)[0]
+        section=src.split("void Rasterizer::BindBuffers(",1)[1]
+        section=section.split("void Rasterizer::",1)[0]
+        # Compile-scope regression: the original R11 placed this in
+        # BindResources, invisible to its uses in BindBuffers (two errors).
+        self.assertNotIn("const bool android_camera_feed =",bind_resources)
         self.assertIn('std::strcmp(active_upscaler, "gsr2") == 0',section)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")',section)
         self.assertIn("const bool android_camera_feed =",section)
+        self.assertLess(section.index("const bool android_camera_feed ="),
+                        section.index("(gbuffer_draw || android_camera_feed)"))
         self.assertEqual(section.count("(gbuffer_draw || android_camera_feed)"),2)
         self.assertIn("camera_motion->Depth()",section)
         self.assertIn("stage.sw_stage == Shader::SwStage::Vertex",section)
