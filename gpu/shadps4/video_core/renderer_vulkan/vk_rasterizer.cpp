@@ -3,6 +3,8 @@
 
 #include <xxhash.h>
 #include <string_view>
+#include <cstdlib>
+#include <cstring>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "gow3_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
