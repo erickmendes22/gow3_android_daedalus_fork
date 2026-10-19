@@ -327,7 +327,7 @@ final class SettingsDialog {
             String key = entry.getKey();
             if (!entry.getValue().equals(values.get(key)) &&
                     !key.equals(HudConfig.ENABLED) && !key.equals(HudConfig.ANCHOR) &&
-                    !key.equals(HudConfig.DX) && !key.equals(HudConfig.DY)) {
+                    !key.equals(HudConfig.VERTICAL) && !key.equals(HudConfig.DX) && !key.equals(HudConfig.DY)) {
                 gameRestartNeeded = true;
             }
         }
