@@ -10,7 +10,6 @@ class BionicR11CameraFeed(unittest.TestCase):
     def test_gsr2_uses_actual_vertex_constants(self):
         src=read("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
         section=src.split("bool Rasterizer::BindResources(const Pipeline* pipeline)",1)[1]
-        section=section.split("void Rasterizer::",1)[0]
         self.assertIn('std::strcmp(active_upscaler, "gsr2") == 0',section)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")',section)
         self.assertIn("const bool android_camera_feed =",section)
