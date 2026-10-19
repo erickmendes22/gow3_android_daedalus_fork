@@ -1,0 +1,3 @@
+Bionic R5 single controlled build trigger
+HUD: 3x3 anchors, no sliders. GSR2: CUSA01623 verified 720p forward scene inputs.
+Trigger exactly one GitHub Actions run.
