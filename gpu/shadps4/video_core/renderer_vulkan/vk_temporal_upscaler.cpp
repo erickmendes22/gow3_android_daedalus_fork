@@ -1390,7 +1390,7 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
         // OnColorTarget cannot latch it. The display boundary supplies the
         // last completed COLOR attachment, so use that only if its actual
         // format/extent, guest address and depth agree below.
-        const VideoCore::ImageId scene = ldr_target ? ldr_target : color;
+        const VideoCore::ImageId scene = color; // Last completed attachment at the display-copy boundary.
         const VideoCore::ImageId depth_id = camera_motion.Depth();
         bool eligible = active && bool(color) && bool(scene) && bool(depth_id) &&
                         scene_targets.Reduced() &&
@@ -1418,7 +1418,7 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
                             camera_motion.Ready() ? "camera" : "zero-motion fallback");
                 std::fflush(stdout);
             }
-        } else if (++probes <= 8) {
+        } else if (++probes <= 8 || probes == 600 || probes == 1800 || probes == 6000) {
             std::printf("GSR2: display boundary skipped #%u active=%d color=%d ldr=%d depth=%d reduced=%d sizes=%ux%u->%ux%u matched=%d\n",
                         probes, int(active), int(bool(color)), int(bool(scene)), int(bool(depth_id)),
                         int(scene_targets.Reduced()), render_width, render_height,
