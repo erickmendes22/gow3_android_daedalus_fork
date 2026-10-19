@@ -73,7 +73,9 @@ final class PerfHudOverlay extends View {
     private int gpuFailures;
 
     // ---- 拖动状态（仅主线程访问） ----
-    private float hudX, hudY;          // HUD 左上角（视图坐标 == 窗口坐标，视图全屏）
+    private float hudX, hudY;          // Position is derived from the anchor and actual measured HUD size.
+    private final float density = getResources().getDisplayMetrics().density;
+    private int anchor = 1, offsetXd = 0, offsetYd = 0;
     private boolean dragging;
     private float grabDx, grabDy;
 
@@ -306,11 +308,34 @@ final class PerfHudOverlay extends View {
         gpuPaths = null;
     }
 
+    private String gpuText() { return "GPU " + (snapGpu != null ? snapGpu : "N/A"); }
+    private String cpuText() { return "CPU " + (snapCpu != null ? snapCpu : "N/A"); }
+
     private void updateMetrics() {
-        // 横向单行：三段文本 + 两个分隔点，宽度按当前文本实测
-        float[] widths = segmentWidths();
-        float w = padPx * 2 + widths[0] + widths[1] + widths[2] + sepW * 2;
-        hudRect.set(0, 0, w, lineH + padPx * 2);
+        // A second line prevents 2x/3x/4x LSFG from pushing GPU/CPU off-screen.
+        float first = pText.measureText(fpsText());
+        float second = pText.measureText(gpuText()) + sepW + pText.measureText(cpuText());
+        float available = Math.max(1f, getWidth() - marginPx * 2);
+        float width = Math.min(available, Math.max(first, second) + padPx * 2);
+        hudRect.set(0, 0, width, lineH * 2 + padPx * 3);
+    }
+    private void alignToAnchor() {
+        float w = hudRect.width();
+        float base = anchor == 0 ? marginPx : anchor == 4 ? (getWidth() - w) * 0.5f
+                : getWidth() - marginPx - w;
+        hudX = Math.max(marginPx, Math.min(base + offsetXd * density,
+                Math.max(marginPx, getWidth() - marginPx - w)));
+        hudY = Math.max(marginPx, Math.min(marginPx + offsetYd * density,
+                Math.max(marginPx, getHeight() - marginPx - hudRect.height())));
+    }
+    /** Called on the main thread when the launcher or native in-game menu edits gow3.ini. */
+    void setConfiguration(HudConfig cfg) {
+        if (anchor == cfg.anchor && offsetXd == cfg.dx && offsetYd == cfg.dy) return;
+        anchor = cfg.anchor;
+        offsetXd = cfg.dx;
+        offsetYd = cfg.dy;
+        if (!dragging) alignToAnchor();
+        invalidate();
     }
 
     private float[] segmentWidths() {
@@ -325,31 +350,32 @@ final class PerfHudOverlay extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         if (w <= 0 || h <= 0) return;
         updateMetrics();
-        // 首次布局/窗口尺寸变化：按 prefs 校验并夹紧位置（design D4：异常数据回退默认右上角）。
-        float[] p = PerfHudMetrics.resolvePosition(prefs.contains("perf_hud_x") ? prefs.getFloat("perf_hud_x", 0) : null,
-                prefs.contains("perf_hud_y") ? prefs.getFloat("perf_hud_y", 0) : null,
-                w, h, hudRect.width(), hudRect.height(), marginPx);
-        hudX = p[0]; hudY = p[1];
+        alignToAnchor();
     }
 
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);
         if (getWidth() <= 0 || getHeight() <= 0) return;
         updateMetrics();
+        if (!dragging) alignToAnchor(); // Recalculate whenever LSFG changes text width.
         c.save();
         c.translate(hudX, hudY);
         c.drawRoundRect(hudRect, cornerPx, cornerPx, pBg);
-        // 配色沿用 WinlatorHUD 的可读性方案：FPS 绿、GPU 品红、CPU 青，分隔点灰色。
-        float x = padPx;
-        float[] widths = segmentWidths();
+        // Always keep FPS and GPU/CPU on separate lines, with the original colors.
         pText.setColor(0xff76ff03);
-        c.drawText(fpsText(), x, baseline, pText); x += widths[0];
-        pSep.setColor(0xff8e9097); c.drawText(" · ", x, baseline, pSep); x += sepW;
+        c.save();
+        c.clipRect(padPx, 0, hudRect.width() - padPx, hudRect.height());
+        c.drawText(fpsText(), padPx, baseline, pText);
+        float row2 = baseline + lineH + padPx;
+        float x = padPx;
         pText.setColor(0xffe040fb);
-        c.drawText("GPU " + (snapGpu != null ? snapGpu : "N/A"), x, baseline, pText); x += widths[1];
-        c.drawText(" · ", x, baseline, pSep); x += sepW;
+        c.drawText(gpuText(), x, row2, pText);
+        x += pText.measureText(gpuText());
+        c.drawText(" · ", x, row2, pSep);
+        x += sepW;
         pText.setColor(0xff00e5ff);
-        c.drawText("CPU " + (snapCpu != null ? snapCpu : "N/A"), x, baseline, pText);
+        c.drawText(cpuText(), x, row2, pText);
+        c.restore();
         c.restore();
     }
 
@@ -369,8 +395,15 @@ final class PerfHudOverlay extends View {
             case MotionEvent.ACTION_UP:
                 if (!dragging) return false;
                 dragging = false;
-                // 松手持久化（design D4：x/y 成对写入）
-                prefs.edit().putFloat("perf_hud_x", hudX).putFloat("perf_hud_y", hudY).apply();
+                // Preserve the exact new position in the same INI used by the in-game menu.
+                float base = anchor == 0 ? marginPx : anchor == 4 ? (getWidth() - hudRect.width()) * 0.5f
+                        : getWidth() - marginPx - hudRect.width();
+                offsetXd = Math.max(-300, Math.min(300, Math.round((hudX - base) / density)));
+                offsetYd = Math.max(0, Math.min(300, Math.round((hudY - marginPx) / density)));
+                java.util.Map<String,String> changed = new java.util.LinkedHashMap<>();
+                changed.put(HudConfig.DX, String.valueOf(offsetXd));
+                changed.put(HudConfig.DY, String.valueOf(offsetYd));
+                HudConfig.update(new File(context.getFilesDir(), "gow3port/gow3.ini"), changed);
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 dragging = false;
