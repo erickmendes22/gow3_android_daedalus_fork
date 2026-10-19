@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <vector>
 
 #include "common/types.h"
@@ -62,6 +63,17 @@ public:
     /// Vertical field of view and near/far planes of the current camera.
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
+    // Upstream zFitness GSR2: use the more expensive 9-tap reconstruction
+    // only when BOTH the view and projection matrices remained unchanged.
+    [[nodiscard]] bool CameraStill() const noexcept {
+        if (!current.valid || !previous.valid) return false;
+        float diff = 0.0f;
+        for (size_t i = 0; i < current.view.size(); ++i)
+            diff += std::abs(current.view[i] - previous.view[i]);
+        for (size_t i = 0; i < current.proj.size(); ++i)
+            diff += std::abs(current.proj[i] - previous.proj[i]);
+        return diff < 1e-5f;
+    }
     // Reference-centre motion predicted by independently validated guest matrices,
     // in render pixels. Useful to check that camera movement isn't being zero-filled.
     [[nodiscard]] std::array<float, 2> EstimatedMotion(u32 width, u32 height) const noexcept;
