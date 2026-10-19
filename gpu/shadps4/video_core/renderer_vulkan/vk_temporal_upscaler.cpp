@@ -2282,7 +2282,10 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         .output_height = oh,
         .jitter = temporal_ready ? std::array<float, 2>{sign * jitter[0], sign * jitter[1]}
                                  : std::array<float, 2>{0.0f, 0.0f},
-        .vertical_fov = camera_motion.VerticalFov(),
+        // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
+        // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
+        // Use a finite 60-degree fallback only for current-frame spatial mode.
+        .vertical_fov = temporal_ready ? camera_motion.VerticalFov() : 1.04719755f,
         .camera_still = temporal_ready ? camera_motion.CameraStill() : true,
         .reset = reset || !temporal_ready,
     });
