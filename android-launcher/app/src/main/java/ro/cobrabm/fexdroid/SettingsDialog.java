@@ -202,7 +202,7 @@ final class SettingsDialog {
             indexOf(anisotropyValues,get("anisotropy","0"),0));
         heading(box,"Image");
         // Same selection model as the native Bloodborne Android GSR2 menu.
-        // FSR 3.1 is intentionally not offered on this Daedalus Bionic runtime.
+        // Older temporal providers are intentionally not offered on Bionic.
         heading(box,"Upscaling — Qualcomm Snapdragon");
         final String[] upscalerValues={"off","gsr2"};
         final RadioGroup upscalers=choices(box,new String[]{
