@@ -132,6 +132,8 @@ int RenderPreset();
 bool ResolutionNeedsRestart();
 /// A startup graphics option differs from the one this launch started with.
 bool GraphicsNeedRestart();
+/// Refresh Android performance-HUD keys written by the launcher without changing graphics state.
+void ReloadHudFromDisk();
 /// Writes the file (menu changes).
 void Save();
 
