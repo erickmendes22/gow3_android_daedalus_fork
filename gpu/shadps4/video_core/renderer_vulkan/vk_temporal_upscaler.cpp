@@ -2192,9 +2192,9 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
         });
         const vk::ImageBlit region{
             .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-            .srcOffsets = {vk::Offset3D{}, vk::Offset3D{s32(ui_width), s32(ui_height), 1}},
+            .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ui_width), s32(ui_height), 1}},
             .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-            .dstOffsets = {vk::Offset3D{}, vk::Offset3D{s32(display.width), s32(display.height), 1}},
+            .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(display.width), s32(display.height), 1}},
         };
         const auto source = vk::Image(ui_image), destination = vk::Image(display.image);
         scheduler.Record([source, destination, region](vk::CommandBuffer cmd) {
