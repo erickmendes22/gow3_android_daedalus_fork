@@ -1427,7 +1427,7 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
             if (ui_phase && ++successful <= 3) {
                 std::printf("GSR2: real Vulkan dispatch recorded #%u %ux%u -> %ux%u motion=%s\n",
                             successful, render_width, render_height, target_width, target_height,
-                            camera_motion.Ready() ? "camera" : "zero-motion fallback");
+                            camera_motion.Ready() ? "verified-temporal" : "spatial-reset-no-history");
                 std::fflush(stdout);
             }
         } else if (++probes <= 8 || probes == 600 || probes == 1800 || probes == 6000) {
