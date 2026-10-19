@@ -27,6 +27,12 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
     AVFrame* frame = av_frame_alloc();
     bool ok = context && packet && frame && avcodec_open2(context, codec, nullptr) == 0 &&
               av_new_packet(packet, int(size)) == 0;
+    if (!ok) {
+        std::printf("Save PNG: decoder setup failed: codec=%d context=%d packet=%d frame=%d, size=%zu\n",
+                    codec != nullptr, context != nullptr, packet != nullptr,
+                    frame != nullptr, size);
+        std::fflush(stdout);
+    }
     if (ok) {
         std::memcpy(packet->data, data, size);
         // A PNG is one still-image packet. Do NOT send the EOF/drain packet
@@ -54,6 +60,11 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
                                          frame->width, frame->height, AV_PIX_FMT_RGBA, SWS_POINT,
                                          nullptr, nullptr, nullptr);
         ok = sws != nullptr;
+        if (!ok) {
+            std::printf("Save PNG: unsupported swscale format=%d, %dx%d\n",
+                        int(frame->format), frame->width, frame->height);
+            std::fflush(stdout);
+        }
         if (ok) {
             out.width = frame->width;
             out.height = frame->height;
@@ -63,6 +74,11 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
             ok = sws_scale(sws, frame->data, frame->linesize, 0, frame->height, planes, strides) ==
                  frame->height;
             sws_freeContext(sws);
+            if (!ok) {
+                std::printf("Save PNG: RGBA conversion failed for format=%d, %dx%d\n",
+                            int(frame->format), frame->width, frame->height);
+                std::fflush(stdout);
+            }
         }
     }
     av_frame_free(&frame);
