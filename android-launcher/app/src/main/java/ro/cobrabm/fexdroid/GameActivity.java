@@ -60,6 +60,8 @@ public final class GameActivity extends Activity {
     private View resume;
     private LinearLayout gameSettingsItem, cheatsItem, graphicsItem, controllerItem, swapFaceItem;
     private TouchControllerOverlay controllerOverlay;
+    private PerfHudOverlay perfHud;
+    private LinearLayout perfHudItem, frameGenItem;
     private PadBridge pad;
     private AudioBridge audio;
     private volatile Process xvfb, game;
@@ -197,6 +199,11 @@ public final class GameActivity extends Activity {
         controllerOverlay=new TouchControllerOverlay(this,pad,!bionicRuntime() && "1".equals(setting("overlay_mouse")));
         controllerOverlay.setVisibility(controllerEnabled() ? View.VISIBLE : View.GONE);
         screen.addView(controllerOverlay,frame(-1,-1,Gravity.CENTER));
+        // Upstream-style draggable HUD stays above the controller and below the drawer.
+        perfHud=new PerfHudOverlay(this);
+        screen.addView(perfHud,frame(-1,-1,Gravity.CENTER));
+        perfHud.setActive(getSharedPreferences("gow3",MODE_PRIVATE)
+                .getBoolean("performance_hud",false));
 
         handle=new View(this);
         GradientDrawable grip=new GradientDrawable(); grip.setColor(0x80c6ad76); grip.setCornerRadius(dp(4));
@@ -257,6 +264,19 @@ public final class GameActivity extends Activity {
         graphicsItem=menuItem("ic_tune","Graphics settings","",() -> {
             closeDrawer();
             new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).show();
+        });
+
+        if (bionicRuntime()) {
+            frameGenItem=menuItem("ic_frames","Frame generation (Bloodframe)",
+                "Off · 2x/3x/4x; changes apply live", this::chooseFrameGeneration);
+        }
+        perfHudItem=menuItem("ic_tune","Draggable FPS / GPU / CPU HUD","",() -> {
+            boolean on=!getSharedPreferences("gow3",MODE_PRIVATE)
+                    .getBoolean("performance_hud",false);
+            getSharedPreferences("gow3",MODE_PRIVATE).edit()
+                    .putBoolean("performance_hud",on).apply();
+            if (perfHud!=null) perfHud.setActive(on);
+            setDetail(perfHudItem,on ? "On" : "Off");
         });
 
         section("Controls");
@@ -358,6 +378,54 @@ public final class GameActivity extends Activity {
         row.setAlpha(on ? 1.0f : 0.4f);
     }
     /** The rows' second lines: the current settings, read when the drawer opens. */
+    /** Upstream bloodframe: state file watched by the Bionic presenter every ~250ms.
+     * The imported DLL is user-provided; no DLL is bundled into this APK. */
+    private void chooseFrameGeneration() {
+        final File dll=new File(BASE,"Lossless.dll");
+        if (!dll.isFile() || dll.length()==0) {
+            new AlertDialog.Builder(this).setTitle("Frame generation")
+                    .setMessage("Import your Lossless.dll from Settings → General on the Home screen first.")
+                    .setPositiveButton("OK",null).show();
+            return;
+        }
+        final String[] modes={"Off (native frames)","Bloodframe 2x","Bloodframe 3x","Bloodframe 4x"};
+        int now=getSharedPreferences("gow3",MODE_PRIVATE).getInt("framegen_multiplier",0);
+        int checked=now>=2 && now<=4 ? now-1 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle("Native frame generation")
+                .setSingleChoiceItems(modes,checked,(dialog,which)->{
+                    int mult=which==0 ? 0 : which+1;
+                    if (writeFramegenState(mult)) {
+                        getSharedPreferences("gow3",MODE_PRIVATE).edit()
+                                .putInt("framegen_multiplier",mult).apply();
+                        setDetail(frameGenItem,mult>=2 ? mult+"x (native)" : "Off");
+                    } else {
+                        new AlertDialog.Builder(this).setTitle("Frame generation")
+                            .setMessage("Could not update framegen.state; no settings were changed.")
+                            .setPositiveButton("OK",null).show();
+                    }
+                    dialog.dismiss();
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private boolean writeFramegenState(int multiplier) {
+        final File file=new File(BASE,"framegen.state");
+        final File tmp=new File(BASE,"framegen.state.tmp");
+        try {
+            if (!new File(BASE).isDirectory() && !new File(BASE).mkdirs()) return false;
+            try (java.io.FileOutputStream output=new java.io.FileOutputStream(tmp)) {
+                String data="multiplier="+(multiplier>=2 && multiplier<=4 ? multiplier : 0)+
+                        "\\nflow=0.80\\nperformance=1\\nfp16=1\\n";
+                output.write(data.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                output.getFD().sync();
+            }
+            return tmp.renameTo(file);
+        } catch(Exception e) {
+            tmp.delete();
+            return false;
+        }
+    }
+
     private void refreshDrawer() {
         /* gameSettingsItem / cheatsItem 的摘要随上面两个入口一起注释掉了（接回来时一起放开）。
         java.util.List<String> game=new java.util.ArrayList<>();
@@ -378,6 +446,13 @@ public final class GameActivity extends Activity {
         setDetail(graphicsItem,upscaler+" · "+("0".equals(limit) ? "no FPS limit"
             : (limit==null || !limit.matches("30|60|120|240") ? "30" : limit)+" FPS limit"));
         setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
+        setDetail(perfHudItem,getSharedPreferences("gow3",MODE_PRIVATE)
+                .getBoolean("performance_hud",false) ? "On" : "Off");
+        if (frameGenItem!=null) {
+            int multiplier=getSharedPreferences("gow3",MODE_PRIVATE)
+                    .getInt("framegen_multiplier",0);
+            setDetail(frameGenItem,multiplier>=2 ? multiplier+"x (native)" : "Off");
+        }
         setDetail(swapFaceItem,getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
     }
 
