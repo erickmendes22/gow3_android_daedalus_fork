@@ -727,7 +727,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (lsfg && is_game_frame && !is_reusing_frame) {
         const vk::Extent2D extent = swapchain.GetExtent();
         SetExpectedGameSize(s32(extent.width), s32(extent.height));
-        if (frame->width == expected_frame_width && frame->height == expected_frame_height &&
+        // Unlike Bloodborne, the GoW III guest can output a SHA-patched
+        // 1280x720 frame into a 1840x828 or 2400x1080 Android window.
+        // The imported Bloodborne condition required these sizes to match
+        // exactly and silently skipped ALL frame generation on such phones.
+        // Bloodframe accepts the real source frame size and SubmitToSwapchain
+        // already letterboxes/blits the resulting frames to the AHB surface.
+        if (frame->width > 0 && frame->height > 0 &&
             PresentWithLsfg(frame)) {
             free_frame();
             DebugState.IncFlipFrameNum();
