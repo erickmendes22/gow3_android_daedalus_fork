@@ -425,8 +425,8 @@ public final class GameActivity extends Activity {
         if (bionicRuntime()) {
             HudConfig cfg = HudConfig.load(new File(BASE,"gow3.ini"));
             String align = cfg.anchor == 0 ? "Left" : cfg.anchor == 4 ? "Center" : "Right";
-            setDetail(perfHudItem,(cfg.enabled ? "On" : "Off") + " · " + align +
-                    " · X " + cfg.dx + " / Y +" + cfg.dy + " dp");
+            String vertical = cfg.vertical == 0 ? "Top" : cfg.vertical == 1 ? "Center" : "Bottom";
+            setDetail(perfHudItem,(cfg.enabled ? "On" : "Off") + " · " + align + " / " + vertical);
         } else {
             setDetail(perfHudItem,getSharedPreferences("gow3",MODE_PRIVATE)
                     .getBoolean("performance_hud",false) ? "On" : "Off");
