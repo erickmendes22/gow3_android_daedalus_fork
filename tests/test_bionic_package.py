@@ -41,3 +41,27 @@ class BionicPackageValidation(unittest.TestCase):
                 payload=self.payload(name)
                 with self.assertRaisesRegex(ValueError,'Removed frame-generation component'):
                     validator.validate_payload(payload,hashlib.sha256(payload).hexdigest())
+
+    def test_licenses_for_pinned_mit_bloodframe_do_not_trigger_legacy_layer_rejection(self):
+        # This is the exact filename that broke the signed Bionic APK validator
+        # even though there was no old LSFG Vulkan layer in the payload.
+        path = 'gow3port/licenses/bloodframe-lsfg-vk.LICENSE.md'
+        payload = self.payload(path)
+        with self.assertRaisesRegex(ValueError, 'Missing Bionic runtime file'):
+            validator.validate_payload(payload, hashlib.sha256(payload).hexdigest())
+
+    def test_bloodframe_license_exception_is_restricted_to_notices_directory(self):
+        for path in [
+            'gow3port/arm64/lib/bloodframe-lsfg-vk.LICENSE.md',
+            'gow3port/arm64/lsfg/bloodframe-lsfg-vk.LICENSE.md',
+            'gow3port/licenses/lsfg-vk.so',
+        ]:
+            with self.subTest(path=path):
+                payload=self.payload(path)
+                with self.assertRaisesRegex(ValueError, 'Removed frame-generation component'):
+                    validator.validate_payload(payload, hashlib.sha256(payload).hexdigest())
+
+    def test_proprietary_lossless_dll_remains_forbidden(self):
+        payload = self.payload('gow3port/Lossless.dll')
+        with self.assertRaisesRegex(ValueError, 'Unexpected game/glibc content'):
+            validator.validate_payload(payload, hashlib.sha256(payload).hexdigest())
