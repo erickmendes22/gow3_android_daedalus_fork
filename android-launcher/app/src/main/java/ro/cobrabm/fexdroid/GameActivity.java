@@ -415,7 +415,7 @@ public final class GameActivity extends Activity {
             if (!new File(BASE).isDirectory() && !new File(BASE).mkdirs()) return false;
             try (java.io.FileOutputStream output=new java.io.FileOutputStream(tmp)) {
                 String data="multiplier="+(multiplier>=2 && multiplier<=4 ? multiplier : 0)+
-                        "\\nflow=0.80\\nperformance=1\\nfp16=1\\n";
+                        "\nflow=0.80\nperformance=1\nfp16=1\n";
                 output.write(data.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
                 output.getFD().sync();
             }
