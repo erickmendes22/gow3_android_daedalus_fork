@@ -32,8 +32,11 @@ def sample_image():
         (0x005ff883, "bf 00 01 00 00 b9 80 07 00 00 41 b8 38 04 00 00"),
         (0x005b7394, "83 bb 80 01 00 00 00 74 32 4c 8d 7d a8"),
         (0x007cd910, "00 00 00 43 00 00 80 3f 00 00 00 50 00 00 00 00 00 04 00 00"),
+        # Upstream's half-resolution post-process table, original 960x540.
+        (0x007f2a34, "00 00 00 00 0a e0 f2 00 c0 03 00 00 1c 02 00 00 01 00 00 00"
+                      " 00 00 00 00"),
     ]
-    image = bytearray(0x007cd930 - patches.EBOOT_BASE)
+    image = bytearray(0x007f2a54 - patches.EBOOT_BASE)
     for addr, raw in fragments:
         data = bytes.fromhex(raw)
         offset = addr - patches.EBOOT_BASE
@@ -48,8 +51,13 @@ class Cusa01715ResolutionTests(unittest.TestCase):
             writes = patches.compile_patches(
                 XML, ['Resolution Patch - 900p'], '01.02', [(0, len(image))], image,
                 expand_video_arena=expand)
-            self.assertEqual(len(writes), 9 if expand else 8)
-            for i, (offset, data) in enumerate(writes[:8]):
+            self.assertEqual(len(writes), 11 if expand else 10)
+            # Ignore the two new postprocessing writes and the optional video-arena write:
+            # the eight geometry operands must still match their independently verified sites.
+            geometry = [(offset, data) for offset, data in writes
+                        if offset + patches.EBOOT_BASE in patches.CUSA01715_0102_SITES]
+            self.assertEqual(len(geometry), 8)
+            for i, (offset, data) in enumerate(geometry):
                 self.assertEqual(offset + patches.EBOOT_BASE, patches.CUSA01715_0102_SITES[i])
                 expected = 1600 if patches.CUSA01715_0102_FIELDS[i] == 'width' else 900
                 self.assertEqual(data, expected.to_bytes(len(data), 'little'))
