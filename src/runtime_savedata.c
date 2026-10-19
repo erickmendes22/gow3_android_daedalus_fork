@@ -294,17 +294,34 @@ bad:
     pthread_mutex_unlock(&lock);
     return ERR_PARAMETER;
 }
+/* Bloodborne's durable per-save PNG writer: partial writes never leave a
+ * broken icon0.png (and imported save thumbnails take precedence at load). */
+static int save_icon_atomic(const char *path, const void *buffer, size_t length) {
+    char temp[760];
+    if (snprintf(temp,sizeof(temp),"%s.bbtmp",path) >= (int)sizeof(temp)) return -1;
+    FILE *f=fopen(temp,"wb");
+    if (!f) return -1;
+    int ok=fwrite(buffer,1,length,f)==length && !fflush(f);
+#ifndef _WIN32
+    ok=ok && !fsync(fileno(f));
+#endif
+    ok=!fclose(f) && ok;
+    if (!ok || rename(temp,path)) { remove(temp); return -1; }
+    return 0;
+}
 static ABI int32_t save_icon(const MountPoint *point, const Icon *icon) {
     if (!initialized) return ERR_NOT_INITIALIZED;
-    if (!icon || !icon->buffer) return ERR_PARAMETER;
+    if (!icon || !icon->buffer || !icon->data_size ||
+        icon->data_size>icon->buffer_size || icon->data_size>8u*1024u*1024u)
+        return ERR_PARAMETER;
     pthread_mutex_lock(&lock);
     int slot=slot_of(point);
     int32_t r=ERR_NOT_MOUNTED;
     if (slot>=0) {
         char path[700]; snprintf(path,sizeof(path),"%s/icon0.png",slots[slot].meta);
-        FILE *f=fopen(path,"wb");
-        r=f && fwrite(icon->buffer,1,icon->data_size,f)==icon->data_size ? 0 : ERR_INTERNAL;
-        if (f) fclose(f);
+        r=save_icon_atomic(path,icon->buffer,(size_t)icon->data_size)==0 ? 0 : ERR_INTERNAL;
+        printf("SaveData: game-supplied slot icon %s (%llu bytes, result %#x)\n",
+               path,(unsigned long long)icon->data_size,(unsigned)r);
     }
     pthread_mutex_unlock(&lock);
     return r;
