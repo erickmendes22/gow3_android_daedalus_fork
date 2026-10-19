@@ -412,6 +412,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // gow3: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
     const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
+    if (std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        static unsigned requests = 0;
+        if (++requests <= 8 || requests % 1200 == 0)
+            std::printf("GSR2_PRESENTER actual_guest=%#llx override=%d count=%u\n",
+                        static_cast<unsigned long long>(cpu_address), int(upscaled), requests);
+    }
     VideoCore::ImageId image_id{};
     if (!upscaled) {
         auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
