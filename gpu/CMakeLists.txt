@@ -187,6 +187,11 @@ set_source_files_properties(shim/gow3_overlay.cpp PROPERTIES
 target_include_directories(gow3gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
 target_compile_definitions(gow3gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(gow3gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
+if(ANDROID)
+    # Upstream native bloodframe controller uses AHardwareBuffer and libnativewindow.
+    target_include_directories(gow3gpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tools/android/lsfg)
+    target_link_libraries(gow3gpu PRIVATE nativewindow android dl)
+endif()
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against gow3-probe.
 if (NOT WIN32)
     target_link_options(gow3gpu PRIVATE -Wl,--allow-shlib-undefined)
