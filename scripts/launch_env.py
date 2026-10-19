@@ -115,6 +115,15 @@ def derive(game, config, state_path, env):
         if names:
             # gow3.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
+            # GSR2 must match the real eboot-allocated scene, not the desktop
+            # default 1920x1080. This retail CUSA01623/01715 01.02 SHA is
+            # byte-validated and the actual 720p resolution patch is selected.
+            from patches import CUSA01715_0102_ANDROID_SHA
+            if (gsr2_requested and identity['title_id'] in ('CUSA01623', 'CUSA01715') and
+                    identity['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
+                    'Resolution Patch - 720p' in names):
+                updates['GOW3_PATCH_INPUT_RES'] = '1280x720'
+                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-720p-target'
             # This exact-address patch belongs only to the supplied and
             # verified eboot revision. Other builds retain their shadows.
             shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
