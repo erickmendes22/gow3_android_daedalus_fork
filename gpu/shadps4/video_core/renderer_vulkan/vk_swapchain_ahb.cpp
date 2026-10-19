@@ -26,7 +26,9 @@ constexpr u64 AhbUsage = AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
                          AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
 
 /// GOW3_PRESENT_BUFFERS: the number of buffers (3 by default: one shown, one pending, one rendered).
-u32 BufferCount() {
+u32 BufferCount(u32 framegen_multiplier = 0) {
+    // Bloodframe requires one output per generated frame plus buffering.
+    if (framegen_multiplier >= 2) return std::min<u32>(8, framegen_multiplier + 3);
     if (const char* value = std::getenv("GOW3_PRESENT_BUFFERS")) {
         const long count = std::strtol(value, nullptr, 10);
         if (count >= 2 && count <= static_cast<long>(8)) {
@@ -48,9 +50,12 @@ bool WaitSyncFile(int fd, int timeout_ms) {
 
 } // namespace
 
-Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& window_)
+u32 Swapchain::MaxImageCount() { return BufferCount(); }
+
+Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& window_,
+                     u32 framegen_multiplier)
     : instance{instance_}, window{window_} {
-    image_count = BufferCount();
+    image_count = BufferCount(framegen_multiplier);
     const vk::PhysicalDeviceExternalSemaphoreInfo semaphore_info{
         .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
     };
@@ -62,7 +67,7 @@ Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& windo
         "swapchain cannot synchronize with the app");
     if (Gow3Present::Client::Configured()) {
         if (!client.Connect(window.GetWidth(), window.GetHeight(), AhbFormat, image_count,
-                            Gow3Settings::Get().vsync.load())) {
+                            Gow3Settings::Get().vsync.load() || framegen_multiplier >= 2)) {
             std::printf("Present: no connection to the app: frames are rendered but not shown\n");
         }
     } else {
@@ -245,6 +250,15 @@ void Swapchain::CreateBuffer(u32 index) {
     buffer.view = view;
     SetObjectName(device, image, "AHB swapchain image {}", index);
     SetObjectName(device, view, "AHB swapchain view {}", index);
+}
+
+void Swapchain::SetFrameGeneration(u32 multiplier) {
+    const bool fifo = Gow3Settings::Get().vsync.load() || multiplier >= 2;
+    if (client.Connected() && !client.SetFifo(fifo)) PeerGone();
+    const u32 target_count = BufferCount(multiplier);
+    if (target_count == image_count) return;
+    image_count = target_count;
+    Recreate(width ? width : window.GetWidth(), height ? height : window.GetHeight());
 }
 
 void Swapchain::Recreate(u32 width_, u32 height_) {
