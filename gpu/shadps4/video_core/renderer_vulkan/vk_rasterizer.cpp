@@ -1628,16 +1628,6 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         }
     }
 
-    // GoW3 forward renderer: unlike Bloodborne, MRT count is 1-2. The
-    // 720p GSR2 Android path must see the vertex constants or it will ALWAYS
-    // report motion=spatial-reset-no-history regardless of valid guest camera.
-    const char* active_upscaler = std::getenv("GOW3_UPSCALER");
-    const bool gow3_gsr2_camera = std::getenv("GOW3_ANDROID_PORT") &&
-        active_upscaler && std::strcmp(active_upscaler, "gsr2") == 0;
-    const bool android_camera_feed = upscaler && upscaler->Enabled() &&
-        (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gow3_gsr2_camera) &&
-        camera_motion->Depth();
-
     bool uses_dma = false;
 
     static const bool stats = std::getenv("GOW3_FRAME_STATS") != nullptr;
@@ -2118,6 +2108,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                              Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data, u32& write_index) {
     const u64 alignment = instance.StorageMinAlignment();
+    // BindBuffers is a separate method from BindResources; declarations there
+    // are NOT visible here. Evaluate the camera gate in the actual reader scope.
+    // Both guest and host-ring constants are consumed below.
+    const char* active_upscaler = std::getenv("GOW3_UPSCALER");
+    const bool gow3_gsr2_camera = std::getenv("GOW3_ANDROID_PORT") &&
+        active_upscaler && std::strcmp(active_upscaler, "gsr2") == 0;
+    const bool android_camera_feed = upscaler && upscaler->Enabled() &&
+        (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gow3_gsr2_camera) &&
+        camera_motion->Depth();
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
