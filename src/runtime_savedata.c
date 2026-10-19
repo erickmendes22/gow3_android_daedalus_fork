@@ -172,20 +172,37 @@ int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size)
     // common title icon. Never use the game's installation-wide icon here.
     // Some PS4 exports nest sce_sys under the save dir or use 'preview.png'.
     const char *const patterns[]={
-        "%s/%s.sce_sys/preview.png",
-        "%s/%s/sce_sys/preview.png",
-        "%s/%s/thumbnail.png",
-        "%s/%s.sce_sys/thumbnail.png",
-        "%s/%s.sce_sys/icon0.png",
-        "%s/%s/sce_sys/icon0.png",
+        "%s/%s.sce_sys/icon0.png", // game-supplied sceSaveDataSaveIcon
+        "%s/%s/sce_sys/icon0.png", // imported PS4 save
         "%s/%s/icon0.png",
         "%s/%s.sce_sys/ICON0.PNG",
-        "%s/%s/sce_sys/ICON0.PNG"
+        "%s/%s/sce_sys/ICON0.PNG",
+        "%s/%s.sce_sys/preview.png",
+        "%s/%s/sce_sys/preview.png",
+        "%s/%s/preview.png",
+        "%s/%s/thumbnail.png",
+        "%s/%s.sce_sys/thumbnail.png",
+        "%s/%s.sce_sys/save_icon.png",
+        "%s/%s/sce_sys/save_icon.png",
+        "%s/%s/sce_sys/SAVEICON.PNG",
+        "%s/%s/sce_sys/save_data.png"
     };
     struct stat info;
     for (unsigned i=0;i<sizeof(patterns)/sizeof(patterns[0]);++i) {
         if (snprintf(out,size,patterns[i],base,dir) >= (int)size) return -1;
-        if (!stat(out,&info) && S_ISREG(info.st_mode) && info.st_size>0) return 0;
+        if (!stat(out,&info) && S_ISREG(info.st_mode) && info.st_size>8) {
+            // Only provide actual PNG bytes; a similarly named metadata file
+            // must not become an invented thumbnail in the ImGui renderer.
+            unsigned char sig[8];
+            FILE *png=fopen(out,"rb");
+            int valid=png && fread(sig,1,sizeof(sig),png)==sizeof(sig) &&
+                      !memcmp(sig,"\\x89PNG\\r\\n\\x1a\\n",8);
+            if (png) fclose(png);
+            if (valid) {
+                printf("SaveData: using genuine per-slot icon for %s (%s)\n",dir,out);
+                return 0;
+            }
+        }
     }
     // If this older save never received sceSaveDataSaveIcon, use the ACTUAL
     // God of War III title art from the player's installed files, not the
