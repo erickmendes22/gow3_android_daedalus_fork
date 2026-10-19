@@ -3,6 +3,9 @@
 
 #include <cstdio>
 #include <cstring>
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -14,6 +17,66 @@ namespace Gow3Png {
 
 namespace {
 constexpr int kMaxSide = 4096; // save icons are 228x128; anything far larger is not one
+
+#if defined(__ANDROID__)
+// Android 11+ uses the OS's own PNG decoder, avoiding FFmpeg decoder registration
+// differences in the native Bionic bundle. The old FFmpeg route remains available
+// if libjnigraphics or the specific PNG format is unsupported.
+struct NativeDecoder;
+struct NativeHeader;
+bool DecodeAndroidPng(const unsigned char* data, size_t size, Image& out) {
+    void* library = dlopen("libjnigraphics.so", RTLD_NOW | RTLD_LOCAL);
+    if (!library) return false;
+    using Create = int (*)(const void*, size_t, NativeDecoder**);
+    using Destroy = void (*)(NativeDecoder*);
+    using GetHeader = const NativeHeader* (*)(const NativeDecoder*);
+    using Dimension = int32_t (*)(const NativeHeader*);
+    using SetFormat = int (*)(NativeDecoder*, int32_t);
+    using Stride = size_t (*)(const NativeDecoder*);
+    using Decode = int (*)(NativeDecoder*, void*, size_t, size_t);
+    const auto create = reinterpret_cast<Create>(dlsym(library, "AImageDecoder_createFromBuffer"));
+    const auto destroy = reinterpret_cast<Destroy>(dlsym(library, "AImageDecoder_delete"));
+    const auto header = reinterpret_cast<GetHeader>(dlsym(library, "AImageDecoder_getHeaderInfo"));
+    const auto widthOf = reinterpret_cast<Dimension>(dlsym(library, "AImageDecoderHeaderInfo_getWidth"));
+    const auto heightOf = reinterpret_cast<Dimension>(dlsym(library, "AImageDecoderHeaderInfo_getHeight"));
+    const auto setFormat = reinterpret_cast<SetFormat>(dlsym(library, "AImageDecoder_setAndroidBitmapFormat"));
+    const auto strideOf = reinterpret_cast<Stride>(dlsym(library, "AImageDecoder_getMinimumStride"));
+    const auto decode = reinterpret_cast<Decode>(dlsym(library, "AImageDecoder_decodeImage"));
+    NativeDecoder* decoder = nullptr;
+    bool ok = false;
+    if (create && destroy && header && widthOf && heightOf && setFormat && strideOf &&
+        decode && create(data, size, &decoder) == 0 && decoder) {
+        const NativeHeader* info = header(decoder);
+        const int width = info ? widthOf(info) : 0;
+        const int height = info ? heightOf(info) : 0;
+        // ANDROID_BITMAP_FORMAT_RGBA_8888 = 1 (NDK <android/bitmap.h>).
+        if (width > 0 && height > 0 && width <= kMaxSide && height <= kMaxSide &&
+            setFormat(decoder, 1) == 0) {
+            const size_t stride = strideOf(decoder);
+            const size_t bytes = stride * size_t(height);
+            if (stride >= size_t(width) * 4 && stride <= 64u << 20 &&
+                bytes <= 64u << 20 && bytes / size_t(height) == stride) {
+                std::vector<unsigned char> pixels(bytes);
+                if (decode(decoder, pixels.data(), stride, pixels.size()) == 0) {
+                    out.width = width;
+                    out.height = height;
+                    out.rgba.resize(size_t(width) * size_t(height) * 4);
+                    for (int y = 0; y < height; ++y) {
+                        std::memcpy(out.rgba.data() + size_t(y) * size_t(width) * 4,
+                                    pixels.data() + size_t(y) * stride, size_t(width) * 4);
+                    }
+                    ok = true;
+                    std::printf("Save PNG: Android ImageDecoder RGBA success %dx%d\n", width, height);
+                    std::fflush(stdout);
+                }
+            }
+        }
+    }
+    if (decoder && destroy) destroy(decoder);
+    dlclose(library);
+    return ok;
+}
+#endif
 }
 
 bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
@@ -21,6 +84,9 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
     if (!data || !size || size > 64u << 20) {
         return false;
     }
+#if defined(__ANDROID__)
+    if (DecodeAndroidPng(data, size, out)) return true;
+#endif
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_PNG);
     AVCodecContext* context = codec ? avcodec_alloc_context3(codec) : nullptr;
     AVPacket* packet = av_packet_alloc();
