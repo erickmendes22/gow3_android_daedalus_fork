@@ -2,7 +2,7 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [android, experimental-bionic, feature/bionic-upstream-framegen-gsr-hud-20261019]
+    branches: [android, experimental-bionic, fix/bionic-bloodborne-fg-gsr-save-20261019]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/android' || github.ref == 'refs/heads/experimental-bionic' || github.ref == 'refs/heads/feature/bionic-upstream-framegen-gsr-hud-20261019'
+    if: github.ref == 'refs/heads/android' || github.ref == 'refs/heads/experimental-bionic' || github.ref == 'refs/heads/fix/bionic-bloodborne-fg-gsr-save-20261019'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
