@@ -191,7 +191,8 @@ int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size)
     // God of War III title art from the player's installed files, not the
     // fabricated blue "SAVE DATA" tile. A scene-specific image is only
     // possible when the game itself has written a save icon.
-    if (const char *game=getenv("GOW3_GAME_DIR"); game && *game) {
+    const char *game=getenv("GOW3_GAME_DIR");
+    if (game && *game) {
         const char *const art[]={"sce_sys/icon0.png","sce_sys/ICON0.PNG",
                                  "sce_sys/save_data.png"};
         for (unsigned i=0;i<sizeof(art)/sizeof(art[0]);++i) {
