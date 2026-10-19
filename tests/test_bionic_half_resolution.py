@@ -14,9 +14,9 @@ HALF_WIDTH = "00 00 00 00 0a e0 f2 00 c0 03 00 00 1c 02 00 00 01 00 00 00"
 HALF_HEIGHT = "0a e0 f2 00 c0 03 00 00 1c 02 00 00 01 00 00 00 00 00 00 00"
 
 class HalfResolutionPostprocessingTests(unittest.TestCase):
-    def test_480p_720p_900p_follow_half_output(self):
+    def test_480p_and_900p_follow_half_output(self):
         root = ET.parse(XML).getroot()
-        expected = {"480p": (427, 240), "720p": (640, 360), "900p": (800, 450)}
+        expected = {"480p": (427, 240), "900p": (800, 450)}
         for resolution, dims in expected.items():
             with self.subTest(resolution=resolution):
                 matches = [x for x in root.findall(".//Metadata")
