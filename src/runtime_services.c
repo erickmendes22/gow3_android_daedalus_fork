@@ -323,6 +323,15 @@ static void save_label(char *out, size_t size, const char *dir) {
              title[0] ? title : dir,when,size_text,subtitle);
 }
 static ABI int32_t save_init(void) { return dialog_init(2); }
+// Allow the Android touch overlay to switch to a compact save-dialog keypad.
+// Create/unlink only when the dialog opens/closes; no filesystem work per draw.
+static void savedata_modal_visible(int visible) {
+    const char *path=getenv("GOW3_SAVE_DIALOG_ACTIVE_FILE");
+    if (!path || !*path) return;
+    if (!visible) { remove(path); return; }
+    FILE *file=fopen(path,"wb");
+    if (file) { fputc('1',file); fclose(file); }
+}
 static ABI int32_t save_open(const unsigned char *p) {
     if (!p) return DIALOG_ARG_NULL;
     if (!dialogs[2].initialized) return DIALOG_NOT_INITIALIZED;
@@ -355,6 +364,7 @@ static ABI int32_t save_open(const unsigned char *p) {
     }
     printf("Runtime: SaveDataDialog list (%s): %d entries shown\n",title,n);
     save_dialog.choosing=1;
+    savedata_modal_visible(1);
     save_dialog.shown_at=now_seconds();
     dialogs[2].status=DIALOG_RUNNING;
     return 0;
@@ -372,6 +382,7 @@ static ABI int32_t save_status(void) {
         }
         if (choice!=-1) {
             save_dialog.choosing=0;
+            savedata_modal_visible(0);
             dialogs[2].status=DIALOG_FINISHED;
             if (choice<0) { save_dialog.result=SAVE_RESULT_CANCELED; dialogs[2].button=0; }
             else {
@@ -388,8 +399,8 @@ static ABI int32_t save_status(void) {
     }
     return dialog_status(2);
 }
-static ABI int32_t save_term(void) { return dialog_term(2); }
-static ABI int32_t save_close(void) { return dialog_close(2); }
+static ABI int32_t save_term(void) { savedata_modal_visible(0); return dialog_term(2); }
+static ABI int32_t save_close(void) { savedata_modal_visible(0); return dialog_close(2); }
 static ABI int32_t save_progress(uint32_t target, uint32_t rate) { (void)rate; return dialog_progress(2,target); }
 /* OrbisSaveDataDialogResult: mode, result, buttonId, dirName* @16, param* @24, userData @32. */
 static ABI int32_t save_result(unsigned char *out) {
