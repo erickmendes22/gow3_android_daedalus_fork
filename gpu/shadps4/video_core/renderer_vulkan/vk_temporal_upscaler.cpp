@@ -1948,11 +1948,18 @@ void TemporalUpscaler::RunScaled() {
             // The GOW3 R7 diagnostic automatically captures one actual Vulkan
             // frame across three stages. It never touches the result and does
             // not require the user to create or copy any trigger file.
-            static bool gsr_probe_once = false;
-            if (UseGsr2() && !gsr_probe_once &&
+            // Capture meaningful gameplay frames, not the first (often black)
+            // intro/menu frame. Three spaced captures allow cross-stage analysis.
+            static u64 gsr_probe_frames = 0;
+            ++gsr_probe_frames;
+            const bool gsr_probe_frame = gsr_probe_frames == 480 ||
+                                         gsr_probe_frames == 2400 ||
+                                         gsr_probe_frames == 7200;
+            if (UseGsr2() && gsr_probe_frame &&
                 std::getenv("GOW3_GSR2_AUTO_PROBE")) {
-                gsr_probe_once = true;
-                DumpImages(instance, scheduler, cmdbuf, 0,
+                std::printf("GSR_STAGE_CAPTURE dispatch=%llu\n",
+                            static_cast<unsigned long long>(gsr_probe_frames));
+                DumpImages(instance, scheduler, cmdbuf, int(gsr_probe_frames),
                     {{color_image, source_width, source_height, 4, "scene_proxy", "rgba"},
                      {vk::Image(output_image), ow, oh, 8, "gsr2_output", "rgba16f"},
                      {vk::Image(ui_image), ow, oh, 4, "ui_blit", "rgba"}});
@@ -2108,6 +2115,14 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
     }
     const auto& image = texture_cache.GetImage(color);
     const VAddr address = image.info.guest_address;
+    if (UseGsr2() && std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        static unsigned redirects = 0;
+        if (++redirects <= 8 || redirects % 1200 == 0) {
+            std::printf("GSR2_DISPLAY_DRAW guest=%#llx redirect=%d ui=%d color=%u frame=%u\n",
+                        (unsigned long long)address, int(display_redirect), int(ui_phase),
+                        color.index, redirects);
+        }
+    }
     if (!FrameCapture::IsDisplayBuffer(address)) {
         display_redirect = false;
         return false;
@@ -2138,25 +2153,96 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
-                     vk::ImageUsageFlagBits::eTransferSrc,
+                     vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
             .initialLayout = vk::ImageLayout::eUndefined,
         });
         display.views.clear();
     }
     scheduler.EndRendering();
-    const vk::ImageMemoryBarrier2 b{
-        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask = vk::AccessFlagBits2::eNone,
-        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eGeneral,
-        .image = vk::Image(display.image),
-        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
-    };
-    scheduler.Record([b](vk::CommandBuffer cmd) {
-        cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
-    });
+    // Bionic GSR2: the PS4 display-copy draw may touch only some tiles.
+    // Beginning from UNDEFINED discards the rest of the buffer and produces
+    // the 2x2 tearing/striped quadrants observed at 720p. Prime all tiles
+    // from the fully reconstructed 720p UI image before any native UI draw.
+    // Scope strictly to experimental GSR2; other upscalers keep old behavior.
+    const bool prefill_gsr2 = UseGsr2() && ui_image && ui_width == display.width &&
+                              ui_height == display.height &&
+                              std::getenv("GOW3_GSR2_PREFILL_DISPLAY") != nullptr;
+    const auto range = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    if (prefill_gsr2) {
+        const vk::ImageMemoryBarrier2 src{
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .image = vk::Image(ui_image), .subresourceRange = range};
+        const vk::ImageMemoryBarrier2 dst{
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .image = vk::Image(display.image), .subresourceRange = range};
+        scheduler.Record([src, dst](vk::CommandBuffer cmd) {
+            const std::array barriers{src, dst};
+            cmd.pipelineBarrier2({.imageMemoryBarrierCount = u32(barriers.size()),
+                                  .pImageMemoryBarriers = barriers.data()});
+        });
+        const vk::ImageBlit region{
+            .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .srcOffsets = {vk::Offset3D{}, vk::Offset3D{s32(ui_width), s32(ui_height), 1}},
+            .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .dstOffsets = {vk::Offset3D{}, vk::Offset3D{s32(display.width), s32(display.height), 1}},
+        };
+        const auto source = vk::Image(ui_image), destination = vk::Image(display.image);
+        scheduler.Record([source, destination, region](vk::CommandBuffer cmd) {
+            cmd.blitImage(source, vk::ImageLayout::eTransferSrcOptimal,
+                          destination, vk::ImageLayout::eTransferDstOptimal,
+                          region, vk::Filter::eNearest);
+        });
+        const vk::ImageMemoryBarrier2 src_end{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = source, .subresourceRange = range};
+        const vk::ImageMemoryBarrier2 dst_end{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead |
+                             vk::AccessFlagBits2::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = destination, .subresourceRange = range};
+        scheduler.Record([src_end, dst_end](vk::CommandBuffer cmd) {
+            const std::array barriers{src_end, dst_end};
+            cmd.pipelineBarrier2({.imageMemoryBarrierCount = u32(barriers.size()),
+                                  .pImageMemoryBarriers = barriers.data()});
+        });
+        static u32 primed = 0;
+        if (++primed <= 2)
+            std::printf("GSR2_PRESENT_INIT copied full UI %ux%u into display target\n",
+                        display.width, display.height);
+    } else {
+        const vk::ImageMemoryBarrier2 b{
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = vk::Image(display.image),
+            .subresourceRange = range,
+        };
+        scheduler.Record([b](vk::CommandBuffer cmd) {
+            cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
+        });
+    }
     display.valid = true;
     target = {Mirror(vk::Image(display.image), display.views, view_info.format, {}),
               vk::ImageLayout::eGeneral, ui_width, ui_height};
@@ -2202,6 +2288,14 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
 bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     std::scoped_lock lock{display_mutex};
     const auto it = displays.find(address);
+    if (UseGsr2() && std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        static unsigned queries = 0;
+        if (++queries <= 8 || queries % 1200 == 0) {
+            std::printf("GSR2_PRESENT_QUERY guest=%#llx match=%d valid=%d buffers=%zu count=%u\n",
+                        (unsigned long long)address, int(it != displays.end()),
+                        int(it != displays.end() && it->second.valid), displays.size(), queries);
+        }
+    }
     if (it == displays.end() || !it->second.valid) {
         return false;
     }
@@ -2218,10 +2312,12 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     // Capture the actual game display-copy target, after the PS4 draw consumed
     // ui_image. If GSR2 output and ui_image are sound but this is not, the
     // defect is after the GSR dispatch, not the Snapdragon compute pipeline.
-    static bool gsr_probe_present_once = false;
-    if (!gsr_probe_present_once && UseGsr2() &&
+    static unsigned gsr_probe_present_frames = 0;
+    const bool gsr_capture_final = ++gsr_probe_present_frames == 480 ||
+                                   gsr_probe_present_frames == 2400 ||
+                                   gsr_probe_present_frames == 7200;
+    if (gsr_capture_final && UseGsr2() &&
         std::getenv("GOW3_GSR2_AUTO_PROBE")) {
-        gsr_probe_present_once = true;
         scheduler.EndRendering();
         const bool bgra = display.format == vk::Format::eB8G8R8A8Unorm ||
                           display.format == vk::Format::eB8G8R8A8Srgb;
