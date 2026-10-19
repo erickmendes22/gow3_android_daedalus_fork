@@ -82,6 +82,18 @@ export GOW3_UPSCALER=none
 export GOW3_FSR1=0
 export GOW3_RCAS=0
 eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)"
+# Do not force the desktop 1080p GSR2 output when the verified game patch uses
+# another native target: the temporal targets must match the actual guest frame.
+if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
+    case "${GOW3_PATCH_INPUT_RES:-}" in
+      *x*) export GOW3_OUTPUT_RES="$GOW3_PATCH_INPUT_RES" ;;
+    esac
+    echo "GSR2: selected in gow3.ini, preset=$(sed -n 's/^preset=//p' "$GOW3_CONFIG" | tail -1), output=${GOW3_OUTPUT_RES:-game-native}"
+else
+    unset GOW3_OUTPUT_RES
+fi
+echo "Bloodframe: state=$GOW3_LSFG_STATE_FILE dll=$([ -s "$GOW3_LSFG_DLL" ] && echo available || echo missing) lib=$([ -s "$GOW3_LSFG_LIB" ] && echo available || echo missing)"
+
 # Report what will actually be patched into the verified CUSA01715 eboot, not
 # merely the preset selected by the UI. scripts/patches.py checks the signature
 # and original bytes again before writing patches.bin.
