@@ -978,12 +978,10 @@ void Presenter::ApplyFramesCap() {
 }
 
 bool Presenter::PresentWithLsfg(Frame* frame) {
-    // 本路径同样 AddSignal(frame->present_done)：先 reset（普通路径在 Present 里做，
-    // LSFG 分支在它之前 return），否则第二次提交起 fence 恒 signaled，
-    // NeedsSubmittedBeforePresent 的提交完成闸被架空。
-    const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
-    ASSERT_MSG(reset_result == vk::Result::eSuccess,
-               "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
+    // Keep the present_done fence SIGNALED until we have actually acquired
+    // a buffer for the real frame. If Bloodframe fails, or the compositor
+    // offers no buffer, GetRenderFrame must not wait forever on an unsignaled
+    // fence that was never submitted.
     using Clock = std::chrono::steady_clock;
     // gow3：Flush 在本线程同步提交（vkQueueSubmit 返回后才返回），无需 BB 的
     // WaitSubmitted(tick) 守卫（其 recording 线程异步提交才有此需求；gow3 的无参
@@ -1064,11 +1062,14 @@ bool Presenter::PresentWithLsfg(Frame* frame) {
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                                vk::PipelineStageFlagBits::eBottomOfPipe,
                                vk::DependencyFlagBits::eByRegion, {}, {}, to_present);
-        // 输出图所有权交回 EXTERNAL（引擎下一周期要用）。
+        // Return the generated image to Bloodframe in GENERAL layout.
+        // It was transitioned from GENERAL -> TRANSFER_SRC in pre_barriers.
+        // Releasing it with oldLayout=GENERAL was INVALID and could cause
+        // Adreno rendering corruption or a VK_ERROR_DEVICE_LOST.
         const vk::ImageMemoryBarrier output_release{
             .srcAccessMask = vk::AccessFlagBits::eTransferRead,
             .dstAccessMask = vk::AccessFlagBits::eNone,
-            .oldLayout = vk::ImageLayout::eGeneral,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
             .newLayout = vk::ImageLayout::eGeneral,
             .srcQueueFamilyIndex = instance.GetGraphicsQueueFamilyIndex(),
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL,
@@ -1109,7 +1110,12 @@ bool Presenter::PresentWithLsfg(Frame* frame) {
     // 真实帧：走常规 blit 路径进它已 acquire 的缓冲（Present() 主体的剩余部分在此
     // 不可复用——它已过 acquire 点，因此这里把真实帧也按同一路径交付）。
     if (!swapchain.AcquireNextImage()) {
-        return true; // 没有缓冲给真实帧：本循环只上生成帧（罕见：缓冲数为倍率+3）
+        // The real frame was copied to the input AHB by ProcessFrame.
+        // Wait for that copy before returning this frame to the free pool,
+        // since there will be no present_done fence submission this cycle.
+        present_scheduler.Wait(present_scheduler.CurrentTick() - 1);
+        std::printf("Bloodframe: no output buffer for real frame; source copy drained\n");
+        return true;
     }
     {
         const vk::Image dst = swapchain.Image();
@@ -1230,6 +1236,11 @@ bool Presenter::PresentWithLsfg(Frame* frame) {
         AddImageAcquiredWait(info, swapchain.GetImageAcquiredSemaphore());
         info.AddWait(frame->ready_semaphore, frame->ready_tick);
         info.AddSignal(swapchain.GetPresentReadySemaphore());
+        // Only reset the fence once its signaling submission is guaranteed
+        // to happen. The prior frame is already completed before reuse.
+        const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
+        ASSERT_MSG(reset_result == vk::Result::eSuccess,
+                   "Unexpected reset of LSFG present fence: {}", vk::to_string(reset_result));
         info.AddSignal(frame->present_done);
         scheduler.Flush(info);
         // Preserve Daedalus Bionic sync-fd submission semantics; no CPU-side
