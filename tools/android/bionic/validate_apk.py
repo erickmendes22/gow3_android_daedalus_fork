@@ -21,7 +21,19 @@ def validate_payload(payload, expected_hash):
             if name.startswith('rootfs/') or Path(name).name.lower() in {
                     'eboot.bin','eboot.elf','boot-linked.bin','content.bin','patches.bin','lossless.dll'}:
                 raise ValueError(f'Unexpected game/glibc content: {name}')
-            if any('lsfg' in part.lower() for part in Path(name).parts):
+            # The old Vulkan-layer LSFG remains prohibited. The pinned MIT
+            # Bloodframe engine is in-process, not a layer; its third-party
+            # license may legitimately contain "lsfg-vk" in the filename.
+            # Allow that ONLY as a regular license file in the notices dir.
+            parts = Path(name).parts
+            third_party_license = (
+                len(parts) == 3 and parts[:2] == ('gow3port', 'licenses') and
+                parts[2].lower().startswith('bloodframe-') and
+                'license' in parts[2].lower() and
+                parts[2].lower().endswith(('.md', '.txt', '.license')) and
+                member.isfile()
+            )
+            if any('lsfg' in part.lower() for part in parts) and not third_party_license:
                 raise ValueError(f'Removed frame-generation component in runtime: {name}')
             if name.endswith('.pkg'):
                 raise ValueError('Player PKG must never be packaged')
@@ -29,7 +41,9 @@ def validate_payload(payload, expected_hash):
                     'gow3port/arm64/bin/gow3-probe','gow3port/arm64/bin/gow3-prepare',
                     'gow3port/arm64/bin/orbis-pkg-util','gow3port/arm64/bin/kgsl-chip-id',
                     'gow3port/arm64/lib/libgow3cpu.so','gow3port/arm64/lib/libgow3gpu.so',
-                    'gow3port/arm64/lib/libgow3present.so','gow3port/arm64/lib/libc++_shared.so',
+                    'gow3port/arm64/lib/libgow3present.so',
+                    'gow3port/arm64/lib/libbloodframe.so',
+                    'gow3port/arm64/lib/libc++_shared.so',
                     'gow3port/arm64/python/bin/python3.13',
                     'gow3port/arm64/python/lib/libpython3.13.so',
                     'gow3port/scripts/patches.py','gow3port/scripts/game_update.py',
@@ -41,6 +55,15 @@ def validate_payload(payload, expected_hash):
             if '/bin/' in name or name.endswith('/run-bionic.sh'):
                 if not members[name].mode & 0o111:
                     raise ValueError(f'Runtime executable bit missing: {name}')
+        bloodframe = archive.extractfile('gow3port/arm64/lib/libbloodframe.so').read(4)
+        if bloodframe != b'\x7fELF':
+            raise ValueError('Bloodframe native engine missing ELF signature')
+        if not any(
+            name.startswith('gow3port/licenses/bloodframe-') and
+            'license' in name.lower() and entry.isfile()
+            for name, entry in members.items()
+        ):
+            raise ValueError('Bloodframe upstream license notices are missing')
         identity = json.load(archive.extractfile('runtime-manifest.json'))
         if (identity.get('schema'),identity.get('runtime_backend'),identity.get('application_id')) != (
                 1,'bionic','com.gow3.android.bionic'):
