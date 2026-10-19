@@ -30,9 +30,11 @@ internal class FrameGenStorage(private val context: Context) {
         return try {
             val text = buildString {
                 appendLine("multiplier=$multiplier")
-                appendLine("flow=0.80")
-                appendLine("performance=1")
-                appendLine("fp16=1")
+                // Preserve the precise Bloodborne controls selected in-game.
+                // Home toggling framegen must not silently reset flow or FP16.
+                appendLine("flow=${prefs.getString("framegen_flow", "0.75")}")
+                appendLine("performance=${if (prefs.getBoolean("framegen_performance", true)) 1 else 0}")
+                appendLine("fp16=${if (prefs.getBoolean("framegen_fp16", true)) 1 else 0}")
             }
             temp.outputStream().use { out ->
                 out.write(text.toByteArray(StandardCharsets.US_ASCII))
