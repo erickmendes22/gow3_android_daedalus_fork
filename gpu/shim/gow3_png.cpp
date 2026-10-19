@@ -6,6 +6,7 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavutil/error.h>
 #include <libswscale/swscale.h>
 }
 
@@ -28,9 +29,25 @@ bool DecodeRgba(const unsigned char* data, size_t size, Image& out) {
               av_new_packet(packet, int(size)) == 0;
     if (ok) {
         std::memcpy(packet->data, data, size);
-        ok = avcodec_send_packet(context, packet) == 0 && avcodec_send_packet(context, nullptr) == 0 &&
-             avcodec_receive_frame(context, frame) == 0 && frame->width > 0 && frame->height > 0 &&
+        // A PNG is one still-image packet. Do NOT send the EOF/drain packet
+        // until the queued image has been received: a second send before the
+        // receive can yield AVERROR(EAGAIN), causing valid scene previews to
+        // appear as a missing thumbnail. Draining is unnecessary for PNG.
+        const int sent = avcodec_send_packet(context, packet);
+        const int received = sent == 0 ? avcodec_receive_frame(context, frame) : sent;
+        ok = sent == 0 && received == 0 &&
+             frame->width > 0 && frame->height > 0 &&
              frame->width <= kMaxSide && frame->height <= kMaxSide;
+        if (!ok) {
+            char sent_error[AV_ERROR_MAX_STRING_SIZE] = {};
+            char recv_error[AV_ERROR_MAX_STRING_SIZE] = {};
+            av_strerror(sent, sent_error, sizeof(sent_error));
+            av_strerror(received, recv_error, sizeof(recv_error));
+            std::printf("Save PNG: FFmpeg send=%d (%s) receive=%d (%s), size=%zu dimensions=%dx%d format=%d\n",
+                        sent, sent_error, received, recv_error, size, frame->width, frame->height,
+                        int(frame->format));
+            std::fflush(stdout);
+        }
     }
     if (ok) {
         SwsContext* sws = sws_getContext(frame->width, frame->height, AVPixelFormat(frame->format),
