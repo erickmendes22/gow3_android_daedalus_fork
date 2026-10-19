@@ -843,7 +843,8 @@ public final class GameActivity extends Activity {
         if (p!=null) { p.destroyForcibly(); try { p.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
     }
     @Override protected void onDestroy() {
-        destroyed=true; pad.reset(); audio.stop(); main.removeCallbacksAndMessages(null);
+        destroyed=true; if (perfHud!=null) perfHud.release();
+        pad.reset(); audio.stop(); main.removeCallbacksAndMessages(null);
         if (bionicRuntime()) Gow3Present.stop(); else DisplayBridge.stop(); stopGame(); if (xvfb!=null) xvfb.destroyForcibly();
         worker.shutdownNow(); super.onDestroy();
     }
