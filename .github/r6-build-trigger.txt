@@ -1,1 +1,2 @@
 R6: One controlled validation build of Compose Home horizontal/vertical HUD and motion-safe GSR2 (240p cap).
+Final R6 revision: validated finite 60deg fallback FOV for missing CUSA01623 camera + spatial reset guard.
