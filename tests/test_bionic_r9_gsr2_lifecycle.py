@@ -27,16 +27,19 @@ class R9(unittest.TestCase):
         self.assertIn("display_redirect = false;",cpp)
         self.assertIn("GSR2_PRESENT_QUERY",cpp)
         self.assertIn("GSR2_PRESENT_INIT",cpp)
-    def test_reset_only_on_next_real_forward_scene(self):
+    def test_only_display_boundary_owns_frame_latch(self):
         cpp=src("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         segment=cpp.split("void TemporalUpscaler::OnColorTarget(",1)[1].split(
             "void TemporalUpscaler::OnDisplayBoundary(",1)[0]
-        self.assertIn("!FrameCapture::IsDisplayBuffer(image.info.guest_address)",segment)
-        self.assertIn("display_redirect = false;",segment)
+        self.assertNotIn("display_redirect = false;",segment)
+        self.assertIn("ldr_target = color;",segment)
+        frame=cpp.split("bool TemporalUpscaler::OnFrameStart()",1)[1].split(
+            "void TemporalUpscaler::OnDispatch(",1)[0]
+        self.assertIn("display_redirect = ui_phase;",frame)
     def test_gated_single_build_and_existing_hud_lsfg_untouched(self):
         workflow=src(".github/workflows/bionic-apk.yml")
-        self.assertIn("r9-build-trigger.txt",workflow)
-        self.assertIn("fix/bionic-r9-gsr2-frame-lifecycle-20261019",workflow)
+        self.assertIn("r10-build-trigger.txt",workflow)
+        self.assertIn("fix/bionic-r10-gsr2-persistent-display-latch-20261019",workflow)
         self.assertIn("cancel-in-progress: true",workflow)
         script=src("tools/android/bionic/run-bionic.sh")
         self.assertIn("export GOW3_GSR2_AUTO_PROBE=1",script)
