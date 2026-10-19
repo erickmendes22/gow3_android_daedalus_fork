@@ -108,9 +108,15 @@ final class PerfHudOverlay extends View {
 
     /** 开关 HUD 并同步采样线程的启停；GameActivity 抽屉行与启动恢复都走这里。 */
     void setActive(boolean on) {
-        running = on;
         setVisibility(on ? VISIBLE : GONE);
-        if (on && sampler == null) startSampling();
+        if (!on) {
+            // Disabling must stop the worker: otherwise the next toggle-on has
+            // a non-null sampler with no tick scheduled and the HUD freezes.
+            release();
+        } else {
+            running = true;
+            if (sampler == null) startSampling();
+        }
     }
 
     private void startSampling() {
