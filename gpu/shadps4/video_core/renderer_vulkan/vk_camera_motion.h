@@ -87,7 +87,7 @@ public:
 
     /// Scan bound scene vertex constants for algebraically validated camera matrices.
     /// Float count comes from the actual guest buffer, never assumed to be 864 bytes.
-    void OnConstants(const float* data, size_t float_count);
+    void OnConstants(const float* data, size_t float_count, u64 shader_hash, u32 buffer_slot);
 
     /// The G-buffer pass (5+ color targets): its depth is the scene depth.
     void OnGBufferPass(VideoCore::ImageId depth);
@@ -124,6 +124,9 @@ private:
     std::array<float, 4> frame_projection{};
     u32 frame_pose_votes = 0, frame_scanned_buffers = 0;
     bool reported_camera = false;
+    // Bounded exact constant capture during two gameplay frames. Enables offline
+    // mapping of eboot shader uniforms without repeated blind APK patches.
+    u32 probe_frame = 0, probe_seen = 0, probe_written = 0;
     std::array<float, 2> jitter{}, previous_jitter{};
     std::array<u32, 2> render_size{};
     VideoCore::ImageId depth_id{};
