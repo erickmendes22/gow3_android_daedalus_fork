@@ -77,6 +77,9 @@ export GOW3_LSFG_STATE_FILE="$base/framegen.state"
 export GOW3_LSFG_LIB="$runtime/lib/libbloodframe.so"
 export GOW3_LSFG_DLL="$base/Lossless.dll"
 export GOW3_GAME_DIR="$game"
+# Save dialogs temporarily switch the Android overlay to D-pad/Cross/Circle.
+export GOW3_SAVE_DIALOG_ACTIVE_FILE="$base/save-dialog.active"
+rm -f "$GOW3_SAVE_DIALOG_ACTIVE_FILE"
 unset GOW3_ANDROID_FSR_FIXED_OUTPUT GOW3_RENDER_RES GOW3_PATCH_INPUT_RES
 export GOW3_UPSCALER=none
 export GOW3_FSR1=0
