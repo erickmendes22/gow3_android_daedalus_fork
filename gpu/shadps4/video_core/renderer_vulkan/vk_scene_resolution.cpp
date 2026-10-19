@@ -12,6 +12,7 @@
 #include "gow3_toggles.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace Vulkan {
 SceneTargets::SceneTargets(const Instance& i, Scheduler& s, Runtime& r,
@@ -38,6 +39,20 @@ SceneTargets::SceneTargets(const Instance& i, Scheduler& s, Runtime& r, Lookup g
                  (w == 426 && h == 240))) {
                 guest_size = {w, h};
                 size = guest_size;
+            }
+        }
+    }
+    // The Bionic game may be SHA-patched to 720p/480p while GSR2 reconstructs
+    // at that output resolution. Align our guest target recognizer with the
+    // REAL patched allocation, otherwise no attachment qualifies for a proxy.
+    if (const char* gsr = std::getenv("GOW3_UPSCALER"); gsr && !std::strcmp(gsr, "gsr2")) {
+        if (const char* output = std::getenv("GOW3_PATCH_INPUT_RES")) {
+            unsigned w = 0, h = 0;
+            if (std::sscanf(output, "%ux%u", &w, &h) == 2 &&
+                w >= 426 && w <= 3840 && h >= 240 && h <= 2160) {
+                guest_size = {w, h};
+                size = guest_size;
+                std::printf("GSR2: verified guest scene %ux%u\n", w, h);
             }
         }
     }
