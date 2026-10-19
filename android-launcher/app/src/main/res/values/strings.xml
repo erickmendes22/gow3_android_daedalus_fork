@@ -194,6 +194,14 @@
     <string name="setup_folder">Select folder</string>
     <string name="param_group_fps">FPS HUD</string>
     <string name="param_show_fps">Show FPS</string>
+        <string name="param_fps_horizontal">FPS HUD horizontal position</string>
+    <string name="param_fps_vertical">FPS HUD vertical position</string>
+    <string name="fps_left">Left</string>
+    <string name="fps_center">Center</string>
+    <string name="fps_right">Right</string>
+    <string name="fps_top">Top</string>
+    <string name="fps_middle">Center</string>
+    <string name="fps_bottom">Bottom</string>
     <string name="param_fps_position">FPS HUD position</string>
     <string name="param_fps_size">FPS HUD size</string>
     <string name="fps_top_left">Top left</string>
