@@ -18,11 +18,11 @@ class UnifiedHudR4Tests(unittest.TestCase):
 
     def test_native_menu_controls_launcher_hud(self):
         native=read("gpu/shim/gow3_overlay.cpp")
-        for label in ('"Horizontal shift"', '"Move down"', '"Left"',
-                      '"Center"', '"Right"'):
+        for label in ('"Horizontal position"', '"Vertical position"', '"Left"',
+                      '"Center##horizontal"', '"Right"', '"Top"', '"Bottom"'):
             self.assertIn(label,native)
         settings=read("gpu/shim/gow3_settings.cpp")
-        for field in ('overlay_offset_x','overlay_offset_y','overlay_corner'):
+        for field in ('overlay_offset_x','overlay_offset_y','overlay_corner','overlay_anchor_y'):
             self.assertIn('key == "'+field+'"',settings)
             self.assertIn(field+'=%d',settings)
         self.assertIn("Gow3Settings::ReloadHudFromDisk();",native)
@@ -34,6 +34,7 @@ class UnifiedHudR4Tests(unittest.TestCase):
         self.assertIn("if (!dragging) alignToAnchor()",view)
         self.assertIn("void setConfiguration(HudConfig cfg)",view)
         self.assertIn("HudConfig.update(",view)
+        self.assertIn("vertical == cfg.vertical",view)
         self.assertNotIn('prefs.edit().putFloat("perf_hud_x"',view)
 
     def test_launcher_and_drawer_share_gow3_ini(self):
@@ -48,6 +49,10 @@ class UnifiedHudR4Tests(unittest.TestCase):
         cfg=read("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/HudConfig.java")
         self.assertIn('static final String DX = "overlay_offset_x"',cfg)
         self.assertIn('static final String DY = "overlay_offset_y"',cfg)
+        self.assertIn('static final String VERTICAL = "overlay_anchor_y"',cfg)
+        controls=read("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/HudControls.java")
+        self.assertNotIn("SeekBar",controls)
+        self.assertIn('String[] verticalLabels = {"Top", "Center", "Bottom"}',controls)
 
     def test_snapdragon_dispatch_reaches_scene_boundary(self):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
