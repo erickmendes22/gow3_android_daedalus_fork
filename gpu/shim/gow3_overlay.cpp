@@ -791,10 +791,11 @@ void ChoiceBox() {
             const ImVec2 image_end(image_pos.x + image_width, image_pos.y + image_height);
             draw->AddRectFilled(image_pos, image_end, IM_COL32(33, 39, 46, 255));
             draw->AddRect(image_pos, image_end, IM_COL32(85, 91, 101, 255));
-            draw->AddText(ImVec2(image_pos.x + 13.0f * scale, image_pos.y + 24.0f * scale),
-                          IM_COL32(211, 218, 228, 255), "GOD OF WAR III");
-            draw->AddText(ImVec2(image_pos.x + 13.0f * scale, image_pos.y + 51.0f * scale),
-                          IM_COL32(149, 157, 168, 255), "SAVE DATA");
+            // Do not fabricate a logo that looks like an actual save preview.
+            // If the game never wrote icon0.png, we cannot infer the scene
+            // from param.bin. State that clearly instead of showing fake art.
+            draw->AddText(ImVec2(image_pos.x + 13.0f * scale, image_pos.y + 35.0f * scale),
+                          IM_COL32(180, 183, 190, 255), "No save preview");
         }
 
         const std::string& label = choice_items[i];
