@@ -414,7 +414,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
     if (std::getenv("GOW3_GSR2_AUTO_PROBE")) {
         static unsigned requests = 0;
-        if (++requests <= 8 || requests % 1200 == 0)
+        // GoW III's 3-buffer rotation aliases one address at period 1200.
+        // Always inspect three consecutive flip slots at each heartbeat.
+        if (++requests <= 12 || requests % 1200 <= 2)
             std::printf("GSR2_PRESENTER actual_guest=%#llx override=%d count=%u\n",
                         static_cast<unsigned long long>(cpu_address), int(upscaled), requests);
     }
