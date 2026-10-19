@@ -15,6 +15,7 @@ class BionicR3Tests(unittest.TestCase):
     def test_adreno_830_avoids_external_sync_fd_by_default(self):
         cpp = source("gpu/shadps4/video_core/renderer_vulkan/gow3_lsfg.cpp")
         self.assertIn('gpu_name.find("Adreno (TM) 830")', cpp)
+        self.assertIn('driver_path.find("/gen8")', cpp)
         self.assertIn("sync_mode.empty()", cpp)
         self.assertIn('sync_mode == "host" || turnip_gen8_workaround', cpp)
         self.assertIn('GOW3_LSFG_SYNC=fd', cpp)
