@@ -1,0 +1,1 @@
+R10 controlled Bionic GSR2 lifecycle build. Keep display_redirect alive through same-frame RGBA8 passes, use OnFrameStart for frame transitions, sample all 3 rotating presenter buffers. No unrelated HUD, framegen or shader changes.
