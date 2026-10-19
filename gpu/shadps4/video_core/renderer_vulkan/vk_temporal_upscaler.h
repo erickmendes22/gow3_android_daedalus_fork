@@ -38,6 +38,7 @@ class Scheduler;
 class Runtime;
 class CameraMotion;
 class SceneTargets;
+class GsrUpscaler;
 
 class TemporalUpscaler {
 public:
@@ -172,6 +173,7 @@ private:
     bool RecordReactive(vk::ImageView color_view);
     /// FSR 4 is selected, possible in this session (not GOW3_RENDER_RES) and has not failed.
     [[nodiscard]] bool UseFsr4() const;
+    [[nodiscard]] bool UseGsr2() const;
     /// gow3: DLSS selected and the bridge is ready (NVIDIA RTX, gow3_dlss.dll).
     [[nodiscard]] bool UseDlss() const;
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
@@ -179,6 +181,8 @@ private:
                     const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh, float frame_ms,
                     bool hdr);
     /// Records FSR 4 into output_image; on a permanent failure FSR 3 takes over.
+    bool RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color, vk::ImageView depth,
+                    u32 w, u32 h, u32 ow, u32 oh);
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
     void RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color, vk::ImageView depth);
@@ -257,8 +261,11 @@ private:
     bool resources_ready = false; ///< images below match width/height/out size
     bool resources_fsr4 = false;  ///< made for FSR 4 (no FSR 3 context)
     bool resources_taa = false;
+    bool resources_gsr2 = false;
     std::unique_ptr<Fsr4Upscaler> fsr4;
     bool fsr4_failed = false;
+    std::unique_ptr<GsrUpscaler> gsr2;
+    bool gsr2_failed = false;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
