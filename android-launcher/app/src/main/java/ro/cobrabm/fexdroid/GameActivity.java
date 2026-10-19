@@ -50,6 +50,20 @@ public final class GameActivity extends Activity {
     private static final int REQUEST_FOLDER=1, REQUEST_STORAGE=2;
     private SurfaceHolder pendingHolder;
     private final Handler main=new Handler(Looper.getMainLooper());
+    // The native ImGui menu and Android graphics settings share gow3.ini.
+    private final Runnable hudConfigPoll = new Runnable() {
+        @Override public void run() {
+            if (destroyed) return;
+            syncHudConfig();
+            main.postDelayed(this, 500);
+        }
+    };
+    private void syncHudConfig() {
+        if (!bionicRuntime() || perfHud == null) return;
+        HudConfig cfg = HudConfig.load(new File(BASE, "gow3.ini"));
+        perfHud.setConfiguration(cfg);
+        if ((perfHud.getVisibility() == View.VISIBLE) != cfg.enabled) perfHud.setActive(cfg.enabled);
+    }
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private FrameLayout screen;
     private SurfaceView surface;
@@ -78,6 +92,7 @@ public final class GameActivity extends Activity {
         super.onCreate(saved);
         FILES=getFilesDir().getAbsolutePath();
         ROOT=FILES+"/rootfs"; BASE=FILES+"/gow3port";
+        if (bionicRuntime()) HudConfig.migrateLegacy(this, new File(BASE,"gow3.ini"));
         gameDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("game_dir",null);
         updateDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("update_dir",null);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -92,6 +107,7 @@ public final class GameActivity extends Activity {
         audio=new AudioBridge(new File(BASE,"audio.fifo"));
         buildScreen();
         immersive();
+        if (bionicRuntime()) main.post(hudConfigPoll);
     }
 
     private boolean bionicRuntime() { return "com.gow3.android.bionic".equals(getPackageName()); }
@@ -202,8 +218,8 @@ public final class GameActivity extends Activity {
         // Upstream-style draggable HUD stays above the controller and below the drawer.
         perfHud=new PerfHudOverlay(this);
         screen.addView(perfHud,frame(-1,-1,Gravity.CENTER));
-        perfHud.setActive(getSharedPreferences("gow3",MODE_PRIVATE)
-                .getBoolean("performance_hud",false));
+        perfHud.setActive(bionicRuntime() ? HudConfig.load(new File(BASE,"gow3.ini")).enabled
+                : getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("performance_hud",false));
 
         handle=new View(this);
         GradientDrawable grip=new GradientDrawable(); grip.setColor(0x80c6ad76); grip.setCornerRadius(dp(4));
@@ -270,13 +286,15 @@ public final class GameActivity extends Activity {
             frameGenItem=menuItem("ic_frames","Frame generation (Bloodframe)",
                 "Off · 2x/3x/4x; changes apply live", this::chooseFrameGeneration);
         }
-        perfHudItem=menuItem("ic_tune","Draggable FPS / GPU / CPU HUD","",() -> {
-            boolean on=!getSharedPreferences("gow3",MODE_PRIVATE)
-                    .getBoolean("performance_hud",false);
-            getSharedPreferences("gow3",MODE_PRIVATE).edit()
-                    .putBoolean("performance_hud",on).apply();
-            if (perfHud!=null) perfHud.setActive(on);
-            setDetail(perfHudItem,on ? "On" : "Off");
+        perfHudItem=menuItem("ic_tune","Performance HUD — position / FPS / GPU / CPU","",() -> {
+            if (bionicRuntime()) {
+                HudControls.show(this,new File(BASE,"gow3.ini"),() -> { syncHudConfig(); refreshDrawer(); });
+            } else {
+                boolean on=!getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("performance_hud",false);
+                getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("performance_hud",on).apply();
+                if (perfHud!=null) perfHud.setActive(on);
+                setDetail(perfHudItem,on ? "On" : "Off");
+            }
         });
 
         section("Controls");
@@ -404,8 +422,15 @@ public final class GameActivity extends Activity {
         setDetail(graphicsItem,upscaler+" · "+("0".equals(limit) ? "no FPS limit"
             : (limit==null || !limit.matches("30|60|120|240") ? "30" : limit)+" FPS limit"));
         setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
-        setDetail(perfHudItem,getSharedPreferences("gow3",MODE_PRIVATE)
-                .getBoolean("performance_hud",false) ? "On" : "Off");
+        if (bionicRuntime()) {
+            HudConfig cfg = HudConfig.load(new File(BASE,"gow3.ini"));
+            String align = cfg.anchor == 0 ? "Left" : cfg.anchor == 4 ? "Center" : "Right";
+            setDetail(perfHudItem,(cfg.enabled ? "On" : "Off") + " · " + align +
+                    " · X " + cfg.dx + " / Y +" + cfg.dy + " dp");
+        } else {
+            setDetail(perfHudItem,getSharedPreferences("gow3",MODE_PRIVATE)
+                    .getBoolean("performance_hud",false) ? "On" : "Off");
+        }
         if (frameGenItem!=null) {
             int multiplier=getSharedPreferences("gow3",MODE_PRIVATE)
                     .getInt("framegen_multiplier",0);
