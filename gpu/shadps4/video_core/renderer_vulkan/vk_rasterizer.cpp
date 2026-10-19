@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <xxhash.h>
+#include <string_view>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "gow3_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -2770,7 +2771,16 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     std::pair<vk::ImageView, vk::ImageLayout> original_color{};
     const auto& regs = Regs();
     const auto& key = pipeline->GetGraphicsKey();
-    if (std::popcount(key.mrt_mask & 0x7f) >= 5 && db_desc.first) {
+    // GoW3 uses forward passes (usually 1-2 MRTs), not Bloodborne's five-MRT
+    // G-buffer. Recognize only color+depth attachments at the SHA-validated
+    // guest resolution; shadow-map passes have different extents.
+    const bool gsr2_forward = std::getenv("GOW3_ANDROID_PORT") &&
+                              std::getenv("GOW3_PATCH_INPUT_RES") &&
+                              std::getenv("GOW3_UPSCALER") &&
+                              std::string_view(std::getenv("GOW3_UPSCALER")) == "gsr2" &&
+                              std::popcount(key.mrt_mask & 0x7f) >= 1 &&
+                              std::popcount(key.mrt_mask & 0x7f) <= 2;
+    if ((std::popcount(key.mrt_mask & 0x7f) >= 5 || gsr2_forward) && db_desc.first) {
         const auto& depth = texture_cache.GetImage(db_desc.first);
         // The 720p eboot patch changes guest allocations, but checking the
         // actual G-buffer is essential: a wrong patch/address or an aligned
@@ -2792,7 +2802,23 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
                             unsigned(depth.info.pixel_format), unsigned(std::popcount(key.mrt_mask & 0x7f)));
             }
         }
-        if (eligible) scene_started = true;
+        if (eligible && gsr2_forward && cb_descs[0].first) {
+            const auto& primary = texture_cache.GetImage(cb_descs[0].first);
+            const bool verified = scene_targets->EligibleScene(primary) &&
+                                  primary.info.size.width == depth.info.size.width &&
+                                  primary.info.size.height == depth.info.size.height;
+            if (verified) {
+                static unsigned forward_logged = 0;
+                if (forward_logged++ < 3)
+                    std::printf("GSR2: forward scene accepted %ux%u MRT=%u depth=%u\\n",
+                                primary.info.size.width, primary.info.size.height,
+                                unsigned(std::popcount(key.mrt_mask & 0x7f)),
+                                unsigned(depth.info.pixel_format));
+                scene_started = true;
+            }
+        } else if (eligible && !gsr2_forward) {
+            scene_started = true;
+        }
     }
     // A proxy attachment cannot represent MSAA or a feedback loop that reads the
     // same image through the guest's native descriptor during this draw.
