@@ -235,7 +235,7 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
     cmdbuf.dispatch((width + 7) / 8, (height + 7) / 8, 1);
 }
 
-void CameraMotion::OnConstants(const float* data, size_t float_count) {
+void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader_hash, u32 buffer_slot) {
     // Keep the old validated Bloodborne layout for the desktop/non-GoW3 path.
     // The CUSA01715 path below deliberately does not inherit those offsets.
     const char* selected_upscaler = std::getenv("GOW3_UPSCALER");
@@ -269,6 +269,34 @@ void CameraMotion::OnConstants(const float* data, size_t float_count) {
             std::printf("GSR2_CAMERA_FEED blocks=%u floats=%zu projection=%d pose=%d votes=%u\n",
                         seen_blocks, float_count, int(have_projection),
                         int(have_pose), frame_pose_votes);
+        }
+    }
+    // eboot CUSA01623 exposes PS3_PreProjToProjMat, PS3_ModelToPreProjMat,
+    // PS3_PrevModelToPreProjMat and PS3_InvProjFactors. These are not guaranteed
+    // to be an affine + inverse pair in one constant block, as the old matcher
+    // assumes. Collect a bounded selection of ACTUAL shader constants once
+    // during gameplay to identify their layout by shader hash and buffer slot.
+    // Do not mark camera valid or disturb GSR2 history without real evidence.
+    if (gow3_android_gsr2 && probe_frame && probe_seen < 1024 &&
+        float_count >= 16 && float_count <= 1024) {
+        ++probe_seen;
+        if (probe_written < 32 &&
+            (probe_seen <= 8 || probe_seen % 32 == 0)) {
+            ++probe_written;
+            char hex[1800]{};
+            size_t written = 0;
+            const size_t floats = std::min(float_count, size_t(128));
+            for (size_t i = 0; i < floats && written + 10 < sizeof(hex); ++i) {
+                const int n = std::snprintf(hex + written, sizeof(hex) - written,
+                                            "%08x", std::bit_cast<u32>(data[i]));
+                if (n <= 0) break;
+                written += size_t(n);
+            }
+            std::printf("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u floats=%zu first=%zu hex=%s\\n",
+                        probe_frame, probe_written,
+                        static_cast<unsigned long long>(shader_hash), buffer_slot,
+                        float_count, floats, hex);
+            std::fflush(stdout);
         }
     }
     if (frame_has_camera && frame_pose_votes >= 3) return;
@@ -332,6 +360,13 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
         (std::getenv("GOW3_ANDROID_PORT") && selected && !std::strcmp(selected, "gsr2"))) {
         static u32 camera_frames = 0;
         const u32 frame_number = ++camera_frames;
+        if (selected && !std::strcmp(selected, "gsr2") &&
+            std::getenv("GOW3_ANDROID_PORT") &&
+            (frame_number == 1200 || frame_number == 3600)) {
+            probe_frame = frame_number;
+            probe_seen = probe_written = 0;
+            std::printf("GSR2_CAMERA_RAW_CAPTURE arm=%u max_samples=32 max_blocks=1024\\n", probe_frame);
+        }
         // Include gameplay, not only the six loading-screen frames as before.
         if (frame_number == 1 || frame_number == 600 || frame_number == 1800 ||
             frame_number == 3600 || frame_number == 6000) {
