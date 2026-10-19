@@ -259,6 +259,18 @@ void CameraMotion::OnConstants(const float* data, size_t float_count) {
     // projections are accepted; never synthesize a valid camera from zeros.
     if (!depth_id || !data || float_count < 16 || float_count > 1024)
         return;
+    if (gow3_android_gsr2) {
+        // GSR2 previously received no camera constants at all because the
+        // caller required the FSR-only environment flag. Prove real input
+        // delivery without dumping private guest data or flooding the log.
+        static unsigned seen_blocks = 0;
+        ++seen_blocks;
+        if (seen_blocks <= 6 || seen_blocks % 1200 == 0) {
+            std::printf("GSR2_CAMERA_FEED blocks=%u floats=%zu projection=%d pose=%d votes=%u\n",
+                        seen_blocks, float_count, int(have_projection),
+                        int(have_pose), frame_pose_votes);
+        }
+    }
     if (frame_has_camera && frame_pose_votes >= 3) return;
     // The forward renderer binds many constant buffers per draw. An exhaustive
     // affine-pair search can consume the GPU command CPU thread, becoming more
