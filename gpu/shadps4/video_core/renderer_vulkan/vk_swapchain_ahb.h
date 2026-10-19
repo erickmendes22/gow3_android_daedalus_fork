@@ -39,7 +39,9 @@ class Instance;
 
 class Swapchain {
 public:
-    explicit Swapchain(const Instance& instance, const Frontend::WindowSDL& window);
+    explicit Swapchain(const Instance& instance, const Frontend::WindowSDL& window,
+                       u32 framegen_multiplier = 0);
+    static u32 MaxImageCount();
     ~Swapchain();
 
     /// Creates (or recreates) the buffers with a given size.
@@ -73,6 +75,8 @@ public:
     bool HasHDR() const { return false; }
     void SetHDR(bool) {}
     void UpdateVsync();
+    // Upstream zFitness/Bloodframe: adapt FIFO mode and buffer count while running.
+    void SetFrameGeneration(u32 framegen_multiplier);
     bool GetHDR() const { return false; }
 
     /// The layout and queue-family ownership the image has when handed to the app.
