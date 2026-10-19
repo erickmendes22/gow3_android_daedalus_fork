@@ -22,10 +22,12 @@ final class TouchControllerOverlay extends View {
         "leftstick","l3","r3","rightstick"
     };
     private static final float[][] DEFAULT={
-        {87,105},{213,105},{640,105},{773,105},{1067,105},{1193,105},
-        {160,395},{90,465},{230,465},{160,535},
-        {1120,405},{1190,475},{1120,545},{1050,475},
-        {320,612},{420,614},{860,614},{960,612}
+        // Compact shoulder rows near the edges; keep the centre of the scene unobstructed.
+        // Only defaults change: manually dragged positions are always respected.
+        {65,82},{182,82},{614,73},{761,73},{1098,82},{1215,82},
+        {147,410},{75,481},{219,481},{147,552},
+        {1116,405},{1190,475},{1116,545},{1042,475},
+        {327,622},{443,628},{836,628},{952,622}
     };
     private final PadBridge pad;
     private final SharedPreferences preferences;
@@ -183,7 +185,7 @@ final class TouchControllerOverlay extends View {
     private void circle(Canvas c,String name,float r,String label,int accent) {
         PointF p=center(name);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : pressed.contains(name) ? 0xaae8dfc9 : 0x6630394c);
+        paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : pressed.contains(name) ? 0xaae8dfc9 : 0x4230394c);
         c.drawCircle(p.x,p.y,r,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3); paint.setColor(accent);
         c.drawCircle(p.x,p.y,r,paint);
@@ -198,7 +200,7 @@ final class TouchControllerOverlay extends View {
         boolean lit=pressed.contains(name) ||
             (name.equals("touchpad") && pressed.contains("touchpad_right"));
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : lit ? 0xaae8dfc9 : 0x6630394c);
+        paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : lit ? 0xaae8dfc9 : 0x4230394c);
         c.drawRoundRect(p.x-width/2,p.y-25,p.x+width/2,p.y+25,14,14,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setColor(0xbbc6ad76); paint.setStrokeWidth(2);
         c.drawRoundRect(p.x-width/2,p.y-25,p.x+width/2,p.y+25,14,14,paint);
@@ -208,7 +210,7 @@ final class TouchControllerOverlay extends View {
     }
     private void drawStick(Canvas c,String name) {
         PointF center=center(name);
-        paint.setStyle(Paint.Style.FILL); paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : 0x6630394c);
+        paint.setStyle(Paint.Style.FILL); paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : 0x4230394c);
         c.drawCircle(center.x,center.y,57,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setColor(0xffa0aec0); paint.setStrokeWidth(3);
         c.drawCircle(center.x,center.y,57,paint);
@@ -232,9 +234,9 @@ final class TouchControllerOverlay extends View {
     }
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c); c.save(); c.translate(offsetX(),offsetY()); c.scale(scale(),scale());
-        rectangle(c,"l2",108,"L2"); rectangle(c,"l1",108,"L1");
-        rectangle(c,"r1",108,"R1"); rectangle(c,"r2",108,"R2");
-        rectangle(c,"touchpad",126,"TOUCH"); rectangle(c,"options",108,"OPTIONS");
+        rectangle(c,"l2",94,"L2"); rectangle(c,"l1",94,"L1");
+        rectangle(c,"r1",94,"R1"); rectangle(c,"r2",94,"R2");
+        rectangle(c,"touchpad",116,"TOUCH"); rectangle(c,"options",94,"OPTIONS");
         circle(c,"up",39,"▲",0xffc6ad76); circle(c,"left",39,"◀",0xffc6ad76);
         circle(c,"right",39,"▶",0xffc6ad76); circle(c,"down",39,"▼",0xffc6ad76);
         circle(c,"triangle",39,"△",0xff83cdaa); circle(c,"circle",39,"○",0xffe38288);
