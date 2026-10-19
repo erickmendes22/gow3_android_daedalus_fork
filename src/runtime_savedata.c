@@ -196,7 +196,7 @@ int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size)
             unsigned char sig[8];
             FILE *png=fopen(out,"rb");
             int valid=png && fread(sig,1,sizeof(sig),png)==sizeof(sig) &&
-                      !memcmp(sig,"\\x89PNG\\r\\n\\x1a\\n",8);
+                      !memcmp(sig,"\x89PNG\r\n\x1a\n",8);
             if (png) fclose(png);
             if (valid) {
                 printf("SaveData: using genuine per-slot icon for %s (%s)\n",dir,out);
