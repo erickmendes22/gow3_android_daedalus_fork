@@ -550,6 +550,14 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
     }
     const vk::Device device = instance.GetDevice();
     Context& ctx = *context;
+    const bool trace_first_frame = ctx.frame == 0;
+    if (trace_first_frame) {
+        std::printf("Bloodframe trace: context ready; entering first copy %ux%u, image=%p, ready=%p, tick=%llu\n",
+                    width, height, static_cast<void*>(static_cast<VkImage>(image)),
+                    static_cast<void*>(static_cast<VkSemaphore>(ready)),
+                    (unsigned long long)ready_tick);
+        std::fflush(stdout);
+    }
     const u32 count = ctx.frame < WarmupFrames ? 0 : multiplier - 1;
 
     scheduler_used = &scheduler;
@@ -571,6 +579,12 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
     }
     // 1. Copy the real frame into the input buffer of this parity, in a submission of its own.
     SharedImage& input = ctx.input[ctx.frame & 1];
+    if (trace_first_frame) {
+        std::printf("Bloodframe trace: first AHB input=%p, copy_done=%p, chained=%d, host_sync=%d\n",
+                    static_cast<void*>(static_cast<VkImage>(input.image)),
+                    static_cast<void*>(static_cast<VkFence>(copy_done)), int(chained), int(sync_host));
+        std::fflush(stdout);
+    }
     const vk::ImageSubresourceRange color_range{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
         .baseMipLevel = 0,
@@ -640,6 +654,10 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         input.used = true;
     }
+    if (trace_first_frame) {
+        std::puts("Bloodframe trace: first command buffer recorded, before GPU copy submit");
+        std::fflush(stdout);
+    }
     RingSemaphore& input_entry = input_ready[cycle % RingSize];
     const vk::Semaphore input_semaphore = Reuse(input_entry);
     {
@@ -657,6 +675,10 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
             info.AddSignal(copy_done);
         }
         scheduler.Flush(info);
+        if (trace_first_frame) {
+            std::puts("Bloodframe trace: first GPU copy submit returned");
+            std::fflush(stdout);
+        }
         const u64 copy_tick = scheduler.CurrentTick() - 1;
         input_entry.tick = copy_tick;
         if (batch_entry) {
@@ -693,6 +715,11 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
         }
         ++stats->host_waits;
     }
+    if (trace_first_frame) {
+        std::printf("Bloodframe trace: pre-engine present, gpu_sync=%d fd=%d\n",
+                    int(!sync_host), input_fd);
+        std::fflush(stdout);
+    }
     const auto present_start = Clock::now();
     Gow3LsfgPresent out{};
     char error[512] = {};
@@ -701,6 +728,10 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
         if (input_fd >= 0) close(input_fd);
         Disable(error[0] ? error : "the framegen failed");
         return -1;
+    }
+    if (trace_first_frame) {
+        std::printf("Bloodframe trace: first engine present completed, generated=%u\n",count);
+        std::fflush(stdout);
     }
     ++ctx.frame;
     ++cycle;
