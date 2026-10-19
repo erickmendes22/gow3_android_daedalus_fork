@@ -238,7 +238,10 @@ void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_vi
 void CameraMotion::OnConstants(const float* data, size_t float_count) {
     // Keep the old validated Bloodborne layout for the desktop/non-GoW3 path.
     // The CUSA01715 path below deliberately does not inherit those offsets.
-    if (!std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT")) {
+    const char* selected_upscaler = std::getenv("GOW3_UPSCALER");
+    const bool gow3_android_gsr2 = std::getenv("GOW3_ANDROID_PORT") &&
+                                   selected_upscaler && std::strcmp(selected_upscaler, "gsr2") == 0;
+    if (!std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") && !gow3_android_gsr2) {
         if (!data || float_count < 192 || frame_has_camera) return;
         if (data[0] != 3000.0f || data[4] < 64.0f || data[5] < 64.0f ||
             std::abs(data[1] * data[0] - 1.0f) > 1e-3f) return;
@@ -312,7 +315,9 @@ void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {
 }
 
 void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
-    if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT")) {
+    const char* selected = std::getenv("GOW3_UPSCALER");
+    if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") ||
+        (std::getenv("GOW3_ANDROID_PORT") && selected && !std::strcmp(selected, "gsr2"))) {
         static u32 camera_frames = 0;
         const u32 frame_number = ++camera_frames;
         // Include gameplay, not only the six loading-screen frames as before.
