@@ -1,3 +1,5 @@
 R11 single Bionic build: permit verified GoW3 GSR2 vertex-camera constants from forward rendering; read actual host constant ring; retain safe no-motion GSR2 fallback and HUD/LSFG untouched.
 
 R11 retry 2: the sole failing legacy integration assertion now checks the host constant-ring copy and rejects old guest-address reads. No native code changed.
+
+R11 retry 3: fix actual C++ compiler error: android_camera_feed declaration moved from BindResources into BindBuffers, ahead of both usages. Structural scope regression added. No shader/HUD/framegen changes.
