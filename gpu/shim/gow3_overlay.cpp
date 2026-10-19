@@ -500,18 +500,22 @@ void OverlayTab() {
     }
     ImGui::BeginDisabled(!s.show_fps);
     ImGui::SeparatorText("Horizontal position");
-    const int selected = s.overlay_corner.load();
-    if (ImGui::RadioButton("Left", selected == 0)) { s.overlay_corner = 0; dirty = true; }
+    const int current_x = s.overlay_corner.load();
+    if (ImGui::RadioButton("Left", current_x == 0)) { s.overlay_corner = 0; dirty = true; }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Center", selected == 4)) { s.overlay_corner = 4; dirty = true; }
+    if (ImGui::RadioButton("Center##horizontal", current_x == 4)) { s.overlay_corner = 4; dirty = true; }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Right", selected != 0 && selected != 4)) { s.overlay_corner = 1; dirty = true; }
-    if (BeginRows("##android_hud_position")) {
-        SliderRow("Horizontal shift", s.overlay_offset_x, -300, 300, "%d dp",
-                  "Negative goes left; positive goes right.");
-        SliderRow("Move down", s.overlay_offset_y, 0, 300, "%d dp",
-                  "Distance below the top safe margin.");
-        ImGui::EndTable();
+    if (ImGui::RadioButton("Right", current_x != 0 && current_x != 4)) { s.overlay_corner = 1; dirty = true; }
+    ImGui::SeparatorText("Vertical position");
+    const int current_y = s.overlay_anchor_y.load();
+    if (ImGui::RadioButton("Top", current_y == 0)) { s.overlay_anchor_y = 0; dirty = true; }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Center##vertical", current_y == 1)) { s.overlay_anchor_y = 1; dirty = true; }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Bottom", current_y == 2)) { s.overlay_anchor_y = 2; dirty = true; }
+    // R4 offsets were unwanted and could override alignment, keep them zero.
+    if (s.overlay_offset_x != 0 || s.overlay_offset_y != 0) {
+        s.overlay_offset_x = 0; s.overlay_offset_y = 0; dirty = true;
     }
     ImGui::EndDisabled();
     ImGui::TextDisabled("Settings persist when you close this menu; no game restart.");
