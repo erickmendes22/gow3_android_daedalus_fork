@@ -30,6 +30,12 @@ class BionicBloodborneFeatureTests(unittest.TestCase):
         for key in ("framegen_flow", "framegen_performance", "framegen_fp16"):
             self.assertIn(key, home)
 
+    def test_save_icon_fallback_is_valid_c11_not_cpp_if_initializer(self):
+        runtime=read("src/runtime_savedata.c")
+        self.assertNotIn('if (const char *game=getenv(', runtime)
+        self.assertIn('const char *game=getenv("GOW3_GAME_DIR");', runtime)
+        self.assertIn('if (game && *game)', runtime)
+
     def test_save_dialog_keeps_touch_navigation_but_not_shoulder_obscuration(self):
         overlay=read("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/TouchControllerOverlay.java")
         runtime=read("src/runtime_services.c")
