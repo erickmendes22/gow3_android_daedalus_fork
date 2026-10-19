@@ -287,5 +287,11 @@ final class TouchControllerOverlay extends View {
             c.drawText("DONE",640,36-(paint.ascent()+paint.descent())/2,paint);
         }
         c.restore();
+        // SaveDataDialog opens asynchronously in the native game thread.  A
+        // touch overlay otherwise redraws only after pad interactions, so
+        // the new modal marker is never observed and shoulder/stick buttons
+        // remain drawn over the Load panel. Poll at 5 Hz, not per-frame.
+        if (getWindowToken() != null && getVisibility() == VISIBLE)
+            postInvalidateDelayed(200);
     }
 }
