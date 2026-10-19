@@ -977,8 +977,18 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto& regs = Regs();
     // gow3: the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
-    if (camera_motion->Enabled() && regs.color_buffers[0] &&
-        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+    // A display buffer can receive dozens of draw calls after one completed
+    // forward scene. Calling OnFrameStart for EACH draw cleared the pending
+    // GSR2 host display redirect, leaving DisplayOverride valid=0 even after
+    // successful 640x360 -> 1280x720 Vulkan dispatches.
+    // Consume the boundary once per validated scene, not once per display draw.
+    const bool is_display_draw = regs.color_buffers[0] &&
+        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
+    const bool gsr2_bionic = std::getenv("GOW3_ANDROID_PORT") &&
+                             std::getenv("GOW3_UPSCALER") &&
+                             std::strcmp(std::getenv("GOW3_UPSCALER"), "gsr2") == 0;
+    if (camera_motion->Enabled() && is_display_draw &&
+        (!gsr2_bionic || scene_started)) {
         scene_started = false;
         // Previous color attachment is the completed frame, before the
         // guest's display-copy draw. Depth is cleared by OnDisplayPass.
@@ -994,9 +1004,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         static const char* scene_debug = std::getenv("GOW3_SCENE_DEBUG");
         scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
         scene_targets->debug = scene_debug_frame;
-    } else if (regs.color_buffers[0] &&
-               FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address()) &&
-               regs.color_buffers[0].Address() != last_display_buffer) {
+    } else if (is_display_draw &&
+               regs.color_buffers[0].Address() != last_display_buffer &&
+               !gsr2_bionic) {
         // Without an upscaler: still count the frame (GOW3_GPU_PROFILE, GOW3_BUFFER_STATS),
         // once per display buffer since the HUD draws into it as well.
         // ponytail: assumes flips rotate display buffers; a single-buffer game counts one frame.
