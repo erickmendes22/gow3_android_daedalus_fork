@@ -552,10 +552,9 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
     Context& ctx = *context;
     const bool trace_first_frame = ctx.frame == 0;
     if (trace_first_frame) {
-        std::printf("Bloodframe trace: context ready; entering first copy %ux%u, image=%p, ready=%p, tick=%llu\n",
-                    width, height, static_cast<void*>(static_cast<VkImage>(image)),
-                    static_cast<void*>(static_cast<VkSemaphore>(ready)),
-                    (unsigned long long)ready_tick);
+        std::printf("Bloodframe trace: context ready; entering first copy %ux%u, image_valid=%d, ready_valid=%d, tick=%llu\n",
+                    width, height, int(static_cast<bool>(image)),
+                    int(static_cast<bool>(ready)), (unsigned long long)ready_tick);
         std::fflush(stdout);
     }
     const u32 count = ctx.frame < WarmupFrames ? 0 : multiplier - 1;
@@ -580,9 +579,9 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
     // 1. Copy the real frame into the input buffer of this parity, in a submission of its own.
     SharedImage& input = ctx.input[ctx.frame & 1];
     if (trace_first_frame) {
-        std::printf("Bloodframe trace: first AHB input=%p, copy_done=%p, chained=%d, host_sync=%d\n",
-                    static_cast<void*>(static_cast<VkImage>(input.image)),
-                    static_cast<void*>(static_cast<VkFence>(copy_done)), int(chained), int(sync_host));
+        std::printf("Bloodframe trace: first AHB input_valid=%d, copy_fence_valid=%d, chained=%d, host_sync=%d\n",
+                    int(static_cast<bool>(input.image)), int(static_cast<bool>(copy_done)),
+                    int(chained), int(sync_host));
         std::fflush(stdout);
     }
     const vk::ImageSubresourceRange color_range{
