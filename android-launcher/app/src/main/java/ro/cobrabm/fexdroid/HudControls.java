@@ -12,8 +12,7 @@ import java.util.Map;
 final class HudControls {
     private final Switch enabled;
     private final RadioGroup alignment;
-    private final SeekBar offsetX, offsetY;
-    private final TextView offsetXLabel, offsetYLabel;
+    private final RadioGroup vertical;
     private final Activity activity;
     private final File ini;
 
@@ -48,43 +47,31 @@ final class HudControls {
         }
         parent.addView(alignment);
 
-        offsetXLabel = new TextView(activity);
-        parent.addView(offsetXLabel);
-        offsetX = new SeekBar(activity);
-        offsetX.setMax(600);
-        offsetX.setProgress(cfg.dx + 300);
-        parent.addView(offsetX);
-        offsetYLabel = new TextView(activity);
-        parent.addView(offsetYLabel);
-        offsetY = new SeekBar(activity);
-        offsetY.setMax(300);
-        offsetY.setProgress(cfg.dy);
-        parent.addView(offsetY);
-
-        SeekBar.OnSeekBarChangeListener listener = new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                offsetXLabel.setText("Horizontal shift: " + (offsetX.getProgress() - 300) + " dp");
-                offsetYLabel.setText("Move down: " + offsetY.getProgress() + " dp");
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {}
-        };
-        offsetX.setOnSeekBarChangeListener(listener);
-        offsetY.setOnSeekBarChangeListener(listener);
-        listener.onProgressChanged(offsetX, offsetX.getProgress(), false);
-
+        TextView positionY = new TextView(activity);
+        positionY.setText("Vertical position");
+        parent.addView(positionY);
+        vertical = new RadioGroup(activity);
+        vertical.setOrientation(RadioGroup.HORIZONTAL);
+        String[] verticalLabels = {"Top", "Center", "Bottom"};
+        for (int i=0; i<verticalLabels.length; i++) {
+            RadioButton button = new RadioButton(activity);
+            button.setId(View.generateViewId());
+            button.setTag(i);
+            button.setText(verticalLabels[i]);
+            vertical.addView(button);
+            if (cfg.vertical == i) vertical.check(button.getId());
+        }
+        parent.addView(vertical);
         enabled.setOnCheckedChangeListener((button, value) -> {
-            alignment.setEnabled(value);
-            for (int i = 0; i < alignment.getChildCount(); ++i)
+            for (int i=0; i<alignment.getChildCount(); i++)
                 alignment.getChildAt(i).setEnabled(value);
-            offsetX.setEnabled(value);
-            offsetY.setEnabled(value);
+            for (int i=0; i<vertical.getChildCount(); i++)
+                vertical.getChildAt(i).setEnabled(value);
         });
-        enabled.setChecked(cfg.enabled);
-        for (int i = 0; i < alignment.getChildCount(); i++)
+        for (int i=0; i<alignment.getChildCount(); i++)
             alignment.getChildAt(i).setEnabled(cfg.enabled);
-        offsetX.setEnabled(cfg.enabled);
-        offsetY.setEnabled(cfg.enabled);
+        for (int i=0; i<vertical.getChildCount(); i++)
+            vertical.getChildAt(i).setEnabled(cfg.enabled);
     }
 
     Map<String,String> values() {
@@ -93,11 +80,18 @@ final class HudControls {
             RadioButton item = (RadioButton)alignment.getChildAt(i);
             if (item.isChecked()) anchor = (Integer)item.getTag();
         }
+        int anchorY = 0;
+        for (int i=0; i<vertical.getChildCount(); i++) {
+            RadioButton item = (RadioButton)vertical.getChildAt(i);
+            if (item.isChecked()) anchorY = (Integer)item.getTag();
+        }
         Map<String,String> result = new LinkedHashMap<>();
         result.put(HudConfig.ENABLED, enabled.isChecked() ? "1" : "0");
         result.put(HudConfig.ANCHOR, String.valueOf(anchor));
-        result.put(HudConfig.DX, String.valueOf(offsetX.getProgress() - 300));
-        result.put(HudConfig.DY, String.valueOf(offsetY.getProgress()));
+        result.put(HudConfig.VERTICAL, String.valueOf(anchorY));
+        // Retire R4 sliders: old offsets must not override the selected anchors.
+        result.put(HudConfig.DX, "0");
+        result.put(HudConfig.DY, "0");
         return result;
     }
 
