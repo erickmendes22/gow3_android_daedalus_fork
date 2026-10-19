@@ -313,6 +313,18 @@ bool TemporalUpscaler::OnFrameStart() {
     if (output_changed) {
         target_width = Gow3Settings::OutputWidths[output];
         target_height = Gow3Settings::OutputHeights[output];
+        // Native Bloodborne-style Qualcomm GSR2 on Bionic must target the
+        // actual display size patched into the verified guest eboot, not the
+        // desktop 1080p default (otherwise scene proxy matching fails).
+        if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT")) {
+            const char* native = std::getenv("GOW3_OUTPUT_RES");
+            unsigned w=0, h=0;
+            if (native && std::sscanf(native,"%ux%u",&w,&h)==2 &&
+                w>=426 && w<=3840 && h>=240 && h<=2160) {
+                target_width=w;
+                target_height=h;
+            }
+        }
         std::printf("Output resolution: %ux%u (live)\n", target_width, target_height);
         failed = false;
         fsr4_failed = false;
