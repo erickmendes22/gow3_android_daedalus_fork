@@ -41,11 +41,18 @@ internal object LaunchParams {
                 LaunchOption("1", R.string.param_option_on)), defaultValue = "0",
         ),
         LaunchParam(
-            key = "overlay_corner", labelRes = R.string.param_fps_position,
+            key = "overlay_corner", labelRes = R.string.param_fps_horizontal,
             groupRes = R.string.param_group_fps,
-            options = listOf(LaunchOption("0", R.string.fps_top_left),
-                LaunchOption("4", R.string.fps_top_center),
-                LaunchOption("1", R.string.fps_top_right)), defaultValue = "1",
+            options = listOf(LaunchOption("0", R.string.fps_left),
+                LaunchOption("4", R.string.fps_center),
+                LaunchOption("1", R.string.fps_right)), defaultValue = "1",
+        ),
+        LaunchParam(
+            key = "overlay_anchor_y", labelRes = R.string.param_fps_vertical,
+            groupRes = R.string.param_group_fps,
+            options = listOf(LaunchOption("0", R.string.fps_top),
+                LaunchOption("1", R.string.fps_middle),
+                LaunchOption("2", R.string.fps_bottom)), defaultValue = "0",
         ),
         LaunchParam(
             key = "overlay_scale", labelRes = R.string.param_fps_size,
