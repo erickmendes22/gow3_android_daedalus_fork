@@ -1628,6 +1628,16 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         }
     }
 
+    // GoW3 forward renderer: unlike Bloodborne, MRT count is 1-2. The
+    // 720p GSR2 Android path must see the vertex constants or it will ALWAYS
+    // report motion=spatial-reset-no-history regardless of valid guest camera.
+    const char* active_upscaler = std::getenv("GOW3_UPSCALER");
+    const bool gow3_gsr2_camera = std::getenv("GOW3_ANDROID_PORT") &&
+        active_upscaler && std::strcmp(active_upscaler, "gsr2") == 0;
+    const bool android_camera_feed = upscaler && upscaler->Enabled() &&
+        (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gow3_gsr2_camera) &&
+        camera_motion->Depth();
+
     bool uses_dma = false;
 
     static const bool stats = std::getenv("GOW3_FRAME_STATS") != nullptr;
@@ -2122,15 +2132,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 // CUSA01715 uses a forward renderer: gbuffer_draw is never
                 // true.  Inspect camera candidates from its scene vertex
                 // constants too; OnConstants still validates the signature.
-                const bool android_scene_camera =
-                    std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") &&
-                    upscaler && upscaler->Enabled() &&
-                    camera_motion->Depth() && stage.sw_stage == Shader::SwStage::Vertex;
                 if (ring->size >= 64 && ring->size <= 4096 &&
-                    (gbuffer_draw || android_scene_camera) &&
-                    ring->address && memory->IsValidGpuMapping(ring->address, ring->size)) {
-                    camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address),
-                                               ring->size / sizeof(float));
+                    stage.sw_stage == Shader::SwStage::Vertex &&
+                    (gbuffer_draw || android_camera_feed)) {
+                    // ring->address is a guest label. The buffer copied to the
+                    // GPU and visible to FrameCapture is the host constant ring.
+                    const auto* data = constant_ring->Data(ring->offset);
+                    if (data)
+                        camera_motion->OnConstants(reinterpret_cast<const float*>(data),
+                                                   ring->size / sizeof(float));
                 }
                 push_data.AddOffset(binding.buffer, 0);
             }
@@ -2189,12 +2199,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         } else {
             const auto vsharp =
                 prepared ? prepared->buffer_sharps[buffer_index] : desc.GetSharp(stage);
-            const bool android_scene_camera =
-                std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") &&
-                    upscaler && upscaler->Enabled() &&
-                camera_motion->Depth() && stage.sw_stage == Shader::SwStage::Vertex;
             if (vsharp.GetSize() >= 64 && vsharp.GetSize() <= 4096 &&
-                (gbuffer_draw || android_scene_camera) && vsharp.base_address &&
+                stage.sw_stage == Shader::SwStage::Vertex &&
+                (gbuffer_draw || android_camera_feed) && vsharp.base_address &&
                 memory->IsValidGpuMapping(vsharp.base_address, vsharp.GetSize())) {
                 camera_motion->OnConstants(reinterpret_cast<const float*>(vsharp.base_address),
                                            vsharp.GetSize() / sizeof(float));
