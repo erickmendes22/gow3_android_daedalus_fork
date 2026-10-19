@@ -121,6 +121,7 @@ void SetOpen(bool value) {
     }
     ImGui::GetIO().MouseDrawCursor = value;
     if (value) {
+        Gow3Settings::ReloadHudFromDisk();
         requested_tab = Gow3Settings::Get().menu_tab;
     }
     if (!value && dirty) {
