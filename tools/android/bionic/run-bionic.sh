@@ -75,6 +75,8 @@ export GOW3_ANDROID_PORT=1
 # R7 forensic probe: one 32x18 RGB readback per GSR2 Vulkan stage, written
 # into android-game.log. No image substitution and no framegen/HUD changes.
 export GOW3_GSR2_AUTO_PROBE=1
+# Experimental R8 correctness: initialize every GSR2 display tile before native UI.
+export GOW3_GSR2_PREFILL_DISPLAY=1
 # Upstream in-process bloodframe is opt-in; settings can update this file live.
 export GOW3_LSFG_STATE_FILE="$base/framegen.state"
 export GOW3_LSFG_LIB="$runtime/lib/libbloodframe.so"
