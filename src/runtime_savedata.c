@@ -187,7 +187,27 @@ int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size)
         if (snprintf(out,size,patterns[i],base,dir) >= (int)size) return -1;
         if (!stat(out,&info) && S_ISREG(info.st_mode) && info.st_size>0) return 0;
     }
+    // If this older save never received sceSaveDataSaveIcon, use the ACTUAL
+    // God of War III title art from the player's installed files, not the
+    // fabricated blue "SAVE DATA" tile. A scene-specific image is only
+    // possible when the game itself has written a save icon.
+    if (const char *game=getenv("GOW3_GAME_DIR"); game && *game) {
+        const char *const art[]={"sce_sys/icon0.png","sce_sys/ICON0.PNG",
+                                 "sce_sys/save_data.png"};
+        for (unsigned i=0;i<sizeof(art)/sizeof(art[0]);++i) {
+            if (snprintf(out,size,"%s/%s",game,art[i]) >= (int)size) break;
+            if (!stat(out,&info) && S_ISREG(info.st_mode) && info.st_size>0) {
+                static int first=1;
+                if (first) {
+                    printf("SaveData: save without per-slot image: using real installed title icon (%s)\n",art[i]);
+                    first=0;
+                }
+                return 0;
+            }
+        }
+    }
     out[0]=0;
+    printf("SaveData: no usable per-save icon or installed title icon for %s\n",dir);
     return -1;
 }
 static ABI int32_t save_initialize(const void *param) { (void)param; initialized=1; return 0; }
