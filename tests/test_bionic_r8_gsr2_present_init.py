@@ -13,6 +13,8 @@ class R8(unittest.TestCase):
         self.assertIn("vk::ImageLayout::eTransferDstOptimal",c)
         self.assertIn("GSR2_PRESENT_INIT copied full UI",c)
         self.assertIn("cmd.blitImage(source, vk::ImageLayout::eTransferSrcOptimal,",c)
+        self.assertIn(".srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ui_width)",c)
+        self.assertIn(".dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(display.width)",c)
         self.assertIn("display.valid = true;",c)
     def test_capture_mature_frames_and_actual_presenter(self):
         s=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
