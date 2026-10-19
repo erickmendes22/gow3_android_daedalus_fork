@@ -1430,13 +1430,10 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
         image.info.size.width == depth.info.size.width &&
         image.info.size.height == depth.info.size.height) {
         ldr_target = color;
-        // This is a NEW verified scene after the previous PS4 display pass.
-        // End the old GSR2 sample redirect here, not at an arbitrary
-        // intermediate render target during that display pass.
-        if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") &&
-            !FrameCapture::IsDisplayBuffer(image.info.guest_address)) {
-            display_redirect = false;
-        }
+        // Do not expire a completed GSR2 output when an intermediate RGBA8
+        // postprocessing pass rebinds a scene-sized target. Those draws still
+        // belong to the current frame and could occur before the actual flip.
+        // The verified display boundary / OnFrameStart owns the handoff.
     }
 }
 
@@ -2266,6 +2263,14 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
         });
     }
     display.valid = true;
+    if (UseGsr2() && std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        static unsigned published = 0;
+        if (++published <= 6 || published % 1200 <= 2) {
+            std::printf("GSR2_DISPLAY_PUBLISH guest=%#llx output=%ux%u count=%u\n",
+                        static_cast<unsigned long long>(address),
+                        display.width, display.height, published);
+        }
+    }
     target = {Mirror(vk::Image(display.image), display.views, view_info.format, {}),
               vk::ImageLayout::eGeneral, ui_width, ui_height};
     return true;
@@ -2312,7 +2317,10 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     const auto it = displays.find(address);
     if (UseGsr2() && std::getenv("GOW3_GSR2_AUTO_PROBE")) {
         static unsigned queries = 0;
-        if (++queries <= 8 || queries % 1200 == 0) {
+        // Sampling only at count%1200 == 0 sampled the SAME guest address
+        // because GoW III rotates three display buffers. Capture a full
+        // three-buffer cycle with 0/1/2 residues instead.
+        if (++queries <= 12 || queries % 1200 <= 2) {
             std::printf("GSR2_PRESENT_QUERY guest=%#llx match=%d valid=%d buffers=%zu count=%u\n",
                         (unsigned long long)address, int(it != displays.end()),
                         int(it != displays.end() && it->second.valid), displays.size(), queries);
