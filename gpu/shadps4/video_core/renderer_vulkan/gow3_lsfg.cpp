@@ -739,7 +739,12 @@ int Lsfg::ProcessFrame(Scheduler& scheduler, vk::Image image, u32 width, u32 hei
     const auto present_start = Clock::now();
     Gow3LsfgPresent out{};
     char error[512] = {};
-    if (api->present(ctx.id, input_fd, count, &out, error, sizeof error) != 0) {
+    // The patched Bloodframe wrapper understands -2: its host-synchronized
+    // path submits without importing OR exporting external sync-fds, and the
+    // caller waits for the compute fence below. -1 still means a signaled
+    // Vulkan SYNC_FD in the normal upstream path, so it is not interchangeable.
+    const int engine_input_fd = sync_host ? -2 : input_fd;
+    if (api->present(ctx.id, engine_input_fd, count, &out, error, sizeof error) != 0) {
         // 失败时引擎未消费输入 sync file：所有权仍在我方，关闭防泄漏。
         if (input_fd >= 0) close(input_fd);
         Disable(error[0] ? error : "the framegen failed");
