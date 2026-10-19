@@ -1,2 +1,3 @@
 Single R8 Bionic APK build: initialize all PS4 display tiles from full GSR2 output, capture useful mature Vulkan scene stages, log actual presenter addresses. No change to HUD/framegen.
 R8 retry 2: inherited CI source tests updated to match late GPU capture sampling; native render code unchanged.
+R8 retry 3: compiler-reported Vulkan-Hpp ArrayWrapper1D errors corrected with std::array offsets. Final R8 native-compile verification.
