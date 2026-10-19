@@ -281,6 +281,22 @@ bool ResolutionNeedsRestart() {
          (v.upscaler == UpscalerTaa) != (v.startup_upscaler == UpscalerTaa));
 }
 
+void ReloadHudFromDisk() {
+#ifdef __ANDROID__
+    std::ifstream file(Path());
+    std::string line;
+    while (std::getline(file, line)) {
+        const auto equal = line.find('=');
+        if (equal == std::string::npos) continue;
+        const std::string key = line.substr(0, equal);
+        if (key == "show_fps" || key == "overlay_corner" || key == "overlay_offset_x" ||
+            key == "overlay_offset_y") {
+            Set(Get(), key, line.substr(equal + 1));
+        }
+    }
+#endif
+}
+
 void Save() {
     // 启动器的补丁选择和手柄配置不属于此菜单，保存时按整行保留。
     // 从当前磁盘读取，避免用启动时的缓存覆盖启动器后来保存的选择。
