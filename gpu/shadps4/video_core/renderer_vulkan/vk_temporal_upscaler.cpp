@@ -299,7 +299,19 @@ bool TemporalUpscaler::OnFrameStart() {
     const auto& settings = Gow3Settings::Get();
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
-    const int preset = Gow3Settings::RenderPreset();
+    int preset = Gow3Settings::RenderPreset();
+    // CUSA01623 currently has no verified temporal camera/motion data on Bionic.
+    // Without history, 240p -> 720p (Ultra Performance 3x) loses too much detail.
+    // Restrict the unstable 3x path to the verified 2x Performance source while
+    // keeping the user's requested preset unchanged in gow3.ini.
+    if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") && preset > 3) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::printf("GSR2: requested preset %d limited to Performance (640x360 -> 1280x720) until verified motion vectors are available\n", preset);
+        }
+        preset = 3;
+    }
     if (applied_preset != preset || settings.upscaler == Gow3Settings::UpscalerOff) failed = false;
     const bool active = Active();
     const bool jitter_on = active && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
@@ -2246,6 +2258,18 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     }
     // Same jitter convention as FSR 3; toggle 1 << 26 flips it for tests.
     const float sign = Gow3Toggle::Disabled(1u << 26) ? -1.0f : 1.0f;
+    // No valid camera pair was recovered in the supplied CUSA01623 logs.
+    // Zero vectors + stale history produce the severe blue/black smearing
+    // seen on screen. A history reset makes GSR2 do its current-frame spatial
+    // reconstruction while retaining the genuine GSR2 compute dispatch.
+    const bool temporal_ready = camera_motion.Ready();
+    if (!temporal_ready) {
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            std::printf("GSR2: camera/motion unavailable; running current-frame spatial reconstruction (history reset each frame)\n");
+        }
+    }
     const bool ok = gsr2->Record({
         .cmdbuf = cmdbuf,
         .color = color,
@@ -2256,10 +2280,11 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         .render_height = h,
         .output_width = ow,
         .output_height = oh,
-        .jitter = {sign * jitter[0], sign * jitter[1]},
+        .jitter = temporal_ready ? std::array<float, 2>{sign * jitter[0], sign * jitter[1]}
+                                 : std::array<float, 2>{0.0f, 0.0f},
         .vertical_fov = camera_motion.VerticalFov(),
-        .camera_still = camera_motion.CameraStill(),
-        .reset = reset,
+        .camera_still = temporal_ready ? camera_motion.CameraStill() : true,
+        .reset = reset || !temporal_ready,
     });
     if (!ok) {
         // Android 的回落目标是 off（FSR 3.1 在该平台是玩家判定无效的路径）；桌面维持 FSR 3.1。
