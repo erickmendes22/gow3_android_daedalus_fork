@@ -54,6 +54,13 @@ def main():
         shutil.copy2(ROOT/'android-launcher/app/src/main/assets/THIRD_PARTY_LICENSES.txt',notices/'THIRD_PARTY_LICENSES.txt')
         shutil.copy2(ROOT/'tools/android/bionic/NOTICE.txt',notices/'BIONIC-NOTICE.txt')
         shutil.copytree(ROOT/'tools/android/bionic/licenses',notices/'driver')
+        # zFitness native MIT Bloodframe must carry its upstream license.
+        bloodframe_licenses = source/'licenses'
+        if bloodframe_licenses.is_dir():
+            for item in bloodframe_licenses.glob('bloodframe*LICENSE*'):
+                if item.is_file(): shutil.copy2(item, notices/item.name)
+        shutil.copy2(ROOT/'gpu/third_party/snapdragon-gsr2/LICENSE',
+                     notices/'snapdragon-gsr2-LICENSE.txt')
         for dep, license in [('fmt-12.1.0','LICENSE'),('zydis-4.1.1','LICENSE'),
                              ('zycore-1.5.2','LICENSE'),('xxhash-0.8.3','LICENSE'),
                              ('miniz-3.1.2','LICENSE'),('ffmpeg-7.1.5','COPYING.LGPLv2.1')]:
