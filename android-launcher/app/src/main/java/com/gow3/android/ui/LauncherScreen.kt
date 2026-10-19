@@ -39,10 +39,11 @@ import com.gow3.android.data.LogManager
 import com.gow3.android.data.SaveManager
 import com.gow3.android.feature.about.AboutScreen
 import com.gow3.android.feature.home.HomeScreen
+import com.gow3.android.feature.settings.GeneralSettingsScreen
 import com.gow3.android.feature.mods.ModsScreen
 import com.gow3.android.ui.components.LauncherColors
 
-private enum class LauncherTab { HOME, MODS, ABOUT }
+private enum class LauncherTab { HOME, MODS, SETTINGS, ABOUT }
 
 @Composable
 internal fun LauncherScreen(
@@ -84,6 +85,7 @@ internal fun LauncherScreen(
             when (tab) {
                 LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg, onInstallUpdatePkg, pkgInstallBusy, pkgInstallMessage, pkgGeneration, onChangeLanguage)
                 LauncherTab.MODS -> ModsScreen()
+                LauncherTab.SETTINGS -> GeneralSettingsScreen()
                 LauncherTab.ABOUT -> AboutScreen(saves, logs, onChangeLanguage)
             }
         }
@@ -100,7 +102,7 @@ private fun BottomNavigation(selectedTab: LauncherTab, onTabSelected: (LauncherT
     ) {
         Row(
             modifier = Modifier
-                .widthIn(max = 420.dp)
+                .widthIn(max = 480.dp)
                 .background(LauncherColors.backgroundBottom)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(28.dp))
@@ -111,6 +113,7 @@ private fun BottomNavigation(selectedTab: LauncherTab, onTabSelected: (LauncherT
         ) {
             NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME, stringResource(R.string.nav_home), "⌂", onTabSelected)
             NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS, stringResource(R.string.nav_mods), "⚙", onTabSelected)
+            NavItem(LauncherTab.SETTINGS, selectedTab == LauncherTab.SETTINGS, "Settings", "☷", onTabSelected)
             NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT, stringResource(R.string.nav_about), "ⓘ", onTabSelected)
         }
     }
