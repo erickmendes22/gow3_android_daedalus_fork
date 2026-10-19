@@ -41,6 +41,10 @@ git -C "$src" cat-file -e "$BLOODFRAME_COMMIT^{commit}" 2>/dev/null ||
 git -C "$src" -c advice.detachedHead=false checkout -q "$BLOODFRAME_COMMIT"
 [[ $(git -C "$src" rev-parse HEAD) == "$BLOODFRAME_COMMIT" ]] ||
     { echo "$src is not at $BLOODFRAME_COMMIT" >&2; exit 1; }
+# The stock Bloodframe wrapper always exports sync-fds, including for zero-frame
+# temporal warmup. Provide a bounded CPU-sync path for the Adreno 830 compatibility
+# mode without modifying the pinned header, API, shaders or non-Gen8 fast path.
+python3 tools/android/bionic/patch_bloodframe_host_sync.py "$src/android/bb_lsfg.cpp"
 # 上游 build-android.sh 硬编码 linux-x86_64 工具链目录：按宿主替换（macOS=darwin-x86_64）。
 if [[ "$(uname -s)" == Darwin ]]; then
     perl -pi -e 's/linux-x86_64/darwin-x86_64/g' "$src/build-android.sh"
