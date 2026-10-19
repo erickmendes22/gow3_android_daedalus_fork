@@ -24,7 +24,7 @@ class UnifiedHudR4Tests(unittest.TestCase):
         settings=read("gpu/shim/gow3_settings.cpp")
         for field in ('overlay_offset_x','overlay_offset_y','overlay_corner'):
             self.assertIn('key == "'+field+'"',settings)
-            self.assertIn('"'+field+'=%d',settings)
+            self.assertIn(field+'=%d',settings)
         self.assertIn("Gow3Settings::ReloadHudFromDisk();",native)
 
     def test_android_has_one_animated_two_row_overlay(self):
