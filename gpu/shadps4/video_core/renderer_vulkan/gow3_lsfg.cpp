@@ -254,7 +254,11 @@ bool Lsfg::Initialize() {
     // GOW3_LSFG_SYNC=fd explicitly restores the upstream fast path for A/B tests.
     const std::string sync_mode = EnvString("GOW3_LSFG_SYNC");
     const std::string gpu_name = instance.GetPhysicalDevice().getProperties().deviceName.data();
+    const std::string driver_path = EnvString("GOW3_VULKAN_DRIVER");
+    // Scope this to the same Turnip Gen8 driver that crashed in the device log.
+    // Other 830 drivers retain fast sync-fd presentation by default.
     const bool turnip_gen8_workaround = gpu_name.find("Adreno (TM) 830") != std::string::npos &&
+                                        driver_path.find("/gen8") != std::string::npos &&
                                         sync_mode.empty();
     sync_host = sync_mode == "host" || turnip_gen8_workaround;
     if (turnip_gen8_workaround) {
