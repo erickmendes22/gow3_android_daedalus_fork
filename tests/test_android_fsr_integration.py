@@ -145,7 +145,10 @@ class AndroidFsrIntegrationTests(unittest.TestCase):
         self.assertIn('Gow3CameraLayout::FindPose(data, float_count)', camera)
         self.assertIn('Gow3CameraLayout::FindProjection(data, float_count)', camera)
         self.assertIn('frame_pose_votes >= 2', camera)
-        self.assertIn('camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address),', raster)
+        self.assertIn('const auto* data = constant_ring->Data(ring->offset);', raster)
+        self.assertIn('camera_motion->OnConstants(reinterpret_cast<const float*>(data),', raster)
+        self.assertNotIn('OnConstants(reinterpret_cast<const float*>(ring->address),', raster)
+        self.assertIn('std::strcmp(active_upscaler, "gsr2") == 0', raster)
         self.assertIn('ring->size >= 64', raster)
         self.assertIn('InversePair(a, b) && InversePair(b, a)', detector)
 
