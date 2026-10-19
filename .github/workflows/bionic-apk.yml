@@ -2,9 +2,9 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [fix/bionic-r10-gsr2-persistent-display-latch-20261019]
+    branches: [fix/bionic-r11-gsr2-real-camera-feed-20261019]
     paths:
-      - '.github/r10-build-trigger.txt'
+      - '.github/r11-build-trigger.txt'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r10-gsr2-persistent-display-latch-20261019'
+    if: github.ref == 'refs/heads/fix/bionic-r11-gsr2-real-camera-feed-20261019'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
