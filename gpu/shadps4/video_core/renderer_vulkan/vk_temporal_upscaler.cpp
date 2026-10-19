@@ -1378,6 +1378,49 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
 }
 
 void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
+    // The Bionic GSR2 path uses dynamically reduced SceneTargets, not the old
+    // GOW3_ANDROID_FSR_FIXED_OUTPUT / scaled_session override. Previously the
+    // unconditional guard below rejected every GSR2 display boundary, so a
+    // valid native-to-display upscale could never run at this safe handoff.
+    if (UseGsr2() && !scaled_session && std::getenv("GOW3_ANDROID_PORT")) {
+        static unsigned probes = 0;
+        static unsigned successful = 0;
+        const bool active = Active() && !done_this_frame && !ui_phase;
+        const VideoCore::ImageId scene = ldr_target;
+        const VideoCore::ImageId depth_id = camera_motion.Depth();
+        bool eligible = active && bool(color) && bool(scene) && bool(depth_id) &&
+                        scene_targets.Reduced() &&
+                        render_width < target_width && render_height < target_height;
+        if (eligible) {
+            const auto& color_image = texture_cache.GetImage(scene);
+            const auto& depth_image = texture_cache.GetImage(depth_id);
+            eligible = color == scene &&
+                       !FrameCapture::IsDisplayBuffer(color_image.info.guest_address) &&
+                       (color_image.info.pixel_format == vk::Format::eR8G8B8A8Unorm ||
+                        color_image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
+                       color_image.info.size.width == depth_image.info.size.width &&
+                       color_image.info.size.height == depth_image.info.size.height &&
+                       color_image.info.size.width == target_width &&
+                       color_image.info.size.height == target_height &&
+                       scene_targets.EligibleScene(color_image) && scene_targets.EligibleScene(depth_image);
+        }
+        if (eligible) {
+            RunScaled(); // After the completed scene, before the game's display copy / UI.
+            if (dispatched_last_frame && ++successful <= 3) {
+                std::printf("GSR2: real Vulkan dispatch recorded #%u %ux%u -> %ux%u motion=%s\n",
+                            successful, render_width, render_height, target_width, target_height,
+                            camera_motion.Ready() ? "camera" : "zero-motion fallback");
+                std::fflush(stdout);
+            }
+        } else if (++probes <= 8) {
+            std::printf("GSR2: display boundary skipped #%u active=%d color=%d ldr=%d depth=%d reduced=%d sizes=%ux%u->%ux%u matched=%d\n",
+                        probes, int(active), int(bool(color)), int(bool(scene)), int(bool(depth_id)),
+                        int(scene_targets.Reduced()), render_width, render_height,
+                        target_width, target_height, int(bool(scene) && color == scene));
+            std::fflush(stdout);
+        }
+        return; // Never fall through into the legacy FSR fixed-size handling.
+    }
     // In CUSA01715 the 640x360 frame is complete before the display copy.
     // GoW3 lacks Bloodborne's five-MRT scene and known HUD shader hashes.
     if (!std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || !scaled_session ||
