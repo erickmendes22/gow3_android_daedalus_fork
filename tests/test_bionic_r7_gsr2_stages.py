@@ -14,10 +14,10 @@ class BionicR7StageTests(unittest.TestCase):
             self.assertIn(part, code)
         self.assertIn('GSR_STAGE stage=%s y=%02u rgb=%s', code)
         self.assertIn("GOW3_GSR2_AUTO_PROBE", code)
-        self.assertIn("static bool gsr_probe_once = false;", code)
-        self.assertIn("static bool gsr_probe_present_once = false;", code)
-        self.assertIn("if (UseGsr2() && !gsr_probe_once", code)
-        self.assertIn("if (!gsr_probe_present_once && UseGsr2()", code)
+        self.assertIn("static u64 gsr_probe_frames = 0;", code)
+        self.assertIn("static unsigned gsr_probe_present_frames = 0;", code)
+        self.assertIn("if (UseGsr2() && gsr_probe_frame", code)
+        self.assertIn("if (gsr_capture_final && UseGsr2()", code)
         self.assertIn("scheduler.DeferPriorityOperation(", code)
         self.assertIn("GsrProbeHalf(", code)
 
@@ -25,8 +25,8 @@ class BionicR7StageTests(unittest.TestCase):
         script = source("tools/android/bionic/run-bionic.sh")
         self.assertIn("export GOW3_GSR2_AUTO_PROBE=1", script)
         workflow = source(".github/workflows/bionic-apk.yml")
-        self.assertIn("r7-build-trigger.txt", workflow)
-        self.assertIn("fix/bionic-r7-gsr2-stage-isolation-20261019", workflow)
+        self.assertIn("r8-build-trigger.txt", workflow)
+        self.assertIn("fix/bionic-r8-gsr2-present-init-20261019", workflow)
 
     def test_no_change_to_upscaler_shaders(self):
         # The shader binary is intentionally unmodified during isolation; avoid
