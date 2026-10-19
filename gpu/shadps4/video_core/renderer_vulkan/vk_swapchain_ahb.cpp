@@ -5,6 +5,7 @@
 #include <android/hardware_buffer.h>
 #include <poll.h>
 #include <unistd.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
