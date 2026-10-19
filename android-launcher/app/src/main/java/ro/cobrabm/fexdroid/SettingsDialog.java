@@ -201,6 +201,13 @@ final class SettingsDialog {
         final RadioGroup anisotropy=choices(box,new String[]{"Game default","2×","4×","8×","16×"},
             indexOf(anisotropyValues,get("anisotropy","0"),0));
         heading(box,"Image");
+        // Qualcomm's native temporal GSR2 provider, copied from zFitness.
+        // Explicit opt-in because it changes Vulkan resource allocation.
+        final Switch sgsr=toggle(box,"Snapdragon Super Resolution (GSR2)",
+                                 "gsr2".equals(get("upscaler","off")));
+        TextView gsrHint=new TextView(activity);
+        gsrHint.setText("Qualcomm temporal super resolution. Requires restart; disables the direct no-upscale mode.");
+        gsrHint.setTextSize(12); gsrHint.setAlpha(0.7f); box.addView(gsrHint);
         final Switch sharpen=toggle(box,"Sharpening","1".equals(get("sharpen","0")));
         final TextView sharpLabel=new TextView(activity); sharpLabel.setTextSize(14); box.addView(sharpLabel);
         final SeekBar sharpness=new SeekBar(activity); sharpness.setMax(100);
@@ -274,7 +281,7 @@ final class SettingsDialog {
                 changed.put("expand_video_arena",expandArena.isChecked() ? "1" : "0");
                 changed.put("patch_startup_black_screen",startupFix.isChecked() ? "1" : "0");
                 changed.put("anisotropy",anisotropyValues[Math.max(0,checkedIndex(anisotropy))]);
-                changed.put("upscaler","off");
+                changed.put("upscaler",sgsr.isChecked() ? "gsr2" : "off");
                 changed.put("fps_limit",FPS_VALUES[Math.max(0,checkedIndex(fpsLimit))]);
                 changed.put("preset","0");
                 changed.put("render_resolution",RESOLUTION_VALUES[Math.max(0,checkedIndex(resolutions))]);
