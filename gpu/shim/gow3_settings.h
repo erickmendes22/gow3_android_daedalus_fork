@@ -49,6 +49,8 @@ struct Values {
     std::atomic<int> overlay_scale{100}, overlay_corner{1}, overlay_opacity{50}, overlay_layout{0};
     /// Android performance HUD: signed horizontal nudge and downward offset, in dp.
     std::atomic<int> overlay_offset_x{0}, overlay_offset_y{0};
+    /// Bionic HUD vertical anchor: 0 top, 1 middle, 2 bottom.
+    std::atomic<int> overlay_anchor_y{0};
     std::atomic<int> menu_tab{0};
     /// Android touch overlay mouse mapping (overlay_mouse in gow3.ini). The display cursor is
     /// hidden while it is off, so the game picture shows no stuck X11 pointer.
