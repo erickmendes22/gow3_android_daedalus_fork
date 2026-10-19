@@ -72,6 +72,11 @@ mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || true)
 [ -n "$mem_kb" ] && [ "$mem_kb" -gt 0 ] && export GOW3_DEVICE_MEM_MB=${GOW3_DEVICE_MEM_MB:-$((mem_kb/1024))}
 # Select game rendering resolution directly.
 export GOW3_ANDROID_PORT=1
+# Upstream in-process bloodframe is opt-in; settings can update this file live.
+export GOW3_LSFG_STATE_FILE="$base/framegen.state"
+export GOW3_LSFG_LIB="$runtime/lib/libbloodframe.so"
+export GOW3_LSFG_DLL="$base/Lossless.dll"
+export GOW3_GAME_DIR="$game"
 unset GOW3_ANDROID_FSR_FIXED_OUTPUT GOW3_RENDER_RES GOW3_PATCH_INPUT_RES
 export GOW3_UPSCALER=none
 export GOW3_FSR1=0
