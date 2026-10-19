@@ -69,14 +69,21 @@ final class FrameGenDialog {
         }
         File log=new File(base,"logs/android-game.log");
         if(log.isFile()) {
-            String last=null;
-            try(BufferedReader input=new BufferedReader(new FileReader(log))) {
-                for(String line;(line=input.readLine())!=null;) {
-                    int at=line.indexOf("LSFG: off (");
-                    if(at>=0) last=line.substring(at).trim();
+            // Logs can be large. Read only the tail, not the whole file on the
+            // Android UI thread when opening this in-game dialog.
+            try(java.io.RandomAccessFile input=new java.io.RandomAccessFile(log,"r")) {
+                long length=input.length();
+                int count=(int)Math.min(length,96*1024L);
+                byte[] tail=new byte[count];
+                input.seek(length-count);
+                input.readFully(tail);
+                String text=new String(tail,StandardCharsets.UTF_8);
+                int at=text.lastIndexOf("LSFG: off (");
+                if(at>=0) {
+                    int end=text.indexOf('\n',at);
+                    return text.substring(at,end>=0?end:text.length()).trim();
                 }
             } catch(Exception ignored) {}
-            if(last!=null) return last;
         }
         return "Not active yet: enable it and start the game with your own Lossless.dll.";
     }
