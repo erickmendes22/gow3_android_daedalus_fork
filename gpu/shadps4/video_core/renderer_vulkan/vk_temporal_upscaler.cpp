@@ -1386,7 +1386,11 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
         static unsigned probes = 0;
         static unsigned successful = 0;
         const bool active = Active() && !done_this_frame && !ui_phase;
-        const VideoCore::ImageId scene = ldr_target;
+        // GoW3's forward final LDR pass may unbind depth; in that case
+        // OnColorTarget cannot latch it. The display boundary supplies the
+        // last completed COLOR attachment, so use that only if its actual
+        // format/extent, guest address and depth agree below.
+        const VideoCore::ImageId scene = ldr_target ? ldr_target : color;
         const VideoCore::ImageId depth_id = camera_motion.Depth();
         bool eligible = active && bool(color) && bool(scene) && bool(depth_id) &&
                         scene_targets.Reduced() &&
@@ -1405,8 +1409,10 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
                        scene_targets.EligibleScene(color_image) && scene_targets.EligibleScene(depth_image);
         }
         if (eligible) {
+            ldr_target = scene;
             RunScaled(); // After the completed scene, before the game's display copy / UI.
-            if (dispatched_last_frame && ++successful <= 3) {
+            // ui_phase is set only after a successful provider dispatch.
+            if (ui_phase && ++successful <= 3) {
                 std::printf("GSR2: real Vulkan dispatch recorded #%u %ux%u -> %ux%u motion=%s\n",
                             successful, render_width, render_height, target_width, target_height,
                             camera_motion.Ready() ? "camera" : "zero-motion fallback");
