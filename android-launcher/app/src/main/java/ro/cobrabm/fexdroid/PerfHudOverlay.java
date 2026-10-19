@@ -75,7 +75,7 @@ final class PerfHudOverlay extends View {
     // ---- 拖动状态（仅主线程访问） ----
     private float hudX, hudY;          // Position is derived from the anchor and actual measured HUD size.
     private final float density = getResources().getDisplayMetrics().density;
-    private int anchor = 1, offsetXd = 0, offsetYd = 0;
+    private int anchor = 1, vertical = 0;
     private boolean dragging;
     private float grabDx, grabDy;
 
@@ -320,21 +320,26 @@ final class PerfHudOverlay extends View {
         hudRect.set(0, 0, width, lineH * 2 + padPx * 3);
     }
     private void alignToAnchor() {
-        float w = hudRect.width();
-        float base = anchor == 0 ? marginPx : anchor == 4 ? (getWidth() - w) * 0.5f
-                : getWidth() - marginPx - w;
-        hudX = Math.max(marginPx, Math.min(base + offsetXd * density,
-                Math.max(marginPx, getWidth() - marginPx - w)));
-        hudY = Math.max(marginPx, Math.min(marginPx + offsetYd * density,
-                Math.max(marginPx, getHeight() - marginPx - hudRect.height())));
+        final float w = hudRect.width(), h = hudRect.height();
+        final float maxX = Math.max(marginPx, getWidth() - marginPx - w);
+        final float maxY = Math.max(marginPx, getHeight() - marginPx - h);
+        final float x = anchor == 0 ? marginPx : anchor == 4
+                ? (getWidth() - w) * 0.5f : maxX;
+        final float y = vertical == 0 ? marginPx : vertical == 1
+                ? (getHeight() - h) * 0.5f : maxY;
+        hudX = Math.max(marginPx, Math.min(x, maxX));
+        hudY = Math.max(marginPx, Math.min(y, maxY));
     }
-    /** Called on the main thread when the launcher or native in-game menu edits gow3.ini. */
+
+    /** Both the Android launcher and native in-game menu use the same 3x3 anchors. */
     void setConfiguration(HudConfig cfg) {
-        if (anchor == cfg.anchor && offsetXd == cfg.dx && offsetYd == cfg.dy) return;
+        if (anchor == cfg.anchor && vertical == cfg.vertical) return;
         anchor = cfg.anchor;
-        offsetXd = cfg.dx;
-        offsetYd = cfg.dy;
-        if (!dragging) alignToAnchor();
+        vertical = cfg.vertical;
+        if (!dragging && getWidth() > 0 && getHeight() > 0) {
+            updateMetrics();
+            alignToAnchor();
+        }
         invalidate();
     }
 
@@ -395,15 +400,21 @@ final class PerfHudOverlay extends View {
             case MotionEvent.ACTION_UP:
                 if (!dragging) return false;
                 dragging = false;
-                // Preserve the exact new position in the same INI used by the in-game menu.
-                float base = anchor == 0 ? marginPx : anchor == 4 ? (getWidth() - hudRect.width()) * 0.5f
-                        : getWidth() - marginPx - hudRect.width();
-                offsetXd = Math.max(-300, Math.min(300, Math.round((hudX - base) / density)));
-                offsetYd = Math.max(0, Math.min(300, Math.round((hudY - marginPx) / density)));
+                // Dragging snaps to one of the nine user-requested anchor points.
+                float centerX = hudX + hudRect.width() * 0.5f;
+                float centerY = hudY + hudRect.height() * 0.5f;
+                anchor = centerX < getWidth() / 3f ? 0
+                        : centerX > getWidth() * 2f / 3f ? 1 : 4;
+                vertical = centerY < getHeight() / 3f ? 0
+                        : centerY > getHeight() * 2f / 3f ? 2 : 1;
                 java.util.Map<String,String> changed = new java.util.LinkedHashMap<>();
-                changed.put(HudConfig.DX, String.valueOf(offsetXd));
-                changed.put(HudConfig.DY, String.valueOf(offsetYd));
+                changed.put(HudConfig.ANCHOR, String.valueOf(anchor));
+                changed.put(HudConfig.VERTICAL, String.valueOf(vertical));
+                changed.put(HudConfig.DX, "0");
+                changed.put(HudConfig.DY, "0");
                 HudConfig.update(new File(context.getFilesDir(), "gow3port/gow3.ini"), changed);
+                alignToAnchor();
+                invalidate();
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 dragging = false;
