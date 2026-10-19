@@ -25,8 +25,8 @@ class BionicR7StageTests(unittest.TestCase):
         script = source("tools/android/bionic/run-bionic.sh")
         self.assertIn("export GOW3_GSR2_AUTO_PROBE=1", script)
         workflow = source(".github/workflows/bionic-apk.yml")
-        self.assertIn("r8-build-trigger.txt", workflow)
-        self.assertIn("fix/bionic-r8-gsr2-present-init-20261019", workflow)
+        self.assertIn("r9-build-trigger.txt", workflow)
+        self.assertIn("fix/bionic-r9-gsr2-frame-lifecycle-20261019", workflow)
 
     def test_no_change_to_upscaler_shaders(self):
         # The shader binary is intentionally unmodified during isolation; avoid
