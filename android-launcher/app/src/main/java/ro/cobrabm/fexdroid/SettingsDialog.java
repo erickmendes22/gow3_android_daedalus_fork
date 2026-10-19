@@ -201,13 +201,31 @@ final class SettingsDialog {
         final RadioGroup anisotropy=choices(box,new String[]{"Game default","2×","4×","8×","16×"},
             indexOf(anisotropyValues,get("anisotropy","0"),0));
         heading(box,"Image");
-        // Qualcomm's native temporal GSR2 provider, copied from zFitness.
-        // Explicit opt-in because it changes Vulkan resource allocation.
-        final Switch sgsr=toggle(box,"Snapdragon Super Resolution (GSR2)",
-                                 "gsr2".equals(get("upscaler","off")));
+        // Same selection model as the native Bloodborne Android GSR2 menu.
+        // FSR 3.1 is intentionally not offered on this Daedalus Bionic runtime.
+        heading(box,"Upscaling — Qualcomm Snapdragon");
+        final String[] upscalerValues={"off","gsr2"};
+        final RadioGroup upscalers=choices(box,new String[]{
+            "Off · original in-game resolution",
+            "Snapdragon Game Super Resolution 2 (GSR2) · temporal"
+        }, "gsr2".equals(get("upscaler","off")) ? 1 : 0);
+        heading(box,"GSR2 rendering preset");
+        final String[] gsrPresets={"Native AA (100% of output)",
+            "Quality (67%)", "Balanced (59%)", "Performance (50%)",
+            "Ultra Performance (33%)"};
+        final String[] gsrPresetValues={"0","1","2","3","4"};
+        final RadioGroup gsrQuality=choices(box,gsrPresets,
+            indexOf(gsrPresetValues,get("preset","1"),1));
         TextView gsrHint=new TextView(activity);
-        gsrHint.setText("Qualcomm temporal super resolution. Requires restart; disables the direct no-upscale mode.");
+        gsrHint.setText("Bloodborne-style presets: scene resolution is reduced; GSR2 reconstructs to the output. Native AA keeps the scene at output size. Requires restart.");
         gsrHint.setTextSize(12); gsrHint.setAlpha(0.7f); box.addView(gsrHint);
+        Runnable updateGsr=() -> {
+            boolean enabled=checkedIndex(upscalers)==1;
+            for(int i=0;i<gsrQuality.getChildCount();i++)
+                gsrQuality.getChildAt(i).setEnabled(enabled);
+        };
+        upscalers.setOnCheckedChangeListener((g,id)->updateGsr.run());
+        updateGsr.run();
         final Switch sharpen=toggle(box,"Sharpening","1".equals(get("sharpen","0")));
         final TextView sharpLabel=new TextView(activity); sharpLabel.setTextSize(14); box.addView(sharpLabel);
         final SeekBar sharpness=new SeekBar(activity); sharpness.setMax(100);
@@ -281,9 +299,9 @@ final class SettingsDialog {
                 changed.put("expand_video_arena",expandArena.isChecked() ? "1" : "0");
                 changed.put("patch_startup_black_screen",startupFix.isChecked() ? "1" : "0");
                 changed.put("anisotropy",anisotropyValues[Math.max(0,checkedIndex(anisotropy))]);
-                changed.put("upscaler",sgsr.isChecked() ? "gsr2" : "off");
+                changed.put("upscaler",upscalerValues[Math.max(0,checkedIndex(upscalers))]);
                 changed.put("fps_limit",FPS_VALUES[Math.max(0,checkedIndex(fpsLimit))]);
-                changed.put("preset","0");
+                changed.put("preset",gsrPresetValues[Math.max(0,checkedIndex(gsrQuality))]);
                 changed.put("render_resolution",RESOLUTION_VALUES[Math.max(0,checkedIndex(resolutions))]);
                 changed.put("disable_dynamic_shadows",disableShadows.isChecked() ? "1" : "0");
                 changed.put("effect_dynamic_shadows",disableShadows.isChecked() ? "0" : "1");
