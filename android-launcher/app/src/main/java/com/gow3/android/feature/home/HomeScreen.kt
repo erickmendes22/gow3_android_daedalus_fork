@@ -89,6 +89,10 @@ internal fun HomeScreen(
         LaunchButton(onStartGame)
         Spacer(Modifier.height(20.dp))
         LaunchParameters(gameDir, updateDir, iniValues, ::save, onChooseGameFolder, onChooseUpdateFolder)
+        if (isBionic) {
+            FrameGenerationCard()
+            Spacer(Modifier.height(12.dp))
+        }
         GpuDriverCard()
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
