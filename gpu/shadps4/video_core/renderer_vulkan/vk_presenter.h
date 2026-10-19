@@ -4,6 +4,8 @@
 #pragma once
 
 #include <deque>
+#include <atomic>
+#include <chrono>
 
 #include <condition_variable>
 
@@ -14,6 +16,9 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#ifdef __ANDROID__
+#include "gow3_lsfg_state.h"
+#endif
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Frontend {
@@ -47,6 +52,9 @@ enum SchedulerType {
 };
 
 class Rasterizer;
+#ifdef __ANDROID__
+class Lsfg;
+#endif
 
 class Presenter {
 public:
@@ -108,6 +116,14 @@ private:
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
+#ifdef __ANDROID__
+    void PollLsfgState();
+    void ApplyLsfgState(const Gow3LsfgState::State& next);
+    void ApplyLsfgOutputMode();
+    void ApplyFramesCap();
+    bool PresentWithLsfg(Frame* frame);
+    void WriteLsfgStats();
+#endif
     void SetExpectedGameSize(s32 width, s32 height);
 
 private:
@@ -126,6 +142,15 @@ private:
     std::deque<u64> recent_frame_ticks; ///< gow3: GOW3_FRAMES_AHEAD bound (PrepareFrame)
     Scheduler present_scheduler;
     Scheduler flip_scheduler;
+#ifdef __ANDROID__
+    Gow3LsfgState::State lsfg_requested{Gow3LsfgState::Initial()};
+    Gow3LsfgState::Watcher lsfg_watch{lsfg_requested};
+    std::unique_ptr<Lsfg> lsfg;
+    std::atomic<u32> frames_cap{0};
+    std::chrono::steady_clock::time_point lsfg_stats_ts{};
+    bool lsfg_stats_active{false};
+    bool lsfg_stats_cleared{false};
+#endif
     Swapchain swapchain;
     Runtime runtime;
     std::unique_ptr<Rasterizer> rasterizer;
