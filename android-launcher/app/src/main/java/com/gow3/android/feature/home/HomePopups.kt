@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.gow3.android.R
+import androidx.compose.ui.res.stringResource
 import com.gow3.android.ui.components.LauncherColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,14 +37,14 @@ import java.util.zip.ZipFile
 internal enum class HomePopupKind { FPS, VIDEO, CHEATS, MODS }
 
 private val cheats = listOf(
-    "cheat_health" to "Vida infinita",
-    "cheat_magic" to "Magia infinita",
-    "cheat_item" to "Itens infinitos",
-    "cheat_rage" to "Fúria de Esparta infinita",
-    "cheat_orbs" to "Máximo de orbes vermelhos",
-    "cheat_very_hard" to "Desbloquear Very Hard",
-    "cheat_double_jumps" to "Saltos duplos infinitos",
-    "auto_qte" to "QTE automático (SpartanPort 2.6)",
+    "cheat_health" to R.string.popup_cheat_health,
+    "cheat_magic" to R.string.popup_cheat_magic,
+    "cheat_item" to R.string.popup_cheat_item,
+    "cheat_rage" to R.string.popup_cheat_rage,
+    "cheat_orbs" to R.string.popup_cheat_orbs,
+    "cheat_very_hard" to R.string.popup_cheat_very_hard,
+    "cheat_double_jumps" to R.string.popup_cheat_double_jumps,
+    "auto_qte" to R.string.popup_cheat_auto_qte,
 )
 private val resolutions = listOf("240p", "360p", "424p", "480p", "540p", "720p",
     "900p", "native", "1440p", "1800p", "4K", "8K")
@@ -115,22 +117,22 @@ internal fun HomePopup(
     } }
     val context = LocalContext.current
     val title = when (kind) {
-        HomePopupKind.FPS -> "FPS e VSync"
-        HomePopupKind.VIDEO -> "Vídeo e resolução"
-        HomePopupKind.CHEATS -> "Cheats"
+        HomePopupKind.FPS -> stringResource(R.string.popup_fps_title)
+        HomePopupKind.VIDEO -> stringResource(R.string.popup_video_title)
+        HomePopupKind.CHEATS -> stringResource(R.string.popup_cheats_title)
         HomePopupKind.MODS -> "Mods"
     }
     PopupShell(title, close) {
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             when (kind) {
                 HomePopupKind.FPS -> {
-                    Text("Limite de FPS", color = LauncherColors.gold, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.popup_fps_limit), color = LauncherColors.gold, fontWeight = FontWeight.Bold)
                     fpsLimits.forEach { value ->
-                        OptionRow(if (value == "0") "Ilimitado" else "$value FPS", fps == value) {
+                        OptionRow(if (value == "0") stringResource(R.string.popup_unlimited) else "$value FPS", fps == value) {
                             fps = value
                         }
                     }
-                    Text("FPS do motor do jogo", color = LauncherColors.gold, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.popup_engine_fps), color = LauncherColors.gold, fontWeight = FontWeight.Bold)
                     listOf("60", "120", "240").forEach { value ->
                         OptionRow("$value FPS", engine == value) { engine = value }
                     }
@@ -141,26 +143,26 @@ internal fun HomePopup(
                     }
                 }
                 HomePopupKind.VIDEO -> {
-                    Text("Resolução interna do jogo", color = LauncherColors.gold,
+                    Text(stringResource(R.string.popup_internal_resolution), color = LauncherColors.gold,
                         fontWeight = FontWeight.Bold)
                     resolutions.forEach { value ->
                         val label = when (value) {
-                            "native" -> "1080p (original)"
-                            "8K" -> "8K · Experimental · 7680×4320"
+                            "native" -> stringResource(R.string.popup_native_resolution)
+                            "8K" -> stringResource(R.string.popup_8k_resolution)
                             else -> value
                         }
                         OptionRow(label, resolution == value) { resolution = value }
                     }
-                    Text("8K exige eboot.bin CUSA01715 01.02 verificado. Se o SHA ou as assinaturas não corresponderem, o jogo recusa o patch. Uso de memória muito alto.",
+                    Text(stringResource(R.string.popup_8k_warning),
                         color = LauncherColors.textMuted, fontSize = 12.sp)
                 }
                 HomePopupKind.CHEATS -> {
-                    Text("Disponíveis somente quando o código do jogo corresponde às assinaturas verificadas. Aplicados no próximo início.",
+                    Text(stringResource(R.string.popup_cheat_warning),
                         color = LauncherColors.textMuted, fontSize = 12.sp)
                     cheats.forEach { (key, label) ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(label, Modifier.weight(1f), color = LauncherColors.textPrimary, fontSize = 14.sp)
+                            Text(stringResource(label), Modifier.weight(1f), color = LauncherColors.textPrimary, fontSize = 14.sp)
                             Switch(checked = enabled[key] == true,
                                 onCheckedChange = { enabled[key] = it })
                         }
@@ -170,8 +172,8 @@ internal fun HomePopup(
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PopupAction("Cancelar", modifier = Modifier.weight(1f), onClick = close)
-            PopupAction("Aplicar", primary = true, modifier = Modifier.weight(1f)) {
+            PopupAction(stringResource(R.string.popup_cancel), modifier = Modifier.weight(1f), onClick = close)
+            PopupAction(stringResource(R.string.popup_apply), primary = true, modifier = Modifier.weight(1f)) {
                 val updates = when (kind) {
                     HomePopupKind.FPS -> mapOf("fps_limit" to fps, "engine_fps" to engine,
                         "vsync" to if (vsync) "1" else "0")
@@ -180,7 +182,7 @@ internal fun HomePopup(
                     HomePopupKind.MODS -> emptyMap()
                 }
                 if (apply(updates)) close()
-                else Toast.makeText(context, "Não foi possível salvar", Toast.LENGTH_LONG).show()
+                else Toast.makeText(context, context.getString(R.string.popup_save_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -232,16 +234,16 @@ private fun ModsPopup(
                             null, null, null)?.use { c ->
                             if (c.moveToFirst()) c.getString(0) else null
                         } ?: "mod.zip"
-                        require(name.endsWith(".zip", ignoreCase = true)) { "Selecione um ZIP de mod." }
+                        require(name.endsWith(".zip", ignoreCase = true)) { context.getString(R.string.popup_mods_select_zip) }
                         val safe = name.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9._-]"), "_")
                             .take(72).trim('.', '_', '-')
-                        require(safe.isNotEmpty()) { "Nome de mod inválido." }
+                        require(safe.isNotEmpty()) { context.getString(R.string.popup_mods_invalid_name) }
                         val target = File(folder, "$safe.zip")
-                        require(!target.exists() && !File(folder, safe).exists()) { "Mod já instalado." }
+                        require(!target.exists() && !File(folder, safe).exists()) { context.getString(R.string.popup_mods_exists) }
                         val temp = File(folder, "$safe.zip.part")
                         try {
                             context.contentResolver.openInputStream(uri).use { input ->
-                                requireNotNull(input) { "Arquivo indisponível." }
+                                requireNotNull(input) { context.getString(R.string.popup_mods_unavailable) }
                                 temp.outputStream().use { output ->
                                     val buf = ByteArray(64 * 1024)
                                     var total = 0L
@@ -249,13 +251,13 @@ private fun ModsPopup(
                                         val n = input.read(buf)
                                         if (n < 0) break
                                         total += n
-                                        require(total <= (16L shl 30)) { "ZIP maior que 16 GiB." }
+                                        require(total <= (16L shl 30)) { context.getString(R.string.popup_mods_too_large) }
                                         output.write(buf, 0, n)
                                     }
                                 }
                             }
-                            ZipFile(temp).use { zip -> require(zip.size() > 0) { "ZIP vazio." } }
-                            check(temp.renameTo(target)) { "Não foi possível instalar o ZIP." }
+                            ZipFile(temp).use { zip -> require(zip.size() > 0) { context.getString(R.string.popup_mods_empty_zip) } }
+                            check(temp.renameTo(target)) { context.getString(R.string.popup_mods_install_failed) }
                         } finally {
                             temp.delete()
                         }
@@ -266,9 +268,9 @@ private fun ModsPopup(
                 outcome.onSuccess {
                     names = listModNames(folder)
                     if (it !in order) order.add(it)
-                    Toast.makeText(context, "Mod importado: $it", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.popup_mods_imported_fmt, it), Toast.LENGTH_SHORT).show()
                 }.onFailure {
-                    Toast.makeText(context, it.message ?: "Falha ao importar", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, it.message ?: context.getString(R.string.popup_mods_import_failed), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -276,14 +278,14 @@ private fun ModsPopup(
     PopupShell("Mods · SpartanPort 2.6", close) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            Text("Carregar mods", color = LauncherColors.textPrimary)
+            Text(stringResource(R.string.popup_mods_load), color = LauncherColors.textPrimary)
             Switch(checked = allEnabled, onCheckedChange = { allEnabled = it })
         }
-        Text("A ordem abaixo define a prioridade. Em conflitos, o mod mais abaixo vence.",
+        Text(stringResource(R.string.popup_mods_order_help),
             color = LauncherColors.textMuted, fontSize = 12.sp)
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             if (names.isEmpty()) {
-                Text("Nenhum mod instalado. Importe um ZIP compatível com o SpartanPort.",
+                Text(stringResource(R.string.popup_mods_none),
                     color = LauncherColors.textMuted)
             }
             order.filter { it in names }.forEach { mod ->
@@ -302,12 +304,12 @@ private fun ModsPopup(
                 }
             }
         }
-        PopupAction(if (importing) "Importando..." else "Importar mod ZIP") {
+        PopupAction(if (importing) stringResource(R.string.popup_mods_importing) else stringResource(R.string.popup_mods_import)) {
             if (!importing) importer.launch(arrayOf("application/zip", "application/octet-stream"))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PopupAction("Cancelar", modifier = Modifier.weight(1f), onClick = close)
-            PopupAction("Aplicar", primary = true, modifier = Modifier.weight(1f)) {
+            PopupAction(stringResource(R.string.popup_cancel), modifier = Modifier.weight(1f), onClick = close)
+            PopupAction(stringResource(R.string.popup_apply), primary = true, modifier = Modifier.weight(1f)) {
                 val obj = JSONObject().put("order", JSONArray(order)).put("disabled", JSONArray(disabled))
                 val success = runCatching {
                     settings.parentFile?.mkdirs()
@@ -316,7 +318,7 @@ private fun ModsPopup(
                     check(tmp.renameTo(settings))
                     check(apply(mapOf("load_mods" to if (allEnabled) "1" else "0")))
                 }.isSuccess
-                if (success) close() else Toast.makeText(context, "Falha ao salvar mods", Toast.LENGTH_LONG).show()
+                if (success) close() else Toast.makeText(context, context.getString(R.string.popup_mods_save_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
