@@ -1,0 +1,2 @@
+R17 Bionic correction: reject stale Vulkan texture-cache backing when guest surfaces at the same address and extent differ in pitch, tile/array mode, bank swizzle, sample count or resources.
+Compare R16 baseline 5fd136eeac872a9a7f941a4eacfcfa8c5dd3e0cd. Inspect GOW3_TEXTURE_LAYOUT_REJECT telemetry when available.
