@@ -73,6 +73,9 @@ class Release217(unittest.TestCase):
     def test_fex_cheats_and_upstream_qte_are_gate_by_signatures(self):
         probe=read("src/probe.c")
         self.assertIn("install_cheats_fex(",probe)
+        self.assertLess(probe.index("#endif /* GUEST_CPU_NATIVE - x86 raw E9 hooks */"),
+                        probe.index("static void install_cheats_fex("))
+        self.assertIn("/* On AArch64, FEX hooks must compile independently",probe)
         self.assertIn("guest_cpu_hook(address, hook->length, gow3_fex_cheat_callback)",probe)
         self.assertIn("gow3_cheat_signature_match(",probe)
         self.assertIn("install_auto_qte_fex(",probe)
