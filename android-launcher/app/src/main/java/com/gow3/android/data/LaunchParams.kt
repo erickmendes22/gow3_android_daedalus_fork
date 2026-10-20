@@ -88,6 +88,7 @@ internal object LaunchParams {
                 LaunchOption("1440p", R.string.param_resolution_1440),
                 LaunchOption("1800p", R.string.param_resolution_1800),
                 LaunchOption("4K", R.string.param_resolution_4k),
+                LaunchOption("8K", R.string.param_resolution_8k),
             ),
             defaultValue = "720p",
             descriptionRes = R.string.param_render_resolution_desc,
