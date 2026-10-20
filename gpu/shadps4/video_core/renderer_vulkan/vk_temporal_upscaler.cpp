@@ -400,8 +400,16 @@ bool TemporalUpscaler::OnFrameStart() {
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
     if (!scaled_session) {
-        scene_targets.SetSize(SceneResolution::ForPreset(active ? preset : 0,
-                                                        {target_width, target_height}));
+        const bool true_input = UseGsr2() && std::getenv("GOW3_GSR2_TRUE_INPUT");
+        // A native-input GSR2 frame is already rendered by the PS4 executable
+        // at the chosen low resolution. NEVER rescale it again via SceneTargets.
+        // Every draw, including forward passes that cannot use a proxy, now
+        // targets the same real framebuffer extent.
+        const auto requested_size = true_input
+            ? scene_targets.GuestSize()
+            : SceneResolution::ForPreset(active ? preset : 0,
+                                         {target_width, target_height});
+        scene_targets.SetSize(requested_size);
         render_width = scene_targets.Size().width;
         render_height = scene_targets.Size().height;
     }
@@ -1452,8 +1460,11 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
         // format/extent, guest address and depth agree below.
         const VideoCore::ImageId scene = color; // Last completed attachment at the display-copy boundary.
         const VideoCore::ImageId depth_id = camera_motion.Depth();
+        const bool native_input = std::getenv("GOW3_GSR2_TRUE_INPUT") != nullptr;
+        const auto actual_guest = scene_targets.GuestSize();
         bool eligible = active && bool(color) && bool(scene) && bool(depth_id) &&
-                        scene_targets.Reduced() &&
+                        ((native_input && !scene_targets.Reduced()) ||
+                         (!native_input && scene_targets.Reduced())) &&
                         render_width < target_width && render_height < target_height;
         if (eligible) {
             const auto& color_image = texture_cache.GetImage(scene);
@@ -1464,8 +1475,8 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
                         color_image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
                        color_image.info.size.width == depth_image.info.size.width &&
                        color_image.info.size.height == depth_image.info.size.height &&
-                       color_image.info.size.width == target_width &&
-                       color_image.info.size.height == target_height &&
+                       color_image.info.size.width == (native_input ? actual_guest.width : target_width) &&
+                       color_image.info.size.height == (native_input ? actual_guest.height : target_height) &&
                        scene_targets.EligibleScene(color_image) && scene_targets.EligibleScene(depth_image);
         }
         if (eligible) {
@@ -1824,7 +1835,7 @@ void TemporalUpscaler::RunScaled() {
     vk::Image depth_image = depth.GetImage(), color_image = color.GetImage();
     vk::ImageView depth_view{}, color_view{};
     u32 source_width = iw, source_height = ih;
-    if (!scaled_session) {
+    if (!scaled_session && !(UseGsr2() && std::getenv("GOW3_GSR2_TRUE_INPUT"))) {
         VideoCore::ImageViewInfo ci, di;
         ci.format = color.info.pixel_format;
         di.format = depth_format;
@@ -1837,8 +1848,18 @@ void TemporalUpscaler::RunScaled() {
         source_width = w;
         source_height = h;
     } else {
+        // Native GSR2 path: sample the ACTUAL low-resolution scene. Never
+        // create a proxy by copying/downscaling a full-resolution guest image.
         depth_view = CachedView(depth, depth_format, vk::ImageAspectFlagBits::eDepth);
         color_view = CachedView(color, color.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+        if (UseGsr2() && std::getenv("GOW3_GSR2_TRUE_INPUT")) {
+            static bool announced = false;
+            if (!announced) {
+                announced = true;
+                std::printf("GSR2_NATIVE_INPUT_VERIFIED guest=%ux%u dispatch=%ux%u output=%ux%u proxy=0\\n",
+                            iw, ih, w, h, ow, oh);
+            }
+        }
         runtime.Transit(&depth, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
                         vk::AccessFlagBits2::eShaderRead);
         runtime.Transit(&color, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
