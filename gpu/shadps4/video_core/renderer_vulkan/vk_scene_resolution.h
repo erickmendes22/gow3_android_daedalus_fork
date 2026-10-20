@@ -57,6 +57,11 @@ public:
     /// Whether SampleProxy would return the proxy of `image` for these levels.
     [[nodiscard]] bool ProxyCurrent(const VideoCore::Image& image, u32 level = 0,
                                     u32 levels = 1) const;
+    /// A reduced scene input is only valid when the guest really rendered it
+    /// at proxy resolution THIS frame. Merely allocating a downsampled proxy
+    /// on read is not evidence of real upscaling or a performance gain.
+    void BeginFrame() { ++frame_serial; }
+    [[nodiscard]] bool WasRasterizedReduced(const VideoCore::Image& image) const;
     /// SampleProxy for a view obtained before (valid while Generation() is unchanged): the
     /// layout to sample it in.
     vk::ImageLayout PrepareSample(const VideoCore::Image& image, u32 level = 0);
@@ -79,6 +84,7 @@ private:
         std::vector<std::pair<VideoCore::ImageViewInfo, vk::UniqueImageView>> views;
         vk::ImageLayout layout = vk::ImageLayout::eUndefined;
         SceneResolution::Coherence state;
+        u64 last_raster_frame = 0;
     };
     static constexpr u64 Key(u64 uid, u32 level) {
         return uid << 4 | level;
@@ -108,6 +114,7 @@ private:
     bool copying = false;
     bool force_stencil_bits = false; ///< test the portable resampler on any driver
     bool guest_scene_observed = false;
+    u64 frame_serial = 0;
     u64 generation = 0;
     mutable std::unordered_map<vk::Format, vk::FormatFeatureFlags> format_features;
     mutable std::array<vk::FormatFeatureFlags, 256> format_table{};
