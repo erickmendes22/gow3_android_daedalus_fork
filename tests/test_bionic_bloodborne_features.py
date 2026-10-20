@@ -14,13 +14,20 @@ class BionicBloodborneFeatureTests(unittest.TestCase):
         self.assertNotIn("frame->width == expected_frame_width && frame->height == expected_frame_height &&",presenter)
         self.assertIn("PresentWithLsfg(frame)", presenter)
 
-    def test_gsr2_has_bloodborne_quality_choices(self):
+    def test_gsr2_runtime_is_preserved_but_in_game_controls_are_hidden(self):
         java = read("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/SettingsDialog.java")
-        for preset in ('Native AA', 'Quality', 'Balanced', 'Performance', 'Ultra Performance'):
-            self.assertIn(preset, java)
-        self.assertIn('changed.put("preset",gsrPresetValues',java)
-        self.assertNotIn('changed.put("preset","0")',java)
-        self.assertIn('changed.put("upscaler",upscalerValues',java)
+        graphics=java.split("    void show() {",1)[1].split(
+            "    /** Saves the changed keys",1)[0]
+        self.assertNotIn("Snapdragon Game Super Resolution",graphics)
+        self.assertNotIn("GSR2 rendering preset",graphics)
+        self.assertNotIn('changed.put("upscaler"',graphics)
+        self.assertNotIn('changed.put("preset"',graphics)
+        settings=read("gpu/shim/gow3_settings.cpp")
+        self.assertIn('if (key == "upscaler")',settings)
+        self.assertIn('key == "preset"',settings)
+        # The 5 reconstruction ratios remain in the renderer for future use.
+        presets=read("gpu/shadps4/video_core/renderer_vulkan/scene_resolution.h")
+        self.assertIn("scales{1.0, 1.5, 1.7, 2.0, 3.0}",presets)
 
     def test_bloodborne_framegen_settings_preserved_in_home(self):
         java = read("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/FrameGenDialog.java")
