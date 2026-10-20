@@ -115,15 +115,28 @@ def derive(game, config, state_path, env):
         if names:
             # gow3.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
-            # GSR2 must match the real eboot-allocated scene, not the desktop
-            # default 1920x1080. This retail CUSA01623/01715 01.02 SHA is
-            # byte-validated and the actual 720p resolution patch is selected.
+            # Render the REAL guest scene at the GSR2 input resolution. R7-R17
+            # forced 1280x720 guest allocations while advertising a smaller
+            # SceneTargets proxy; native fallback passes made that effectively
+            # 720p rendering followed by a filter/downsample/re-upscale.
+            # The verified ten-site CUSA01715 patch includes the half-resolution
+            # post-process dimensions, so this can be done without a proxy.
             from patches import CUSA01715_0102_ANDROID_SHA
             if (gsr2_requested and identity['title_id'] in ('CUSA01623', 'CUSA01715') and
-                    identity['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
-                    'Resolution Patch - 720p' in names):
-                updates['GOW3_PATCH_INPUT_RES'] = '1280x720'
-                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-720p-target'
+                    identity['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA):
+                # The host/display remains at 1280x720; only the guest's own
+                # framebuffer allocations change. Preset 0 is native (1:1).
+                true_input = {'0': '1280x720', '1': '854x480',
+                              '2': '752x424', '3': '640x360',
+                              '4': '640x360'}.get(ini.get('preset', '0'), '1280x720')
+                names = [name for name in names
+                         if not name.startswith('Resolution Patch') and
+                         name != 'Bug Fix - Texture Corruption Fix']
+                names.append('Resolution Patch - 720p')  # checked template, dynamic bytes
+                updates['GOW3_PATCH_INPUT_RES'] = true_input
+                updates['GOW3_GSR2_TRUE_INPUT'] = '1'
+                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-guest-native-input'
+                updates['GOW3_OUTPUT_RES'] = '1280x720'
             # This exact-address patch belongs only to the supplied and
             # verified eboot revision. Other builds retain their shadows.
             shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
