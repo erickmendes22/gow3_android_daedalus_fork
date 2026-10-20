@@ -67,6 +67,8 @@ struct Values {
     /// Damage hook (src/actor_hook.h): enemy health bar, off by default.
     std::atomic<bool> enemy_health_bar{false};
     std::atomic<bool> actor_watch_supported{false};
+    std::atomic<bool> auto_qte{false}; // SpartanPort 2.6, saved off by default
+    std::atomic<bool> qte_supported{false};
     // Graphics (gow3_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};
