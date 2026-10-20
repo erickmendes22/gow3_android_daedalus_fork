@@ -69,7 +69,7 @@ class Cusa01715ResolutionTests(unittest.TestCase):
             with self.subTest(preset=preset):
                 writes, evidence = patches.android_native_resolution_writes(
                     XML, image, segs, HASH, preset, ["Resolution Patch - 720p"])
-                self.assertEqual(len(writes), 8)
+                self.assertEqual(len(writes), 10)
                 self.assertEqual(evidence["render"], preset)
                 self.assertEqual(evidence["output"], preset)
                 self.assertEqual(tuple(int(x, 16) for x in evidence["verified_sites"]),
@@ -79,6 +79,18 @@ class Cusa01715ResolutionTests(unittest.TestCase):
                     width, height = map(int, preset.split("x"))
                     target = width if patches.CUSA01715_0102_FIELDS[i] == "width" else height
                     self.assertEqual(payload, target.to_bytes(len(payload), 'little'))
+                half_width = writes[0x007f2a3c - patches.EBOOT_BASE]
+                half_height = writes[0x007f2a40 - patches.EBOOT_BASE]
+                self.assertEqual(int.from_bytes(half_width, 'little'), width // 2)
+                self.assertEqual(int.from_bytes(half_height, 'little'), height // 2)
+
+    def test_rejects_wrong_original_half_resolution_data(self):
+        image = sample_image()
+        image[0x007f2a3c - patches.EBOOT_BASE] ^= 1
+        with self.assertRaises(ValueError):
+            patches.android_native_resolution_writes(
+                XML, image, [(0, len(image))], HASH, "1280x720",
+                ["Resolution Patch - 720p"])
 
     def test_shadow_branch_patch_is_validated_by_cusa_signature(self):
         image = sample_image()
