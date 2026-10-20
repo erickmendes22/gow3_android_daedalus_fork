@@ -492,6 +492,22 @@ def main():
         writes=remapped
         print(f"Patches: verified CUSA01715 DIRECT render {native_info['render']} "
               f"({len(overrides)} operand writes)")
+    # 8K is explicitly experimental but NEVER unverified. The sole upstream
+    # target is the byte-exact CUSA01715 01.02 eboot. Signature mismatches are
+    # fatal rather than silently starting a different resolution.
+    if 'Resolution Patch - 8K' in names:
+        if sha != REFERENCE_SHA256:
+            raise ValueError('8K EXPERIMENTAL refused: eboot.bin SHA-256 is not verified CUSA01715 01.02')
+        if 'Resolution Patch - 8K' in skipped:
+            raise ValueError(f"8K EXPERIMENTAL refused: eboot.bin signature mismatch ({skipped['Resolution Patch - 8K']})")
+        expected = {0x0055a876,0x005f0b3b,0x005f0b43,0x005f0b4c,
+                    0x005f0b53,0x005643f3,0x00564400,0x005ff769,
+                    0x005ff76f,0x007c46b4,0x007c46b8,0x0056bb82,
+                    0x0060953d,0x007f2a3c,0x007f2a40,0x007cd918}
+        actual = {offset+EBOOT_BASE for offset,_ in writes}
+        if not expected.issubset(actual):
+            raise ValueError(f'8K EXPERIMENTAL refused: missing patched eboot operands: {sorted(expected-actual)}')
+        print('8K EXPERIMENTAL: verified eboot SHA, all 16 opcode/pool signatures and 1x scene samples')
     for name,reason in skipped.items():
         print(f'Patches: {name} skipped ({reason} in this eboot.bin)')
     if a.patches_dir and sha==REFERENCE_SHA256:
