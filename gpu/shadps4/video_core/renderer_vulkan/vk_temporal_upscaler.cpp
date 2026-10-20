@@ -345,18 +345,10 @@ bool TemporalUpscaler::OnFrameStart() {
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
     int preset = Gow3Settings::RenderPreset();
-    // CUSA01623 currently has no verified temporal camera/motion data on Bionic.
-    // Without history, 240p -> 720p (Ultra Performance 3x) loses too much detail.
-    // Restrict the unstable 3x path to the verified 2x Performance source while
-    // keeping the user's requested preset unchanged in gow3.ini.
-    if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") && preset > 3) {
-        static bool warned = false;
-        if (!warned) {
-            warned = true;
-            std::printf("GSR2: requested preset %d limited to Performance (640x360 -> 1280x720) until verified motion vectors are available\n", preset);
-        }
-        preset = 3;
-    }
+    // Honor each of the five user-selected presets. In earlier Bionic
+    // builds Ultra Performance silently ran at Performance, even when the
+    // launcher showed 3x. Validity checks below independently decide whether
+    // real reduced-raster input can be passed to GSR2 for that preset.
     if (applied_preset != preset || settings.upscaler == Gow3Settings::UpscalerOff) failed = false;
     const bool active = Active();
     const bool jitter_on = active && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
@@ -1475,7 +1467,10 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
                        color_image.info.size.height == depth_image.info.size.height &&
                        color_image.info.size.width == target_width &&
                        color_image.info.size.height == target_height &&
-                       scene_targets.EligibleScene(color_image) && scene_targets.EligibleScene(depth_image);
+                       // Native AA samples the original 1:1 images and should
+                       // not require either image to support BLIT/proxy tiling.
+                       (native_aa || (scene_targets.EligibleScene(color_image) &&
+                                      scene_targets.EligibleScene(depth_image)));
             // The old guard accepted any generated 752x424 proxy, including a
             // native 1280x720 image downsampled on demand at RunScaled. That
             // executes GSR2 like a filter WITHOUT actually rendering fewer
