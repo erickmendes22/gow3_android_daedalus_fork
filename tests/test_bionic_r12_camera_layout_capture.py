@@ -20,9 +20,11 @@ class R12(unittest.TestCase):
         self.assertIn("probe_seen < 1024",camera)
         self.assertIn("probe_written < 32",camera)
         self.assertIn("probe_seen <= 8 || probe_seen % 32 == 0",camera)
-        self.assertIn("std::min(float_count, size_t(128))",camera)
+        self.assertIn("std::min(float_count, size_t(512))",camera)
         self.assertIn("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u",camera)
-        self.assertIn("std::bit_cast<u32>(data[i])",camera)
+        self.assertIn("std::bit_cast<u32>(data[start + i])",camera)
+        self.assertIn("start += 128",camera)
+        self.assertIn("offset=%zu count=%zu hex=%s",camera)
         self.assertIn("std::fflush(stdout);",camera)
     def test_do_not_fake_temporal_matrices(self):
         camera=get("gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.cpp")
