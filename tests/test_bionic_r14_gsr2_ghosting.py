@@ -27,7 +27,7 @@ class R14Ghosting(unittest.TestCase):
         segment=c.split("void TemporalUpscaler::RunScaled()",1)[1].split(
             "vk::ImageView TemporalUpscaler::Mirror(",1)[0]
         self.assertIn("if (reprojection)",segment)
-        self.assertIn("cmd.clearColorImage(vk::Image(motion_image)",segment)
+        self.assertIn("cmdbuf.clearColorImage(vk::Image(motion_image)",segment)
     def test_one_prefill_per_new_image_and_no_host_reuse_without_redirection(self):
         c=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         h=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.h")
