@@ -12,10 +12,10 @@ typedef struct {
     unsigned id, length, replacement_length;
     unsigned char original[9], replacement[40];
     Gow3Signature site;  /* finds the hook in any build; offset is the reference build's */
-} SpartanCheatHook;
+} Gow3CheatHook;
 /* Celogamez's CUSA01623 v01.02 cheats, adapted to the local executable's offsets.
  * https://github.com/GoldHEN/GoldHEN_Cheat_Repository/blob/main/json/CUSA01623_01.02.json */
-static const SpartanCheatHook gow3_cheat_hooks[] = {
+static const Gow3CheatHook gow3_cheat_hooks[] = {
     {0x5040e,GOW3_CHEAT_HEALTH,9,30,
      {0xc4,0xc1,0x7a,0x11,0x85,0xcc,0x01,0,0},
      {0x9c,0x41,0x80,0xbd,0x98,0x02,0,0,0,0x75,9,
@@ -56,11 +56,11 @@ static const SpartanCheatHook gow3_cheat_hooks[] = {
      {"0f 84 ?? ?? ?? ?? 41 f6 84 24 ac 04 00 00 04 0f 85 ?? ?? ?? ??",6}}
 };
 #define GOW3_CHEAT_HOOK_COUNT (sizeof(gow3_cheat_hooks)/sizeof(gow3_cheat_hooks[0]))
-static inline int gow3_cheat_signature_match(const SpartanCheatHook *hook,
+static inline int gow3_cheat_signature_match(const Gow3CheatHook *hook,
                                             const unsigned char *code, uint64_t size) {
     return size >= hook->length && !memcmp(code, hook->original, hook->length);
 }
-static inline unsigned gow3_cheat_build_stub(unsigned char *out, const SpartanCheatHook *hook,
+static inline unsigned gow3_cheat_build_stub(unsigned char *out, const Gow3CheatHook *hook,
                                             uintptr_t flag, uintptr_t resume) {
     /* Keep the SysV red zone, GPRs and condition flags intact; no host call on the hot path. */
     const unsigned char prefix[] = {
