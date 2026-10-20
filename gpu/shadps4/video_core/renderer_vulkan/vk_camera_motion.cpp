@@ -419,7 +419,11 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
         (std::getenv("GOW3_ANDROID_PORT") && selected && !std::strcmp(selected, "gsr2"))) {
         static u32 camera_frames = 0;
         const u32 frame_number = ++camera_frames;
-        if (selected && !std::strcmp(selected, "gsr2") &&
+        // R12 recovered the real camera offsets. Keep raw floating-point
+        // constant dumping available only as an explicit forensic opt-in,
+        // not on every regular R13 test session.
+        if (std::getenv("GOW3_GSR2_CAMERA_LAYOUT_PROBE") &&
+            selected && !std::strcmp(selected, "gsr2") &&
             std::getenv("GOW3_ANDROID_PORT") &&
             (frame_number == 1200 || frame_number == 3600)) {
             probe_frame = frame_number;
