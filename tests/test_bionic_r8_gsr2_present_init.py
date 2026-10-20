@@ -30,6 +30,6 @@ class R8(unittest.TestCase):
         self.assertIn("export GOW3_GSR2_PREFILL_DISPLAY=1",script)
     def test_one_gated_ci(self):
         ci=read(".github/workflows/bionic-apk.yml")
-        self.assertIn("r13-build-trigger.txt",ci)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",ci)
+        self.assertIn("r14-build-trigger.txt",ci)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",ci)
 if __name__=="__main__": unittest.main()
