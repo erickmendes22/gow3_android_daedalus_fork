@@ -1,0 +1,3 @@
+R16 Bionic targeted jitter mismatch correction
+Code proof: Rasterizer draws jittered scene on invalid camera frames, while previous RecordGsr2 passed zero jitter. Invalid camera counted 3615 / 6000 dispatches in 2026-10-20 07:35 test log.
+R14-R15 fixes remain intact.
