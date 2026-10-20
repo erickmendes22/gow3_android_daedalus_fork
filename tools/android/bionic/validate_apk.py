@@ -83,7 +83,7 @@ def main():
     a=p.parse_args()
     badging=subprocess.check_output([a.aapt,'dump','badging',str(a.apk)],text=True)
     for expected in ["name='com.gow3.android.bionic'","sdkVersion:'30'","targetSdkVersion:'28'",
-                     "native-code: 'arm64-v8a'","versionName='2.1.6-daedalus.4-bionic'"]:
+                     "native-code: 'arm64-v8a'","versionName='2.1.7-bionic'"]:
         if expected not in badging:raise ValueError('APK identity mismatch: '+expected)
     with zipfile.ZipFile(a.apk) as apk:
         apk.getinfo('lib/arm64-v8a/libgow3present.so')
