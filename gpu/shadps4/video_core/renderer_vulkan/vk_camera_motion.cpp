@@ -319,7 +319,8 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             // Draw calls within a scene may move slightly (animated camera).
             // Demand two independently bound coherent camera projections
             // before allowing temporal history to be used.
-            bool coherent = have_pose && have_projection;
+            bool coherent = have_pose && have_projection &&
+                            frame_camera_shader_hash == shader_hash;
             if (coherent) {
                 if (std::abs(frame_projection[0] - recovered.projection[0]) > 0.09f ||
                     std::abs(frame_projection[1] - recovered.projection[1]) > 0.16f ||
@@ -341,11 +342,13 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             frame_view = recovered.view;
             frame_inverse = recovered.inverse;
             frame_projection = recovered.projection;
+            frame_camera_shader_hash = shader_hash;
             have_pose = have_projection = true;
             if (frame_pose_votes >= 2) {
                 current.view = frame_view;
                 current.inv_view = frame_inverse;
                 current.proj = frame_projection;
+                current.shader_hash = frame_camera_shader_hash;
                 current.valid = true;
                 frame_has_camera = true;
                 static unsigned confirmed = 0;
@@ -453,6 +456,7 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
     frame_has_camera = false;
     have_pose = have_projection = false;
     frame_pose_votes = frame_scanned_buffers = 0;
+    frame_camera_shader_hash = 0;
     depth_id = {};
 }
 
