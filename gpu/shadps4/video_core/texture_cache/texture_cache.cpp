@@ -784,7 +784,7 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             static u32 rejected_overlap_layout = 0;
             if (++rejected_overlap_layout <= 12 || rejected_overlap_layout % 1000 == 0) {
                 std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT count=%u address=%#llx "
-                            "pitch=%u->%u tile=%u->%u samples=%u->%u\\n",
+                            "pitch=%u->%u tile=%u->%u samples=%u->%u\n",
                             rejected_overlap_layout,
                             static_cast<unsigned long long>(a.guest_address),
                             b.pitch, a.pitch, u32(b.tile_mode), u32(a.tile_mode),
@@ -1118,7 +1118,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             static u32 layout_rejections = 0;
             if (++layout_rejections <= 12 || layout_rejections % 1000 == 0) {
                 std::printf("GOW3_TEXTURE_LAYOUT_REJECT count=%u address=%#llx "
-                            "pitch=%u->%u tile=%u->%u samples=%u->%u\\n",
+                            "pitch=%u->%u tile=%u->%u samples=%u->%u\n",
                             layout_rejections,
                             static_cast<unsigned long long>(info.guest_address),
                             cache_image.info.pitch, info.pitch,
