@@ -52,6 +52,46 @@ public:
     [[nodiscard]] bool Ready() const noexcept {
         return current.valid && previous.valid && depth_id;
     }
+    // R14 applies stricter temporal validity only to GSR2. Other upscalers
+    // continue using Ready(), unchanged.
+    enum class Gsr2HistoryStatus : u32 {
+        Valid = 0, MissingCamera, DifferentShader, ProjectionCut, PositionCut, RotationCut
+    };
+    [[nodiscard]] Gsr2HistoryStatus Gsr2HistoryValidity() const noexcept {
+        if (!Ready() || !current.shader_hash || !previous.shader_hash)
+            return Gsr2HistoryStatus::MissingCamera;
+        if (current.shader_hash != previous.shader_hash)
+            return Gsr2HistoryStatus::DifferentShader;
+        for (unsigned i = 0; i < 4; ++i) {
+            const float a = current.proj[i], b = previous.proj[i];
+            if (!std::isfinite(a) || !std::isfinite(b))
+                return Gsr2HistoryStatus::ProjectionCut;
+            if (std::abs(a - b) > (i < 2 ? 0.055f : 0.008f))
+                return Gsr2HistoryStatus::ProjectionCut;
+        }
+        float displacement_sq = 0.f;
+        for (unsigned r = 0; r < 3; ++r) {
+            const float a = current.inv_view[r * 4 + 3];
+            const float b = previous.inv_view[r * 4 + 3];
+            if (!std::isfinite(a) || !std::isfinite(b))
+                return Gsr2HistoryStatus::PositionCut;
+            displacement_sq += (a - b) * (a - b);
+        }
+        if (displacement_sq > 64.f) return Gsr2HistoryStatus::PositionCut;
+        float forward_dot = 0.f, norms[2]{};
+        for (unsigned k = 0; k < 3; ++k) {
+            const float a = current.view[8 + k], b = previous.view[8 + k];
+            if (!std::isfinite(a) || !std::isfinite(b))
+                return Gsr2HistoryStatus::RotationCut;
+            forward_dot += a * b;
+            norms[0] += a * a;
+            norms[1] += b * b;
+        }
+        if (norms[0] < 0.9f || norms[1] < 0.9f ||
+            forward_dot < 0.90f * std::sqrt(norms[0] * norms[1]))
+            return Gsr2HistoryStatus::RotationCut;
+        return Gsr2HistoryStatus::Valid;
+    }
     [[nodiscard]] VideoCore::ImageId Depth() const noexcept {
         return depth_id;
     }
@@ -101,6 +141,7 @@ private:
         std::array<float, 12> view{};     ///< world to view, 3x4 rows
         std::array<float, 12> inv_view{}; ///< view to world, 3x4 rows
         std::array<float, 4> proj{};      ///< x scale, y scale, z scale, z offset
+        u64 shader_hash = 0; ///< provenance of the recovered camera
         bool valid = false;
     };
 
@@ -123,6 +164,7 @@ private:
     std::array<float, 12> frame_view{}, frame_inverse{};
     std::array<float, 4> frame_projection{};
     u32 frame_pose_votes = 0, frame_scanned_buffers = 0;
+    u64 frame_camera_shader_hash = 0;
     bool reported_camera = false;
     // Bounded exact constant capture during two gameplay frames. Enables offline
     // mapping of eboot shader uniforms without repeated blind APK patches.
