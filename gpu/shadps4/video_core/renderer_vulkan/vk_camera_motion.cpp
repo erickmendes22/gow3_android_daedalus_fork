@@ -284,19 +284,25 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
         if (probe_written < 32 &&
             (probe_seen <= 8 || probe_seen % 32 == 0)) {
             ++probe_written;
-            char hex[1800]{};
-            size_t written = 0;
-            const size_t floats = std::min(float_count, size_t(128));
-            for (size_t i = 0; i < floats && written + 10 < sizeof(hex); ++i) {
-                const int n = std::snprintf(hex + written, sizeof(hex) - written,
-                                            "%08x", std::bit_cast<u32>(data[i]));
-                if (n <= 0) break;
-                written += size_t(n);
+            // Print at most 512 floats in <=128-float chunks so Android logs
+            // do not truncate long messages and 384/420-float uniform blocks
+            // retain matrices beyond their first 128 entries.
+            const size_t limit = std::min(float_count, size_t(512));
+            for (size_t start = 0; start < limit; start += 128) {
+                char hex[1200]{};
+                size_t written = 0;
+                const size_t count = std::min(size_t(128), limit - start);
+                for (size_t i = 0; i < count && written + 10 < sizeof(hex); ++i) {
+                    const int n = std::snprintf(hex + written, sizeof(hex) - written,
+                                                "%08x", std::bit_cast<u32>(data[start + i]));
+                    if (n <= 0) break;
+                    written += size_t(n);
+                }
+                std::printf("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u floats=%zu offset=%zu count=%zu hex=%s\n",
+                            probe_frame, probe_written,
+                            static_cast<unsigned long long>(shader_hash), buffer_slot,
+                            float_count, start, count, hex);
             }
-            std::printf("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u floats=%zu first=%zu hex=%s\n",
-                        probe_frame, probe_written,
-                        static_cast<unsigned long long>(shader_hash), buffer_slot,
-                        float_count, floats, hex);
             std::fflush(stdout);
         }
     }
