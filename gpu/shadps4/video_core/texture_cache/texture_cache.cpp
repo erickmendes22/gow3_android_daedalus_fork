@@ -773,6 +773,27 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             }
             return {cache_image_id, -1, -1};
         }
+        // Same VRAM address does not make two incompatible surface layouts
+        // interchangeable. The generic equal-size overlap path below used
+        // to return the old image even after FindImage correctly rejected it.
+        // In particular, a new tiled surface could be sampled through a prior
+        // linear backing of equal byte size, yielding corrupted stripes.
+        if (a.pitch != b.pitch || a.tile_mode != b.tile_mode ||
+            a.array_mode != b.array_mode || a.bank_swizzle != b.bank_swizzle ||
+            a.alt_tile != b.alt_tile || a.num_samples != b.num_samples) {
+            static u32 rejected_overlap_layout = 0;
+            if (++rejected_overlap_layout <= 12 || rejected_overlap_layout % 1000 == 0) {
+                std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT count=%u address=%#llx "
+                            "pitch=%u->%u tile=%u->%u samples=%u->%u\\n",
+                            rejected_overlap_layout,
+                            static_cast<unsigned long long>(a.guest_address),
+                            b.pitch, a.pitch, u32(b.tile_mode), u32(a.tile_mode),
+                            b.num_samples, a.num_samples);
+            }
+            if (safe_to_delete) FreeImage(cache_image_id);
+            return {merged_image_id, -1, -1};
+        }
+
         if (image_info.BlockDim() != cache_image.info.BlockDim() ||
             lhs_block_size != rhs_block_size) {
             // Very likely this kind of overlap is caused by allocation from a pool.
