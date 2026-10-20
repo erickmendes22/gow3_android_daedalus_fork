@@ -95,26 +95,28 @@ internal fun HomeScreen(
             color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
         HomeSection {
             LaunchButton(onStartGame)
-            HomeAction("Selecionar pasta do jogo", onClick = onChooseGameFolder)
-            HomeAction("Selecionar atualização", onClick = onChooseUpdateFolder)
-            HomeAction("Instalar jogo via PKG", enabled = !pkgInstallBusy, onClick = onInstallBasePkg)
-            HomeAction("Instalar atualização via PKG", enabled = !pkgInstallBusy, onClick = onInstallUpdatePkg)
+            HomeAction(stringResource(R.string.home_select_game), onClick = onChooseGameFolder)
+            HomeAction(stringResource(R.string.home_select_update), onClick = onChooseUpdateFolder)
+            HomeAction(stringResource(R.string.home_install_pkg), enabled = !pkgInstallBusy, onClick = onInstallBasePkg)
+            HomeAction(stringResource(R.string.home_install_update_pkg), enabled = !pkgInstallBusy, onClick = onInstallUpdatePkg)
             if (pkgInstallMessage != null)
                 Text(pkgInstallMessage, color = LauncherColors.textMuted, fontSize = 12.sp)
         }
-        HomeSection("VÍDEO E DESEMPENHO") {
+        HomeSection(stringResource(R.string.home_section_video)) {
             val fps = iniValues["fps_limit"] ?: "60"
             val vsync = iniValues["vsync"] != "0"
-            HomeAction("FPS e VSync · ${if (fps == "0") "Ilimitado" else "$fps FPS"} · ${if (vsync) "VSync ON" else "VSync OFF"}") {
+            HomeAction(stringResource(R.string.home_fps_summary_fmt,
+                if (fps == "0") stringResource(R.string.home_fps_unlimited) else "$fps FPS",
+                stringResource(if (vsync) R.string.home_vsync_on else R.string.home_vsync_off))) {
                 popup = HomePopupKind.FPS
             }
-            HomeAction("Vídeo e resolução · ${iniValues["render_resolution"] ?: "720p"}") {
+            HomeAction(stringResource(R.string.home_resolution_summary_fmt, iniValues["render_resolution"] ?: "720p")) {
                 popup = HomePopupKind.VIDEO
             }
         }
-        HomeSection("MODS E CHEATS") {
-            HomeAction("Mods · selecionar e organizar") { popup = HomePopupKind.MODS }
-            HomeAction("Cheats · selecionar") { popup = HomePopupKind.CHEATS }
+        HomeSection(stringResource(R.string.home_section_mods)) {
+            HomeAction(stringResource(R.string.home_mods_action)) { popup = HomePopupKind.MODS }
+            HomeAction(stringResource(R.string.home_cheats_action)) { popup = HomePopupKind.CHEATS }
         }
         if (isBionic) {
             FrameGenerationCard()
