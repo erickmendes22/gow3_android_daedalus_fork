@@ -29,7 +29,7 @@ static void Env(const char* key, const char* value) {
 int main() {
     assert(G::ParseDisplayMode("borderless") == G::Borderless && G::ParseDisplayMode("bogus") == G::Windowed);
     assert(G::ParseFpsLimit(240) == 240 && G::ParseFpsLimit(75) == 0);
-    assert(G::ParseResolution("1440p") == 8 && G::ParseResolution("8K") == 7);
+    assert(G::ParseResolution("1440p") == 8 && G::ParseResolution("8K") == 11);
     assert(G::ParseResolution("900p") == 6);
     assert(G::ParseResolution("800p") == G::ParseResolution("900p"));
     assert(G::ParseResolution("1600x900") == G::ParseResolution("900p"));
