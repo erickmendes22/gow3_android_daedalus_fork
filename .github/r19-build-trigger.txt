@@ -7,3 +7,5 @@ Ultra Performance (4): raster 426x240 -> output 1280x720; remove silent preset-3
 Real scale requires current-frame reduced raster writes to both color and depth. If absent, log GSR2_SCALE_PROOF and leave guest presentation unmodified; do NOT apply an upscaling filter to full-resolution content.
 Shared native GPU: restore depth aspect conversion ordering, reacquire movable SlotVector references in depth/stencil, invalidate CPU texture hashes, hash entire page-size resource.
 Regression: compile the actual five SceneResolution C++ output dimensions.
+
+CI rerun: updated legacy test to preserve explicit game resolution when render_resolution=native; removed obsolete Ultra=Performance clamp expectation. Five-preset C++ matrix and native GPU regressions remain active.
