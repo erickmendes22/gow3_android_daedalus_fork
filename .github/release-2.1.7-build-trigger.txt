@@ -8,3 +8,5 @@ CI retry: updated graphics settings test to assert 8K beta index 11 instead of o
 CI retry: fix settings reload assertion: render_resolution=8K is recognized as preset 11, not native 7. The failure was in the host test only.
 
 CI retry: inherit R19 test checks native GSR2 with explicit 8K exclusion; keep save/log manager checks with language callback.
+
+CI retry: HomeAction now puts onClick last, positional early card callsites use named handler; resolves all four Kotlin compileReleaseKotlin errors from run 39458552902.
