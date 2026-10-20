@@ -2,9 +2,9 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [fix/bionic-r13-verified-viewproj-camera-20261019]
+    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019]
     paths:
-      - '.github/r13-build-trigger.txt'
+      - '.github/r14-build-trigger.txt'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r13-verified-viewproj-camera-20261019'
+    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
