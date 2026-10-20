@@ -29,7 +29,10 @@ class R6(unittest.TestCase):
         self.assertIn(".camera_still = temporal_ready ? camera_motion.CameraStill() : true,",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
         self.assertIn(".vertical_fov = temporal_ready ? camera_motion.VerticalFov() : 1.04719755f,",cpp)
-        self.assertIn("if (UseGsr2() && std::getenv(\"GOW3_ANDROID_PORT\") && preset > 3)",cpp)
+        # R19 honors Ultra Performance as actual 3x (not silently 2x);
+        # no-motion history safety still relies on per-frame reset.
+        self.assertNotIn('preset = 3;',cpp)
+        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",cpp)
         glsl=src("gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp")
         self.assertIn("float(params.reset)",glsl)
         self.assertIn("mix(HistoryColor, Upsampledcw.xyz, alpha)",glsl)
