@@ -200,6 +200,7 @@ private:
     int applied_upscaler = -1;
     bool dispatched_last_frame = false;
     bool completed_temporal_frame = false;
+    u64 gsr2_completed_generation = 0; ///< increments for every successful GSR2 dispatch
     bool last_active = false, last_jitter = false;
 
 
@@ -254,6 +255,7 @@ private:
         vk::Format format{};
         u32 width = 0, height = 0;
         bool valid = false;
+        u64 gsr2_seed_generation = 0; ///< host framebuffer initialized once per GSR2 image
     };
     std::mutex display_mutex;
     std::unordered_map<VAddr, DisplayImage> displays;
