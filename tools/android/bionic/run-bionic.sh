@@ -59,10 +59,30 @@ if [ -n "${GOW3_PATCH_DIR:-}" ]; then
     fi
     game=$update_view
     echo "Game and update combined from $GOW3_PATCH_DIR" >&2
-    trap 'if [ -n "${update_view:-}" ]; then "$python" "$base/scripts/game_update.py" remove "$update_view" 2>/dev/null || true; fi' EXIT
+    # Shared cleanup trap below also removes the ephemeral mods overlay.
 fi
 
 
+# SpartanPort 2.6.0 file mods: resolve the enabled order into a temporary
+# read-only game view. The original eboot/game folder is never modified.
+mods_view=
+mods_on=$(setting load_mods)
+case "$mods_on" in 0) ;; *) mods_on=1 ;; esac
+if ! mods_view=$("$python" "$base/scripts/mods.py" "$game" --out "$out" \
+        --mods-dir "$base/mods" --config "$base/mods.json" --enabled "$mods_on"); then
+    echo 'Mods: selected mods could not be mounted; launch cancelled (game files unchanged)' >&2
+    exit 2
+fi
+case "$mods_view" in
+    "$out"/mod-game-*) game=$mods_view ;;
+    "$game") ;;
+    *) echo "Mods: unexpected overlay path: $mods_view" >&2; exit 2 ;;
+esac
+trap '
+    case "${mods_view:-}" in "$out"/mod-game-*) rm -rf -- "$mods_view" ;; esac
+    if [ -n "${update_view:-}" ]; then "$python" "$base/scripts/game_update.py" remove "$update_view" 2>/dev/null || true; fi
+' EXIT
+echo "Mods: load_mods=$mods_on game_view=$game"
 vulkan_status=ok
 "$probe" --vulkan-only || { echo 'Bionic Vulkan driver initialization failed' >&2; exit 4; }
 "$runtime/bin/gow3-prepare" "$game" "$out"
