@@ -45,8 +45,8 @@ class BionicR11CameraFeed(unittest.TestCase):
 
     def test_single_ci_trigger_preserves_prior_regressions(self):
         workflow=read(".github/workflows/bionic-apk.yml")
-        self.assertIn("r13-build-trigger.txt",workflow)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",workflow)
+        self.assertIn("r14-build-trigger.txt",workflow)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",workflow)
         self.assertIn("cancel-in-progress: true",workflow)
 
 if __name__=="__main__": unittest.main()
