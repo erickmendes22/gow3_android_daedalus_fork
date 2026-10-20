@@ -35,6 +35,23 @@ int main() {
         std::abs(v.position[2]+299.2223f)>.02f) return 3;
     if (!Gow3CameraLayout::InversePair(v.view,v.inverse) ||
         !Gow3CameraLayout::InversePair(v.inverse,v.view)) return 4;
+    // Independent earlier 1200-frame capture from the SAME shader, genuine
+    // camera rotation with stable world position. History must see a change.
+    const float earlier[32] = {
+        1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1,
+        -1.92641294f, -.0862333775f, .204205185f, .204203621f,
+         .000354632095f, 3.47399640f, .120652519f, .120651595f,
+         .404891312f, -.413328439f, .971472323f, .971464932f,
+        87.0151062f,-962.621643f,264.712341f,265.210327f
+    };
+    const auto previous=Gow3CameraLayout::RecoverViewProjection(earlier,32,1);
+    if (!previous.valid) return 8;
+    for (int i=0;i<3;++i)
+        if (std::abs(v.position[i]-previous.position[i])>.02f) return 9;
+    float difference=0.f;
+    for (int i=0;i<12;++i)
+        difference+=std::abs(v.view[i]-previous.view[i]);
+    if (difference < 0.01f) return 10;
     if (Gow3CameraLayout::RecoverViewProjection(recorded,32,0).valid) return 5;
     float corrupt[32]; for(int i=0;i<32;++i) corrupt[i]=recorded[i];
     corrupt[16+14]=corrupt[16+15]+2.f;
