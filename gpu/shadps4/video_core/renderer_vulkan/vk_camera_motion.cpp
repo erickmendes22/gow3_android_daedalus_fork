@@ -311,6 +311,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
     // been verified against other shader constants in the 22:00 eboot log.
     // Unlike FindPose(), this correctly handles GoW3's two separate
     // model/preprojection matrices, not Bloodborne's adjacent inverse pair.
+    if (frame_has_camera && frame_pose_votes >= 3) return;
     if (gow3_android_gsr2 && buffer_slot == 1 && float_count >= 32) {
         const auto recovered = Gow3CameraLayout::RecoverViewProjection(
             data, float_count, buffer_slot);
@@ -330,7 +331,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
                         coherent = false;
             }
             if (coherent) {
-                frame_pose_votes = std::min(frame_pose_votes + 1, 16u);
+                frame_pose_votes = std::min(frame_pose_votes + 1, 3u);
             } else {
                 frame_pose_votes = 1;
             }
@@ -358,7 +359,6 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             return;
         }
     }
-    if (frame_has_camera && frame_pose_votes >= 3) return;
     // The forward renderer binds many constant buffers per draw. An exhaustive
     // affine-pair search can consume the GPU command CPU thread, becoming more
     // expensive than the FSR dispatch it is trying to enable. Cap expensive
