@@ -346,6 +346,10 @@ void GameTab() {
             CheckRow(names[cheat], s.cheats[cheat], available ? helps[cheat] : Unsupported);
             ImGui::EndDisabled();
         }
+        ImGui::BeginDisabled(!s.qte_supported.load());
+        CheckRow("Automatic QTE (SpartanPort 2.6)", s.auto_qte,
+                 s.qte_supported.load() ? "Answer button presses, holds and rotations automatically." : Unsupported);
+        ImGui::EndDisabled();
         ImGui::EndTable();
     }
 
