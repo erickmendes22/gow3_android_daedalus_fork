@@ -527,6 +527,9 @@ static void install_stat_multipliers(const char *app0, Segment *segments, uint64
     printf("Multipliers: damage %s, green/blue/gold orbs %s\n", damage ? "ready" : "unavailable",
            pickup ? "ready" : "unavailable");
 }
+#endif /* GUEST_CPU_NATIVE - x86 raw E9 hooks */
+
+/* On AArch64, FEX hooks must compile independently from native x86 hooks. */
 #if !defined(GUEST_CPU_NATIVE)
 /* Bionic/FEX: unlike x86-64, the JIT cannot execute a host-patched E9 jump to
  * raw machine code. guest_cpu_hook installs a translated guest syscall trap.
@@ -686,7 +689,6 @@ static void install_auto_qte_fex(Segment *segments, uint64_t count, uint64_t siz
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
-#endif
 
 static void apply_patches(const char *path, Segment *segments, uint64_t ns, const Reloc *relocs, uint64_t nr) {
     FILE *f=fopen(path,"rb");
