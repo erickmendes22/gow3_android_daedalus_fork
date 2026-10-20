@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #include "runtime.h"
 #include "guest_cpu.h"
+#include "fex_guest_hook.h"
 #include "orb_hook.h"
 #include "cheat_hook.h"
 #include "qte_hook.h"
@@ -657,15 +658,11 @@ static void gow3_fex_qte_callback(GuestRegs *regs) {
                  * or automatic replacement can RET into garbage and crash.
                  * Preserve the x86-64 CALL/RET stack contract for BOTH modes. */
                 const uint64_t return_rip = (uint64_t)(fex_qte_sites[i].address + 5);
-                const uint64_t original_sp = regs->gpr[GUEST_RSP];
-                if (original_sp < sizeof(return_rip)) {
+                if (!gow3_fex_prepare_guest_call(regs, return_rip)) {
                     printf("FEX QTE: invalid guest stack at RepeatPress hook\n");
                     regs->rip = 0;
                     return;
                 }
-                const uint64_t call_sp = original_sp - sizeof(return_rip);
-                memcpy((void *)(uintptr_t)call_sp, &return_rip, sizeof(return_rip));
-                regs->gpr[GUEST_RSP] = call_sp;
             }
             regs->rip = fex_qte_sites[i].trampoline;
             return;
