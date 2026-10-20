@@ -2272,9 +2272,10 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
                               display.gsr2_seed_generation == gsr2_completed_generation;
         const vk::ImageMemoryBarrier2 b{
             .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-            .srcAccessMask = preserve ? (vk::AccessFlagBits2::eMemoryRead |
-                                        vk::AccessFlagBits2::eMemoryWrite)
-                                     : vk::AccessFlagBits2::eNone,
+            .srcAccessMask = preserve
+                ? vk::AccessFlags2{vk::AccessFlagBits2::eMemoryRead |
+                                    vk::AccessFlagBits2::eMemoryWrite}
+                : vk::AccessFlags2{vk::AccessFlagBits2::eNone},
             .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
             .oldLayout = preserve ? vk::ImageLayout::eGeneral : vk::ImageLayout::eUndefined,
