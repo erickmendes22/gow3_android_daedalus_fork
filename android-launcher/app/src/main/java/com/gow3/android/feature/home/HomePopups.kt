@@ -42,6 +42,7 @@ private val cheats = listOf(
     "cheat_orbs" to "Máximo de orbes vermelhos",
     "cheat_very_hard" to "Desbloquear Very Hard",
     "cheat_double_jumps" to "Saltos duplos infinitos",
+    "auto_qte" to "QTE automático (SpartanPort 2.6)",
 )
 private val resolutions = listOf("240p", "360p", "424p", "480p", "540p", "720p",
     "900p", "native", "1440p", "1800p", "4K", "8K")
