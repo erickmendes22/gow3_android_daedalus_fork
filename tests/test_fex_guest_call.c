@@ -1,5 +1,6 @@
 /* Host-side regression test for the FEX E8 -> SYSCALL QTE RepeatPress hook.
  * This exercises the actual C helper, not a duplicate Python implementation. */
+#define _GNU_SOURCE 1
 #include "../src/fex_guest_hook.h"
 #include <assert.h>
 #include <stdint.h>
