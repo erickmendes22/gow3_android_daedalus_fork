@@ -1016,6 +1016,18 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
 
     std::scoped_lock lock{mutex};
 
+    // Address/extent/format do not uniquely identify the host image. GoW III
+    // reuses VRAM surfaces with different pitch, tiling and sample layouts.
+    // Reusing a view backed by the previous layout produces scrambled texels.
+    const auto same_layout = [](const ImageInfo& a, const ImageInfo& b) {
+        return a.pitch == b.pitch && a.tile_mode == b.tile_mode &&
+               a.array_mode == b.array_mode && a.num_samples == b.num_samples &&
+               a.num_bits == b.num_bits && a.bank_swizzle == b.bank_swizzle &&
+               a.alt_tile == b.alt_tile && a.resources == b.resources &&
+               a.props.is_pow2 == b.props.is_pow2 &&
+               a.props.is_block == b.props.is_block;
+    };
+
     u64 key_hash = info.guest_address ^ info.guest_size << 17 ^ u64(info.pixel_format) << 40 ^
                    u64(info.size.width) << 24 ^ info.size.height ^ u64(desc.type) << 58 ^
                    u64(exact_fmt) << 63 ^ u64(desc.needs_native) << 62;
@@ -1033,7 +1045,8 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         return True(image.flags & ImageFlagBits::Registered) &&
                image.info.guest_address == info.guest_address &&
                image.info.guest_size == info.guest_size && image.info.size == info.size &&
-               image.info.pixel_format == info.pixel_format;
+               image.info.pixel_format == info.pixel_format &&
+               same_layout(image.info, info);
     };
     if ((cached.generation == registry_generation.load(std::memory_order_relaxed) || still_exact()) &&
         cached.address == info.guest_address &&
@@ -1041,6 +1054,12 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         cached.format == info.pixel_format && cached.type == info.type &&
         cached.exact_fmt == exact_fmt && cached.binding == desc.type &&
         cached.needs_native == desc.needs_native && cached.levels == info.resources.levels && cached.layers == info.resources.layers &&
+        cached.pitch == info.pitch && cached.tile_mode == u32(info.tile_mode) &&
+        cached.array_mode == u32(info.array_mode) &&
+        cached.num_samples == info.num_samples && cached.num_bits == info.num_bits &&
+        cached.bank_swizzle == info.bank_swizzle && cached.alt_tile == info.alt_tile &&
+        cached.is_pow2 == bool(info.props.is_pow2) &&
+        cached.is_block == bool(info.props.is_block) &&
         !Gow3Toggle::Disabled(Gow3Toggle::FindImageCache)) {
         Image& image = slot_images[cached.image_id];
         image.tick_accessed_last = scheduler.CurrentTick();
@@ -1070,6 +1089,21 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             continue;
         }
         if (cache_image.info.size != info.size) {
+            continue;
+        }
+        if (!same_layout(cache_image.info, info)) {
+            // A differently tiled/pitched resource must go through overlap
+            // resolution rather than being selected as an exact backing.
+            static u32 layout_rejections = 0;
+            if (++layout_rejections <= 12 || layout_rejections % 1000 == 0) {
+                std::printf("GOW3_TEXTURE_LAYOUT_REJECT count=%u address=%#llx "
+                            "pitch=%u->%u tile=%u->%u samples=%u->%u\\n",
+                            layout_rejections,
+                            static_cast<unsigned long long>(info.guest_address),
+                            cache_image.info.pitch, info.pitch,
+                            u32(cache_image.info.tile_mode), u32(info.tile_mode),
+                            cache_image.info.num_samples, info.num_samples);
+            }
             continue;
         }
         if (!IsVulkanFormatCompatible(cache_image.info.pixel_format, info.pixel_format) ||
@@ -1181,6 +1215,15 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         .needs_native = desc.needs_native,
         .levels = info.resources.levels,
         .layers = info.resources.layers,
+        .pitch = info.pitch,
+        .tile_mode = u32(info.tile_mode),
+        .array_mode = u32(info.array_mode),
+        .num_samples = info.num_samples,
+        .num_bits = info.num_bits,
+        .bank_swizzle = info.bank_swizzle,
+        .alt_tile = info.alt_tile,
+        .is_pow2 = bool(info.props.is_pow2),
+        .is_block = bool(info.props.is_block),
         .generation = registry_generation.load(std::memory_order_relaxed),
         .image_id = image_id,
         .view_mip = view_mip,
