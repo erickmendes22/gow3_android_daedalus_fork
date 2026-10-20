@@ -46,6 +46,7 @@
     <string name="param_resolution_360">360p</string>
     <string name="param_resolution_424">424p</string>
     <string name="param_resolution_540">540p</string>
+    <string name="param_resolution_8k">8K · EXPERIMENTAL (eboot verified only)</string>
     
     
     
