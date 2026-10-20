@@ -63,7 +63,10 @@ def derive(game, config, state_path, env):
     # Native AA is GSR2 running with equal input/output dimensions, not GSR2 Off.
     # Preserve the user's provider at every preset, including preset=0.
     # The GPU dispatch path determines whether the scene requires enlargement.
-    gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'
+    # GSR2 is kept in the runtime for future work, but 8K is not a GSR2
+    # target. The 8K eboot patch must never silently become its 720p fallback.
+    gsr2_requested = (android_port and ini.get('upscaler') == 'gsr2' and
+                      graphics.get('render_resolution') != '8K')
     if android_port and ini.get('upscaler') not in ('off', 'gsr2'):
         graphics_options.write_keys(config, {'upscaler': 'off', 'preset': '0',
                                              'fsr1': '0', 'rcas': '0'})
