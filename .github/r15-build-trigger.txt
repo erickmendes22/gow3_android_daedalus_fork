@@ -1,0 +1,3 @@
+R15 Bionic APK build request
+Fix: use native patched 1280x720 for GSR2 FragCoord, replacing desktop-only 1920x1080 on Android.
+Validated R14 baseline: debbd72d94de8ae885ee8aa1183d8bba2798ab3e
