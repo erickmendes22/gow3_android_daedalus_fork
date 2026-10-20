@@ -415,11 +415,13 @@ public final class GameActivity extends Activity {
         if ("1".equals(setting("cheat_item"))) cheats.add("infinite items");
         setDetail(cheatsItem,cheats.isEmpty() ? "Off" : String.join(" · ",cheats));
          */
-        String upscaler="off".equals(setting("upscaler")) ? "No upscaling" : "FSR 3.1";
+        // Do not expose any hidden upscaler choice in the in-game drawer.
+        String displayResolution=setting("render_resolution");
+        if (displayResolution==null || displayResolution.isEmpty()) displayResolution="720p";
         String limit=setting("fps_limit");
         // 取值域与 SettingsDialog.FPS_VALUES 一致：只有 30/60/120/240 会按原值显示，0 是"不限制"，
         // 其余（键缺失、旧版遗留的 40/45）运行时 ParseFpsLimit 都当 0，所以回退显示 30。
-        setDetail(graphicsItem,upscaler+" · "+("0".equals(limit) ? "no FPS limit"
+        setDetail(graphicsItem,displayResolution+" · "+("0".equals(limit) ? "no FPS limit"
             : (limit==null || !limit.matches("30|60|120|240") ? "30" : limit)+" FPS limit"));
         setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
         if (bionicRuntime()) {
