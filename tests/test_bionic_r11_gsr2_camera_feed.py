@@ -39,7 +39,7 @@ class BionicR11CameraFeed(unittest.TestCase):
         self.assertIn('GSR2_CAMERA_FEED blocks=%u',cam)
         self.assertIn("GOW3_CAMERA_VERIFIED",cam)
         self.assertIn("frame_pose_votes >= 2",cam)
-        self.assertIn("const bool temporal_ready = camera_motion.Ready();",src)
+        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",src)
         self.assertIn(".reset = reset || !temporal_ready,",src)
         self.assertIn("GSR2_PRESENT_INIT copied full UI",src)
 
