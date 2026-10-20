@@ -12,7 +12,7 @@ H = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.h").read_text(en
 
 class R17TextureLayoutIdentity(unittest.TestCase):
     def test_cached_request_tracks_physical_layout(self):
-        entry = H.split("struct FindImageCacheEntry {", 1)[1].split("};", 1)[0]
+        entry = H.split("struct FindImageCacheEntry {", 1)[1].split("std::array<FindImageCacheEntry", 1)[0]
         for field in ("pitch", "tile_mode", "array_mode", "num_samples",
                       "num_bits", "bank_swizzle", "alt_tile", "is_pow2", "is_block"):
             self.assertIn(field, entry)
