@@ -38,8 +38,8 @@ class R9(unittest.TestCase):
         self.assertIn("display_redirect = ui_phase;",frame)
     def test_gated_single_build_and_existing_hud_lsfg_untouched(self):
         workflow=src(".github/workflows/bionic-apk.yml")
-        self.assertIn("r11-build-trigger.txt",workflow)
-        self.assertIn("fix/bionic-r11-gsr2-real-camera-feed-20261019",workflow)
+        self.assertIn("r12-build-trigger.txt",workflow)
+        self.assertIn("fix/bionic-r12-camera-layout-capture-20261019",workflow)
         self.assertIn("cancel-in-progress: true",workflow)
         script=src("tools/android/bionic/run-bionic.sh")
         self.assertIn("export GOW3_GSR2_AUTO_PROBE=1",script)
