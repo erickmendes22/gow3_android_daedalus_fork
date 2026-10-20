@@ -12,3 +12,5 @@ CI retry: inherit R19 test checks native GSR2 with explicit 8K exclusion; keep s
 CI retry: HomeAction now puts onClick last, positional early card callsites use named handler; resolves all four Kotlin compileReleaseKotlin errors from run 39458552902.
 
 CI retry: close GUEST_CPU_NATIVE before both ARM64 FEX installers in src/probe.c, and require this boundary in release tests. Native build previously failed to see install_cheats_fex/install_auto_qte_fex.
+
+CI retry 2026-10-20: align 2.1.7-bionic APK version across app Gradle, sign_apk.sh, validate_apk.py, package_runtime.py; regression test executes in source test stage. Previous run compiled, signed v3, then failed exclusively on stale 2.1.6 expected name.
