@@ -14,6 +14,7 @@
 #include "guest_cpu.h"
 #include "orb_hook.h"
 #include "cheat_hook.h"
+#include "qte_hook.h"
 #include "actor_hook.h"
 #include "damage_hook.h"
 #include "gpu/gow3gpu.h"
@@ -361,6 +362,8 @@ extern void gow3_cheat_status(unsigned id);
 extern uintptr_t gow3_damage_multiplier(int taken);
 extern uintptr_t gow3_orb_pickup_multiplier(unsigned kind);
 extern void gow3_stat_multipliers_status(int damage, int orb_pickup);
+extern uintptr_t gow3_auto_qte_flag(void);
+extern void gow3_qte_status(int supported);
 
 /* The hook installers write x86-64 machine-code stubs into the image; they only apply when the
  * guest runs on the host CPU. Under the JIT this needs guest_cpu_hook (not wired yet), so they
@@ -604,6 +607,79 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
             printf("FEX Cheats: %s ready, controlled live by gow3.ini\n", names[id]);
         }
     }
+}
+#endif
+
+#if !defined(GUEST_CPU_NATIVE)
+/* Automatic QTE from SpartanPort 2.6, adapted to the FEX guest hook boundary.
+ * Each prompt kind is optional and installed ONLY when its x86 signature is
+ * unique. The user flag is consulted in the guest stub; disabled preserves
+ * the original input checks. Unlike patching raw E9 instructions, this works
+ * when x86-64 is translated on Android/ARM64. */
+typedef struct { uintptr_t address, trampoline; } FexQteSite;
+static FexQteSite fex_qte_sites[5];
+static unsigned fex_qte_count;
+static Gow3QteState fex_qte_state;
+static void gow3_fex_qte_callback(GuestRegs *regs) {
+    for (unsigned i = 0; i < fex_qte_count; ++i) {
+        if (regs->rip == fex_qte_sites[i].address) {
+            regs->rip = fex_qte_sites[i].trampoline;
+            return;
+        }
+    }
+    regs->rip += 2;
+}
+static void install_auto_qte_fex(Segment *segments, uint64_t count, uint64_t size) {
+    const Gow3Signature *signatures[] = {
+        &gow3_qte_rotation_site, &gow3_qte_timed_site, &gow3_qte_repeat_site,
+        &gow3_qte_charged_site, &gow3_qte_circle_site
+    };
+    const unsigned lengths[] = {GOW3_QTE_HOOK_LENGTH, GOW3_QTE_TIMED_LENGTH, 5,
+                                 GOW3_QTE_CHARGED_LENGTH, GOW3_QTE_CIRCLE_LENGTH};
+    const char *kinds[] = {"rotation", "button", "repeated press", "held press", "Circle"};
+    const uintptr_t automatic = gow3_auto_qte_flag();
+    uint64_t sites[5];
+    unsigned char *stubs = allocate(page_size);
+    for (unsigned i = 0; i < 5; ++i) {
+        sites[i] = gow3_signature_find(image, size, signatures[i]);
+        if (sites[i] == UINT64_MAX || !mapped(segments, count, sites[i], lengths[i]) ||
+            (i == 0 && memcmp(image + sites[i], gow3_qte_rotation_original,
+                              GOW3_QTE_HOOK_LENGTH) != 0)) {
+            printf("FEX QTE: %s unavailable (eboot signature mismatch)\n", kinds[i]);
+            sites[i] = UINT64_MAX;
+            continue;
+        }
+        unsigned char *stub = stubs + i * 256;
+        const uintptr_t resume = (uintptr_t)(image + sites[i] + lengths[i]);
+        if (i == 0) {
+            gow3_qte_build_rotation_stub(stub, (uintptr_t)&fex_qte_state.pass,
+                                         automatic, resume);
+        } else if (i == 1) {
+            gow3_qte_build_timed_stub(stub, automatic, resume);
+        } else if (i == 2) {
+            gow3_qte_build_repeat_stub(stub, automatic,
+                (uintptr_t)(image + gow3_qte_call_target(image + sites[i], sites[i])));
+        } else if (i == 3) {
+            gow3_qte_build_charged_stub(stub, automatic, resume);
+        } else {
+            gow3_qte_build_circle_stub(stub, automatic, resume,
+                (uintptr_t)(image + sites[i] + GOW3_QTE_CIRCLE_SKIP));
+        }
+    }
+    protect(stubs, page_size, 5);
+    guest_cpu_code((uintptr_t)stubs, page_size);
+    for (unsigned i = 0; i < 5; ++i) {
+        if (sites[i] == UINT64_MAX) continue;
+        const uintptr_t address = (uintptr_t)(image + sites[i]);
+        if (!guest_cpu_hook(address, lengths[i], gow3_fex_qte_callback)) {
+            printf("FEX QTE: %s unavailable (JIT hook rejected)\n", kinds[i]);
+            continue;
+        }
+        fex_qte_sites[fex_qte_count++] = (FexQteSite){address, (uintptr_t)(stubs + i*256)};
+    }
+    gow3_qte_status(fex_qte_count != 0);
+    printf("FEX QTE: %u of 5 prompt kinds ready; auto=%s\n",
+           fex_qte_count, fex_qte_count ? "selectable" : "unavailable");
 }
 #endif
 
@@ -963,6 +1039,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
 #else
     if (gpu_enabled) install_cheats_fex(app0, segments, ns, size);
+    if (gpu_enabled) install_auto_qte_fex(segments, ns, size);
 #endif
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
