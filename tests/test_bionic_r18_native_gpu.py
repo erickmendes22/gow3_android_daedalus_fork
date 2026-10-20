@@ -1,9 +1,4 @@
-"""R18: Native AA must not initialize GSR2's scene/display routing.
-
-Both Native and GSR2 reconstruction need correct texture-cache ownership.
-Native has no GSR2 dispatch; leaving the provider enabled only enables its
-GPU hooks and forces a spurious 720p PS4 resolution patch.
-"""
+"""Native AA runs GSR2 at 1:1 and preserves valid depth/stencil cache ownership."""
 import sys
 import tempfile
 import unittest
@@ -28,21 +23,21 @@ class R18NativePath(unittest.TestCase):
                 plan=launch_env.derive(base,config,base/"state.json",{"GOW3_ANDROID_PORT":"1"})
             return plan,config.read_text(encoding="utf-8")
 
-    def test_native_aa_has_no_dispatch_or_forced_720p_patch(self):
+    def test_native_aa_preserves_gsr2_provider_without_enlargement(self):
         plan,persisted=self.plan("0")
         u=plan["updates"]
-        self.assertEqual(u["GOW3_UPSCALER"],"none")
-        self.assertEqual(u["GOW3_UPSCALER_SOURCE"],"native-aa-1to1-no-gsr2")
-        self.assertNotIn("GOW3_PATCH_INPUT_RES",u)
-        self.assertNotIn("Resolution Patch - 720p",plan["patch_names"])
+        self.assertEqual(u["GOW3_UPSCALER"],"gsr2")
+        self.assertEqual(u["GOW3_UPSCALER_SOURCE"],"gsr2-native-aa-1to1")
+        self.assertEqual(u["GOW3_PATCH_INPUT_RES"],"1280x720")
+        self.assertIn("Resolution Patch - 720p",plan["patch_names"])
         self.assertIn("Bug Fix - Texture Corruption Fix",plan["patch_names"])
         self.assertIn("upscaler=gsr2\npreset=0\n",persisted)
 
-    def test_explicit_720p_is_preserved_without_gsr2_routing(self):
+    def test_explicit_720p_keeps_gsr2_native_aa(self):
         plan,_=self.plan("0","720p")
-        self.assertEqual(plan["updates"]["GOW3_UPSCALER"],"none")
+        self.assertEqual(plan["updates"]["GOW3_UPSCALER"],"gsr2")
         self.assertIn("Resolution Patch - 720p",plan["patch_names"])
-        self.assertNotIn("GOW3_PATCH_INPUT_RES",plan["updates"])
+        self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],"1280x720")
 
     def test_reduced_gsr2_presets_remain_selected(self):
         for preset in ("1","2","3","4"):
