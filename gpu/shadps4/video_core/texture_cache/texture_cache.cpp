@@ -571,6 +571,10 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
             // Modified region overlaps image, so the image was definitely accessed by this fault.
             // Untrack the image, so that the range is unprotected and the guest can write freely.
             InvalidateAlias(image);
+            // A confirmed CPU write invalidates the old contents hash as
+            // well as the GPU image. Otherwise a later MaybeCpuDirty pass can
+            // compare against a pre-write hash and treat stale bytes as valid.
+            image.hash = 0;
             image.flags |= ImageFlagBits::CpuDirty;
             UntrackImage(image_id);
         } else if (pages_end < image_end) {
@@ -1408,17 +1412,12 @@ void TextureCache::RefreshImage(Image& image) {
 
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
-        // The image size should be less than page size to be considered MaybeCpuDirty
-        // So this calculation should be very uncommon and reasonably fast
-        // For now we'll just check up to 64 first pixels
-        const auto addr = std::bit_cast<u8*>(image.info.guest_address);
-        const u32 w = std::min(image.info.size.width, u32(8));
-        const u32 h = std::min(image.info.size.height, u32(8));
-
-        const u32 s_w = image.info.props.is_block ? Common::DivCeil(w, 4u) : w;
-        const u32 s_h = image.info.props.is_block ? Common::DivCeil(h, 4u) : h;
-        const u32 size = s_w * s_h * (image.info.num_bits / 8);
-        const u64 hash = XXH3_64bits(addr, size);
+        // MaybeCpuDirty is used only when an image fits inside the single
+        // untracked page. Comparing just its first 8x8 texels misses guest
+        // writes elsewhere on that same page and incorrectly reuses a stale
+        // Vulkan texture. Hash the whole guest allocation (page bounded).
+        const auto addr = std::bit_cast<const u8*>(image.info.guest_address);
+        const u64 hash = XXH3_64bits(addr, image.info.guest_size);
         if (image.hash == hash) {
             image.flags &= ~ImageFlagBits::MaybeCpuDirty;
             return;
