@@ -89,8 +89,8 @@ int main() {
 
     def test_r13_single_gated_build(self):
         wf=(ROOT/".github/workflows/bionic-apk.yml").read_text()
-        self.assertIn("r13-build-trigger.txt",wf)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",wf)
+        self.assertIn("r14-build-trigger.txt",wf)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",wf)
         self.assertIn("cancel-in-progress: true",wf)
 
 if __name__=="__main__":
