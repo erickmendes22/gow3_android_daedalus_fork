@@ -124,4 +124,100 @@ inline bool SimilarPose(const Affine& a, const Affine& b, float threshold=.015f)
         if (std::abs(a[i] - b[i]) > threshold) return false;
     return true;
 }
+
+/**
+ * CUSA01623 observed vertex constants:
+ * - shader 05756ef0a3a4414c, slot 1, float offset 16: world->clip 4x4 (row-vector)
+ * - shader 30e354c9bbe4f109, slot 0: projection with near 0.5, sy/sx=16/9
+ * - world-space camera position independently matches slot 1 offset 160.
+ *
+ * For the GoW3 forward renderer B = View * Proj. Its first two columns are
+ * scaled unit axes; the fourth column is the (positive) forward axis. With
+ * depth = 1 - near / z, B[r][2] - B[r][3] = 0 for r < 3 and -near for r=3.
+ * Unlike Bloodborne, there is NO view/inverse-view pair in the same block.
+ *
+ * Recover the row-vector View by dividing columns 0/1 by the projection
+ * scales; transpose it to the column-vector 3x4 format CameraMotion uses.
+ * Reject anything that is not a rigid and coherent GoW3 scene camera.
+ */
+struct GoW3ViewProjection {
+    Affine view{}, inverse{};
+    Projection projection{};
+    std::array<float, 3> position{};
+    float near_plane = 0.f;
+    bool valid = false;
+};
+inline GoW3ViewProjection RecoverViewProjection(const float* data, size_t count,
+                                                 unsigned buffer_slot) {
+    GoW3ViewProjection out{};
+    if (!data || buffer_slot != 1 || count < 32) return out;
+    const float* b = data + 16;
+    for (size_t i = 0; i < 16; ++i)
+        if (!std::isfinite(b[i])) return out;
+    // Offsets 16..31 are the proven 4x4 combined matrix, row-vector layout.
+    // The values from the 2026-10-19 GoW3 eboot capture are close to
+    // sx=1.975, sy=3.51, near=0.498 at 1280x720.
+    float sx2 = 0.f, sy2 = 0.f, fw2 = 0.f;
+    for (unsigned r = 0; r < 3; ++r) {
+        sx2 += b[r * 4] * b[r * 4];
+        sy2 += b[r * 4 + 1] * b[r * 4 + 1];
+        fw2 += b[r * 4 + 3] * b[r * 4 + 3];
+        if (std::abs(b[r * 4 + 2] - b[r * 4 + 3]) > 0.0005f)
+            return out;
+    }
+    const float sx = std::sqrt(sx2), sy = std::sqrt(sy2);
+    const float near = b[15] - b[14];
+    if (!(sx > 1.25f && sx < 3.5f && sy > 2.f && sy < 6.5f &&
+          std::abs(sy / sx - 16.f / 9.f) < 0.035f &&
+          std::abs(fw2 - 1.f) < 0.025f &&
+          near > 0.45f && near < 0.55f && std::abs(b[15]) > 5.f))
+        return out;
+    float row[4][4]{};
+    for (unsigned r = 0; r < 4; ++r) {
+        row[r][0] = b[r * 4] / sx;
+        row[r][1] = b[r * 4 + 1] / sy;
+        row[r][2] = b[r * 4 + 3];
+        row[r][3] = r == 3 ? 1.f : 0.f;
+    }
+    for (unsigned r = 0; r < 3; ++r) {
+        float length = 0.f;
+        for (unsigned c = 0; c < 3; ++c)
+            length += row[r][c] * row[r][c];
+        if (std::abs(length - 1.f) > 0.035f) return out;
+        for (unsigned k = 0; k < r; ++k) {
+            float dot = 0.f;
+            for (unsigned c = 0; c < 3; ++c)
+                dot += row[r][c] * row[k][c];
+            if (std::abs(dot) > 0.025f) return out;
+        }
+    }
+    // Row-vector inverse: R^-1 = R^T, t^-1 = -t R^-1.
+    float inverse[4][4]{};
+    for (unsigned r = 0; r < 3; ++r) {
+        for (unsigned c = 0; c < 3; ++c) {
+            inverse[r][c] = row[c][r];
+            // The CameraMotion reprojection shader uses column-vector 3x4s.
+            out.view[r * 4 + c] = row[c][r];
+            out.inverse[r * 4 + c] = inverse[c][r];
+        }
+    }
+    for (unsigned r = 0; r < 3; ++r) {
+        float t = 0.f;
+        for (unsigned c = 0; c < 3; ++c)
+            t -= row[3][c] * inverse[c][r];
+        inverse[3][r] = t;
+        out.view[r * 4 + 3] = row[3][r];
+        out.inverse[r * 4 + 3] = t;
+        out.position[r] = t;
+        if (!std::isfinite(t) || std::abs(t) > 100000.f) return GoW3ViewProjection{};
+    }
+    // Reprojection uses positive forward-Z coordinates, so the GoW3
+    // negative-Z projection becomes zScale=1 and depthOffset=-near.
+    out.projection = {sx, sy, 1.f, -near};
+    out.near_plane = near;
+    out.valid = InversePair(out.view, out.inverse) &&
+                InversePair(out.inverse, out.view);
+    return out;
+}
+
 } // namespace Gow3CameraLayout
