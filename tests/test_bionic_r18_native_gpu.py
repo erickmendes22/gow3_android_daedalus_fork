@@ -28,8 +28,10 @@ class R18NativePath(unittest.TestCase):
         u=plan["updates"]
         self.assertEqual(u["GOW3_UPSCALER"],"gsr2")
         self.assertEqual(u["GOW3_UPSCALER_SOURCE"],"gsr2-native-aa-1to1")
-        self.assertEqual(u["GOW3_PATCH_INPUT_RES"],"1280x720")
-        self.assertIn("Resolution Patch - 720p",plan["patch_names"])
+        # Selecting the AA provider does not silently change an explicit
+        # game render_resolution=native; this preset has no enlargement.
+        self.assertNotIn("GOW3_PATCH_INPUT_RES",u)
+        self.assertNotIn("Resolution Patch - 720p",plan["patch_names"])
         self.assertIn("Bug Fix - Texture Corruption Fix",plan["patch_names"])
         self.assertIn("upscaler=gsr2\npreset=0\n",persisted)
 
