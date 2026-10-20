@@ -2145,19 +2145,21 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
     std::scoped_lock lock{display_mutex};
     auto& display = displays[address];
     if (!display_redirect) {
-        // Distinguish a stale display from a later UI draw in the SAME
-        // upscaled frame. R8 observed valid=0 on all ~10k presenter queries,
-        // even with a successful native GSR2 dispatch each frame. Reuse a
-        // primed host buffer only during a completed GSR2 frame; otherwise
-        // fall back to the real guest buffer, never to stale upscale pixels.
-        const bool keep_this_frame = UseGsr2() &&
-            std::getenv("GOW3_ANDROID_PORT") &&
-            completed_temporal_frame && Active() &&
-            display.valid && bool(display.image);
-        if (!keep_this_frame) {
-            display.valid = false;
+        // A display buffer from a previous flip must NEVER be drawn into a
+        // new guest frame as a substitute for current frame content. R13
+        // retained the host image here and prefilled it again even when no
+        // new GSR2 image was available, causing overlaid/double-exposure frames.
+        if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT")) {
+            display.valid = false; // Presenter falls back to this guest's real frame.
             return false;
         }
+        display.valid = false;
+        return false;
+    }
+    if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") &&
+        (!completed_temporal_frame || gsr2_completed_generation == 0)) {
+        display.valid = false;
+        return false;
     }
     if (!display.image || display.format != image.info.pixel_format ||
         display.width != ui_width || display.height != ui_height) {
@@ -2183,6 +2185,7 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
             .initialLayout = vk::ImageLayout::eUndefined,
         });
         display.views.clear();
+        display.gsr2_seed_generation = 0;
     }
     scheduler.EndRendering();
     // Bionic GSR2: the PS4 display-copy draw may touch only some tiles.
@@ -2190,11 +2193,17 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
     // the 2x2 tearing/striped quadrants observed at 720p. Prime all tiles
     // from the fully reconstructed 720p UI image before any native UI draw.
     // Scope strictly to experimental GSR2; other upscalers keep old behavior.
-    const bool prefill_gsr2 = UseGsr2() && ui_image && ui_width == display.width &&
-                              ui_height == display.height &&
+    const bool prefill_gsr2 = UseGsr2() && display_redirect &&
+                              completed_temporal_frame && ui_image &&
+                              ui_width == display.width && ui_height == display.height &&
                               std::getenv("GOW3_GSR2_PREFILL_DISPLAY") != nullptr;
+    // Prime exactly ONCE per newly dispatched image for each of the game's
+    // rotating guest display buffers. Further draws in this same guest pass
+    // must preserve already-composited pixels, not re-copy the scene underneath.
+    const bool new_gsr2_image = prefill_gsr2 &&
+        (!display.valid || display.gsr2_seed_generation != gsr2_completed_generation);
     const auto range = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-    if (prefill_gsr2) {
+    if (new_gsr2_image) {
         const vk::ImageMemoryBarrier2 src{
             .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
             .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
@@ -2250,17 +2259,25 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
             cmd.pipelineBarrier2({.imageMemoryBarrierCount = u32(barriers.size()),
                                   .pImageMemoryBarriers = barriers.data()});
         });
+        display.gsr2_seed_generation = gsr2_completed_generation;
         static u32 primed = 0;
         if (++primed <= 2)
             std::printf("GSR2_PRESENT_INIT copied full UI %ux%u into display target\n",
                         display.width, display.height);
     } else {
+        // A framebuffer already initialized for this GSR2 generation retains
+        // the native draw/UI composition. The old code used UNDEFINED even on
+        // subsequent draws, discarding that content and causing image overlap.
+        const bool preserve = prefill_gsr2 && display.valid &&
+                              display.gsr2_seed_generation == gsr2_completed_generation;
         const vk::ImageMemoryBarrier2 b{
             .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .srcAccessMask = preserve ? (vk::AccessFlagBits2::eMemoryRead |
+                                        vk::AccessFlagBits2::eMemoryWrite)
+                                     : vk::AccessFlagBits2::eNone,
             .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-            .oldLayout = vk::ImageLayout::eUndefined,
+            .oldLayout = preserve ? vk::ImageLayout::eGeneral : vk::ImageLayout::eUndefined,
             .newLayout = vk::ImageLayout::eGeneral,
             .image = vk::Image(display.image),
             .subresourceRange = range,
@@ -2524,6 +2541,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // 录制完成的帧计数（排障：与「画面冻结」的时间点对照——录制停了 = 调用链问题；
         // 录制继续而画面冻结 = GPU 侧挂起）。行缓冲下即时落盘。
         ++dispatched;
+        ++gsr2_completed_generation;
         if (dispatched == 1 || dispatched % 600 == 0) {
             std::printf("Upscaler: GSR 2 recorded frame %llu\n",
                         static_cast<unsigned long long>(dispatched));
