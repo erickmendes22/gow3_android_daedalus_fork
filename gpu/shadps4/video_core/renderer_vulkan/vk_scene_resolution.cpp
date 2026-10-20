@@ -511,10 +511,22 @@ SceneTargets::Target SceneTargets::Attachment(VideoCore::ImageId id,
                   : vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite);
     }
     e.state.ProxyWrite();
+    e.last_raster_frame = frame_serial;
     auto attachment_info = info;
     attachment_info.is_storage = true; // include stencil in attachment views
     return {e.image, View(e, original, attachment_info), e.layout, e.image.image_ci.usage};
 }
+bool SceneTargets::WasRasterizedReduced(const VideoCore::Image& image) const {
+    if (!Reduced() || frame_serial == 0 || !image.scene_proxy) {
+        return false;
+    }
+    const auto it = entries.find(Key(image.image_uid, 0));
+    // Native writes/resolves invalidate dirty proxy content. Never treat a
+    // proxy created by Copy(native -> reduced) as a true low-res raster pass.
+    return it != entries.end() && it->second->last_raster_frame == frame_serial &&
+           it->second->state.valid && it->second->state.dirty;
+}
+
 bool SceneTargets::ProxyCurrent(const VideoCore::Image& image, u32 level, u32 levels) const {
     if (copying || !image.scene_proxy || image.info.props.is_depth || levels != 1) {
         return false;
