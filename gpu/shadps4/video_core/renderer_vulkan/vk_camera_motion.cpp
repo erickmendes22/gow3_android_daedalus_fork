@@ -2,6 +2,7 @@
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/gow3_camera_layout.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -292,7 +293,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
                 if (n <= 0) break;
                 written += size_t(n);
             }
-            std::printf("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u floats=%zu first=%zu hex=%s\\n",
+            std::printf("GSR2_CAMERA_RAW frame=%u sample=%u shader=%016llx slot=%u floats=%zu first=%zu hex=%s\n",
                         probe_frame, probe_written,
                         static_cast<unsigned long long>(shader_hash), buffer_slot,
                         float_count, floats, hex);
@@ -365,7 +366,7 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
             (frame_number == 1200 || frame_number == 3600)) {
             probe_frame = frame_number;
             probe_seen = probe_written = 0;
-            std::printf("GSR2_CAMERA_RAW_CAPTURE arm=%u max_samples=32 max_blocks=1024\\n", probe_frame);
+            std::printf("GSR2_CAMERA_RAW_CAPTURE arm=%u max_samples=32 max_blocks=1024\n", probe_frame);
         }
         // Include gameplay, not only the six loading-screen frames as before.
         if (frame_number == 1 || frame_number == 600 || frame_number == 1800 ||
