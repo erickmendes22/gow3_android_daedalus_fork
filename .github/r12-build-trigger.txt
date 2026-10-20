@@ -1,0 +1,1 @@
+One gated R12 Bionic build: capture shader/slot-tagged GoW3 CUSA01623 matrix constant layouts during gameplay, at bounded 1200/3600 frames, preserving GSR2/FSR/LSFG/HUD. This is a targeted camera-layout investigation, not a claim temporal GSR2 is fixed.
