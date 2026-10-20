@@ -35,7 +35,7 @@ class R12(unittest.TestCase):
         self.assertIn("spatial-reset-no-history",u)
     def test_trigger_restricted_to_this_branch(self):
         w=get(".github/workflows/bionic-apk.yml")
-        self.assertIn("r13-build-trigger.txt",w)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",w)
+        self.assertIn("r14-build-trigger.txt",w)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",w)
         self.assertIn("cancel-in-progress: true",w)
 if __name__=="__main__":unittest.main()
