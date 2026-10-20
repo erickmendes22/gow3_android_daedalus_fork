@@ -29,6 +29,18 @@ class R17TextureLayoutIdentity(unittest.TestCase):
         self.assertIn("if (!same_layout(cache_image.info, info))", method)
         self.assertIn("GOW3_TEXTURE_LAYOUT_REJECT", method)
 
+    def test_equal_address_overlap_does_not_reintroduce_old_layout(self):
+        overlap = CPP.split("std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(", 1)[1]
+        same_addr = overlap.split("// Equal address", 1)[1].split("// Right overlap", 1)[0]
+        self.assertIn("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT", same_addr)
+        self.assertIn("a.pitch != b.pitch || a.tile_mode != b.tile_mode", same_addr)
+        self.assertIn("a.array_mode != b.array_mode", same_addr)
+        self.assertIn("a.bank_swizzle != b.bank_swizzle", same_addr)
+        self.assertIn("a.alt_tile != b.alt_tile", same_addr)
+        self.assertIn("a.num_samples != b.num_samples", same_addr)
+        guard = same_addr.split("if (a.pitch != b.pitch",1)[1].split("if (image_info.BlockDim()",1)[0]
+        self.assertIn("return {merged_image_id, -1, -1};", guard)
+
     def test_same_guest_address_different_tiling_must_not_match(self):
         first = dict(address=0x100000, width=1280, height=720, format="RGBA8",
                      pitch=1280, tile=1, samples=1)
