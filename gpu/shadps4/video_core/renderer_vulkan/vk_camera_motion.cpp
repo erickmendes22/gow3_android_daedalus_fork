@@ -266,7 +266,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
         // delivery without dumping private guest data or flooding the log.
         static unsigned seen_blocks = 0;
         ++seen_blocks;
-        if (seen_blocks <= 6 || seen_blocks % 1200 == 0) {
+        if (seen_blocks <= 6 || seen_blocks == 1200 || seen_blocks % 600000 == 0) {
             std::printf("GSR2_CAMERA_FEED blocks=%u floats=%zu projection=%d pose=%d votes=%u\n",
                         seen_blocks, float_count, int(have_projection),
                         int(have_pose), frame_pose_votes);
