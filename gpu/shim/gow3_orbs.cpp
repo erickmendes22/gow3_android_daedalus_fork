@@ -16,6 +16,14 @@ extern "C" float __attribute__((sysv_abi)) gow3_orbs_gain(void* player, float re
     return Gow3Orbs::Scale(balance, requested, Gow3Settings::Get().red_orb_multiplier.load());
 }
 
+extern "C" uintptr_t gow3_auto_qte_flag(void) {
+    static_assert(sizeof(std::atomic<bool>) == 1, "QTE stubs compare one byte");
+    return reinterpret_cast<uintptr_t>(&Gow3Settings::Get().auto_qte);
+}
+extern "C" void gow3_qte_status(int supported) {
+    Gow3Settings::Get().qte_supported = supported != 0;
+}
+
 extern "C" uintptr_t gow3_cheat_flag(unsigned id) {
     static_assert(sizeof(std::atomic<bool>) == 1 && std::atomic<bool>::is_always_lock_free);
     return id < GOW3_CHEAT_COUNT ? reinterpret_cast<uintptr_t>(&Gow3Settings::Get().cheats[id]) : 0;
