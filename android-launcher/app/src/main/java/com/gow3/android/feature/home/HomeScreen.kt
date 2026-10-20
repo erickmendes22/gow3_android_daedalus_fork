@@ -80,33 +80,75 @@ internal fun HomeScreen(
         }
     }
 
-    ScreenColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(36.dp))
-        Text(stringResource(R.string.title_god_of_war_iii), color = LauncherColors.textPrimary, fontFamily = FontFamily.Serif, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-        Text(stringResource(R.string.title_remastered), color = LauncherColors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
-        Text(if (isBionic) "Daedalus Fork · Bionic" else "Daedalus Fork", color = LauncherColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(28.dp))
-        LaunchButton(onStartGame)
-        Spacer(Modifier.height(20.dp))
-        LaunchParameters(gameDir, updateDir, iniValues, ::save, onChooseGameFolder, onChooseUpdateFolder)
+    var popup by remember { mutableStateOf<HomePopupKind?>(null) }
+    fun applyChanges(values: Map<String, String>): Boolean {
+        if (!Gow3Ini.write(gow3IniFile(context), values)) return false
+        iniValues = iniValues + values
+        return true
+    }
+    ScreenColumn {
+        Text(stringResource(R.string.title_god_of_war_iii), color = LauncherColors.textPrimary,
+            fontFamily = FontFamily.Serif, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text("DAEDALUS · 2.1.7 · ANDROID BIONIC", color = LauncherColors.gold,
+            fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(gameDir ?: stringResource(R.string.game_folder_not_selected),
+            color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
+        HomeSection {
+            LaunchButton(onStartGame)
+            HomeAction("Selecionar pasta do jogo", onChooseGameFolder)
+            HomeAction("Selecionar atualização", onChooseUpdateFolder)
+            HomeAction("Instalar jogo via PKG", onInstallBasePkg, enabled = !pkgInstallBusy)
+            HomeAction("Instalar atualização via PKG", onInstallUpdatePkg, enabled = !pkgInstallBusy)
+            if (pkgInstallMessage != null)
+                Text(pkgInstallMessage, color = LauncherColors.textMuted, fontSize = 12.sp)
+        }
+        HomeSection("VÍDEO E DESEMPENHO") {
+            val fps = iniValues["fps_limit"] ?: "60"
+            val vsync = iniValues["vsync"] != "0"
+            HomeAction("FPS e VSync · ${if (fps == "0") "Ilimitado" else "$fps FPS"} · ${if (vsync) "VSync ON" else "VSync OFF"}") {
+                popup = HomePopupKind.FPS
+            }
+            HomeAction("Vídeo e resolução · ${iniValues["render_resolution"] ?: "720p"}") {
+                popup = HomePopupKind.VIDEO
+            }
+        }
+        HomeSection("MODS E CHEATS") {
+            HomeAction("Mods · selecionar e organizar") { popup = HomePopupKind.MODS }
+            HomeAction("Cheats · selecionar") { popup = HomePopupKind.CHEATS }
+        }
         if (isBionic) {
             FrameGenerationCard()
-            Spacer(Modifier.height(12.dp))
         }
-        GpuDriverCard()
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PkgAction(stringResource(R.string.pkg_install), onInstallBasePkg, !pkgInstallBusy, Modifier.weight(1f))
-            PkgAction(stringResource(R.string.pkg_update), onInstallUpdatePkg, !pkgInstallBusy, Modifier.weight(1f))
-        }
-        if (pkgInstallMessage != null) {
-            Text(pkgInstallMessage, color = LauncherColors.textMuted, fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(16.dp))
-        LanguageSetting(onChangeLanguage)
-        Spacer(Modifier.height(16.dp))
-        Spacer(Modifier.height(24.dp))
     }
+    popup?.let { which ->
+        HomePopup(which, iniValues, ::applyChanges, close = { popup = null })
+    }
+}
+
+@Composable
+private fun HomeSection(title: String? = null, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(20.dp))
+        .background(LauncherColors.surface)
+        .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = 0.55f)), RoundedCornerShape(20.dp))
+        .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (title != null) Text(title, color = LauncherColors.gold, fontSize = 15.sp,
+            fontWeight = FontWeight.Bold)
+        content()
+    }
+}
+
+@Composable
+private fun HomeAction(title: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Text(title, Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        .background(LauncherColors.navSurface)
+        .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+        .clickable(enabled = enabled, onClick = onClick)
+        .padding(horizontal = 16.dp, vertical = 17.dp),
+        color = if (enabled) LauncherColors.textPrimary else LauncherColors.textMuted,
+        fontSize = 14.sp)
 }
 
 @Composable
