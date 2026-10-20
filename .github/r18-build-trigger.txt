@@ -1,2 +1,4 @@
 Bionic R18 / native preset 0 only:\n- disable GSR2 interception at launcher environment (no provider dispatch, no scene proxy, no forced 720p patch)\n- preserve explicitly selected game resolution and saved menu settings\n- reacquire depth source after SlotVector insertion (source reference can relocate)\n- compare existing native R17 09:15 log: preset=0; zero GSR2 dispatch; 720p forced; image corrupted\n\nOnly promote once source tests, native C++ build and APK validation pass.\n
 Final native lifetime fix: FindDepthTarget also reacquires original image by ID after stencil slot allocation (guarded by R18 regression test).
+
+R18 CI retry: repair fixture INI newlines; verify native preset 0 disables GSR2 only at launch and both depth/stencil SlotVector lifetime regressions.
