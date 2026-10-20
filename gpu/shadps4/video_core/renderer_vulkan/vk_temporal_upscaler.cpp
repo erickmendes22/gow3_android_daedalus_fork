@@ -1452,9 +1452,17 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
         // format/extent, guest address and depth agree below.
         const VideoCore::ImageId scene = color; // Last completed attachment at the display-copy boundary.
         const VideoCore::ImageId depth_id = camera_motion.Depth();
+        // Preset 0 is GSR2 Native AA: the guest scene and output are both 1280x720.
+        // It still needs a real compute dispatch to apply antialiasing, but
+        // must not be routed through reduced-size SceneTargets proxies.
+        const bool native_aa = Gow3Settings::RenderPreset() == Gow3Settings::NativeAA &&
+                               !scene_targets.Reduced() &&
+                               render_width == target_width &&
+                               render_height == target_height;
+        const bool true_upscale = scene_targets.Reduced() &&
+                                  render_width < target_width && render_height < target_height;
         bool eligible = active && bool(color) && bool(scene) && bool(depth_id) &&
-                        scene_targets.Reduced() &&
-                        render_width < target_width && render_height < target_height;
+                        (native_aa || true_upscale);
         if (eligible) {
             const auto& color_image = texture_cache.GetImage(scene);
             const auto& depth_image = texture_cache.GetImage(depth_id);
@@ -1824,7 +1832,7 @@ void TemporalUpscaler::RunScaled() {
     vk::Image depth_image = depth.GetImage(), color_image = color.GetImage();
     vk::ImageView depth_view{}, color_view{};
     u32 source_width = iw, source_height = ih;
-    if (!scaled_session) {
+    if (!scaled_session && scene_targets.Reduced()) {
         VideoCore::ImageViewInfo ci, di;
         ci.format = color.info.pixel_format;
         di.format = depth_format;
@@ -1837,6 +1845,10 @@ void TemporalUpscaler::RunScaled() {
         source_width = w;
         source_height = h;
     } else {
+        // Native AA must sample the ORIGINAL full-size Vulkan images.
+        // SceneTargets::Read() here would fabricate a proxy even for a 1:1
+        // frame, perform needless color/depth blits and obscure real image
+        // lifetime/ownership issues. A true upscale still reads its proxies.
         depth_view = CachedView(depth, depth_format, vk::ImageAspectFlagBits::eDepth);
         color_view = CachedView(color, color.info.pixel_format, vk::ImageAspectFlagBits::eColor);
         runtime.Transit(&depth, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
