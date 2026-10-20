@@ -60,7 +60,16 @@ def derive(game, config, state_path, env):
         ini = graphics_options.read_ini(config)
     # Bionic opt-in Snapdragon GSR2: unlike the broken old FSR3 Android route,
     # it is an upstream Qualcomm provider. All other upscalers stay disabled.
-    gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'
+    # Native AA (preset 0) is a 1:1 scene, not an upscaling session. Until
+    # the native-AA compute path exists, running the GSR2 provider here only
+    # intercepts guest passes without producing any dispatch (09:15 log:
+    # preset=0, 0 GSR2 dispatches, all display overrides invalid). Never force
+    # a 720p guest patch just because the menu's provider is still 'gsr2'.
+    # Preserve the saved choice so switching to Quality/Performance on restart
+    # re-enables the provider; only the launch environment is bypassed.
+    gsr2_preset = ini.get('preset', '0').strip()
+    gsr2_requested = (android_port and ini.get('upscaler') == 'gsr2' and
+                      gsr2_preset in ('1', '2', '3', '4'))
     if android_port and ini.get('upscaler') not in ('off', 'gsr2'):
         graphics_options.write_keys(config, {'upscaler': 'off', 'preset': '0',
                                              'fsr1': '0', 'rcas': '0'})
@@ -70,7 +79,9 @@ def derive(game, config, state_path, env):
         updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'
         updates['GOW3_FSR1'] = '0'
         updates['GOW3_RCAS'] = '0'
-        updates['GOW3_UPSCALER_SOURCE'] = 'gsr2-opt-in' if gsr2_requested else 'disabled-android'
+        updates['GOW3_UPSCALER_SOURCE'] = ('gsr2-opt-in' if gsr2_requested else
+            'native-aa-1to1-no-gsr2' if ini.get('upscaler') == 'gsr2' and gsr2_preset == '0'
+            else 'disabled-android')
         updates['GOW3_RESOLUTION_STATUS'] = 'native-game-patch'
     elif 'GOW3_UPSCALER' not in env:
         updates['GOW3_UPSCALER'] = 'none'
