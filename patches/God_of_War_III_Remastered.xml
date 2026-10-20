@@ -46,6 +46,11 @@
             <Line Type="bytes" Address="0x00564400" Value="00050000" Pattern="41 b9 80 07 00 00 4c 89 f9 4d 89 e0 e8 ?? ?? ?? ??" At="2"/>
             <Line Type="bytes" Address="0x005ff769" Value="00050000" Pattern="bf 00 01 00 00 b9 80 07 00 00 41 b8 38 04 00 00" At="6"/>
             <Line Type="bytes" Address="0x005ff76f" Value="d0020000" Pattern="bf 00 01 00 00 b9 80 07 00 00 41 b8 38 04 00 00" At="12"/>
+            <!-- GoW III's native post-processing targets are half the guest output.
+                 Port of verified SpartanPort PR #613; without these, 720p
+                 geometry still feeds 960x540 post-process allocations. -->
+            <Line Type="bytes" Address="0x007f2a3c" Value="80020000" Pattern="00 00 00 00 0a e0 f2 00 c0 03 00 00 1c 02 00 00 01 00 00 00" At="8"/>
+            <Line Type="bytes" Address="0x007f2a40" Value="68010000" Pattern="0a e0 f2 00 c0 03 00 00 1c 02 00 00 01 00 00 00 00 00 00 00" At="8"/>
             <Line Type="bytes" Address="0x007cd918" VideoArena="true" Value="00000090" Pattern="00 00 00 43 00 00 80 3f 00 00 00 50 00 00 00 00 00 04 00 00" At="8"/>
         </PatchList>
     </Metadata>
