@@ -20,10 +20,10 @@ class R9(unittest.TestCase):
     def test_preserve_host_redirect_during_intermediate_offscreen_passes(self):
         cpp=src("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         self.assertIn("if (!UseGsr2() || !std::getenv(\"GOW3_ANDROID_PORT\"))",cpp)
-        self.assertIn("const bool keep_this_frame = UseGsr2()",cpp)
+        self.assertIn("display.valid = false; // Presenter falls back",cpp)
         self.assertIn("completed_temporal_frame && Active()",cpp)
         self.assertIn("display.valid && bool(display.image)",cpp)
-        self.assertIn("if (!keep_this_frame)",cpp)
+        self.assertIn("if (!display_redirect)",cpp)
         self.assertIn("display_redirect = false;",cpp)
         self.assertIn("GSR2_PRESENT_QUERY",cpp)
         self.assertIn("GSR2_PRESENT_INIT",cpp)
@@ -38,8 +38,8 @@ class R9(unittest.TestCase):
         self.assertIn("display_redirect = ui_phase;",frame)
     def test_gated_single_build_and_existing_hud_lsfg_untouched(self):
         workflow=src(".github/workflows/bionic-apk.yml")
-        self.assertIn("r13-build-trigger.txt",workflow)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",workflow)
+        self.assertIn("r14-build-trigger.txt",workflow)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",workflow)
         self.assertIn("cancel-in-progress: true",workflow)
         script=src("tools/android/bionic/run-bionic.sh")
         self.assertIn("export GOW3_GSR2_AUTO_PROBE=1",script)
