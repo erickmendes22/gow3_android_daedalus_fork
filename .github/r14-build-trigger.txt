@@ -1,1 +1,3 @@
 One bounded R14 Bionic APK compilation: guard GSR2 temporal history by same-shader/continuous projection, pose and depth; prevent guest framebuffer double-exposure with one GSR2 prefill per image generation; never reuse stale host display. Keep HUD/LSFG and all other shaders untouched. Validate runtime on Adreno after compile.
+
+R14 retry 2: all four legacy assertions updated to require verified shader/pose history and actual cmdbuf motion reset. Native source unchanged.
