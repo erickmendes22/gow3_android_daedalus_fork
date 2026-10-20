@@ -318,6 +318,7 @@ bool TemporalUpscaler::RasterScaling() const {
 }
 
 bool TemporalUpscaler::OnFrameStart() {
+    scene_targets.BeginFrame();
     // gow3: GOW3_PRESET_FILE=<file> holding a preset number, read about once a second: switches
     // the preset like the menu does (scripted tests of live preset changes).
     static const char* preset_file = std::getenv("GOW3_PRESET_FILE");
@@ -1475,6 +1476,28 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
                        color_image.info.size.width == target_width &&
                        color_image.info.size.height == target_height &&
                        scene_targets.EligibleScene(color_image) && scene_targets.EligibleScene(depth_image);
+            // The old guard accepted any generated 752x424 proxy, including a
+            // native 1280x720 image downsampled on demand at RunScaled. That
+            // executes GSR2 like a filter WITHOUT actually rendering fewer
+            // pixels. Every enlarged preset must prove both inputs originated
+            // from reduced raster attachments in this same guest frame.
+            if (eligible && true_upscale) {
+                const bool real_color = scene_targets.WasRasterizedReduced(color_image);
+                const bool real_depth = scene_targets.WasRasterizedReduced(depth_image);
+                if (!(real_color && real_depth)) {
+                    static unsigned rejected_filter_frames = 0;
+                    const unsigned index = ++rejected_filter_frames;
+                    if (index <= 12 || index % 600 == 0) {
+                        std::printf("GSR2_SCALE_PROOF rejected count=%u preset=%d "
+                                    "scene=%ux%u output=%ux%u color_raster=%d depth_raster=%d "
+                                    "reason=NO_REAL_REDUCED_INPUT\n",
+                                    index, Gow3Settings::RenderPreset(), render_width,
+                                    render_height, target_width, target_height,
+                                    int(real_color), int(real_depth));
+                    }
+                    eligible = false;
+                }
+            }
         }
         if (eligible) {
             ldr_target = scene;
@@ -1807,6 +1830,17 @@ void TemporalUpscaler::RunScaled() {
     const auto [w, h] = SceneSize(iw, ih);
     const u32 ow = target_width, oh = target_height;
     if (depth.info.size.width != iw || depth.info.size.height != ih || w > ow || h > oh) {
+        return;
+    }
+    if (UseGsr2() && std::getenv("GOW3_ANDROID_PORT") && scene_targets.Reduced() &&
+        (!scene_targets.WasRasterizedReduced(color) ||
+         !scene_targets.WasRasterizedReduced(depth))) {
+        // Downsampling a native frame into a proxy is NOT actual upscaling.
+        // Keep the unmodified guest image when rasterization was not reduced.
+        static u32 invalid_source_frames = 0;
+        if (++invalid_source_frames <= 8 || invalid_source_frames % 600 == 0)
+            std::printf("GSR2_RUN_GUARD refused native-downsampled source count=%u\n",
+                        invalid_source_frames);
         return;
     }
     // No camera: no temporal data. Do not use RunUiOnly() here: that
