@@ -616,10 +616,13 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
             fex_cheat_sites[fex_cheat_site_count++] = (FexCheatSite){address, trampoline};
         }
         if (valid) {
+            uint64_t first_site = UINT64_MAX;
+            for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+                if (gow3_cheat_hooks[i].id == id) { first_site = sites[i]; break; }
+            }
             gow3_cheat_status(id);
             printf("FEX Cheats: %s READY, %u verified site(s), selected=%d, first=0x%" PRIx64 "\n",
-                   names[id], needed, (int)*(volatile unsigned char *)flag,
-                   sites[0]); /* per-site positions are reported on signature failure */
+                   names[id], needed, (int)*(volatile unsigned char *)flag, first_site);
         }
     }
 }
