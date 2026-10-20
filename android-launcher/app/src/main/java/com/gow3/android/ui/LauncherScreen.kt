@@ -85,7 +85,7 @@ internal fun LauncherScreen(
             when (tab) {
                 LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg, onInstallUpdatePkg, pkgInstallBusy, pkgInstallMessage, pkgGeneration, onChangeLanguage)
                 LauncherTab.MODS -> ModsScreen()
-                LauncherTab.SETTINGS -> GeneralSettingsScreen(saves, logs)
+                LauncherTab.SETTINGS -> GeneralSettingsScreen(saves, logs, onChangeLanguage)
                 LauncherTab.ABOUT -> AboutScreen(saves, logs, onChangeLanguage)
             }
         }
