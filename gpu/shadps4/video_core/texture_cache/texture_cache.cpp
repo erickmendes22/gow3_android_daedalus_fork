@@ -777,14 +777,20 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             }
             return {cache_image_id, -1, -1};
         }
-        // Same VRAM address does not make two incompatible surface layouts
-        // interchangeable. The generic equal-size overlap path below used
-        // to return the old image even after FindImage correctly rejected it.
-        // In particular, a new tiled surface could be sampled through a prior
-        // linear backing of equal byte size, yielding corrupted stripes.
-        if (a.pitch != b.pitch || a.tile_mode != b.tile_mode ||
-            a.array_mode != b.array_mode || a.bank_swizzle != b.bank_swizzle ||
-            a.alt_tile != b.alt_tile || a.num_samples != b.num_samples) {
+        // Different image layouts normally must not alias. But color-to-depth
+        // and depth/stencil format conversions are handled by ResolveDepthOverlap
+        // BELOW. R17 rejected them here first, so the native renderer never
+        // rebuilt the target and could retain stale depth/color contents.
+        // Permit only genuine aspect conversions; a same-aspect layout mismatch
+        // must still be rejected rather than handed to the generic image pool.
+        const bool depth_conversion =
+            (a.props.is_depth != b.props.is_depth) ||
+            (a.props.is_depth && b.props.is_depth &&
+             (a.props.has_stencil != b.props.has_stencil || a.num_bits != b.num_bits));
+        if (!depth_conversion &&
+            (a.pitch != b.pitch || a.tile_mode != b.tile_mode ||
+             a.array_mode != b.array_mode || a.bank_swizzle != b.bank_swizzle ||
+             a.alt_tile != b.alt_tile || a.num_samples != b.num_samples)) {
             static u32 rejected_overlap_layout = 0;
             if (++rejected_overlap_layout <= 12 || rejected_overlap_layout % 1000 == 0) {
                 std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT count=%u address=%#llx "
