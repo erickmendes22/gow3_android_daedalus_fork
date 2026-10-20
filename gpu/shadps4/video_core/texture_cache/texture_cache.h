@@ -558,6 +558,17 @@ private:
         bool needs_native = true;
         u32 levels = 0;
         u32 layers = 0;
+        // Cached requests must distinguish otherwise identical address/extent images
+        // with different memory layouts. ImageId may remain registered across reuse.
+        u32 pitch = 0;
+        u32 tile_mode = 0;
+        u32 array_mode = 0;
+        u32 num_samples = 0;
+        u32 num_bits = 0;
+        u32 bank_swizzle = 0;
+        bool alt_tile = false;
+        bool is_pow2 = false;
+        bool is_block = false;
         u64 generation = ~0ULL;
         ImageId image_id{};
         int view_mip = -1;
