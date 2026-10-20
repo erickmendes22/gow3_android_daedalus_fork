@@ -36,11 +36,15 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.gow3.android.feature.home.GpuDriverCard
+import com.gow3.android.feature.about.LanguageSetting
+import com.gow3.android.data.Gow3Ini
 import com.gow3.android.ui.components.LauncherColors
 import com.gow3.android.ui.components.ScreenColumn
 
 @Composable
-internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager) {
+internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
+    onChangeLanguage: (String) -> Unit) {
     val context = LocalContext.current
     val bionic = context.packageName == "com.gow3.android.bionic"
     var hasSaves by remember { mutableStateOf(SaveArchive.hasSaves(saves.savedataDir())) }
@@ -72,10 +76,30 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager) {
         }
     }
     ScreenColumn {
-        Text("Settings", color = LauncherColors.textPrimary,
+        Text("OPÇÕES", color = LauncherColors.textPrimary,
             fontWeight = FontWeight.Bold, fontSize = 22.sp)
-        Text("General", color = LauncherColors.gold, fontSize = 15.sp)
-        Text("Save data & diagnostic logs", color = LauncherColors.gold, fontSize = 15.sp)
+        Text("IDIOMA", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        LanguageSetting(onChangeLanguage)
+        Text("HUD E CONTROLES", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        val iniFile = remember(context) { java.io.File(context.filesDir, "gow3port/gow3.ini") }
+        var ini by remember { mutableStateOf(Gow3Ini.read(iniFile)) }
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().background(LauncherColors.surface, RoundedCornerShape(12.dp))
+                .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = .5f)),
+                    RoundedCornerShape(12.dp)).padding(14.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text("HUD — FPS / GPU / CPU", Modifier.weight(1f),
+                color = LauncherColors.textPrimary, fontSize = 14.sp)
+            androidx.compose.material3.Switch(checked = ini["show_fps"] == "1", onCheckedChange = { value ->
+                if (Gow3Ini.write(iniFile, mapOf("show_fps" to if (value) "1" else "0")))
+                    ini = ini + ("show_fps" to if (value) "1" else "0")
+                else showResult("Não foi possível salvar o HUD")
+            })
+        }
+        Text("OPÇÕES", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        GpuDriverCard()
+        Text("SALVAMENTOS E LOGS", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         SaveCard(
             hasSaves = hasSaves,
             onExport = {
