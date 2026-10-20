@@ -2517,8 +2517,11 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         .render_height = h,
         .output_width = ow,
         .output_height = oh,
-        .jitter = temporal_ready ? std::array<float, 2>{sign * jitter[0], sign * jitter[1]}
-                                 : std::array<float, 2>{0.0f, 0.0f},
+        // The rasterizer applies this same jitter to scene geometry even when
+        // the camera pair is invalid (and GSR2 resets history). Passing zero
+        // here described a different sample position than the one rendered,
+        // introducing edge shimmer in every spatial-reset frame.
+        .jitter = {sign * jitter[0], sign * jitter[1]},
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
