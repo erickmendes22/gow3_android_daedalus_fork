@@ -400,8 +400,8 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
         raise ValueError(f'unsupported verified direct resolution: {render_res}')
     template = compile_patches(xml, ['Resolution Patch - 720p'], '01.02',
                                segments, image)
-    if len(template) != 9:
-        raise ValueError('incomplete 720p template: expected eight geometry operands and DMEM')
+    if len(template) != 11:
+        raise ValueError('incomplete 720p template: expected eight geometry operands, two half-resolution operands and DMEM')
     overrides = {}
     for i, (offset, patched) in enumerate(template[:8]):
         address = offset + EBOOT_BASE
@@ -415,6 +415,22 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
         if patched != (1280 if field == 'width' else 720).to_bytes(len(patched), 'little'):
             raise ValueError(f'Resolution operand {i}: 720p patch template mismatch at {address:#x}')
         overrides[offset] = (width if field == 'width' else height).to_bytes(len(patched), 'little')
+    # Upstream SpartanPort #613: this independent post-process table must be
+    # exactly half the requested guest output. The old 960x540 allocation is
+    # incompatible with patched 720p and lower-size scene surfaces.
+    # Check actual CUSA01715 01.02 instruction/data bytes before writing.
+    for i, (offset, patched) in enumerate(template[8:10]):
+        address = offset + EBOOT_BASE
+        expected_address = (0x007f2a3c, 0x007f2a40)[i]
+        if address != expected_address:
+            raise ValueError(f'Half-resolution operand {i}: got {address:#x}, expected {expected_address:#x}')
+        original = (960 if i == 0 else 540).to_bytes(4, 'little')
+        if image[offset:offset + 4] != original:
+            raise ValueError(f'Half-resolution operand {i}: unexpected original data at {address:#x}')
+        expected_template = (640 if i == 0 else 360).to_bytes(4, 'little')
+        if patched != expected_template:
+            raise ValueError(f'Half-resolution operand {i}: 720p patch template mismatch at {address:#x}')
+        overrides[offset] = ((width if i == 0 else height) // 2).to_bytes(4, 'little')
     return overrides, {'render': f'{width}x{height}', 'output': f'{width}x{height}',
                        'verified_eboot_sha256': sha,
                        'verified_sites': [hex(site) for site in CUSA01715_0102_SITES]}
