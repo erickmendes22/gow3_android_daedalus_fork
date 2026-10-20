@@ -19,7 +19,7 @@ class BionicR1RepairTests(unittest.TestCase):
         for expr in ('saves.launchExport', 'saves.launchImport', 'logs.launchExport',
                      'SaveCard(', 'LogCard('):
             self.assertIn(expr,ui)
-        self.assertIn('GeneralSettingsScreen(saves, logs)',nav)
+        self.assertIn('GeneralSettingsScreen(saves, logs, onChangeLanguage)',nav)
 
     def test_generated_image_returns_with_legal_vulkan_layout(self):
         presenter=source("gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp")
