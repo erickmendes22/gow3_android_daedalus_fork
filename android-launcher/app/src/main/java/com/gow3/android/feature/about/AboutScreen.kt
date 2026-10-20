@@ -81,45 +81,6 @@ internal fun AboutScreen(
         Spacer(Modifier.height(8.dp))
         ContactCard()
         GitHubCard()
-        SaveCard(
-            hasSaves = hasSaves,
-            onExport = {
-                saves.launchExport { result ->
-                    when (result) {
-                        is SaveResult.Success -> toast(result.message)
-                        SaveResult.Cancelled -> Unit
-                        is SaveResult.Failed -> toast(result.message)
-                    }
-                }
-            },
-            onImport = {
-                saves.launchImport { result ->
-                    when (result) {
-                        is SaveResult.Success -> {
-                            refresh()
-                            toast(result.message)
-                        }
-                        SaveResult.Cancelled -> Unit
-                        is SaveResult.Failed -> toast(result.message)
-                    }
-                }
-            },
-        )
-        LogCard(
-            hasLogs = hasLogs,
-            onExport = {
-                logs.launchExport { result ->
-                    when (result) {
-                        is LogResult.Success -> {
-                            refresh()
-                            toast(result.message)
-                        }
-                        LogResult.Cancelled -> Unit
-                        is LogResult.Failed -> toast(result.message)
-                    }
-                }
-            },
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -134,7 +95,6 @@ internal fun AboutScreen(
             Text(stringResource(R.string.about_third_party_licenses), color = LauncherColors.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Text("›", color = LauncherColors.gold, fontSize = 24.sp)
         }
-        LanguageSetting(onChangeLanguage)
     }
 }
 
