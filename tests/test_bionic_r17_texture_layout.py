@@ -38,8 +38,11 @@ class R17TextureLayoutIdentity(unittest.TestCase):
         self.assertIn("a.bank_swizzle != b.bank_swizzle", same_addr)
         self.assertIn("a.alt_tile != b.alt_tile", same_addr)
         self.assertIn("a.num_samples != b.num_samples", same_addr)
-        guard = same_addr.split("if (a.pitch != b.pitch",1)[1].split("if (image_info.BlockDim()",1)[0]
+        guard = same_addr.split("if (!depth_conversion &&", 1)[1].split(
+            "if (image_info.BlockDim()", 1)[0]
         self.assertIn("return {merged_image_id, -1, -1};", guard)
+        self.assertIn("a.props.is_depth != b.props.is_depth", same_addr)
+        self.assertIn("ResolveDepthOverlap(image_info, binding, cache_image_id)", same_addr)
 
     def test_same_guest_address_different_tiling_must_not_match(self):
         first = dict(address=0x100000, width=1280, height=720, format="RGBA8",
