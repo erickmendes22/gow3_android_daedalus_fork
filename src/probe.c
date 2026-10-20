@@ -567,6 +567,14 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
         sites[i] = gow3_signature_find(image, size, &gow3_cheat_hooks[i].site);
 
     for (unsigned id = 0; id < GOW3_CHEAT_COUNT; ++id) {
+        /* Disabled cheats MUST leave the guest eboot untouched. A FEX
+         * syscall trap changes the translated instruction stream even when
+         * its trampoline's runtime flag evaluates to false. */
+        const uintptr_t flag = gow3_cheat_flag(id);
+        if (!flag || !*(volatile const unsigned char *)flag) {
+            printf("FEX Cheats: %s OFF - no guest code patched\n", names[id]);
+            continue;
+        }
         int valid = 1;
         unsigned needed = 0;
         for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
@@ -591,7 +599,6 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
             continue;
         }
         unsigned next = 0;
-        const uintptr_t flag = gow3_cheat_flag(id);
         for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
             const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
             if (hook->id != id) continue;
@@ -634,13 +641,32 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
  * unique. The user flag is consulted in the guest stub; disabled preserves
  * the original input checks. Unlike patching raw E9 instructions, this works
  * when x86-64 is translated on Android/ARM64. */
-typedef struct { uintptr_t address, trampoline; } FexQteSite;
+typedef struct {
+    uintptr_t address, trampoline;
+    unsigned char is_call; /* RepeatPress hooks an E8 rel32 CALL, not a JMP. */
+} FexQteSite;
 static FexQteSite fex_qte_sites[5];
 static unsigned fex_qte_count;
 static Gow3QteState fex_qte_state;
 static void gow3_fex_qte_callback(GuestRegs *regs) {
     for (unsigned i = 0; i < fex_qte_count; ++i) {
         if (regs->rip == fex_qte_sites[i].address) {
+            if (fex_qte_sites[i].is_call) {
+                /* The original E8 CALL pushes its next RIP. The FEX syscall
+                 * interception bypasses that push, so the original callee
+                 * or automatic replacement can RET into garbage and crash.
+                 * Preserve the x86-64 CALL/RET stack contract for BOTH modes. */
+                const uint64_t return_rip = (uint64_t)(fex_qte_sites[i].address + 5);
+                const uint64_t original_sp = regs->gpr[GUEST_RSP];
+                if (original_sp < sizeof(return_rip)) {
+                    printf("FEX QTE: invalid guest stack at RepeatPress hook\n");
+                    regs->rip = 0;
+                    return;
+                }
+                const uint64_t call_sp = original_sp - sizeof(return_rip);
+                memcpy((void *)(uintptr_t)call_sp, &return_rip, sizeof(return_rip));
+                regs->gpr[GUEST_RSP] = call_sp;
+            }
             regs->rip = fex_qte_sites[i].trampoline;
             return;
         }
@@ -656,6 +682,12 @@ static void install_auto_qte_fex(Segment *segments, uint64_t count, uint64_t siz
                                  GOW3_QTE_CHARGED_LENGTH, GOW3_QTE_CIRCLE_LENGTH};
     const char *kinds[] = {"rotation", "button", "repeated press", "held press", "Circle"};
     const uintptr_t automatic = gow3_auto_qte_flag();
+    /* OFF must be a true bypass, with no guest instruction mutation. */
+    if (!automatic || !*(volatile const unsigned char *)automatic) {
+        gow3_qte_status(0);
+        printf("FEX QTE: OFF - 0 of 5 guest code sites patched\n");
+        return;
+    }
     uint64_t sites[5];
     unsigned char *stubs = allocate(page_size);
     for (unsigned i = 0; i < 5; ++i) {
@@ -693,7 +725,7 @@ static void install_auto_qte_fex(Segment *segments, uint64_t count, uint64_t siz
             printf("FEX QTE: %s unavailable (JIT hook rejected)\n", kinds[i]);
             continue;
         }
-        fex_qte_sites[fex_qte_count++] = (FexQteSite){address, (uintptr_t)(stubs + i*256)};
+        fex_qte_sites[fex_qte_count++] = (FexQteSite){address, (uintptr_t)(stubs + i*256), (unsigned char)(i == 2)};
     }
     gow3_qte_status(fex_qte_count != 0);
     printf("FEX QTE: %u of 5 prompt kinds ready; auto=%s\n",
