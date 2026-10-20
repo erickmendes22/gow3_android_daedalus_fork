@@ -52,6 +52,18 @@ class R18NativePath(unittest.TestCase):
                 self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],"1280x720")
                 self.assertIn("Resolution Patch - 720p",plan["patch_names"])
 
+    def test_stencil_reallocation_never_uses_old_depth_reference(self):
+        cpp=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text(encoding="utf-8")
+        fn=cpp.split("ImageView& TextureCache::FindDepthTarget(",1)[1].split(
+            "void TextureCache::RefreshImage(",1)[0]
+        allocation=fn.index("stencil_id = slot_images.insert(")
+        reload=fn.index("slot_images[image_id].image_uid")
+        return_view=fn.index("return slot_images[image_id].FindView(")
+        self.assertLess(allocation,reload)
+        self.assertLess(reload,return_view)
+        self.assertNotIn("AssociateDepth(image_id, image.image_uid)",fn)
+        self.assertNotIn("return image.FindView(",fn)
+
     def test_depth_source_reference_is_reloaded_after_slotvector_growth(self):
         cpp=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text(encoding="utf-8")
         slot=(ROOT/"gpu/shadps4/common/slot_vector.h").read_text(encoding="utf-8")
