@@ -17,6 +17,18 @@ class Release217(unittest.TestCase):
         gradle=read("android-launcher/app/build.gradle.kts")
         self.assertIn('versionName = "2.1.7-bionic"', gradle)
         self.assertIn('versionCode = 2010700', gradle)
+        # Every runtime/packaging check must use the same release name.
+        # The first 2.1.7 APK compiled and signed, then failed here because
+        # validate_apk.py, sign_apk.sh and package_runtime.py still said 2.1.6.
+        expected = "2.1.7-bionic"
+        validator = read("tools/android/bionic/validate_apk.py")
+        signer = read("tools/android/bionic/sign_apk.sh")
+        packager = read("tools/android/bionic/package_runtime.py")
+        self.assertIn("versionName='" + expected + "'", validator)
+        self.assertIn("God-of-War-III-Daedalus-Fork-v" + expected + "-arm64.apk", signer)
+        self.assertIn("'version':'" + expected + "'", packager)
+        self.assertIn("'runtime_name':'daedalus-gow3-bionic-2.1.7'", packager)
+        self.assertNotIn("2.1.6-daedalus.4-bionic", validator + signer + packager)
 
     def test_8k_strict_eboot_signatures(self):
         xml=ET.parse(ROOT/"patches/God_of_War_III_Remastered.xml").getroot()
