@@ -1856,7 +1856,7 @@ void TemporalUpscaler::RunScaled() {
             static bool announced = false;
             if (!announced) {
                 announced = true;
-                std::printf("GSR2_NATIVE_INPUT_VERIFIED guest=%ux%u dispatch=%ux%u output=%ux%u proxy=0\\n",
+                std::printf("GSR2_NATIVE_INPUT_VERIFIED guest=%ux%u dispatch=%ux%u output=%ux%u proxy=0\n",
                             iw, ih, w, h, ow, oh);
             }
         }
@@ -2381,7 +2381,7 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     if (completed_temporal_frame) {
         static u64 presented_temporal_frames = 0;
         if (++presented_temporal_frames == 1 || presented_temporal_frames % 600 == 0)
-            std::printf("GOW3_FSR_STATUS state=TEMPORAL_PRESENTED count=%llu output=%ux%u\n",
+            std::printf("GOW3_FSR_STATUS state=UPSCALED_FRAME_PRESENTED count=%llu output=%ux%u\n",
                         static_cast<unsigned long long>(presented_temporal_frames),
                         display.width, display.height);
     }
