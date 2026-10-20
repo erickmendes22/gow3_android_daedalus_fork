@@ -1,0 +1,1 @@
+Single controlled R13 Bionic build: validated PS4 GoW3 ViewProjection constants recovered at vertex slot 1 float offset 16 from 20261019 220053 log; true camera, inverse, FOV, and motion with two votes. Includes native C++ regression using two real time slices. No HUD/LSFG/presentation changes.
