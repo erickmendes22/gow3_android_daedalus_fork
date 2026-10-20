@@ -135,6 +135,9 @@ def derive(game, config, state_path, env):
                 names.append('Resolution Patch - 720p')  # checked template, dynamic bytes
                 updates['GOW3_PATCH_INPUT_RES'] = true_input
                 updates['GOW3_GSR2_TRUE_INPUT'] = '1'
+                # Display-copy passes are partial: initialize untouched tiles
+                # from the reconstructed 720p frame once per generation.
+                updates['GOW3_GSR2_PREFILL_DISPLAY'] = '1'
                 updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-guest-native-input'
                 updates['GOW3_OUTPUT_RES'] = '1280x720'
             # This exact-address patch belongs only to the supplied and
