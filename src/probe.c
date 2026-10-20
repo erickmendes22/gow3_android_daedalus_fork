@@ -524,6 +524,89 @@ static void install_stat_multipliers(const char *app0, Segment *segments, uint64
     printf("Multipliers: damage %s, green/blue/gold orbs %s\n", damage ? "ready" : "unavailable",
            pickup ? "ready" : "unavailable");
 }
+#if !defined(GUEST_CPU_NATIVE)
+/* Bionic/FEX: unlike x86-64, the JIT cannot execute a host-patched E9 jump to
+ * raw machine code. guest_cpu_hook installs a translated guest syscall trap.
+ * Redirect the guest RIP into the SAME verified x86-64 cheat trampoline that
+ * the native installer uses. It reads the live setting byte and either runs
+ * the original instruction or the enabled cheat, then jumps back.
+ * No code is changed unless every signature for that cheat matches. */
+typedef struct { uintptr_t address, trampoline; } FexCheatSite;
+static FexCheatSite fex_cheat_sites[GOW3_CHEAT_HOOK_COUNT];
+static unsigned fex_cheat_site_count;
+
+static void gow3_fex_cheat_callback(GuestRegs *regs) {
+    for (unsigned i = 0; i < fex_cheat_site_count; ++i) {
+        if (fex_cheat_sites[i].address == regs->rip) {
+            regs->rip = fex_cheat_sites[i].trampoline;
+            return;
+        }
+    }
+    /* A missing site must not spin forever in the patched syscall. */
+    regs->rip += 2;
+}
+
+static void install_cheats_fex(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
+    char path[4096], serial[32] = "", version[32] = "";
+    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
+    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
+    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
+    if ((strcmp(serial, "CUSA01623") && strcmp(serial, "CUSA01715") &&
+         strcmp(serial, "CUSA01720")) || strcmp(version, "01.02")) {
+        printf("FEX Cheats: unsupported title/version; all cheats disabled\n");
+        return;
+    }
+    static const char *names[] = {"health", "magic", "item meter", "Rage of Sparta",
+                                  "red orbs", "Very Hard", "double jumps"};
+    for (unsigned id = 0; id < GOW3_CHEAT_COUNT; ++id) {
+        int valid = 1;
+        unsigned needed = 0;
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            ++needed;
+            if (hook->offset > size || hook->length > size - hook->offset ||
+                !mapped(segments, count, hook->offset, hook->length) ||
+                !gow3_cheat_signature_match(hook, image + hook->offset, size - hook->offset)) {
+                valid = 0;
+            }
+        }
+        if (!valid || fex_cheat_site_count + needed > GOW3_CHEAT_HOOK_COUNT) {
+            printf("FEX Cheats: %s unavailable (eboot signature mismatch)\n", names[id]);
+            continue;
+        }
+        unsigned char *stubs = allocate(page_size);
+        unsigned next = 0;
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            gow3_cheat_build_stub(stubs + next * 256, hook, gow3_cheat_flag(id),
+                                  (uintptr_t)(image + hook->offset + hook->length));
+            ++next;
+        }
+        protect(stubs, page_size, 5);
+        guest_cpu_code((uintptr_t)stubs, page_size);
+        next = 0;
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            const uintptr_t address = (uintptr_t)(image + hook->offset);
+            const uintptr_t trampoline = (uintptr_t)(stubs + next++ * 256);
+            if (!guest_cpu_hook(address, hook->length, gow3_fex_cheat_callback)) {
+                printf("FEX Cheats: %s unavailable (guest JIT hook rejected)\n", names[id]);
+                valid = 0;
+                break;
+            }
+            fex_cheat_sites[fex_cheat_site_count++] = (FexCheatSite){address, trampoline};
+        }
+        if (valid) {
+            gow3_cheat_status(id);
+            printf("FEX Cheats: %s ready, controlled live by gow3.ini\n", names[id]);
+        }
+    }
+}
+#endif
+
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -879,7 +962,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_actor_watch(app0, segments, ns, size);
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
 #else
-    (void)segments; (void)ns;
+    if (gpu_enabled) install_cheats_fex(app0, segments, ns, size);
 #endif
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
