@@ -1,0 +1,3 @@
+2.1.7 EN/PT-BR launcher localization correction.
+All Home / Settings / Mods / Cheats / FPS / Resolution / Bloodframe text comes from English or Brazilian Portuguese Android string resources, preserving button actions and emulator runtime.
+Build full signed Android/Bionic APK after string resource and Kotlin tests.
