@@ -1873,7 +1873,14 @@ void TemporalUpscaler::RunScaled() {
             all, vk::AccessFlagBits2::eNone, vk::ImageLayout::eGeneral, all, rw);
     // CUSA01715: RunScaled is rejected above without validated motion.
     // Never label a zero-filled motion texture as working temporal FSR.
-    const bool reprojection = camera_motion.Ready();
+    // A valid pair of matrix buffers is not enough for temporal history:
+    // R13 accepted different guest shaders and abrupt camera/model changes.
+    // Those vectors point into unrelated images and produce the reported
+    // doubled/overlaid scene. For Android GSR2, validate continuity FIRST.
+    const bool gsr2_bionic = UseGsr2() && std::getenv("GOW3_ANDROID_PORT");
+    const bool reprojection = gsr2_bionic
+        ? camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid
+        : camera_motion.Ready();
     const auto motion_stage = reprojection ? vk::PipelineStageFlagBits2::eComputeShader
                                            : vk::PipelineStageFlagBits2::eTransfer;
     const auto motion_write = reprojection ? vk::AccessFlagBits2::eShaderWrite
@@ -2458,7 +2465,23 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     // Zero vectors + stale history produce the severe blue/black smearing
     // seen on screen. A history reset makes GSR2 do its current-frame spatial
     // reconstruction while retaining the genuine GSR2 compute dispatch.
-    const bool temporal_ready = camera_motion.Ready();
+    const auto temporal_status = camera_motion.Gsr2HistoryValidity();
+    const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;
+    // Aggregate, rather than logging on every draw. All 6 outcomes are
+    // measured at the point GSR2 actually records a compute dispatch.
+    static std::array<u64, 6> history_decisions{};
+    static u64 history_dispatches = 0;
+    ++history_decisions[static_cast<unsigned>(temporal_status)];
+    if (++history_dispatches % 600 == 0) {
+        std::printf("GSR2_HISTORY_GUARD dispatch=%llu valid=%llu missing=%llu shader=%llu projection=%llu position=%llu rotation=%llu\n",
+            (unsigned long long)history_dispatches,
+            (unsigned long long)history_decisions[0],
+            (unsigned long long)history_decisions[1],
+            (unsigned long long)history_decisions[2],
+            (unsigned long long)history_decisions[3],
+            (unsigned long long)history_decisions[4],
+            (unsigned long long)history_decisions[5]);
+    }
     if (!temporal_ready) {
         static bool reported = false;
         if (!reported) {
