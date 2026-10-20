@@ -26,10 +26,10 @@ class Gsr2R10(unittest.TestCase):
     def test_gsr2_only_existing_correctness_guards(self):
         code=source("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         self.assertIn("const bool prefill_gsr2 = UseGsr2()",code)
-        self.assertIn("const bool keep_this_frame = UseGsr2()",code)
+        self.assertIn("const bool new_gsr2_image = prefill_gsr2",code)
         self.assertIn("GSR2_PRESENT_INIT copied full UI",code)
         ci=source(".github/workflows/bionic-apk.yml")
-        self.assertIn("r13-build-trigger.txt",ci)
-        self.assertIn("fix/bionic-r13-verified-viewproj-camera-20261019",ci)
+        self.assertIn("r14-build-trigger.txt",ci)
+        self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",ci)
         self.assertIn("cancel-in-progress: true",ci)
 if __name__=="__main__":unittest.main()
