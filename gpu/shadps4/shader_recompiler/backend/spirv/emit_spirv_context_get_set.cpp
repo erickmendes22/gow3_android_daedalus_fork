@@ -12,6 +12,11 @@
 
 #include <magic_enum/magic_enum.hpp>
 
+#include <array>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 namespace Shader::Backend::SPIRV {
 
 using PointerType = EmitContext::PointerType;
@@ -80,6 +85,30 @@ Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
     return result;
 }
 
+// FragCoord on reduced GoW III render targets must use the REAL guest extent.
+// The desktop implementation assumed 1920x1080; CUSA01623 on Android is patched
+// to 1280x720, so the old 1920/640 (instead of 1280/640) ratio sampled pixels
+// 50% past their intended coordinates. This is resolved when SPIR-V is generated,
+// without expanding the already full 128-byte graphics push constant block.
+static const std::array<u32, 2>& GuestFragCoordExtent() {
+    static const std::array<u32, 2> extent = [] {
+        constexpr std::array<u32, 2> desktop{1920u, 1080u};
+        const char* port = std::getenv("GOW3_ANDROID_PORT");
+        const char* provider = std::getenv("GOW3_UPSCALER");
+        const char* patched = std::getenv("GOW3_PATCH_INPUT_RES");
+        if (!port || !provider || std::strcmp(provider, "gsr2") != 0 || !patched) {
+            return desktop;
+        }
+        unsigned w = 0, h = 0;
+        if (std::sscanf(patched, "%ux%u", &w, &h) != 2 ||
+            w < 426 || w > 3840 || h < 240 || h > 2160) {
+            return desktop;
+        }
+        return std::array<u32, 2>{w, h};
+    }();
+    return extent;
+}
+
 Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
     if (IR::IsParam(attr)) {
         const u32 param_index{u32(attr) - u32(IR::Attribute::Param0)};
@@ -130,7 +159,7 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         const Id dimension = comp == 0
             ? ctx.OpBitwiseAnd(ctx.U32[1], packed, ctx.ConstU32(65535u))
             : ctx.OpShiftRightLogical(ctx.U32[1], packed, ctx.ConstU32(16u));
-        const Id native = ctx.ConstU32(comp == 0 ? 1920u : 1080u);
+        const Id native = ctx.ConstU32(GuestFragCoordExtent()[comp]);
         const Id safe = ctx.OpSelect(ctx.U32[1],
             ctx.OpIEqual(ctx.U1[1], dimension, ctx.u32_zero_value), native, dimension);
         return ctx.OpFMul(ctx.F32[1], value, ctx.OpFDiv(ctx.F32[1],
