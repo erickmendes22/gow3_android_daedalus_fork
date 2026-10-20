@@ -20,7 +20,7 @@ class R18NativePath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             base=Path(temp)
             config=base/"gow3.ini"
-            config.write_text(f"upscaler=gsr2\\npreset={preset}\\nrender_resolution={resolution}\\n",encoding="utf-8")
+            config.write_text(f"upscaler=gsr2\npreset={preset}\nrender_resolution={resolution}\n",encoding="utf-8")
             identity={"title_id":"CUSA01623","app_version":"01.02",
                       "eboot_sha256":patches.CUSA01715_0102_ANDROID_SHA,
                       "eboot_matches":True,"reason":"validated"}
@@ -36,7 +36,7 @@ class R18NativePath(unittest.TestCase):
         self.assertNotIn("GOW3_PATCH_INPUT_RES",u)
         self.assertNotIn("Resolution Patch - 720p",plan["patch_names"])
         self.assertIn("Bug Fix - Texture Corruption Fix",plan["patch_names"])
-        self.assertIn("upscaler=gsr2\\npreset=0\\n",persisted)
+        self.assertIn("upscaler=gsr2\npreset=0\n",persisted)
 
     def test_explicit_720p_is_preserved_without_gsr2_routing(self):
         plan,_=self.plan("0","720p")
