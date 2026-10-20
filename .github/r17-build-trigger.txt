@@ -4,3 +4,4 @@ Compare R16 baseline 5fd136eeac872a9a7f941a4eacfcfa8c5dd3e0cd. Inspect GOW3_TEXT
 Build retry after fixing the new Python regression test parser and hardening ResolveOverlap (equal-address incompatible layouts).
 
 Bionic validation: upstream SpartanPort PR #613 720p half postprocessing dimensions now included; dynamically validated 10 native game operands for CUSA01715 01.02. Verify 480p/720p/900p and R17 texture cache tests.
+R17 final diagnostic format: texture layout rejection logs newline-delimited; build all merged fixes at head 82c5d92.
