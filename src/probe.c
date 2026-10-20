@@ -553,17 +553,19 @@ static void gow3_fex_cheat_callback(GuestRegs *regs) {
 }
 
 static void install_cheats_fex(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
-    char path[4096], serial[32] = "", version[32] = "";
-    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
-    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
-    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    if ((strcmp(serial, "CUSA01623") && strcmp(serial, "CUSA01715") &&
-         strcmp(serial, "CUSA01720")) || strcmp(version, "01.02")) {
-        printf("FEX Cheats: unsupported title/version; all cheats disabled\n");
-        return;
-    }
+    (void)app0;
+    /* The fixed 0x... offsets were for CUSA01623 01.02 only. CUSA01715 and
+     * updated game images may relocate these functions even though their
+     * instructions are compatible. Reuse the UNIQUE multi-instruction
+     * signatures from SpartanPort Windows v2.6.0; never hook ambiguous code.
+     * The exact overwritten original bytes are checked independently.
+     */
     static const char *names[] = {"health", "magic", "item meter", "Rage of Sparta",
-                                  "red orbs", "Very Hard", "double jumps"};
+                                  "red orbs", "Very Hard unlock", "double jumps"};
+    uint64_t sites[GOW3_CHEAT_HOOK_COUNT];
+    for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i)
+        sites[i] = gow3_signature_find(image, size, &gow3_cheat_hooks[i].site);
+
     for (unsigned id = 0; id < GOW3_CHEAT_COUNT; ++id) {
         int valid = 1;
         unsigned needed = 0;
@@ -571,23 +573,30 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
             const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
             if (hook->id != id) continue;
             ++needed;
-            if (hook->offset > size || hook->length > size - hook->offset ||
-                !mapped(segments, count, hook->offset, hook->length) ||
-                !gow3_cheat_signature_match(hook, image + hook->offset, size - hook->offset)) {
+            if (sites[i] == UINT64_MAX ||
+                !mapped(segments, count, sites[i], hook->length) ||
+                !gow3_cheat_signature_match(hook, image + sites[i], size - sites[i])) {
                 valid = 0;
+                printf("FEX Cheats: %s signature %u missing/ambiguous or original bytes differ (reference 0x%x)\n",
+                       names[id], i, hook->offset);
             }
         }
-        if (!valid || fex_cheat_site_count + needed > GOW3_CHEAT_HOOK_COUNT) {
-            printf("FEX Cheats: %s unavailable (eboot signature mismatch)\n", names[id]);
+        if (!valid || !needed || fex_cheat_site_count + needed > GOW3_CHEAT_HOOK_COUNT) {
+            printf("FEX Cheats: %s unavailable (code not verified in this eboot.bin)\n", names[id]);
             continue;
         }
         unsigned char *stubs = allocate(page_size);
+        if (!stubs || needed > page_size / 256) {
+            printf("FEX Cheats: %s unavailable (trampoline allocation)\n", names[id]);
+            continue;
+        }
         unsigned next = 0;
+        const uintptr_t flag = gow3_cheat_flag(id);
         for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
             const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
             if (hook->id != id) continue;
-            gow3_cheat_build_stub(stubs + next * 256, hook, gow3_cheat_flag(id),
-                                  (uintptr_t)(image + hook->offset + hook->length));
+            gow3_cheat_build_stub(stubs + next * 256, hook, flag,
+                                  (uintptr_t)(image + sites[i] + hook->length));
             ++next;
         }
         protect(stubs, page_size, 5);
@@ -596,10 +605,11 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
         for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
             const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
             if (hook->id != id) continue;
-            const uintptr_t address = (uintptr_t)(image + hook->offset);
+            const uintptr_t address = (uintptr_t)(image + sites[i]);
             const uintptr_t trampoline = (uintptr_t)(stubs + next++ * 256);
             if (!guest_cpu_hook(address, hook->length, gow3_fex_cheat_callback)) {
-                printf("FEX Cheats: %s unavailable (guest JIT hook rejected)\n", names[id]);
+                printf("FEX Cheats: %s unavailable (JIT hook rejected at 0x%" PRIx64 ")\n",
+                       names[id], sites[i]);
                 valid = 0;
                 break;
             }
@@ -607,7 +617,9 @@ static void install_cheats_fex(const char *app0, Segment *segments, uint64_t cou
         }
         if (valid) {
             gow3_cheat_status(id);
-            printf("FEX Cheats: %s ready, controlled live by gow3.ini\n", names[id]);
+            printf("FEX Cheats: %s READY, %u verified site(s), selected=%d, first=0x%" PRIx64 "\n",
+                   names[id], needed, (int)*(volatile unsigned char *)flag,
+                   sites[0]); /* per-site positions are reported on signature failure */
         }
     }
 }
