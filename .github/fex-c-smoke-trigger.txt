@@ -1,2 +1,4 @@
 Check Android/ARM64 clang -Werror native FEX C hooks independently from the long Vulkan/GPU build.
 Current fix: close GUEST_CPU_NATIVE guard before FEX cheat and QTE installers.
+
+Hotfix 2026-10-20: compile ARM64 src/probe.c with SpartanPort 2.6 per-cheat unique signatures replacing obsolete fixed offsets; Android SettingsDialog hides GSR2 completely.
