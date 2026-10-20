@@ -1,0 +1,2 @@
+Check Android/ARM64 clang -Werror native FEX C hooks independently from the long Vulkan/GPU build.
+Current fix: close GUEST_CPU_NATIVE guard before FEX cheat and QTE installers.
