@@ -95,10 +95,10 @@ internal fun HomeScreen(
             color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
         HomeSection {
             LaunchButton(onStartGame)
-            HomeAction("Selecionar pasta do jogo", onChooseGameFolder)
-            HomeAction("Selecionar atualização", onChooseUpdateFolder)
-            HomeAction("Instalar jogo via PKG", onInstallBasePkg, enabled = !pkgInstallBusy)
-            HomeAction("Instalar atualização via PKG", onInstallUpdatePkg, enabled = !pkgInstallBusy)
+            HomeAction("Selecionar pasta do jogo", onClick = onChooseGameFolder)
+            HomeAction("Selecionar atualização", onClick = onChooseUpdateFolder)
+            HomeAction("Instalar jogo via PKG", enabled = !pkgInstallBusy, onClick = onInstallBasePkg)
+            HomeAction("Instalar atualização via PKG", enabled = !pkgInstallBusy, onClick = onInstallUpdatePkg)
             if (pkgInstallMessage != null)
                 Text(pkgInstallMessage, color = LauncherColors.textMuted, fontSize = 12.sp)
         }
@@ -141,7 +141,7 @@ private fun HomeSection(title: String? = null, content: @Composable androidx.com
 }
 
 @Composable
-private fun HomeAction(title: String, onClick: () -> Unit, enabled: Boolean = true) {
+private fun HomeAction(title: String, enabled: Boolean = true, onClick: () -> Unit) {
     Text(title, Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
         .background(LauncherColors.navSurface)
         .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
