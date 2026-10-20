@@ -24,7 +24,7 @@ class R6(unittest.TestCase):
 
     def test_gsr2_no_motion_never_accumulates_invalid_history(self):
         cpp=src("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
-        self.assertIn("const bool temporal_ready = camera_motion.Ready();",cpp)
+        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",cpp)
         self.assertIn(".reset = reset || !temporal_ready,",cpp)
         self.assertIn(".camera_still = temporal_ready ? camera_motion.CameraStill() : true,",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
