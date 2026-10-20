@@ -15,7 +15,8 @@ LAUNCH = (ROOT / "scripts/launch_env.py").read_text()
 
 class NativeAaTextureRegression(unittest.TestCase):
     def test_native_aa_uses_provider_without_reduction(self):
-        self.assertIn("gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'", LAUNCH)
+        self.assertIn("ini.get('upscaler') == 'gsr2'", LAUNCH)
+        self.assertIn("graphics.get('render_resolution') != '8K'", LAUNCH)
         self.assertIn("'gsr2-native-aa-1to1'", LAUNCH)
         self.assertIn("scales{1.0, 1.5, 1.7, 2.0, 3.0}", SCENE)
         boundary = UP.split("void TemporalUpscaler::OnDisplayBoundary(", 1)[1].split(
