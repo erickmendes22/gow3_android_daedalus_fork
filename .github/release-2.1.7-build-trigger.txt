@@ -2,3 +2,5 @@ Daedalus Fork v2.1.7 Android/Bionic release candidate.
 Home-only popups FPS/VSync and internal resolution; mods/cheats selectable from Home; Settings owns Vulkan driver, language, HUD, saves/logs. Snapdragon GSR2 remains compiled, not exposed.
 SpartanPort 2.6 file mods via Bionic overlay, seven FEX cheats + five-kind Automatic QTE. 8K beta resolution (7680x4320) uses upstream 16-site eboot signature/sha verification and must fail closed. No game eboot redistributed.
 Compile and package release APK; not proven on-device until runtime reports.
+
+CI retry: updated graphics settings test to assert 8K beta index 11 instead of obsolete unknown-resolution fallback. Includes Brazilian Portuguese 8K label.
