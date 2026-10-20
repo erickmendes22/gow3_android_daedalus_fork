@@ -19,9 +19,9 @@ inline constexpr std::array<const char*, DisplayModeCount> DisplayModeNames = {
 inline constexpr std::array<int, 5> FpsLimits = {30, 60, 120, 240, 0};
 
 /// Game patch suffixes ("Resolution Patch - <name>"); "native" is no resolution patch.
-inline constexpr std::array<std::string_view, 11> Resolutions = {
+inline constexpr std::array<std::string_view, 12> Resolutions = {
     "240p", "360p", "424p", "480p", "540p", "720p",
-    "900p", "native", "1440p", "1800p", "4K"};
+    "900p", "native", "1440p", "1800p", "4K", "8K"};
 /// Engine frame rate ceilings: 60 is the game's own, 120 and 240 are frame rate patches.
 inline constexpr std::array<int, 3> EngineFps = {60, 120, 240};
 
