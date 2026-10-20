@@ -28,13 +28,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal object LauncherColors {
-    val backgroundTop = Color(0xFF29120F)
-    val backgroundBottom = Color(0xFF0D0A07)
-    val surface = Color(0xFF12100D)
-    val navSurface = Color(0xFF171411)
+    val backgroundTop = Color(0xFF310C13)
+    val backgroundBottom = Color(0xFF11090D)
+    val surface = Color(0xD8200C13)
+    val navSurface = Color(0xFF32151A)
     val textPrimary = Color(0xFFE8DFC9)
     val textMuted = Color(0xFF8E9097)
-    val gold = Color(0xFFC6AD76)
+    val gold = Color(0xFFED653D)
     val crimson = Color(0xFFB8172B)
 }
 
