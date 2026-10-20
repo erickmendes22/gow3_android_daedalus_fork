@@ -193,23 +193,26 @@ inline GoW3ViewProjection RecoverViewProjection(const float* data, size_t count,
     }
     // Row-vector inverse: R^-1 = R^T, t^-1 = -t R^-1.
     float inverse[4][4]{};
-    for (unsigned r = 0; r < 3; ++r) {
-        for (unsigned c = 0; c < 3; ++c) {
+    for (unsigned r = 0; r < 3; ++r)
+        for (unsigned c = 0; c < 3; ++c)
             inverse[r][c] = row[c][r];
-            // The CameraMotion reprojection shader uses column-vector 3x4s.
-            out.view[r * 4 + c] = row[c][r];
-            out.inverse[r * 4 + c] = inverse[c][r];
-        }
-    }
     for (unsigned r = 0; r < 3; ++r) {
         float t = 0.f;
         for (unsigned c = 0; c < 3; ++c)
             t -= row[3][c] * inverse[c][r];
         inverse[3][r] = t;
-        out.view[r * 4 + 3] = row[3][r];
-        out.inverse[r * 4 + 3] = t;
         out.position[r] = t;
         if (!std::isfinite(t) || std::abs(t) > 100000.f) return GoW3ViewProjection{};
+    }
+    for (unsigned r = 0; r < 3; ++r) {
+        for (unsigned c = 0; c < 3; ++c) {
+            // The CameraMotion shader uses column-vector 3x4 matrices,
+            // transposed relative to GoW3's row-vector constants.
+            out.view[r * 4 + c] = row[c][r];
+            out.inverse[r * 4 + c] = inverse[c][r];
+        }
+        out.view[r * 4 + 3] = row[3][r];
+        out.inverse[r * 4 + 3] = inverse[3][r];
     }
     // Reprojection uses positive forward-Z coordinates, so the GoW3
     // negative-Z projection becomes zScale=1 and depthOffset=-near.
