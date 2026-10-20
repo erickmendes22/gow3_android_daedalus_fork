@@ -6,3 +6,5 @@ Compile and package release APK; not proven on-device until runtime reports.
 CI retry: updated graphics settings test to assert 8K beta index 11 instead of obsolete unknown-resolution fallback. Includes Brazilian Portuguese 8K label.
 
 CI retry: fix settings reload assertion: render_resolution=8K is recognized as preset 11, not native 7. The failure was in the host test only.
+
+CI retry: inherit R19 test checks native GSR2 with explicit 8K exclusion; keep save/log manager checks with language callback.
