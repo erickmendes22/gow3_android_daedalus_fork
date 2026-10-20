@@ -75,8 +75,8 @@ if ! mods_view=$("$python" "$base/scripts/mods.py" "$game" --out "$out" \
 fi
 case "$mods_view" in
     "$out"/mod-game-*) game=$mods_view ;;
-    "$game") ;;
-    *) echo "Mods: unexpected overlay path: $mods_view" >&2; exit 2 ;;
+    *) [ -f "$mods_view/eboot.bin" ] || { echo "Mods: invalid game view $mods_view" >&2; exit 2; }
+       game=$mods_view ;;
 esac
 trap '
     case "${mods_view:-}" in "$out"/mod-game-*) rm -rf -- "$mods_view" ;; esac
@@ -125,6 +125,14 @@ echo "Bloodframe: state=$GOW3_LSFG_STATE_FILE dll=$([ -s "$GOW3_LSFG_DLL" ] && e
 # Report what will actually be patched into the verified CUSA01715 eboot, not
 # merely the preset selected by the UI. scripts/patches.py checks the signature
 # and original bytes again before writing patches.bin.
+# Never silently launch 720p/native after the user explicitly requested beta 8K.
+# patches.py then checks every eboot signature and refuses any incomplete patch.
+if [ "$(setting render_resolution)" = 8K ]; then
+    case ";${GOW3_PATCHES:-};" in *";Resolution Patch - 8K;"*) ;; *)
+        echo "8K EXPERIMENTAL: eboot/available RAM not validated; refusing launch" >&2
+        exit 3
+    esac
+fi
 echo "GOW3_NATIVE_RESOLUTION: status=${GOW3_RESOLUTION_STATUS:-unknown} patch=${GOW3_PATCH_INPUT_RES:-standard}"
 echo "Game language: system_param=${GOW3_LANGUAGE:-1} (1=English, 7=Portuguese, 17=Portuguese-Brazil)"
 # The retail pool is 5056 MiB; the resolution/texture patches ask for more (7104+ for the default
