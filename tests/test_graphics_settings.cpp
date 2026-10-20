@@ -97,7 +97,7 @@ int main() {
     Env("GOW3_ASYNC_SHADERS", "1");  // 启动时环境变量仍优先生效。
     v.async_shaders = false;
     Gow3Settings::Load();
-    assert(v.display_mode == G::Windowed && v.fps_limit == 0 && v.render_resolution == 7 && v.engine_fps == 120);
+    assert(v.display_mode == G::Windowed && v.fps_limit == 0 && v.render_resolution == 11 && v.engine_fps == 120);
     assert(v.rcas_strength == 75 && v.frames_queued == 1);
     assert(v.async_shaders);
     {
