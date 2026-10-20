@@ -14,3 +14,5 @@ CI retry: HomeAction now puts onClick last, positional early card callsites use 
 CI retry: close GUEST_CPU_NATIVE before both ARM64 FEX installers in src/probe.c, and require this boundary in release tests. Native build previously failed to see install_cheats_fex/install_auto_qte_fex.
 
 CI retry 2026-10-20: align 2.1.7-bionic APK version across app Gradle, sign_apk.sh, validate_apk.py, package_runtime.py; regression test executes in source test stage. Previous run compiled, signed v3, then failed exclusively on stale 2.1.6 expected name.
+
+Hotfix 2026-10-20: hide Android in-game GSR2 radio group/preset, preserve runtime and config; port SpartanPort 2.6 signature-located FEX magic/Rage/VeryHard hooks; add native C relocation tests. FEX ARM64 smoke passed in run 39471970213.
