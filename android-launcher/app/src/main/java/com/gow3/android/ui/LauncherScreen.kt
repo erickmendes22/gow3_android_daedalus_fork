@@ -113,7 +113,7 @@ private fun BottomNavigation(selectedTab: LauncherTab, onTabSelected: (LauncherT
         ) {
             NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME, stringResource(R.string.nav_home), "⌂", onTabSelected)
             NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS, stringResource(R.string.nav_mods), "⚙", onTabSelected)
-            NavItem(LauncherTab.SETTINGS, selectedTab == LauncherTab.SETTINGS, "Settings", "☷", onTabSelected)
+            NavItem(LauncherTab.SETTINGS, selectedTab == LauncherTab.SETTINGS, stringResource(R.string.nav_settings), "☷", onTabSelected)
             NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT, stringResource(R.string.nav_about), "ⓘ", onTabSelected)
         }
     }
