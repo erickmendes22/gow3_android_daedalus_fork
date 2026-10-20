@@ -1,1 +1,3 @@
 Correct NoExec/SEGV regression seen with cheats ON and OFF in Android logs 20261020-192151 and 192833. No cheat or QTE FEX syscalls are installed when their toggles are OFF. QTE RepeatPress emulates x86 CALL's 5-byte return-address push before its guest stub. Includes compiled native regression test and Python guards. Preserve Bionic runtime and launcher English/Portuguese fixes. Do not publish a release until on-device validation.
+
+CI retry: host-side guest CALL unit test needs _GNU_SOURCE before guest_cpu.h to define POSIX siginfo_t; Python regression tests already passed. No game-code change in this retry.
