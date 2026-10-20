@@ -703,13 +703,17 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         const auto new_image_id = slot_images.insert(instance, runtime, slot_image_views, new_info);
         RegisterImage(new_image_id);
 
-        // Inherit image usage
+        // SlotVector::insert may grow its contiguous storage and invalidate
+        // cache_image. Resolve the source ID *after* inserting the new image;
+        // otherwise depth/color copies can read a dangling image reference.
+        // This is independent of GSR2 and applies to native rasterization.
+        auto& source_after_insert = slot_images[cache_image_id];
         auto& new_image = slot_images[new_image_id];
-        new_image.usage = cache_image.usage;
+        new_image.usage = source_after_insert.usage;
         new_image.flags &= ~ImageFlagBits::Dirty;
         // When creating a depth buffer through overlap resolution don't clear it on first use.
         new_image.info.meta_info.htile_clear_mask = 0;
-        runtime.CopyColorAndDepth(&cache_image, &new_image);
+        runtime.CopyColorAndDepth(&source_after_insert, &new_image);
 
         // Free the cache image.
         FreeImage(cache_image_id);
