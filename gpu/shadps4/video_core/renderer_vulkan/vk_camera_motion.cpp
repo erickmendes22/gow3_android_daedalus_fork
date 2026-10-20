@@ -306,6 +306,58 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             std::fflush(stdout);
         }
     }
+    // GoW3 Bionic: use the ACTUAL world->clip matrix at float offset 16 of
+    // the captured vertex slot 1. Its independent projection/position have
+    // been verified against other shader constants in the 22:00 eboot log.
+    // Unlike FindPose(), this correctly handles GoW3's two separate
+    // model/preprojection matrices, not Bloodborne's adjacent inverse pair.
+    if (gow3_android_gsr2 && buffer_slot == 1 && float_count >= 32) {
+        const auto recovered = Gow3CameraLayout::RecoverViewProjection(
+            data, float_count, buffer_slot);
+        if (recovered.valid) {
+            // Draw calls within a scene may move slightly (animated camera).
+            // Demand two independently bound coherent camera projections
+            // before allowing temporal history to be used.
+            bool coherent = have_pose && have_projection;
+            if (coherent) {
+                if (std::abs(frame_projection[0] - recovered.projection[0]) > 0.09f ||
+                    std::abs(frame_projection[1] - recovered.projection[1]) > 0.16f ||
+                    std::abs(frame_projection[3] - recovered.projection[3]) > 0.005f)
+                    coherent = false;
+                for (unsigned i = 0; i < 3; ++i)
+                    if (std::abs(frame_inverse[i * 4 + 3] -
+                                 recovered.inverse[i * 4 + 3]) > 1.5f)
+                        coherent = false;
+            }
+            if (coherent) {
+                frame_pose_votes = std::min(frame_pose_votes + 1, 16u);
+            } else {
+                frame_pose_votes = 1;
+            }
+            // The freshest pose matches the actual completed scene. The
+            // camera position is independently verified, not inferred from
+            // a guessed fixed FOV or artificial motion vector.
+            frame_view = recovered.view;
+            frame_inverse = recovered.inverse;
+            frame_projection = recovered.projection;
+            have_pose = have_projection = true;
+            if (frame_pose_votes >= 2) {
+                current.view = frame_view;
+                current.inv_view = frame_inverse;
+                current.proj = frame_projection;
+                current.valid = true;
+                frame_has_camera = true;
+                static unsigned confirmed = 0;
+                if (++confirmed <= 3 || confirmed % 2400 == 0)
+                    std::printf("GOW3_CAMERA_VERIFIED_VP shader=%016llx slot=%u sx=%.5f sy=%.5f near=%.5f world=(%.3f,%.3f,%.3f) votes=%u\n",
+                                static_cast<unsigned long long>(shader_hash), buffer_slot,
+                                recovered.projection[0], recovered.projection[1],
+                                recovered.near_plane, recovered.position[0],
+                                recovered.position[1], recovered.position[2], frame_pose_votes);
+            }
+            return;
+        }
+    }
     if (frame_has_camera && frame_pose_votes >= 3) return;
     // The forward renderer binds many constant buffers per draw. An exhaustive
     // affine-pair search can consume the GPU command CPU thread, becoming more
