@@ -1,1 +1,3 @@
 GSR2 pre-HUD source correlation and projection guard 2026-10-21; run all Bionic host regressions.
+
+2026-10-21: validate depth target write-generation forwarding to GSR2 VideoOut match guard.
