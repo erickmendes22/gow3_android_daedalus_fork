@@ -23,8 +23,10 @@ class R14Ghosting(unittest.TestCase):
         self.assertIn("GSR2_HISTORY_GUARD dispatch=",c)
         self.assertIn("camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid",c)
         self.assertIn("const bool temporal_ready =",c)
-        self.assertIn("!guest_display_mode_recording &&",c)
-        self.assertIn(".reset = reset || !temporal_ready,",c)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",c)
+        self.assertIn("const bool dispatch_reset =",c)
+        self.assertIn("!temporal_ready;",c)
+        self.assertIn(".reset = dispatch_reset,",c)
         segment=c.split("void TemporalUpscaler::RunScaled()",1)[1].split(
             "vk::ImageView TemporalUpscaler::Mirror(",1)[0]
         self.assertIn("if (reprojection)",segment)
