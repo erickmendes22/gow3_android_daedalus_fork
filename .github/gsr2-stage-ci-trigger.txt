@@ -40,3 +40,5 @@ Second temporal host suite: adapt old reset-string invariant to contiguous verif
 GSR2 stage validation: selected real depth view in VideoOut temporal path (fallback synthetic depth only on missing history), revised source assertions.
 
 Final source contracts for depth-validated temporal history after actual GSR2 VideoOut; preserve safe fallback and old NativeAA.
+
+GSR2 final temporal validation: full-screen ow/oh, frozen verified camera, real scene depth, motion compute, actual contiguous history reset and honest context status.
