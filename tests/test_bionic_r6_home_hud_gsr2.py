@@ -25,11 +25,16 @@ class R6(unittest.TestCase):
     def test_gsr2_no_motion_never_accumulates_invalid_history(self):
         cpp=src("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         self.assertIn("const bool temporal_ready =",cpp)
-        self.assertIn("!guest_display_mode_recording &&",cpp)
-        self.assertIn(".reset = reset || !temporal_ready,",cpp)
-        self.assertIn(".camera_still = temporal_ready ? camera_motion.CameraStill() : true,",cpp)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",cpp)
+        self.assertIn("const bool dispatch_reset =",cpp)
+        self.assertIn("!temporal_ready;",cpp)
+        self.assertIn(".reset = dispatch_reset,",cpp)
+        self.assertIn(".camera_still = temporal_ready",cpp)
+        self.assertIn("camera_motion.CompletedCameraStill()",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
-        self.assertIn(".vertical_fov = temporal_ready ? camera_motion.VerticalFov() : 1.04719755f,",cpp)
+        self.assertIn(".vertical_fov = temporal_ready",cpp)
+        self.assertIn("camera_motion.CompletedVerticalFov()",cpp)
+        self.assertIn(": 1.04719755f,",cpp)
         # R19 honors Ultra Performance as actual 3x (not silently 2x);
         # no-motion history safety still relies on per-frame reset.
         self.assertNotIn('preset = 3;',cpp)
