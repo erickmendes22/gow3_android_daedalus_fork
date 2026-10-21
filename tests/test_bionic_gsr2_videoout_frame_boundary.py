@@ -24,8 +24,8 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         body = raster.split("void Rasterizer::Gsr2OnVideoOutFlip(", 1)[1].split(
             "void Rasterizer::NoteFrameStart(", 1)[0]
         self.assertLess(body.index("DrainDrawPipe();"),
-                        body.index("camera_motion->OnDisplayPass({});"))
-        self.assertLess(body.index("camera_motion->OnDisplayPass({});"),
+                        body.index("camera_motion->OnDisplayPass({}, guest_address);"))
+        self.assertLess(body.index("camera_motion->OnDisplayPass({}, guest_address);"),
                         body.index("upscaler->OnFrameStart()"))
         self.assertIn("GSR2_VIDEOOUT_BOUNDARY", body)
         self.assertIn("scene_started = false;", body)
@@ -37,6 +37,32 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
             "Frame* frame = GetRenderFrame();",1)[0]
         self.assertLess(flip.index("Gsr2OnVideoOutFlip(cpu_address)"),
                         flip.index("PresentGsr2FromGuestDisplay(image_id, display)"))
+
+    def test_temporal_history_consumes_exact_display_flip_and_generation(self):
+        header = (ROOT/"vk_camera_motion.h").read_text()
+        cam = (ROOT/"vk_camera_motion.cpp").read_text()
+        up = (ROOT/"vk_temporal_upscaler.cpp").read_text()
+        up_h = (ROOT/"vk_temporal_upscaler.h").read_text()
+        self.assertIn("CompletedVideoOutAddress() const noexcept", header)
+        self.assertIn("CompletedVideoOutGeneration() const noexcept", header)
+        self.assertIn("++completed_videoout_generation;", cam)
+        self.assertIn("guest_display_last_flip_generation = 0;", up_h)
+        func = up.split("bool TemporalUpscaler::PresentGsr2FromGuestDisplay(",1)[1].split(
+            "bool TemporalUpscaler::DisplayOverride(",1)[0]
+        for required in (
+            "CompletedVideoOutGeneration()",
+            "CompletedVideoOutAddress() == source.info.guest_address",
+            "flip_generation != guest_display_last_flip_generation",
+            "flip_generation == guest_display_last_flip_generation + 1",
+            "if (!source_matches_flip || !adjacent_flip)",
+            "guest_display_history_contiguous = false;",
+            "guest_display_last_flip_generation = flip_generation;",
+            "GSR2_VIDEOOUT_MOTION",
+            "matched=%d adjacent=%d",
+        ):
+            self.assertIn(required, func)
+        self.assertLess(func.index("guest_display_last_flip_generation = flip_generation;"),
+                        func.index("GSR2_VIDEOOUT_MOTION"))
 
     def test_snapshot_is_captured_before_clearing_live_state(self):
         camera = (ROOT/"vk_camera_motion.cpp").read_text()
