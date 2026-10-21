@@ -3222,8 +3222,14 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     if (dispatched == 0) {
         std::printf("Upscaler: GSR 2 first dispatch %ux%u -> %ux%u\n", w, h, ow, oh);
     }
-    if (!gsr2) {
-        gsr2 = std::make_unique<GsrUpscaler>(instance, scheduler);
+    // 240 Hz PS4 VideoOut flips are not 240 unique game scene frames. GSR2
+    // keeps temporal history in its own provider, while filler flips use a
+    // separate spatial provider whose resets cannot erase that history.
+    const bool spatial_videoout = guest_display_mode_recording &&
+                                  PreHudEnabled() && !guest_display_motion_ready;
+    auto& provider = spatial_videoout ? gsr2_spatial : gsr2;
+    if (!provider) {
+        provider = std::make_unique<GsrUpscaler>(instance, scheduler);
     }
     // Same jitter convention as FSR 3; toggle 1 << 26 flips it for tests.
     const float sign = Gow3Toggle::Disabled(1u << 26) ? -1.0f : 1.0f;
@@ -3272,7 +3278,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
                     int(temporal_ready),int(dispatch_reset),
                     double(matched_jitter[0]),double(matched_jitter[1]));
     }
-    const bool ok = gsr2->Record({
+    const bool ok = provider->Record({
         .cmdbuf = cmdbuf,
         .color = color,
         .depth = depth,
