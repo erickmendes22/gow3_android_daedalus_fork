@@ -96,12 +96,12 @@ int main() {
         c = CAMERA_CPP.read_text(encoding="utf-8")
         h = CAMERA_H.read_text(encoding="utf-8")
         self.assertIn("static constexpr size_t MaxFrameCameraSources = 32;", h)
-        # Increasing storage cannot relax the 64-probe CPU budget.
-        self.assertIn("frame_extra_source_probes >= 64", source)
         self.assertIn("std::array<Camera, MaxFrameCameraSources> current_frame_sources{}", h)
         self.assertIn("std::array<Camera, MaxFrameCameraSources> previous_frame_sources{}", h)
         source = c.split("void CameraMotion::OnConstants(", 1)[1].split(
             "void CameraMotion::OnGBufferPass(", 1)[0]
+        # Increasing storage cannot relax the 64-probe CPU budget.
+        self.assertIn("frame_extra_source_probes >= 64", source)
         self.assertIn("candidate.shader_hash == shader_hash", source)
         self.assertIn("prior_source = &candidate;", source)
         self.assertIn("const bool same_source_last_frame = prior_source != nullptr;", source)
