@@ -558,7 +558,7 @@ void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {
     depth_id = depth;
 }
 
-void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
+void CameraMotion::OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest_address) {
     const char* selected = std::getenv("GOW3_UPSCALER");
     if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") ||
         (std::getenv("GOW3_ANDROID_PORT") && selected && !std::strcmp(selected, "gsr2"))) {
@@ -618,6 +618,11 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
     completed_current = current;
     completed_previous = previous;
     completed_depth = depth_id;
+    // Only the real Presenter::PrepareFrame flip has an address. Ordinary
+    // display draws and Native AA never acquire a GSR2 frame generation.
+    completed_videoout_address = presented_guest_address;
+    if (presented_guest_address)
+        ++completed_videoout_generation;
     if (std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT")) {
         static unsigned snapshots = 0, eligible = 0;
         ++snapshots;
