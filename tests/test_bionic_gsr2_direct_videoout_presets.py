@@ -106,6 +106,9 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertIn('completed_current = current;', on_display)
         self.assertIn('completed_previous = previous;', on_display)
         self.assertIn('CompletedHistoryValidity()',videoout)
+        # Experimental temporal motion must not modify stable Native AA.
+        self.assertIn('Gow3Settings::RenderPreset() != Gow3Settings::NativeAA',videoout)
+        self.assertIn('std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT")',videoout)
         self.assertIn('CompletedDepth()',videoout)
         self.assertIn('RecordCompletedMotion(cmd, chosen_depth_view, *motion_view, w, h)',videoout)
         self.assertIn('CachedView(real_depth, real_depth.info.pixel_format',videoout)
