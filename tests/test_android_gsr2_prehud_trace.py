@@ -30,6 +30,21 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertNotIn("ui_phase = true", body)
         self.assertNotIn("display_redirect = true", body)
 
+    def test_direct_videoout_does_not_overwrite_last_scene_ldr(self):
+        cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
+        section = cpp.split("void TemporalUpscaler::OnColorTarget(", 1)[1].split(
+            "void TemporalUpscaler::OnDisplayBoundary(", 1)[0]
+        self.assertIn("if (Gsr2GuestDisplayMode() &&", section)
+        self.assertIn("FrameCapture::IsDisplayBuffer(image.info.guest_address)", section)
+        self.assertLess(section.index("FrameCapture::IsDisplayBuffer("),
+                        section.index("ldr_target = color;"))
+        # The identified source is only retained for scene provenance; the
+        # stable direct-VideoOut renderer still reads the real guest output.
+        present = cpp.split("bool TemporalUpscaler::PresentGsr2FromGuestDisplay(", 1)[1].split(
+            "bool TemporalUpscaler::DisplayOverride(", 1)[0]
+        self.assertIn("auto& source = texture_cache.GetImage(guest);", present)
+        self.assertIn("RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)", present)
+
     def test_reject_non_finite_scene_projection(self):
         cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
         section = cpp.split("bool TemporalUpscaler::PresentGsr2FromGuestDisplay(", 1)[1].split(
