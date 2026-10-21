@@ -224,6 +224,10 @@ private:
         VAddr address = 0;
         Camera camera{};
         VideoCore::ImageId depth{};
+        // ImageId alone is not a lifetime guarantee: TextureCache can recycle
+        // its slot or rewrite the depth image after this guest display copy.
+        u64 depth_image_uid = 0;
+        u64 depth_alias_generation = 0;
     };
     static constexpr size_t MaxDisplayTargetCandidates = 32;
     std::array<DisplayTargetCandidate, MaxDisplayTargetCandidates> display_target_candidates{};
