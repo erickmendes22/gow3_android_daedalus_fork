@@ -456,7 +456,15 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             }
         }
     }
-    if (have_pose && have_projection && frame_pose_votes >= 2) {
+    // A recovered, shader-proven GoW III view/projection always outranks
+    // the legacy unconstrained FindPose/FindProjection pair. The latter may
+    // see unrelated model or UI constants later in the SAME display frame.
+    // Previously this branch overwrote current.shader_hash with 0 after an
+    // adjacent verified recovery (2 votes), breaking temporal history.
+    // Keep scanning exact RecoverViewProjection() above on following calls;
+    // only prevent a lower-confidence candidate from replacing a verified one.
+    if (have_pose && have_projection && frame_pose_votes >= 2 &&
+        !(gow3_android_gsr2 && current.valid && current.shader_hash != 0)) {
         current.view = frame_view;
         current.inv_view = frame_inverse;
         current.proj = frame_projection;
