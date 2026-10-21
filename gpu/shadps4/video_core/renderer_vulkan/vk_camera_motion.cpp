@@ -558,7 +558,63 @@ void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {
     depth_id = depth;
 }
 
+void CameraMotion::OnDisplayTargetDraw(VAddr guest_address) {
+    // A true shader-verified scene camera must be present BEFORE recording
+    // any display-copy/HUD commands. Keep the first eligible draw per target,
+    // instead of allowing subsequent UI or the next scene to replace it.
+    if (!guest_address || !frame_has_camera || !current.valid ||
+        !current.shader_hash || !depth_id)
+        return;
+    for (const auto& candidate : display_target_candidates)
+        if (candidate.address == guest_address)
+            return;
+    for (auto& candidate : display_target_candidates) {
+        if (candidate.address)
+            continue;
+        candidate.address = guest_address;
+        candidate.camera = current;
+        candidate.depth = depth_id;
+        static unsigned recorded = 0;
+        if (++recorded <= 5 || recorded % 1200 == 0)
+            std::printf("GSR2_FRAMEBUFFER_SCENE_CAPTURE addr=%#llx shader=%016llx count=%u\n",
+                        (unsigned long long)guest_address,
+                        (unsigned long long)current.shader_hash, recorded);
+        return;
+    }
+}
+
 void CameraMotion::OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest_address) {
+    if (presented_guest_address) {
+        // Only the candidate captured at a real draw INTO THIS EXACT VideoOut
+        // framebuffer can supply temporal motion. The presenter's argument
+        // cannot be used to certify unrelated live camera state.
+        bool matched = false;
+        for (const auto& candidate : display_target_candidates) {
+            if (candidate.address != presented_guest_address)
+                continue;
+            current = candidate.camera;
+            depth_id = candidate.depth;
+            frame_has_camera = true;
+            matched = true;
+            break;
+        }
+        if (!matched) {
+            current.valid = false;
+            current.shader_hash = 0;
+            frame_has_camera = false;
+            depth_id = {};
+        }
+        static unsigned matched_count = 0, unmatched_count = 0;
+        if (matched) ++matched_count; else ++unmatched_count;
+        if (matched_count + unmatched_count <= 5 ||
+            (matched_count + unmatched_count) % 600 == 0)
+            std::printf("GSR2_FRAMEBUFFER_SCENE_MATCH guest=%#llx valid=%d accepted=%u rejected=%u\n",
+                        (unsigned long long)presented_guest_address,
+                        int(matched), matched_count, unmatched_count);
+        // A new draw/flip is required to reuse any guest-buffer candidate;
+        // never revive an earlier frame's camera after a scene cut.
+        display_target_candidates = {};
+    }
     const char* selected = std::getenv("GOW3_UPSCALER");
     if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") ||
         (std::getenv("GOW3_ANDROID_PORT") && selected && !std::strcmp(selected, "gsr2"))) {
