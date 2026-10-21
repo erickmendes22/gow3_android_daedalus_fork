@@ -58,3 +58,5 @@ Validated 20261021 120425 120533 guest upscale temporal recovered for 1929/1150 
 2026-10-21 12:39 log: GSR2 valid history rose to 2970/12000 then stopped immediately after AUTOSAVE cinematic PSDNINT.XVAG. Keep bounded 16 previous-frame camera candidates keyed by shader; require real geometric continuity, preserve original scene-cut history reset; verify before APK.
 
 Validate actual vk_camera_motion.h contains CameraMotion class and vk_camera_motion.cpp contains OnConstants implementation, both with bounded 16-shader adjacent-frame cache; prevent swapped implementation/header regression before ARM64 build.
+
+20261021 131408 logs: direct 640x360 GSR2 1219/9600 valid and zero GSR2_CAMERA_MULTI_SOURCE_RECOVERED despite 16-slot camera cache; original early-return after one verified shader prevents collecting next candidates. Bounded up to 64 additional candidate probes, avoid modifying selected shader. Regression in test_bionic_gsr2_camera_reacquisition.py.
