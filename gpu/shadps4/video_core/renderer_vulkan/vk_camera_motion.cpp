@@ -463,8 +463,18 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
     // adjacent verified recovery (2 votes), breaking temporal history.
     // Keep scanning exact RecoverViewProjection() above on following calls;
     // only prevent a lower-confidence candidate from replacing a verified one.
+    const bool keep_verified_camera =
+        gow3_android_gsr2 && current.valid && current.shader_hash != 0;
+    if (have_pose && have_projection && frame_pose_votes >= 2 && keep_verified_camera) {
+        static unsigned protected_frames = 0;
+        if (++protected_frames <= 4 || protected_frames % 1200 == 0)
+            std::printf("GSR2_CAMERA_PROVENANCE_PROTECTED count=%u shader=%016llx legacy_votes=%u\\n",
+                        protected_frames,
+                        static_cast<unsigned long long>(current.shader_hash),
+                        frame_pose_votes);
+    }
     if (have_pose && have_projection && frame_pose_votes >= 2 &&
-        !(gow3_android_gsr2 && current.valid && current.shader_hash != 0)) {
+        !keep_verified_camera) {
         current.view = frame_view;
         current.inv_view = frame_inverse;
         current.proj = frame_projection;
