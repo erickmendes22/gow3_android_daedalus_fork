@@ -123,6 +123,7 @@ public:
     [[nodiscard]] u64 CompletedVideoOutGeneration() const noexcept {
         return completed_videoout_generation;
     }
+    [[nodiscard]] std::array<float, 2> CompletedJitter() const noexcept { return completed_current_jitter; }
     [[nodiscard]] float CompletedVerticalFov() const noexcept {
         return 2.0f * std::atan(1.0f / completed_current.proj[1]);
     }
@@ -215,6 +216,7 @@ private:
     ObjectMotion* object_motion = nullptr;
     Camera current, previous;
     Camera completed_current, completed_previous;
+    std::array<float, 2> completed_current_jitter{}, completed_previous_jitter{};
     Gsr2HistoryStatus completed_history_status = Gsr2HistoryStatus::MissingCamera;
     VideoCore::ImageId completed_depth{};
     VAddr completed_videoout_address = 0;
