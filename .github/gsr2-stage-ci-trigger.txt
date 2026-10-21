@@ -11,3 +11,4 @@ R20 host retry: FP16 NaN/Inf heat check for intermediate shader output plus per-
 CI: verify temporal history dropout detector, camera capture counters and same-generation GSR2 stage color-space analyzer. Engine unchanged.
 
 Run conservative camera reacquisition CPU safeguards on 2.1.7 experimental branch.
+Validate accurate GSR2 temporal guard status label and camera recovery regression.
