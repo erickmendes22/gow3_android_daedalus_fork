@@ -64,3 +64,5 @@ Validate actual vk_camera_motion.h contains CameraMotion class and vk_camera_mot
 HOST-ONLY 20261021: Diagnose frame mismatch in 141753 log (321600 synthetic display-draw scene cuts vs 13200 real guest VideoOut flips, valid camera 44511 at synthetic boundaries but dispatch history 2196). Shift scaled GSR2 camera snapshot/reset from DrawRecord arbitrary registered display buffer to Presenter::PrepareFrame real VideoOut address; drain Stage-B first; preserve 1:1 NativeAA and other providers. NO APK until confident and validated.
 
 Host-only Phase 2: tag completed real GSR2 VideoOut camera/depth snapshot with exact presented guest address and monotonically increasing flip generation. Assert the Presenter image address matches and temporal history is reused only across consecutive accepted generations; frame missed/rejected triggers reset. No APK build.
+
+Final host-only analytic check: current/previous pixel displacement, GSR2 convert sign, and upscale PrevUV formula agree algebraically for 240p/360p/424p/540p render presets; real guest VideoOut capture / exact source address / generation checks already in branch. NO ARM64 APK build until verified correctness.
