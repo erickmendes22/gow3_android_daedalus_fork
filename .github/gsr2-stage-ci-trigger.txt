@@ -21,3 +21,5 @@ GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffe
 2026-10-21 log 194900: same-VideoOut-flip 4800/7200/9600 sampled; Qualcomm RGBA16F raw values linear, not dark SRGB; 9600 final loses guest VideoOut color-grading. Restore color-pass linear residual after scene-only GSR2, preserve strong-HUD direct pixels, count ALL actually nonreset temporal dispatches instead of sampling once every 600 frames. Run full host regression gate.
 
 2026-10-21 log 194900 saturated 16/16 adjacent-frame camera source cache with all 64 probes consumed. Raise ONLY per-frame source storage to 32, preserve 64 bounded probes and unchanged shader/pose/projection/cut validity. Validate exact camera regression and scene-HUD color residual.
+
+2026-10-21 verify temporal counts only AFTER a successful gsr2->Record, keeping 32/32-source adjacent-camera cache (64 probes fixed), color residual and HUD separation. Regression gate before final native integration.
