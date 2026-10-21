@@ -33,3 +33,5 @@ Final temporal Bionic APK: full-screen ow/oh fix, verified frame-frozen camera+s
 GSR2 next verified-camera priority fix 20261021: logs confirm 426x240 and 640x360 actual temporal history for ~1929 and ~1150 dispatches, then shader_hash=0 camera starvation; preserve proven recovered shader camera against later legacy fallback, add bounded GSR2_CAMERA_PROVENANCE_PROTECTED. Full-screen blit Native AA remain unchanged.
 
 R27 post-save temporal fix: 12:39 input GSR2 resets after AUTOSAVE cinematic, camera remains shader-valid on non-presented scene frames. Introduce 16-source per-shader candidates limited to immediately previous scene, same real matrix/geometric confirmation and spatial cut fallback. Host full regression 39629110712 successful; build ARM64 APK now.
+
+Validated host suite 39634728771: 20261021-131408 shows 1219/9600 valid temporal dispatches and zero GSR2_CAMERA_MULTI_SOURCE_RECOVERED. Permit only bounded additional unseen shader camera captures after 3 votes; protect current camera, reset at display boundary, source pool count diagnostics. Preserve GSR2 1280x720 blit and NativeAA.
