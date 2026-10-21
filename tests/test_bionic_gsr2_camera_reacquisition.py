@@ -73,6 +73,16 @@ int main() {
         code = CAMERA_CPP.read_text(encoding="utf-8")
         header = CAMERA_H.read_text(encoding="utf-8")
         upscaler = UPSCALER_CPP.read_text(encoding="utf-8")
+        # The old path reached 3 pose votes with no exact source hash,
+        # then incorrectly returned before RecoverViewProjection().
+        self.assertIn("(!gow3_android_gsr2 || current.shader_hash != 0)", code)
+        self.assertLess(
+            code.index("if (frame_has_camera && frame_pose_votes >= 3 &&"),
+            code.index("Gow3CameraLayout::RecoverViewProjection("))
+        # Two provenance clears: unverified affine fallback, frame boundary.
+        self.assertGreaterEqual(code.count("current.shader_hash = 0;"), 2)
+        fallback = code.index('std::printf("GOW3_CAMERA_VERIFIED pair=1')
+        self.assertLess(code.rfind("current.shader_hash = 0;", 0, fallback), fallback)
         for expression in (
             "previous_frame_candidate.shader_hash == shader_hash",
             "CompatibleAdjacentCameraSamples(earlier, recovered)",
