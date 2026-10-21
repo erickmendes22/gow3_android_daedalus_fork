@@ -460,8 +460,14 @@ bool TemporalUpscaler::OnFrameStart() {
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
     if (!scaled_session) {
-        scene_targets.SetSize(SceneResolution::ForPreset(active ? preset : 0,
-                                                        {target_width, target_height}));
+        if (Gsr2GuestDisplayMode()) {
+            // In verified VideoOut mode the EBOOT ALREADY renders at reduced
+            // resolution. Do not downscale it again through SceneTargets.
+            scene_targets.SetSize(scene_targets.GuestSize());
+        } else {
+            scene_targets.SetSize(SceneResolution::ForPreset(active ? preset : 0,
+                                                            {target_width, target_height}));
+        }
         render_width = scene_targets.Size().width;
         render_height = scene_targets.Size().height;
     }
@@ -981,9 +987,9 @@ void TemporalUpscaler::ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, 
                   vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite);
     const vk::ImageBlit region{
         .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
         .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
     };
     cmdbuf.blitImage(target, vk::ImageLayout::eGeneral, vk::Image(extra_sharpen_image),
                      vk::ImageLayout::eGeneral, region, vk::Filter::eNearest);
@@ -2468,7 +2474,19 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     auto& source = texture_cache.GetImage(guest);
     const u32 w = source.info.size.width;
     const u32 h = source.info.size.height;
-    if (w != target_width || h != target_height || !w || !h ||
+    // A *real* source must equal the exact raster installed by the eboot
+    // patch. Reject 720p guest fallback pretending to be 360p rendering.
+    u32 expected_w = target_width;
+    u32 expected_h = target_height;
+    if (const char* input = std::getenv("GOW3_GSR2_INPUT_RES"); input) {
+        unsigned ew=0, eh=0;
+        if (std::sscanf(input, "%ux%u", &ew, &eh) == 2) {
+            expected_w = ew;
+            expected_h = eh;
+        }
+    }
+    if (w != expected_w || h != expected_h || !w || !h ||
+        w > target_width || h > target_height ||
         FrameCapture::IsDisplayBuffer(source.info.guest_address) == false ||
         (source.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
          source.info.pixel_format != vk::Format::eR8G8B8A8Srgb &&
@@ -2481,8 +2499,9 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                         vk::to_string(source.info.pixel_format).c_str());
         return false; // The ordinary guest image remains intact.
     }
-    if (!EnsureResources(w, h, w, h, false)) return false;
-    EnsureUiResources(w, h, source.info.pixel_format, vk::Format::eD32Sfloat);
+    const u32 ow = target_width, oh = target_height;
+    if (!EnsureResources(w, h, ow, oh, false)) return false;
+    EnsureUiResources(ow, oh, source.info.pixel_format, vk::Format::eD32Sfloat);
 
     if (!guest_display_depth || guest_display_depth_width != w ||
         guest_display_depth_height != h) {
@@ -2555,7 +2574,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // Real GSR2 compute, but deliberately 1:1 spatial and history-reset while
     // we isolate input acquisition. The ordinary VideoOut buffer is the fallback.
     guest_display_mode_recording = true;
-    const bool ok = RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, w, h);
+    const bool ok = RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh);
     guest_display_mode_recording = false;
     if (!ok) return false;
     barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
@@ -2573,14 +2592,14 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                   region, vk::Filter::eNearest);
     barrier(vk::Image(ui_image), vk::ImageLayout::eGeneral,
             transfer, twrite, all, sread);
-    display = {vk::Image(ui_image), source.info.pixel_format, w, h};
+    display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};
     static u64 accepted = 0;
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
                     "output=%ux%u dispatch=%llu path=post_videoout_native_aa\n",
                     static_cast<unsigned long long>(source.info.guest_address),
-                    w, h, w, h, static_cast<unsigned long long>(accepted));
+                    w, h, ow, oh, static_cast<unsigned long long>(accepted));
     }
     if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
         (accepted == 480 || accepted == 2400)) {
@@ -2588,8 +2607,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         if (std::strcmp(src_format, "unsupported") != 0)
             DumpImages(instance, scheduler, cmd, int(accepted),
                        {{source.GetImage(), w, h, 4, "videoout_original", src_format},
-                        {vk::Image(output_image), w, h, 8, "videoout_gsr2", "rgba16f"},
-                        {vk::Image(ui_image), w, h, 4, "videoout_filtered", src_format}});
+                        {vk::Image(output_image), ow, oh, 8, "videoout_gsr2", "rgba16f"},
+                        {vk::Image(ui_image), ow, oh, 4, "videoout_filtered", src_format}});
     }
     return true;
 }
@@ -2742,7 +2761,8 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
 
 bool TemporalUpscaler::Gsr2GuestDisplayMode() const {
     return std::getenv("GOW3_ANDROID_PORT") && UseGsr2() &&
-           Gow3Settings::RenderPreset() == Gow3Settings::NativeAA;
+           (Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||
+            std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT"));
 }
 
 bool TemporalUpscaler::UseGsr2() const {
