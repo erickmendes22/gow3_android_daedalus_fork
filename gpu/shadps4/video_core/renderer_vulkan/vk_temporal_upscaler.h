@@ -333,6 +333,7 @@ private:
     vk::UniqueDescriptorSetLayout pre_hud_composite_desc_layout;
     vk::UniquePipelineLayout pre_hud_composite_pipeline_layout;
     vk::UniquePipeline pre_hud_composite_pipeline;
+    vk::UniqueSampler pre_hud_linear_sampler;
     // ExtraSharpen: a copy of the upscaled frame (RCAS reads neighbours) and the target views.
     VideoCore::UniqueImage extra_sharpen_image;
     vk::UniqueImageView extra_sharpen_view;
