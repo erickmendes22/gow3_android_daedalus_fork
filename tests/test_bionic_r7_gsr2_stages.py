@@ -12,11 +12,12 @@ class BionicR7StageTests(unittest.TestCase):
         for part in ("GsrProbeGrid(", "vmaInvalidateAllocation(", "copyImageToBuffer(",
                      '"scene_proxy"', '"gsr2_output"', '"ui_blit"', '"display_final"'):
             self.assertIn(part, code)
-        self.assertIn('GSR_STAGE stage=%s y=%02u rgb=%s', code)
+        self.assertIn('GSR_STAGE stage=%s y=%02u rgb=%s generation=%d', code)
         self.assertIn("GOW3_GSR2_AUTO_PROBE", code)
-        self.assertIn("static u64 gsr_probe_frames = 0;", code)
-        self.assertIn("static unsigned gsr_probe_present_frames = 0;", code)
+        self.assertIn("captured_generation = gsr2_completed_generation", code)
+        self.assertIn("const u64 seeded_generation = it->second.gsr2_seed_generation;", code)
         self.assertIn("if (UseGsr2() && gsr_probe_frame", code)
+        self.assertIn("GSR_STAGE_SRGB stage=", code)
         self.assertIn("if (gsr_capture_final && UseGsr2()", code)
         self.assertIn("scheduler.DeferPriorityOperation(", code)
         self.assertIn("GsrProbeHalf(", code)
