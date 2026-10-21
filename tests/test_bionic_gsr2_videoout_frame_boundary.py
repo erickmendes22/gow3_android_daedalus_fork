@@ -102,6 +102,8 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         self.assertIn("candidate.address = guest_address;", capture)
         self.assertIn("candidate.camera = current;",capture)
         self.assertIn("candidate.depth = depth_id;",capture)
+        self.assertIn("candidate.depth_image_uid = depth_image.image_uid;",capture)
+        self.assertIn("candidate.depth_alias_generation = depth_image.alias_generation;",capture)
         self.assertIn("!current.shader_hash || !depth_id",capture)
         self.assertIn("if (candidate.address == guest_address)",capture)
         flip = camera.split("void CameraMotion::OnDisplayPass(",1)[1].split(
@@ -109,6 +111,11 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         self.assertIn("candidate.address != presented_guest_address",flip)
         self.assertIn("current = candidate.camera;",flip)
         self.assertIn("depth_id = candidate.depth;",flip)
+        self.assertIn("texture_cache.TryGetImage(candidate.depth, candidate.depth_image_uid)",flip)
+        self.assertIn("depth_image->alias_generation != candidate.depth_alias_generation",flip)
+        self.assertLess(
+            flip.index("texture_cache.TryGetImage(candidate.depth, candidate.depth_image_uid)"),
+            flip.index("current = candidate.camera;"))
         self.assertIn("current.valid = false;",flip)
         self.assertIn("depth_id = {};",flip)
         self.assertIn("display_target_candidates = {};",flip)
