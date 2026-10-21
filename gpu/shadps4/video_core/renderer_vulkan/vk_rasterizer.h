@@ -58,6 +58,11 @@ public:
         return *upscaler;
     }
 
+    // GSR2 direct VideoOut: finish the real rendered frame at SubmitFlip,
+    // rather than treating every draw into any registered display buffer as
+    // a separate frame. Other upscalers and Native AA retain their path.
+    void Gsr2OnVideoOutFlip(VAddr guest_address);
+
     [[nodiscard]] VideoCore::TextureCache& GetTextureCache() noexcept {
         return texture_cache;
     }
