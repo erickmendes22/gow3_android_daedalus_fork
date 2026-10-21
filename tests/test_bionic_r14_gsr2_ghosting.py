@@ -22,7 +22,8 @@ class R14Ghosting(unittest.TestCase):
         c=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         self.assertIn("GSR2_HISTORY_GUARD dispatch=",c)
         self.assertIn("camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid",c)
-        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",c)
+        self.assertIn("const bool temporal_ready =",c)
+        self.assertIn("!guest_display_mode_recording &&",c)
         self.assertIn(".reset = reset || !temporal_ready,",c)
         segment=c.split("void TemporalUpscaler::RunScaled()",1)[1].split(
             "vk::ImageView TemporalUpscaler::Mirror(",1)[0]
