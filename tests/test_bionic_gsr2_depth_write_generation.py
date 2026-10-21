@@ -6,6 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 TEX = ROOT / "gpu/shadps4/video_core/texture_cache"
 
 class DepthWriteGeneration(unittest.TestCase):
+    def test_videoout_rasterizer_has_settings_declaration(self):
+        raster = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+        self.assertIn('#include "gow3_settings.h"', raster)
+        self.assertIn("Gow3Settings::RenderPreset()", raster)
+
     def test_depth_write_flag_follows_depth_control(self):
         src = (TEX / "texture_cache.h").read_text()
         self.assertIn("bool depth_write{false};", src)
