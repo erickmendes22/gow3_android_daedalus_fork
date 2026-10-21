@@ -3786,7 +3786,7 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
     // The canonical scene-to-VideoOut boundary is one per REAL requested
     // guest flip. Never consume it in DrawRecord's intermediate display draws.
-    camera_motion->OnDisplayPass({});
+    camera_motion->OnDisplayPass({}, guest_address);
     if (upscaler->OnFrameStart()) {
         object_motion->InvalidateHistory();
         camera_motion->InvalidateHistory();
