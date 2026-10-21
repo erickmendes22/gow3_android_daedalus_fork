@@ -33,6 +33,7 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",fn)
         self.assertIn("std::getenv(\"GOW3_ANDROID_PORT\")",source)
         self.assertIn("PreHudEnabled() && pre_hud_consecutive_matches >= 3", source)
+        self.assertIn("camera_motion.CompletedHistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid",source)
         self.assertIn("(!Gsr2GuestDisplayMode() || prehud_temporal)",source)
     def test_invalid_motion_is_cleared_before_gsr2_dispatch(self):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
