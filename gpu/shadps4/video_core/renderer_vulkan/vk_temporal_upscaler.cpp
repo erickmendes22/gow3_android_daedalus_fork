@@ -1547,6 +1547,16 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
         return;
     }
     const auto& image = texture_cache.GetImage(color);
+    // DrawRecord binds the destination VideoOut framebuffer before calling
+    // ProbeGsr2PreHudSource. Previously that draw silently overwrote the last
+    // non-display LDR scene with the VideoOut surface itself. In direct GSR2
+    // mode preserve the last actual scene candidate until the real flip.
+    // Only the diagnostic/source bookkeeping changes here: all guest draws,
+    // HUD and presentation retain their original paths.
+    if (Gsr2GuestDisplayMode() &&
+        FrameCapture::IsDisplayBuffer(image.info.guest_address)) {
+        return;
+    }
     const auto& depth = texture_cache.GetImage(camera_motion.Depth());
     if ((image.info.pixel_format == vk::Format::eR8G8B8A8Unorm ||
          image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
