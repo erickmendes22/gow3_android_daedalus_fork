@@ -106,7 +106,8 @@ def derive(game, config, state_path, env):
         '3': ('360p', '640x360'),
         '4': ('240p', '426x240'),
     }
-    if verified_gsr2_eboot and gsr2_preset in gsr2_native_input_by_preset:
+    if (verified_gsr2_eboot and gsr2_preset in gsr2_native_input_by_preset and
+            gsr2_preset != '0'):
         # Launch-only graphics override: no change to the user's stored 720p
         # output choice or the known-good resolution when GSR2 is switched off.
         patch_name, pixel_size = gsr2_native_input_by_preset[gsr2_preset]
@@ -155,11 +156,15 @@ def derive(game, config, state_path, env):
             from patches import CUSA01715_0102_ANDROID_SHA
             if (verified_gsr2_eboot and 'Resolution Patch - 720p' in names and
                     gsr2_preset in gsr2_native_input_by_preset):
-                # Use the actual patched guest raster as the GSR2 source.
-                # Keep the *host* output fixed at 1280x720 regardless of preset.
-                actual_input = gsr2_native_input_by_preset[gsr2_preset][1]
-                updates['GOW3_PATCH_INPUT_RES'] = actual_input
-                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-videoout-input'
+                if gsr2_preset == '0':
+                    # Do not change native AA's existing exact-match 720p path.
+                    updates['GOW3_PATCH_INPUT_RES'] = '1280x720'
+                    updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-720p-target'
+                else:
+                    # SHA-verified lower guest raster, separate fixed 720p host.
+                    actual_input = gsr2_native_input_by_preset[gsr2_preset][1]
+                    updates['GOW3_PATCH_INPUT_RES'] = actual_input
+                    updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-videoout-input'
             # This exact-address patch belongs only to the supplied and
             # verified eboot revision. Other builds retain their shadows.
             shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
