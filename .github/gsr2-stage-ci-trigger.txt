@@ -70,3 +70,5 @@ Final host-only analytic check: current/previous pixel displacement, GSR2 conver
 Host-only 20261021: Tighten source provenance. At the first real display-copy draw, cache validated scene camera and depth by regs.color_buffers[0].Address(). During Presenter real flip, accept only candidate whose key equals actually presented guest address; otherwise invalidate temporal feed, clear candidates. Prevent tautological address tagging at Presenter and UI overwrites. New regression suite; do not trigger Android APK build.
 
 Re-run HOST-ONLY after matching VideoOut framebuffer is required for GSR2 camera/depth. Adapt legacy snapshot unit assertions to distinguish intentional pre-snapshot candidate rejection from normal post-snapshot per-frame cleanup; ensure full Bionic tests pass. NO APK BUILD.
+
+Host-only depth identity verification: OnDisplayTargetDraw caches TextureCache image_uid and alias_generation for verified scene depth. OnDisplayPass accepts camera/depth ONLY if TryGetImage verifies same uid and no later depth GPU writes before real VideoOut flip. On mismatch spatial reset rather than stale reprojection; protect fps and do not build APK.
