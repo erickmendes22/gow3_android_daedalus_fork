@@ -95,6 +95,9 @@ public:
     /// A pass's first color target: the last render-size RGBA8 target before the UI is the
     /// game's finished frame.
     void OnColorTarget(VideoCore::ImageId color);
+    /// Probe the pre-HUD scene at the first draw targeting a guest VideoOut buffer.
+    /// Diagnostic only: never redirect guest rendering or alter the presented image.
+    void ProbeGsr2PreHudSource(VAddr guest_address);
     /// Final image boundary of CUSA01715's one/two MRT forward renderer.
     void OnDisplayBoundary(VideoCore::ImageId color);
 
