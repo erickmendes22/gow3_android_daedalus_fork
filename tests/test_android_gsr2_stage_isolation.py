@@ -71,7 +71,7 @@ class Gsr2StageIsolation(unittest.TestCase):
         self.assertNotIn("gsr_probe_present_frames == 2400", code)
 
     def test_temporal_history_decline_after_verified_camera(self):
-        log = "\\n".join((
+        log = "\n".join((
             "GOW3_CAMERA_VERIFIED_VP shader=abc slot=1 votes=3",
             "GSR2_HISTORY_GUARD dispatch=600 valid=89 missing=511 shader=0 projection=0 position=0 rotation=0",
             "GSR2_HISTORY_GUARD dispatch=1200 valid=689 missing=511 shader=0 projection=0 position=0 rotation=0",
@@ -86,7 +86,7 @@ class Gsr2StageIsolation(unittest.TestCase):
                          [{"from_dispatch": 1800, "to_dispatch": 2400}])
 
     def test_temporal_history_missing_only_is_not_mislabeled_drop(self):
-        log = "\\n".join((
+        log = "\n".join((
             "GSR2_HISTORY_GUARD dispatch=600 valid=0 missing=600 shader=0 projection=0 position=0 rotation=0",
             "GSR2_HISTORY_GUARD dispatch=1200 valid=0 missing=1200 shader=0 projection=0 position=0 rotation=0",
         ))
