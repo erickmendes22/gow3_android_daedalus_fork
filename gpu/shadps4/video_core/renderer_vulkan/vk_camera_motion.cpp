@@ -196,16 +196,33 @@ vk::Image CameraMotion::ObjectMotionImage(u32 width, u32 height) const noexcept 
 
 void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                 vk::ImageView motion_view, u32 width, u32 height) {
+    RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
+                    current, previous, jitter, previous_jitter);
+}
+
+void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
+                                         vk::ImageView motion_view, u32 width, u32 height) {
+    // Guest VideoOut is produced after OnDisplayPass. Use its frozen scene
+    // camera rather than the reset camera of the next frame.
+    RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
+                    completed_current, completed_previous, {}, {});
+}
+
+void CameraMotion::RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
+                                   vk::ImageView motion_view, u32 width, u32 height,
+                                   const Camera& now, const Camera& before,
+                                   std::array<float, 2> now_jitter,
+                                   std::array<float, 2> before_jitter) {
     bool object_valid = false;
     const vk::ImageView object_view = object_motion && object_motion->Enabled()
         ? object_motion->PrepareRead(cmdbuf, width, height, object_valid) : depth_view;
     const PushConstants push{
-        .reproject = Multiply(previous.view, current.inv_view),
-        .proj = current.proj,
-        .prev_proj = previous.proj,
+        .reproject = Multiply(before.view, now.inv_view),
+        .proj = now.proj,
+        .prev_proj = before.proj,
         .size = {float(width), float(height)},
-        .jitter = jitter,
-        .previous_jitter = previous_jitter,
+        .jitter = now_jitter,
+        .previous_jitter = before_jitter,
         .mode = object_valid ? 1u : 0u,
     };
     const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
@@ -496,6 +513,24 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
         std::strcmp(chosen, "gsr2") == 0) {
         previous_frame_candidate = current_frame_candidate;
         current_frame_candidate.valid = false;
+    }
+    // Preserve the completed scene's true depth and verified adjacent cameras
+    // for the later Presenter VideoOut dispatch. This cannot be reconstructed
+    // from live camera state because we clear it below.
+    completed_history_status = frame_has_camera && current.valid
+        ? Gsr2HistoryValidity() : Gsr2HistoryStatus::MissingCamera;
+    completed_current = current;
+    completed_previous = previous;
+    completed_depth = depth_id;
+    if (std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT")) {
+        static unsigned snapshots = 0, eligible = 0;
+        ++snapshots;
+        eligible += completed_history_status == Gsr2HistoryStatus::Valid;
+        if (snapshots <= 4 || snapshots % 600 == 0)
+            std::printf("GSR2_COMPLETED_SCENE frame=%u status=%u valid_total=%u depth=%d shader=%llx/%llx\n",
+                snapshots, unsigned(completed_history_status), eligible, int(bool(completed_depth)),
+                (unsigned long long)completed_current.shader_hash,
+                (unsigned long long)completed_previous.shader_hash);
     }
     // Freeze the just completed scene camera as the previous frame. The next
     // scene must acquire its own transform before history may be reprojected.
