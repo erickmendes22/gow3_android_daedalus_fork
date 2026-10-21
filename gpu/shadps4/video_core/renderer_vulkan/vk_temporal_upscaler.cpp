@@ -584,7 +584,11 @@ bool TemporalUpscaler::OnFrameStart() {
     const bool active = Active();
     // Enable Halton only after three consecutive *verified* pre-HUD captures.
     // The direct VideoOut fallback itself remains unchanged, never jittered.
-    const bool prehud_temporal = PreHudEnabled() && pre_hud_consecutive_matches >= 3;
+    // Never jitter an unverified scene, menu or camera-less VideoOut flip.
+    // The 190657 device log proved that frame 12000 had a stable scene slot
+    // but NO matching camera/depth, yet the previous code kept jitter active.
+    const bool prehud_temporal = PreHudEnabled() && pre_hud_consecutive_matches >= 3 &&
+        camera_motion.CompletedHistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid;
     const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
                            settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
