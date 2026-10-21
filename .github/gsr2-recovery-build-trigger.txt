@@ -23,3 +23,5 @@ Final 2.1.7 Bionic ARM64 direct VideoOut profile 1-4 real raster patch, preserve
 Retry after fixing native C++ ExtraSharpen w/h undeclared ow/oh (previous run 39602263451), host checks passed 39605772259.
 
 ARM64 final GSR2 2.1.7: fill full host extent ow/oh when copying 640x360->1280x720 output, regression for quarter-screen; preserve Native AA, ExtraSharpen and other paths. Host suite 39613760690 triggered.
+
+Replace previous quarter-screen-only build with 2.1.7 temporal VideoOut: full ow/oh screen, frozen verified camera/depth before OnDisplayPass invalidation, camera reprojection vectors, contiguous history gating, accurate history/reset diagnostics, safe spatial fallback, untouched Native AA.
