@@ -279,6 +279,9 @@ private:
     bool guest_display_mode_recording = false;
     bool guest_display_motion_ready = false;
     bool guest_display_history_contiguous = false;
+    // Every temporal GSR2 input must refer to exactly one fresh, real
+    // VideoOut flip. Never silently reuse a scene from a different buffer.
+    u64 guest_display_last_flip_generation = 0;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
