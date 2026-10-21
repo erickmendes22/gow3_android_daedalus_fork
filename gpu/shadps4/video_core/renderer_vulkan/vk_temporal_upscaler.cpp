@@ -618,8 +618,14 @@ bool TemporalUpscaler::OnFrameStart() {
         failed = false;
         fsr4_failed = false;
     }
-    const bool changed = output_changed || applied_preset != preset || active != last_active ||
-                         jitter_on != last_jitter || applied_upscaler != upscaler;
+    // Only changes to the upscaler/provider/raster actually invalidate a
+    // verified scene history. A 240 Hz VideoOut callback can change its
+    // camera/jitter eligibility twice between consecutive game scene frames;
+    // invalidating Qualcomm history on those filler flips prevents EVERY
+    // temporal dispatch (202739: temporal=0 after 16200 flips).
+    const bool provider_changed = output_changed || applied_preset != preset ||
+                                  active != last_active || applied_upscaler != upscaler;
+    const bool changed = provider_changed || jitter_on != last_jitter;
     if (applied_upscaler != upscaler) {
         // A failed provider keeps a fatal flag internally; a user retry gets a fresh context.
         scheduler.Finish();
@@ -628,6 +634,9 @@ bool TemporalUpscaler::OnFrameStart() {
     }
     if (applied_upscaler != upscaler) {
         gsr2.reset();
+        gsr2_spatial.reset();
+        camera_motion.InvalidateTemporalScene();
+        guest_display_last_temporal_flip_generation = 0;
         fsr4_failed = gsr2_failed = false;
     }
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
@@ -646,7 +655,14 @@ bool TemporalUpscaler::OnFrameStart() {
     }
     Gow3Settings::Get().active_render_width = Scaled() ? render_width : scene_targets.Size().width;
     Gow3Settings::Get().active_render_height = Scaled() ? render_height : scene_targets.Size().height;
-    if (changed) guest_display_history_contiguous = false;
+    // In pre-HUD direct mode the scene-history cadence is separate from the
+    // VideoOut jitter toggle. A missing-camera *flip* is not a verified scene
+    // cut; continuity is checked against the previous accepted SCENE instead.
+    if (changed && (!PreHudEnabled() || provider_changed)) {
+        guest_display_history_contiguous = false;
+        camera_motion.InvalidateTemporalScene();
+        guest_display_last_temporal_flip_generation = 0;
+    }
     if (changed || !dispatched_last_frame) reset = true;
     if (changed) jitter_index = 0;
     applied_preset = preset;
