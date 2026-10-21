@@ -50,3 +50,5 @@ R6 R11 R12 R13 R14 R16 C++ temporal guards: require completed camera+depth and a
 Broad 115-test Bionic regression gate on same GSR2 temporal snapshot branch after updates of legacy R6/R11/R12/R13/R14/R16 source string assertions.
 
 Repeat full Bionic tests with recursive submodule checkout so the ImGui Vulkan compile test has its pinned sources and headers.
+
+Guard source priority regression after logs 20261021-120425/120533: 360p and 240p temporal initially valid, then verified shader replaced by legacy shader_hash 0; prevent verified-to-legacy downgrade and preserve scene cut resets.
