@@ -987,9 +987,9 @@ void TemporalUpscaler::ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, 
                   vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eTransferWrite);
     const vk::ImageBlit region{
         .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
+        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
         .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
+        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
     };
     cmdbuf.blitImage(target, vk::ImageLayout::eGeneral, vk::Image(extra_sharpen_image),
                      vk::ImageLayout::eGeneral, region, vk::Filter::eNearest);
