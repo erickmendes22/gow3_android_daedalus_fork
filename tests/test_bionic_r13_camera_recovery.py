@@ -85,8 +85,10 @@ int main() {
         # Never enable history with fake camera matrices.
         up=(ROOT/"gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp").read_text()
         self.assertIn("const bool temporal_ready =",up)
-        self.assertIn("!guest_display_mode_recording &&",up)
-        self.assertIn(".reset = reset || !temporal_ready,",up)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",up)
+        self.assertIn("const bool dispatch_reset =",up)
+        self.assertIn("!temporal_ready;",up)
+        self.assertIn(".reset = dispatch_reset,",up)
 
     def test_r13_single_gated_build(self):
         wf=(ROOT/".github/workflows/bionic-apk.yml").read_text()
