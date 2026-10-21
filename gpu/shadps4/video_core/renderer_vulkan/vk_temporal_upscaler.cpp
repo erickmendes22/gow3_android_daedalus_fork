@@ -2610,8 +2610,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             all, vk::AccessFlagBits2::eNone, vk::PipelineStageFlagBits2::eComputeShader,
             swrite);
 
-    // Real GSR2 compute, but deliberately 1:1 spatial and history-reset while
-    // we isolate input acquisition. The ordinary VideoOut buffer is the fallback.
+    // Direct GSR2 compute from the completed guest VideoOut image. The
+    // verified matching scene depth/camera may enable history; missing or
+    // mismatched inputs always reset to the safe spatial fallback.
+    const bool reuse_history = use_scene_motion && guest_display_history_contiguous;
     guest_display_motion_ready = use_scene_motion;
     guest_display_mode_recording = true;
     const bool ok = RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh);
@@ -2641,11 +2643,11 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};
     static u64 accepted = 0;
     static u64 temporal_frames = 0;
-    if (use_scene_motion) ++temporal_frames;
+    if (reuse_history) ++temporal_frames;
     if (accepted <= 5 || accepted % 600 == 0)
-        std::printf("GSR2_VIDEOOUT_MOTION status=%u real_depth=%d temporal=%d cumulative=%llu reset=%d\\n",
+        std::printf("GSR2_VIDEOOUT_MOTION status=%u real_depth=%d computed_motion=%d history_used=%d cumulative=%llu reset=%d\n",
             unsigned(status), int(bool(completed_depth)), int(use_scene_motion),
-            (unsigned long long)temporal_frames, int(!use_scene_motion));
+            int(reuse_history), (unsigned long long)temporal_frames, int(!reuse_history));
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
@@ -2864,6 +2866,9 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
             std::printf("GSR2: camera/motion unavailable; running current-frame spatial reconstruction (history reset each frame)\n");
         }
     }
+    const bool dispatch_reset =
+        (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
+        !temporal_ready;
     const bool ok = gsr2->Record({
         .cmdbuf = cmdbuf,
         .color = color,
@@ -2891,8 +2896,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         .camera_still = temporal_ready
             ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill()
                                             : camera_motion.CameraStill()) : true,
-        .reset = (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
-                 !temporal_ready,
+        .reset = dispatch_reset,
     });
     if (!ok) {
         // Android 的回落目标是 off（FSR 3.1 在该平台是玩家判定无效的路径）；桌面维持 FSR 3.1。
@@ -2918,7 +2922,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
             std::printf("GSR2_CAPTURE_CONTEXT generation=%llu input=%ux%u output=%ux%u history_status=%u temporal=%d reset=%d still=%d jitter=%.6f,%.6f fov=%.6f\n",
                         static_cast<unsigned long long>(gsr2_completed_generation),
                         w, h, ow, oh, static_cast<unsigned>(temporal_status),
-                        int(temporal_ready), int(reset || !temporal_ready),
+                        int(temporal_ready), int(dispatch_reset),
                         int(temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill() : camera_motion.CameraStill()) : true),
                         sign * jitter[0], sign * jitter[1],
                         temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov() : camera_motion.VerticalFov()) : 1.04719755f);
