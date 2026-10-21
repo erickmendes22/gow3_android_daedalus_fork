@@ -1003,6 +1003,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         // the actual display-copy draw. The later Presenter address must
         // match this captured source or temporal history is rejected.
         camera_motion->OnDisplayTargetDraw(regs.color_buffers[0].Address());
+        upscaler->CaptureGsr2PreHudScene(regs.color_buffers[0].Address());
         upscaler->ProbeGsr2PreHudSource(regs.color_buffers[0].Address());
     }
     if (camera_motion->Enabled() && is_display_draw &&
@@ -3795,6 +3796,7 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
     // The canonical scene-to-VideoOut boundary is one per REAL requested
     // guest flip. Never consume it in DrawRecord's intermediate display draws.
+    upscaler->SelectGsr2PreHudScene(guest_address);
     camera_motion->OnDisplayPass({}, guest_address);
     if (upscaler->OnFrameStart()) {
         object_motion->InvalidateHistory();
