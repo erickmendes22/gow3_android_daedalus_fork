@@ -54,3 +54,5 @@ Repeat full Bionic tests with recursive submodule checkout so the ImGui Vulkan c
 Guard source priority regression after logs 20261021-120425/120533: 360p and 240p temporal initially valid, then verified shader replaced by legacy shader_hash 0; prevent verified-to-legacy downgrade and preserve scene cut resets.
 
 Validated 20261021 120425 120533 guest upscale temporal recovered for 1929/1150 dispatches respectively, later overwritten shader provenance. Stage assert verified VP priority with bounded debug and native AA preserved.
+
+2026-10-21 12:39 log: GSR2 valid history rose to 2970/12000 then stopped immediately after AUTOSAVE cinematic PSDNINT.XVAG. Keep bounded 16 previous-frame camera candidates keyed by shader; require real geometric continuity, preserve original scene-cut history reset; verify before APK.
