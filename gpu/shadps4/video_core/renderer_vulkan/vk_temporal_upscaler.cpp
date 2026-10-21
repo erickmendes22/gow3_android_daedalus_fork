@@ -502,7 +502,7 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
     slot->captured = true;
     static u32 captures=0;
     if (++captures<=4 || captures%600==0)
-        std::printf("GSR2_PREHUD_CAPTURE count=%u guest=%#llx scene=%#llx size=%ux%u\\n",
+        std::printf("GSR2_PREHUD_CAPTURE count=%u guest=%#llx scene=%#llx size=%ux%u\n",
                     captures,(unsigned long long)guest,
                     (unsigned long long)color.info.guest_address,w,h);
 }
@@ -523,7 +523,7 @@ void TemporalUpscaler::SelectGsr2PreHudScene(VAddr guest) {
     if (pre_hud_completed_slot < 0) pre_hud_consecutive_matches = 0;
     static u32 flips=0;
     if (++flips<=4 || flips%600==0)
-        std::printf("GSR2_PREHUD_FLIP flip=%u guest=%#llx scene_slot=%d stable=%u\\n",
+        std::printf("GSR2_PREHUD_FLIP flip=%u guest=%#llx scene_slot=%d stable=%u\n",
                     flips,(unsigned long long)guest,
                     pre_hud_completed_slot, pre_hud_consecutive_matches);
 }
@@ -3170,7 +3170,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         : jitter;
     if (guest_display_mode_recording && std::getenv("GOW3_GSR2_AUTO_PROBE") &&
         (history_dispatches <= 5 || history_dispatches % 600 == 0)) {
-        std::printf("GSR2_PREHUD_TEMPORAL dispatch=%llu actual_scene=%d history=%d reset=%d jitter=%g,%g\\n",
+        std::printf("GSR2_PREHUD_TEMPORAL dispatch=%llu actual_scene=%d history=%d reset=%d jitter=%g,%g\n",
                     (unsigned long long)history_dispatches,int(pre_hud_recording),
                     int(temporal_ready),int(dispatch_reset),
                     double(matched_jitter[0]),double(matched_jitter[1]));
