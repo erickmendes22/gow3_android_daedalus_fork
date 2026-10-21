@@ -77,7 +77,7 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         source=cpp.split('bool TemporalUpscaler::PresentGsr2FromGuestDisplay(',1)[1].split(
             'bool TemporalUpscaler::DisplayOverride(',1)[0]
         self.assertIn('const u32 ow = target_width, oh = target_height;',source)
-        self.assertIn('RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh)',source)
+        self.assertIn('RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)',source)
 
     def test_direct_videoout_blit_copies_full_gsr2_output_not_quarter_screen(self):
         # 640x360->1280x720 must copy the entire computed output into the
