@@ -38,3 +38,5 @@ Experimental temporal input handoff: preserve completed scene camera+depth at On
 Second temporal host suite: adapt old reset-string invariant to contiguous verified completed motion, keep missing-camera reset always active.
 
 GSR2 stage validation: selected real depth view in VideoOut temporal path (fallback synthetic depth only on missing history), revised source assertions.
+
+Final source contracts for depth-validated temporal history after actual GSR2 VideoOut; preserve safe fallback and old NativeAA.
