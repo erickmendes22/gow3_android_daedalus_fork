@@ -2604,6 +2604,19 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                             status == CameraMotion::Gsr2HistoryStatus::Valid &&
                             bool(completed_depth);
     if (use_scene_motion) {
+        // Never send a singular or implausible scene projection to GSR2.
+        // atan(1 / proj.y) can become PI if proj.y is zero; the compute
+        // shader then evaluates tan(FOV/2) to an effectively unbounded value.
+        const float fov = camera_motion.CompletedVerticalFov();
+        if (!std::isfinite(fov) || fov <= 0.17f || fov >= 3.0f) {
+            static unsigned invalid_fov = 0;
+            if (++invalid_fov <= 5 || invalid_fov % 600 == 0)
+                std::printf("GSR2_SCENE_PROJECTION_REJECT count=%u fov=%g\n",
+                            invalid_fov, double(fov));
+            use_scene_motion = false;
+        }
+    }
+    if (use_scene_motion) {
         const auto& depth = texture_cache.GetImage(completed_depth);
         const auto fmt = depth.info.pixel_format;
         use_scene_motion = depth.info.size.width == w && depth.info.size.height == h &&
