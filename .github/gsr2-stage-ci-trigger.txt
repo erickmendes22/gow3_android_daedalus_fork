@@ -28,3 +28,5 @@ Fix restricted jitter modification to GSR2 Native AA; restore FSR4 original jitt
 GSR2 direct guest VideoOut test all 5 presets via verified 01.02 eboot patch, retain full-screen real guest raster and 1280x720 host output; no SceneTargets double downsample.
 
 Preserve R18 Native AA without any forced eboot resolution when user selected native; direct verified resolution for GSR2 presets 1-4 only.
+
+ARM64 compile regression 39602263451: extra sharpen has w/h parameters, never ow/oh; test explicitly constrains scope.
