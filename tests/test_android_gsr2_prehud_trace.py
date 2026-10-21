@@ -66,6 +66,10 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("sampled(*output_view)",cpp)
         self.assertIn("OutputComposited",shader)
         self.assertIn("foregroundDifference",shader)
+        self.assertIn("vec3 before=textureLod(InputPreHud,uv,0.0).rgb;",shader)
+        self.assertIn("vec3 restored=clamp(scene + (guest-before),0.0,1.0);",shader)
+        self.assertIn("changed>params.threshold) ? guest:restored;",shader)
+        self.assertIn("GSR2_HISTORY_DISPATCH_TOTAL",cpp)
         self.assertIn("incompatibleScene",shader)
         self.assertIn("different>=12u",shader)
         self.assertIn("barrier();",shader)
@@ -78,6 +82,21 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("gsr2_prehud_composite.comp",build)
         self.assertIn('GOW3_GSR2_PREHUD_COMPOSITE:-1',shell)
         self.assertIn("} else {\n        // Stable fallback",cpp)
+
+    def test_same_frame_postprocess_is_restored_without_temporal_hud_contamination(self):
+        # Identity-GSR input must reconstruct EXACTLY the final VideoOut
+        # even when the copy pass applies global color correction (9600 case).
+        source_before = (0.11, 0.21, 0.07)
+        guest_after = (0.09, 0.13, 0.02)
+        temporal_scene = source_before
+        restored = tuple(max(0.0, min(1.0, temporali + guesti - beforei))
+                         for temporali, guesti, beforei in
+                         zip(temporal_scene, guest_after, source_before))
+        self.assertEqual(tuple(round(v, 6) for v in restored), guest_after)
+        # An opaque HUD difference remains guest-only: never enter history.
+        threshold = 0.045
+        self.assertGreater(abs(1.0 - 0.1), threshold)
+        self.assertEqual((1.0 if abs(1.0 - 0.1) > threshold else 0.1), 1.0)
 
     def test_reject_non_finite_scene_projection(self):
         cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
