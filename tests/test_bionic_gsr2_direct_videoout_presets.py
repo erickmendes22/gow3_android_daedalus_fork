@@ -87,7 +87,7 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
             'bool TemporalUpscaler::DisplayOverride(',1)[0]
         blit=source.split('const vk::ImageBlit region{',1)[1].split(
             'cmd.blitImage(',1)[0]
-        self.assertEqual(blit.count('vk::Offset3D{s32(ow), s32(oh), 1}'),2)
+        self.assertEqual(blit.count('vk::Offset3D{s32(ow),s32(oh),1}'),2)
         self.assertNotIn('vk::Offset3D{s32(w), s32(h), 1}',blit)
         self.assertIn('display = {vk::Image(ui_image), source.info.pixel_format, ow, oh}',source)
 
@@ -122,7 +122,9 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertIn('completed_history_status = Gsr2HistoryStatus::MissingCamera',cam_h)
         self.assertIn('completed_depth',cam_h)
         self.assertIn('RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,',cam)
-        self.assertIn('completed_current, completed_previous, {}, {}, false)',cam)
+        self.assertIn('completed_current_jitter, completed_previous_jitter, false)',cam)
+        self.assertIn('completed_current_jitter = jitter;',on_display)
+        self.assertIn('completed_previous_jitter = previous_jitter;',on_display)
         self.assertIn('guest_display_motion_ready = use_scene_motion;',videoout)
         self.assertIn('guest_display_motion_ready)',cpp)
         self.assertIn('chosen_depth_view, w, h, ow, oh',videoout)
