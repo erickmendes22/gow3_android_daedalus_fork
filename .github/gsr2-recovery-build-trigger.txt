@@ -35,3 +35,6 @@ GSR2 next verified-camera priority fix 20261021: logs confirm 426x240 and 640x36
 R27 post-save temporal fix: 12:39 input GSR2 resets after AUTOSAVE cinematic, camera remains shader-valid on non-presented scene frames. Introduce 16-source per-shader candidates limited to immediately previous scene, same real matrix/geometric confirmation and spatial cut fallback. Host full regression 39629110712 successful; build ARM64 APK now.
 
 Validated host suite 39634728771: 20261021-131408 shows 1219/9600 valid temporal dispatches and zero GSR2_CAMERA_MULTI_SOURCE_RECOVERED. Permit only bounded additional unseen shader camera captures after 3 votes; protect current camera, reset at display boundary, source pool count diagnostics. Preserve GSR2 1280x720 blit and NativeAA.
+
+
+2026-10-21 pre-HUD source forensic APK (distinct stage vs prior runs): stage host suite 39652662433 success. Record actual pre-HUD LDR candidate before first VideoOut draw with optional raw readback to separate upstream scene corruption from GSR2, reject singular/unbounded completed-camera FOV; preserve all 2.1.7 fixes and existing 720p output. This is diagnostic: never claim temporal HUD compositing fixed before device evidence.
