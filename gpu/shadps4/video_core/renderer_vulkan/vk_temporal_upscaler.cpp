@@ -427,6 +427,7 @@ bool TemporalUpscaler::OnFrameStart() {
                            ? 0 : settings.output_res.load();
     const bool output_changed = !scaled_session && applied_output != output;
     if (output_changed) {
+        guest_display_history_contiguous = false;
         target_width = Gow3Settings::OutputWidths[output];
         target_height = Gow3Settings::OutputHeights[output];
         // Native Bloodborne-style Qualcomm GSR2 on Bionic must target the
@@ -473,6 +474,7 @@ bool TemporalUpscaler::OnFrameStart() {
     }
     Gow3Settings::Get().active_render_width = Scaled() ? render_width : scene_targets.Size().width;
     Gow3Settings::Get().active_render_height = Scaled() ? render_height : scene_targets.Size().height;
+    if (changed) guest_display_history_contiguous = false;
     if (changed || !dispatched_last_frame) reset = true;
     if (changed) jitter_index = 0;
     applied_preset = preset;
@@ -2615,7 +2617,11 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const bool ok = RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh);
     guest_display_mode_recording = false;
     guest_display_motion_ready = false;
-    if (!ok) return false;
+    if (!ok) {
+        guest_display_history_contiguous = false;
+        return false;
+    }
+    guest_display_history_contiguous = use_scene_motion;
     dispatched_last_frame = true;
     barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits2::eComputeShader, swrite, transfer, tread);
@@ -2885,7 +2891,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         .camera_still = temporal_ready
             ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill()
                                             : camera_motion.CameraStill()) : true,
-        .reset = (guest_display_mode_recording ? !dispatched_last_frame : reset) ||
+        .reset = (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
                  !temporal_ready,
     });
     if (!ok) {
@@ -2913,9 +2919,9 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
                         static_cast<unsigned long long>(gsr2_completed_generation),
                         w, h, ow, oh, static_cast<unsigned>(temporal_status),
                         int(temporal_ready), int(reset || !temporal_ready),
-                        int(temporal_ready ? camera_motion.CameraStill() : true),
+                        int(temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill() : camera_motion.CameraStill()) : true),
                         sign * jitter[0], sign * jitter[1],
-                        temporal_ready ? camera_motion.VerticalFov() : 1.04719755f);
+                        temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov() : camera_motion.VerticalFov()) : 1.04719755f);
         }
         if (dispatched == 1 || dispatched % 600 == 0) {
             std::printf("Upscaler: GSR 2 recorded frame %llu\n",
