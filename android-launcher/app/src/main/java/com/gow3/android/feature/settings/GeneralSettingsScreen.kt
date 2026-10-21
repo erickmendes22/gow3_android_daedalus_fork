@@ -38,7 +38,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gow3.android.feature.home.GpuDriverCard
 import com.gow3.android.feature.about.LanguageSetting
+import com.gow3.android.R
 import com.gow3.android.data.Gow3Ini
+import androidx.compose.ui.res.stringResource
 import com.gow3.android.ui.components.LauncherColors
 import com.gow3.android.ui.components.ScreenColumn
 
@@ -70,17 +72,17 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
         if (uri != null) {
             val ok = storage.importDll(uri)
             dllInstalled = storage.hasDll()
-            Toast.makeText(context, if (ok) "Lossless.dll imported successfully."
-                    else "Import failed: select a valid, non-empty Lossless.dll.",
+            Toast.makeText(context, if (ok) context.getString(R.string.settings_framegen_import_ok)
+                    else context.getString(R.string.settings_framegen_import_failed),
                     Toast.LENGTH_LONG).show()
         }
     }
     ScreenColumn {
-        Text("OPÇÕES", color = LauncherColors.textPrimary,
+        Text(stringResource(R.string.settings_title), color = LauncherColors.textPrimary,
             fontWeight = FontWeight.Bold, fontSize = 22.sp)
-        Text("IDIOMA", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_language_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         LanguageSetting(onChangeLanguage)
-        Text("HUD E CONTROLES", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_hud_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         val iniFile = remember(context) { java.io.File(context.filesDir, "gow3port/gow3.ini") }
         var ini by remember { mutableStateOf(Gow3Ini.read(iniFile)) }
         androidx.compose.foundation.layout.Row(
@@ -89,17 +91,17 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
                     RoundedCornerShape(12.dp)).padding(14.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            Text("HUD — FPS / GPU / CPU", Modifier.weight(1f),
+            Text(stringResource(R.string.settings_hud_label), Modifier.weight(1f),
                 color = LauncherColors.textPrimary, fontSize = 14.sp)
             androidx.compose.material3.Switch(checked = ini["show_fps"] == "1", onCheckedChange = { value ->
                 if (Gow3Ini.write(iniFile, mapOf("show_fps" to if (value) "1" else "0")))
                     ini = ini + ("show_fps" to if (value) "1" else "0")
-                else showResult("Não foi possível salvar o HUD")
+                else showResult(context.getString(R.string.settings_hud_save_failed))
             })
         }
-        Text("OPÇÕES", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_driver_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         GpuDriverCard()
-        Text("SALVAMENTOS E LOGS", color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_saves_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         SaveCard(
             hasSaves = hasSaves,
             onExport = {
@@ -142,22 +144,22 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Lossless.dll · Bloodframe", color = LauncherColors.textPrimary,
+                Text(stringResource(R.string.settings_framegen_title), color = LauncherColors.textPrimary,
                     fontWeight = FontWeight.Bold)
-                Text(if (dllInstalled) "Imported · native frame generation is available"
-                     else "Not imported · frame generation is disabled by default",
+                Text(if (dllInstalled) stringResource(R.string.settings_framegen_ready)
+                     else stringResource(R.string.settings_framegen_missing),
                     color = LauncherColors.textMuted, fontSize = 12.sp)
-                Text("IMPORT LOSSLESS.DLL",
+                Text(stringResource(R.string.settings_framegen_import),
                     modifier = Modifier.fillMaxWidth()
                         .background(LauncherColors.crimson, RoundedCornerShape(8.dp))
                         .clickable { importer.launch(arrayOf("*/*")) }
                         .padding(14.dp),
                     color = LauncherColors.textPrimary, fontWeight = FontWeight.Bold)
-                Text("The file must be provided by you. Bloodframe uses its shaders; the APK never bundles the DLL.",
+                Text(stringResource(R.string.settings_framegen_notice),
                     color = LauncherColors.textMuted, fontSize = 12.sp)
             }
         } else {
-            Text("Native Bloodframe options are available in the Bionic version.",
+            Text(stringResource(R.string.settings_framegen_bionic_only),
                  color = LauncherColors.textMuted, fontSize = 13.sp)
         }
     }
