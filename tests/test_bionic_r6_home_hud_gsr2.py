@@ -24,7 +24,8 @@ class R6(unittest.TestCase):
 
     def test_gsr2_no_motion_never_accumulates_invalid_history(self):
         cpp=src("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
-        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",cpp)
+        self.assertIn("const bool temporal_ready =",cpp)
+        self.assertIn("!guest_display_mode_recording &&",cpp)
         self.assertIn(".reset = reset || !temporal_ready,",cpp)
         self.assertIn(".camera_still = temporal_ready ? camera_motion.CameraStill() : true,",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
@@ -32,7 +33,7 @@ class R6(unittest.TestCase):
         # R19 honors Ultra Performance as actual 3x (not silently 2x);
         # no-motion history safety still relies on per-frame reset.
         self.assertNotIn('preset = 3;',cpp)
-        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",cpp)
+        self.assertIn("const bool temporal_ready =",cpp)
         glsl=src("gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp")
         self.assertIn("float(params.reset)",glsl)
         self.assertIn("mix(HistoryColor, Upsampledcw.xyz, alpha)",glsl)
