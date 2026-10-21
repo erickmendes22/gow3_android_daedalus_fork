@@ -42,11 +42,14 @@ class R18NativePath(unittest.TestCase):
         self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],"1280x720")
 
     def test_reduced_gsr2_presets_remain_selected(self):
-        for preset in ("1","2","3","4"):
+        expected={"1":"960x540","2":"752x424","3":"640x360","4":"426x240"}
+        for preset,actual in expected.items():
             with self.subTest(preset=preset):
                 plan,_=self.plan(preset,"720p")
                 self.assertEqual(plan["updates"]["GOW3_UPSCALER"],"gsr2")
-                self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],"1280x720")
+                self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],actual)
+                self.assertEqual(plan["updates"]["GOW3_GSR2_DIRECT_VIDEOOUT"],"1")
+                self.assertEqual(plan["updates"]["GOW3_GSR2_OUTPUT_RES"],"1280x720")
                 self.assertIn("Resolution Patch - 720p",plan["patch_names"])
 
     def test_stencil_reallocation_never_uses_old_depth_reference(self):
