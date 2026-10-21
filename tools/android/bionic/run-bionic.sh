@@ -114,6 +114,10 @@ eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_C
 # another native target: the temporal targets must match the actual guest frame.
 if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
     if [ "${GOW3_GSR2_DIRECT_VIDEOOUT:-0}" = 1 ]; then
+        # Experimental temporal samples: the scene viewport and the GSR2
+        # completed-frame motion must use the same Halton phase. Keep this
+        # absent for Native AA; it is not a reconstructed 2x input.
+        export GOW3_GSR2_TEMPORAL_JITTER="${GOW3_GSR2_TEMPORAL_JITTER:-1}"
         # The guest is SHA-patched to the selected REAL input raster. The
         # Snapdragon provider writes a separate 720p host image; unlike the
         # previous SceneTargets path there is no proxy/downsample/re-render.
