@@ -92,7 +92,8 @@ public:
                   AmdGpu::DepthControl ctl, VAddr htile_address, AmdGpu::CbDbExtent hint,
                   bool write_buffer = false)
             : info{buffer, view.NumSlices(), htile_address, hint, write_buffer},
-              view_info{buffer, view, ctl}, type{BindingType::DepthTarget} {}
+              view_info{buffer, view, ctl}, type{BindingType::DepthTarget},
+              depth_write{bool(ctl.depth_write_enable)} {}
         ImageDesc(const Libraries::VideoOut::BufferAttributeGroup& group, VAddr cpu_address)
             : info{group, cpu_address}, type{BindingType::VideoOut} {}
     };
