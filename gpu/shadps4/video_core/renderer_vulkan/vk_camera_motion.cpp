@@ -311,7 +311,11 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
     // been verified against other shader constants in the 22:00 eboot log.
     // Unlike FindPose(), this correctly handles GoW3's two separate
     // model/preprojection matrices, not Bloodborne's adjacent inverse pair.
-    if (frame_has_camera && frame_pose_votes >= 3) return;
+    // An unproven legacy affine-pair candidate has no shader provenance.
+    // Do not let it suppress the exact GoW3 view-projection detector for the
+    // rest of the display frame, especially after a scene or shader change.
+    if (frame_has_camera && frame_pose_votes >= 3 &&
+        (!gow3_android_gsr2 || current.shader_hash != 0)) return;
     if (gow3_android_gsr2 && buffer_slot == 1 && float_count >= 32) {
         const auto recovered = Gow3CameraLayout::RecoverViewProjection(
             data, float_count, buffer_slot);
@@ -438,6 +442,10 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
         current.view = frame_view;
         current.inv_view = frame_inverse;
         current.proj = frame_projection;
+        // FindPose + FindProjection may represent unrelated guest draws.
+        // Until RecoverViewProjection confirms provenance, a legacy pair
+        // can guide discovery but must NEVER satisfy GSR2 temporal history.
+        current.shader_hash = 0;
         current.valid = true;
         frame_has_camera = true;
         if (!reported_camera) {
@@ -497,6 +505,9 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
         InvalidateHistory();
     }
     current.valid = false;
+    // Shader provenance belongs to the finished frame. Never let the
+    // unverified legacy path inherit a previous frame's shader hash.
+    current.shader_hash = 0;
     frame_has_camera = false;
     have_pose = have_projection = false;
     frame_pose_votes = frame_scanned_buffers = 0;
