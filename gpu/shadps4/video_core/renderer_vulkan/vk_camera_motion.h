@@ -136,6 +136,38 @@ public:
             diff += std::abs(completed_current.proj[i] - completed_previous.proj[i]);
         return diff < 1e-5f;
     }
+    // Temporal history follows VERIFIED scene frames, not every 240 Hz
+    // VideoOut flip. The GoW III scene is commonly produced only on every
+    // third flip, and the two intermediate spatial displays must not poison
+    // its prior camera/jitter sample.
+    [[nodiscard]] bool CompletedPreviousMatchesTemporalScene() const noexcept {
+        if (!last_temporal_scene_camera.valid || !completed_previous.valid ||
+            completed_previous.shader_hash != last_temporal_scene_camera.shader_hash ||
+            !completed_previous.shader_hash)
+            return false;
+        for (size_t i=0; i<completed_previous.view.size(); ++i) {
+            if (!std::isfinite(completed_previous.view[i]) ||
+                std::abs(completed_previous.view[i] - last_temporal_scene_camera.view[i]) > 0.03f)
+                return false;
+            if (!std::isfinite(completed_previous.inv_view[i]) ||
+                std::abs(completed_previous.inv_view[i] -
+                         last_temporal_scene_camera.inv_view[i]) > 0.03f)
+                return false;
+        }
+        for (size_t i=0; i<completed_previous.proj.size(); ++i)
+            if (!std::isfinite(completed_previous.proj[i]) ||
+                std::abs(completed_previous.proj[i] -
+                         last_temporal_scene_camera.proj[i]) > 0.005f)
+                return false;
+        return true;
+    }
+    void CommitCompletedTemporalScene() noexcept {
+        last_temporal_scene_camera = completed_current;
+        last_temporal_scene_jitter = completed_current_jitter;
+    }
+    void InvalidateTemporalScene() noexcept {
+        last_temporal_scene_camera.valid = false;
+    }
     void RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                vk::ImageView motion_view, u32 width, u32 height);
 
@@ -216,6 +248,8 @@ private:
     ObjectMotion* object_motion = nullptr;
     Camera current, previous;
     Camera completed_current, completed_previous;
+    Camera last_temporal_scene_camera{};
+    std::array<float, 2> last_temporal_scene_jitter{};
     std::array<float, 2> completed_current_jitter{}, completed_previous_jitter{};
     Gsr2HistoryStatus completed_history_status = Gsr2HistoryStatus::MissingCamera;
     VideoCore::ImageId completed_depth{};
