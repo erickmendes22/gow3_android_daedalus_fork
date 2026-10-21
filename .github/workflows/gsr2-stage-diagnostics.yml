@@ -1,0 +1,23 @@
+name: GSR2 Stage Correlation (Experimental)
+
+on:
+  push:
+    branches:
+      - research/2.1.7-gsr2-srgb-stage-isolation-20261020
+    paths:
+      - '.github/gsr2-stage-ci-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify GSR2 gamma, stages, exact generation and safeguards
+        run: |
+          python3 -m unittest discover -s tests -p 'test_android_gsr2_*.py' -v
+          python3 -m compileall -q tools/diagnostics/gsr2_stage_compare.py
