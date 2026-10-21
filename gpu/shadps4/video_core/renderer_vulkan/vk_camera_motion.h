@@ -241,7 +241,10 @@ private:
     // frame. A single candidate slot loses the previous frame's real scene
     // source when a postprocess/shadow shader appears last. Keep a bounded
     // per-shader set for ONLY the immediately preceding completed scene.
-    static constexpr size_t MaxFrameCameraSources = 16;
+    // Device log 194900 repeatedly reached 16/16 captured shaders even
+    // though 64 bounded probes ran. Keep more adjacent-frame candidates;
+    // provenance/geometry checks and the 64-probe CPU budget stay unchanged.
+    static constexpr size_t MaxFrameCameraSources = 32;
     std::array<Camera, MaxFrameCameraSources> current_frame_sources{};
     std::array<Camera, MaxFrameCameraSources> previous_frame_sources{};
     bool frame_has_camera = false;
