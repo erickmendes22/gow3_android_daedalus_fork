@@ -204,9 +204,16 @@ void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView
                                          vk::ImageView motion_view, u32 width, u32 height) {
     // Guest VideoOut is produced after OnDisplayPass. Use its frozen scene
     // camera rather than the reset camera of the next frame.
+    // In a 240 Hz VideoOut stream the last actual scene was often three
+    // flips ago. Only a camera-proven temporal continuation can use its
+    // saved jitter; raw previous_jitter belongs to the immediately prior
+    // VideoOut callback, which can be a spatial-only duplicate.
+    const bool continuing_scene = CompletedPreviousMatchesTemporalScene();
     RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
                     completed_current, completed_previous,
-                    completed_current_jitter, completed_previous_jitter, false);
+                    completed_current_jitter,
+                    continuing_scene ? last_temporal_scene_jitter
+                                     : completed_previous_jitter, false);
 }
 
 void CameraMotion::RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
