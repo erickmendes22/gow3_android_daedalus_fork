@@ -286,6 +286,7 @@ private:
     bool guest_display_mode_recording = false;
     bool guest_display_motion_ready = false;
     struct PreHudSlot {
+        PreHudSlot() : image{} {}
         VAddr guest = 0;
         VideoCore::UniqueImage image;
         vk::UniqueImageView view;
