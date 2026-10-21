@@ -91,6 +91,40 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertNotIn('vk::Offset3D{s32(w), s32(h), 1}',blit)
         self.assertIn('display = {vk::Image(ui_image), source.info.pixel_format, ow, oh}',source)
 
+    def test_completed_scene_temporal_inputs_are_real_and_frame_aligned(self):
+        cpp=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp').read_text()
+        cam=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.cpp').read_text()
+        cam_h=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.h').read_text()
+        videoout=cpp.split('bool TemporalUpscaler::PresentGsr2FromGuestDisplay(',1)[1].split(
+            'bool TemporalUpscaler::DisplayOverride(',1)[0]
+        on_display=cam.split('void CameraMotion::OnDisplayPass(',1)[1].split(
+            'void CameraMotion::Overlay(',1)[0]
+        self.assertLess(on_display.index('completed_history_status ='),
+                        on_display.index('current.valid = false;'))
+        self.assertLess(on_display.index('completed_depth = depth_id;'),
+                        on_display.index('depth_id = {};'))
+        self.assertIn('completed_current = current;', on_display)
+        self.assertIn('completed_previous = previous;', on_display)
+        self.assertIn('CompletedHistoryValidity()',videoout)
+        self.assertIn('CompletedDepth()',videoout)
+        self.assertIn('RecordCompletedMotion(cmd, chosen_depth_view, *motion_view, w, h)',videoout)
+        self.assertIn('CachedView(real_depth, real_depth.info.pixel_format',videoout)
+        self.assertIn('guest_display_history_contiguous = use_scene_motion;',videoout)
+        self.assertIn('guest_display_history_contiguous = false;',cpp)
+        self.assertIn('guest_display_history_contiguous',cpp)
+        self.assertIn('completed_history_status = Gsr2HistoryStatus::MissingCamera',cam_h)
+        self.assertIn('completed_depth',cam_h)
+        self.assertIn('RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,',cam)
+        self.assertIn('completed_current, completed_previous, {}, {}, false)',cam)
+        self.assertIn('guest_display_motion_ready = use_scene_motion;',videoout)
+        self.assertIn('guest_display_motion_ready)',cpp)
+        self.assertIn('chosen_depth_view, w, h, ow, oh',videoout)
+        # No unconditional spatial-only guard for the direct VideoOut route.
+        record=cpp.split('bool TemporalUpscaler::RecordGsr2(',1)[1].split(
+            'bool TemporalUpscaler::UseDlss()',1)[0]
+        self.assertNotIn('!guest_display_mode_recording &&',record)
+        self.assertIn('!guest_display_history_contiguous',record)
+
     def test_shell_exports_host_separately_from_guest_raster(self):
         sh=(ROOT/'tools/android/bionic/run-bionic.sh').read_text()
         self.assertIn('GOW3_GSR2_DIRECT_VIDEOOUT:-0',sh)
