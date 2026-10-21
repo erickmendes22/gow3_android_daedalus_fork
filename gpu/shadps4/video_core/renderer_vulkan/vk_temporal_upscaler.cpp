@@ -389,17 +389,24 @@ void TemporalUpscaler::ProbeGsr2PreHudSource(VAddr guest_address) {
                            bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
     const bool depth = bool(camera_motion.Depth());
     bool depth_extent = false;
+    u64 depth_uid = 0;
+    u64 depth_generation = 0;
     if (depth) {
         const auto& d = texture_cache.GetImage(camera_motion.Depth());
         depth_extent = d.info.size.width == w && d.info.size.height == h;
+        depth_uid = d.image_uid;
+        depth_generation = d.alias_generation;
     }
     std::printf("GSR2_PREHUD_CANDIDATE count=%llu guest=%#llx color_guest=%#llx "
-                "image=%u uid=%llu raster=%ux%u format=%s pre_hud=%d depth=%d "
+                "image=%u uid=%llu color_generation=%llu raster=%ux%u "
+                "format=%s pre_hud=%d depth=%d depth_uid=%llu depth_generation=%llu "
                 "depth_extent=%d capture=%d\n",
                 (unsigned long long)n, (unsigned long long)guest_address,
                 (unsigned long long)color.info.guest_address, ldr_target.index,
-                (unsigned long long)color.image_uid, w, h, format,
-                int(pre_hud), int(depth), int(depth_extent),
+                (unsigned long long)color.image_uid,
+                (unsigned long long)color.alias_generation, w, h, format,
+                int(pre_hud), int(depth), (unsigned long long)depth_uid,
+                (unsigned long long)depth_generation, int(depth_extent),
                 int(pre_hud && supported && depth_extent));
     std::fflush(stdout);
     // Limit raw readback to three selected frames. This optional probe must
