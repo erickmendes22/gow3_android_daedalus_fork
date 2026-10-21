@@ -197,7 +197,7 @@ vk::Image CameraMotion::ObjectMotionImage(u32 width, u32 height) const noexcept 
 void CameraMotion::RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                 vk::ImageView motion_view, u32 width, u32 height) {
     RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
-                    current, previous, jitter, previous_jitter);
+                    current, previous, jitter, previous_jitter, true);
 }
 
 void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
@@ -205,16 +205,17 @@ void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView
     // Guest VideoOut is produced after OnDisplayPass. Use its frozen scene
     // camera rather than the reset camera of the next frame.
     RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
-                    completed_current, completed_previous, {}, {});
+                    completed_current, completed_previous, {}, {}, false);
 }
 
 void CameraMotion::RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                                    vk::ImageView motion_view, u32 width, u32 height,
                                    const Camera& now, const Camera& before,
                                    std::array<float, 2> now_jitter,
-                                   std::array<float, 2> before_jitter) {
+                                   std::array<float, 2> before_jitter,
+                                   bool include_object_motion) {
     bool object_valid = false;
-    const vk::ImageView object_view = object_motion && object_motion->Enabled()
+    const vk::ImageView object_view = include_object_motion && object_motion && object_motion->Enabled()
         ? object_motion->PrepareRead(cmdbuf, width, height, object_valid) : depth_view;
     const PushConstants push{
         .reproject = Multiply(before.view, now.inv_view),
