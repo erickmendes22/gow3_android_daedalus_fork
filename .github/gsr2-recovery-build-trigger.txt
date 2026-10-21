@@ -17,3 +17,5 @@ Rebuild post VideoOut GSR2 NativeAA after v2.1.7 R6/R11/R13/R14/R16 tests repair
 Native compile after fixed GSR2-vs-FSR4 jitter scope and 100% passing host suite 39596437170.
 
 Upgraded direct GSR2 Quality/Balanced/Performance/Ultra verified lower guest VideoOut patches and unmodified 720p native baseline, independent 720p GSR2 output. Host tests run 39601594101 passed.
+
+Final 2.1.7 Bionic ARM64 direct VideoOut profile 1-4 real raster patch, preserve native original and 720p Native AA; tests success 39602211448.
