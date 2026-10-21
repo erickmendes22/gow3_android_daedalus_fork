@@ -411,7 +411,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
     // gow3: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
-    const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
+    bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
     if (std::getenv("GOW3_GSR2_AUTO_PROBE")) {
         static unsigned requests = 0;
         // GoW III's 3-buffer rotation aliases one address at period 1200.
@@ -425,6 +425,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
         image_id = texture_cache.FindImage(desc);
         texture_cache.UpdateImage(image_id);
+        // Canonical source: after all PS4 display-copy and UI draws, this is
+        // the exact registered VideoOut framebuffer presented without GSR2.
+        // Native AA now reads THIS image, not the last forward LDR attachment.
+        // Failure leaves the original guest display image intact.
+        upscaled = rasterizer->GetUpscaler().PresentGsr2FromGuestDisplay(image_id, display);
     }
 
     Frame* frame = GetRenderFrame();
