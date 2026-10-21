@@ -31,7 +31,9 @@ class R12(unittest.TestCase):
         self.assertIn("frame_pose_votes >= 2",camera)
         self.assertIn("GOW3_CAMERA_VERIFIED",camera)
         u=get("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
-        self.assertIn(".reset = reset || !temporal_ready,",u)
+        self.assertIn("const bool dispatch_reset =",u)
+        self.assertIn("!temporal_ready;",u)
+        self.assertIn(".reset = dispatch_reset,",u)
         self.assertIn("spatial-reset-no-history",u)
     def test_trigger_restricted_to_this_branch(self):
         w=get(".github/workflows/bionic-apk.yml")
