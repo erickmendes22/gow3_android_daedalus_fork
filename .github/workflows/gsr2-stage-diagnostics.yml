@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Verify GSR2 gamma, stages, exact generation and safeguards
         run: |
           python3 -m unittest discover -s tests -p 'test_android_gsr2_*.py' -v
