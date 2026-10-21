@@ -279,6 +279,9 @@ private:
     std::unique_ptr<Fsr4Upscaler> fsr4;
     bool fsr4_failed = false;
     std::unique_ptr<GsrUpscaler> gsr2;
+    // Independent spatial provider: filler VideoOut flips may be presented
+    // without clearing the history of the last VERIFIED scene frame.
+    std::unique_ptr<GsrUpscaler> gsr2_spatial;
     bool gsr2_failed = false;
     VideoCore::UniqueImage guest_display_depth;
     vk::UniqueImageView guest_display_depth_view;
@@ -304,6 +307,7 @@ private:
     // Every temporal GSR2 input must refer to exactly one fresh, real
     // VideoOut flip. Never silently reuse a scene from a different buffer.
     u64 guest_display_last_flip_generation = 0;
+    u64 guest_display_last_temporal_flip_generation = 0;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
