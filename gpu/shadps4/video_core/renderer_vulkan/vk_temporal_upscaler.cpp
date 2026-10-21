@@ -2866,21 +2866,74 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     guest_display_history_contiguous = use_scene_motion;
     guest_display_last_flip_generation = flip_generation;
     dispatched_last_frame = true;
-    barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
-            vk::PipelineStageFlagBits2::eComputeShader, swrite, transfer, tread);
-    barrier(vk::Image(ui_image), vk::ImageLayout::eUndefined,
-            all, vk::AccessFlagBits2::eNone, transfer, twrite);
-    const vk::ImageBlit region{
-        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
-        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
-    };
-    cmd.blitImage(vk::Image(output_image), vk::ImageLayout::eGeneral,
-                  vk::Image(ui_image), vk::ImageLayout::eGeneral,
-                  region, vk::Filter::eNearest);
-    barrier(vk::Image(ui_image), vk::ImageLayout::eGeneral,
-            transfer, twrite, all, sread);
+    if (prehud) {
+        // GSR2 holds the scene ONLY. Reconstruct the HUD/menus from the PS4's
+        // unmodified finished VideoOut, pixel-classified against this frame's
+        // pre-HUD color. Never write UI into Qualcomm temporal history.
+        const auto compute=vk::PipelineStageFlagBits2::eComputeShader;
+        barrier(vk::Image(output_image),vk::ImageLayout::eGeneral,
+                compute,swrite,compute,sread);
+        barrier(vk::Image(ui_image),vk::ImageLayout::eUndefined,
+                all,vk::AccessFlagBits2::eNone,compute,swrite);
+        if (!ui_storage_view) {
+            ui_storage_view=Check(instance.GetDevice().createImageViewUnique({
+                .image=vk::Image(ui_image), .viewType=vk::ImageViewType::e2D,
+                .format=vk::Format::eR8G8B8A8Unorm,
+                .subresourceRange={vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+        }
+        const auto sampled=[&](vk::ImageView view){
+            return vk::DescriptorImageInfo{
+                .sampler=*taa_sampler,.imageView=view,
+                .imageLayout=vk::ImageLayout::eGeneral};
+        };
+        const std::array<vk::DescriptorImageInfo,4> images{{
+            sampled(*pre_hud_slots[pre_hud_completed_slot].view),
+            sampled(guest_view),sampled(*output_view),
+            vk::DescriptorImageInfo{.imageView=*ui_storage_view,
+                                    .imageLayout=vk::ImageLayout::eGeneral}
+        }};
+        std::array<vk::WriteDescriptorSet,4> writes{};
+        for(u32 i=0;i<writes.size();++i) {
+            writes[i]={.dstBinding=i,.descriptorCount=1,
+                .descriptorType=i<3?vk::DescriptorType::eCombinedImageSampler
+                                   :vk::DescriptorType::eStorageImage,
+                .pImageInfo=&images[i]};
+        }
+        struct Params {std::array<u32,2> input,output;u32 srgb;float threshold;};
+        const Params params{
+            {w,h},{ow,oh},
+            u32(source.info.pixel_format==vk::Format::eR8G8B8A8Srgb ||
+                source.info.pixel_format==vk::Format::eB8G8R8A8Srgb),
+            0.045f};
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute,*pre_hud_composite_pipeline);
+        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
+                                 *pre_hud_composite_pipeline_layout,0,writes);
+        cmd.pushConstants(*pre_hud_composite_pipeline_layout,
+                          vk::ShaderStageFlagBits::eCompute,0,sizeof(params),&params);
+        cmd.dispatch((ow+7)/8,(oh+7)/8,1);
+        barrier(vk::Image(ui_image),vk::ImageLayout::eGeneral,
+                compute,swrite,all,sread);
+    } else {
+        // Stable fallback for loading screens, unknown scene provenance and
+        // Native AA. Nothing is redirected and the normal PS4 frame survives.
+        barrier(vk::Image(output_image),vk::ImageLayout::eGeneral,
+                vk::PipelineStageFlagBits2::eComputeShader,swrite,transfer,tread);
+        barrier(vk::Image(ui_image),vk::ImageLayout::eUndefined,
+                all,vk::AccessFlagBits2::eNone,transfer,twrite);
+        const vk::ImageBlit region{
+            .srcSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+            .srcOffsets=std::array{vk::Offset3D{},
+                                  vk::Offset3D{s32(ow),s32(oh),1}},
+            .dstSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+            .dstOffsets=std::array{vk::Offset3D{},
+                                  vk::Offset3D{s32(ow),s32(oh),1}},
+        };
+        cmd.blitImage(vk::Image(output_image),vk::ImageLayout::eGeneral,
+                      vk::Image(ui_image),vk::ImageLayout::eGeneral,
+                      region,vk::Filter::eNearest);
+        barrier(vk::Image(ui_image),vk::ImageLayout::eGeneral,
+                transfer,twrite,all,sread);
+    }
     display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};
     static u64 accepted = 0;
     static u64 temporal_frames = 0;
