@@ -1,0 +1,4 @@
+2.1.7 Qualcomm GSR2 stage-isolation diagnostic APK only.
+Host tests: gamma-correct srgb/linear stage comparisons; exact GSR2 generation stamped on native present, not independent counters; CUSA01715 camera/history statuses and FP16 NaN detection; no Vulkan shader or framegen changes.
+Preserve verified 2.1.7 game patches, Turnip driver, GSR2_PREFILL_DISPLAY=1 and public release branch unchanged.
+Pack experimental APK and sha256 in separately named workflow artifact.
