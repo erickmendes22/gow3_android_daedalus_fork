@@ -587,8 +587,19 @@ bool TemporalUpscaler::OnFrameStart() {
     // Never jitter an unverified scene, menu or camera-less VideoOut flip.
     // The 190657 device log proved that frame 12000 had a stable scene slot
     // but NO matching camera/depth, yet the previous code kept jitter active.
+    // Real GoW III camera frames recur once per three VideoOut flips. Keep
+    // the scene raster jitter across the two intervening presentations;
+    // alternating jitter on/off every callback would put the next verified
+    // scene on an unjittered raster and collapse Halton reconstruction.
+    const u64 completed_flip = camera_motion.CompletedVideoOutGeneration();
+    const bool recent_verified_scene =
+        guest_display_last_temporal_flip_generation != 0 &&
+        completed_flip >= guest_display_last_temporal_flip_generation &&
+        completed_flip - guest_display_last_temporal_flip_generation <= 4 &&
+        guest_display_history_contiguous;
     const bool prehud_temporal = PreHudEnabled() && pre_hud_consecutive_matches >= 3 &&
-        camera_motion.CompletedHistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid;
+        (camera_motion.CompletedHistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid ||
+         recent_verified_scene);
     const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
                            settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
@@ -692,6 +703,13 @@ bool TemporalUpscaler::OnFrameStart() {
     // size, which survives the frame boundary (Performance 960 -> 1920 needs 32 phases).
     const u32 phases = Scaled() ? Motion::JitterPhases(render_width, target_width)
         : Motion::JitterPhases(scene_targets.Size().width, scene_targets.GuestSize().width);
+    // A duplicate VideoOut flip does not advance the scene camera/sample.
+    // Hold the phase already assigned to the next real scene until a VERIFIED
+    // scene arrives. This is distinct from turning jitter off: fallback stays
+    // safe when the scene chain has actually expired.
+    if (PreHudEnabled() &&
+        camera_motion.CompletedHistoryValidity() != CameraMotion::Gsr2HistoryStatus::Valid)
+        return changed;
     jitter_index = jitter_index % phases + 1;
     jitter = {Halton(jitter_index, 2) - 0.5f, Halton(jitter_index, 3) - 0.5f};
     return changed;
