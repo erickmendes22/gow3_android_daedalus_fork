@@ -62,6 +62,7 @@ class Gsr2StageIsolation(unittest.TestCase):
             "captured_generation = gsr2_completed_generation",
             "it->second.gsr2_seed_generation",
             "GSR_STAGE_FINAL generation=",
+            "GSR2_CAPTURE_CONTEXT generation=",
         ):
             with self.subTest(key=key):
                 self.assertIn(key, code)
