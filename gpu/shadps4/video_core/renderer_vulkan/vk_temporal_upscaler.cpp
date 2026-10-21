@@ -389,24 +389,17 @@ void TemporalUpscaler::ProbeGsr2PreHudSource(VAddr guest_address) {
                            bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
     const bool depth = bool(camera_motion.Depth());
     bool depth_extent = false;
-    u64 depth_uid = 0;
-    u64 depth_generation = 0;
     if (depth) {
         const auto& d = texture_cache.GetImage(camera_motion.Depth());
         depth_extent = d.info.size.width == w && d.info.size.height == h;
-        depth_uid = d.image_uid;
-        depth_generation = d.alias_generation;
     }
     std::printf("GSR2_PREHUD_CANDIDATE count=%llu guest=%#llx color_guest=%#llx "
-                "image=%u uid=%llu color_generation=%llu raster=%ux%u "
-                "format=%s pre_hud=%d depth=%d depth_uid=%llu depth_generation=%llu "
+                "image=%u uid=%llu raster=%ux%u format=%s pre_hud=%d depth=%d "
                 "depth_extent=%d capture=%d\n",
                 (unsigned long long)n, (unsigned long long)guest_address,
                 (unsigned long long)color.info.guest_address, ldr_target.index,
-                (unsigned long long)color.image_uid,
-                (unsigned long long)color.alias_generation, w, h, format,
-                int(pre_hud), int(depth), (unsigned long long)depth_uid,
-                (unsigned long long)depth_generation, int(depth_extent),
+                (unsigned long long)color.image_uid, w, h, format,
+                int(pre_hud), int(depth), int(depth_extent),
                 int(pre_hud && supported && depth_extent));
     std::fflush(stdout);
     // Limit raw readback to three selected frames. This optional probe must
@@ -476,7 +469,15 @@ bool TemporalUpscaler::OnFrameStart() {
     // real reduced-raster input can be passed to GSR2 for that preset.
     if (applied_preset != preset || settings.upscaler == Gow3Settings::UpscalerOff) failed = false;
     const bool active = Active();
-    const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
+    // Preserve Native AA. Enable subpixel samples only for the verified
+    // reduced-raster GSR2 VideoOut experimental mode.
+    const char* temporal_jitter = std::getenv("GOW3_GSR2_TEMPORAL_JITTER");
+    const bool direct_temporal = UseGsr2() && Gsr2GuestDisplayMode() &&
+        preset != Gow3Settings::NativeAA &&
+        std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+        temporal_jitter && temporal_jitter[0] == '1';
+    const bool jitter_on = active && (!Gsr2GuestDisplayMode() || direct_temporal) &&
+                           settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
     // Android has one immutable output target (720p). Use a local effective
     // value, not a write through the const settings reference. This also
@@ -1554,16 +1555,6 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
         return;
     }
     const auto& image = texture_cache.GetImage(color);
-    // DrawRecord binds the destination VideoOut framebuffer before calling
-    // ProbeGsr2PreHudSource. Previously that draw silently overwrote the last
-    // non-display LDR scene with the VideoOut surface itself. In direct GSR2
-    // mode preserve the last actual scene candidate until the real flip.
-    // Only the diagnostic/source bookkeeping changes here: all guest draws,
-    // HUD and presentation retain their original paths.
-    if (Gsr2GuestDisplayMode() &&
-        FrameCapture::IsDisplayBuffer(image.info.guest_address)) {
-        return;
-    }
     const auto& depth = texture_cache.GetImage(camera_motion.Depth());
     if ((image.info.pixel_format == vk::Format::eR8G8B8A8Unorm ||
          image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
@@ -2970,6 +2961,22 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     const bool dispatch_reset =
         (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
         !temporal_ready;
+    // Presenter dispatches after OnFrameStart advanced to the NEXT scene.
+    // Read the frozen completed-scene phase, not the next frame's phase.
+    const std::array<float, 2> frame_jitter = guest_display_mode_recording
+        ? camera_motion.CompletedJitter() : jitter;
+    const char* direct_jitter_flag = std::getenv("GOW3_GSR2_TEMPORAL_JITTER");
+    const bool direct_temporal = guest_display_mode_recording &&
+        Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
+        direct_jitter_flag && direct_jitter_flag[0] == '1';
+    if (history_dispatches <= 5 || history_dispatches % 600 == 0)
+        std::printf("GSR2_TEMPORAL_INPUT frame=%llu render=%ux%u output=%ux%u "
+                    "direct=%d enabled=%d history_valid=%d reset=%d "
+                    "jitter=%.6f,%.6f\n",
+                    (unsigned long long)history_dispatches, w, h, ow, oh,
+                    int(guest_display_mode_recording), int(direct_temporal),
+                    int(temporal_ready), int(dispatch_reset),
+                    double(sign * frame_jitter[0]), double(sign * frame_jitter[1]));
     const bool ok = gsr2->Record({
         .cmdbuf = cmdbuf,
         .color = color,
@@ -2984,9 +2991,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // the camera pair is invalid (and GSR2 resets history). Passing zero
         // here described a different sample position than the one rendered,
         // introducing edge shimmer in every spatial-reset frame.
-        .jitter = guest_display_mode_recording
-                      ? std::array<float, 2>{0.0f, 0.0f}
-                      : std::array<float, 2>{sign * jitter[0], sign * jitter[1]},
+        .jitter = {sign * frame_jitter[0], sign * frame_jitter[1]},
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
@@ -3025,7 +3030,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
                         w, h, ow, oh, static_cast<unsigned>(temporal_status),
                         int(temporal_ready), int(dispatch_reset),
                         int(temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill() : camera_motion.CameraStill()) : true),
-                        sign * jitter[0], sign * jitter[1],
+                        sign * frame_jitter[0], sign * frame_jitter[1],
                         temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov() : camera_motion.VerticalFov()) : 1.04719755f);
         }
         if (dispatched == 1 || dispatched % 600 == 0) {
