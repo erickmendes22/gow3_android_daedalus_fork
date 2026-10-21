@@ -36,3 +36,5 @@ Regression post-game log 2026-10-21 11:00: GSR2 VideoOut blits ow/oh full output
 Experimental temporal input handoff: preserve completed scene camera+depth at OnDisplayPass; real depth-driven motion after VideoOut; gate consecutive valid history, preserve native AA and full-screen output.
 
 Second temporal host suite: adapt old reset-string invariant to contiguous verified completed motion, keep missing-camera reset always active.
+
+GSR2 stage validation: selected real depth view in VideoOut temporal path (fallback synthetic depth only on missing history), revised source assertions.
