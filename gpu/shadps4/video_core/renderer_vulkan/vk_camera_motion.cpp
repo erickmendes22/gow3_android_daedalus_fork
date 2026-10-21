@@ -571,9 +571,12 @@ void CameraMotion::OnDisplayTargetDraw(VAddr guest_address) {
     for (auto& candidate : display_target_candidates) {
         if (candidate.address)
             continue;
+        const auto& depth_image = texture_cache.GetImage(depth_id);
         candidate.address = guest_address;
         candidate.camera = current;
         candidate.depth = depth_id;
+        candidate.depth_image_uid = depth_image.image_uid;
+        candidate.depth_alias_generation = depth_image.alias_generation;
         static unsigned recorded = 0;
         if (++recorded <= 5 || recorded % 1200 == 0)
             std::printf("GSR2_FRAMEBUFFER_SCENE_CAPTURE addr=%#llx shader=%016llx count=%u\n",
@@ -592,6 +595,15 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest
         for (const auto& candidate : display_target_candidates) {
             if (candidate.address != presented_guest_address)
                 continue;
+            // The depth selected during rendering must still refer to that
+            // same TextureCache allocation and GPU write generation.
+            // A recycled/overwritten depth surface cannot describe the
+            // already completed VideoOut image even when its dimensions match.
+            auto* depth_image =
+                texture_cache.TryGetImage(candidate.depth, candidate.depth_image_uid);
+            if (!depth_image ||
+                depth_image->alias_generation != candidate.depth_alias_generation)
+                break;
             current = candidate.camera;
             depth_id = candidate.depth;
             frame_has_camera = true;
