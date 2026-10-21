@@ -38,3 +38,6 @@ Validated host suite 39634728771: 20261021-131408 shows 1219/9600 valid temporal
 
 
 2026-10-21 pre-HUD source forensic APK (distinct stage vs prior runs): stage host suite 39652662433 success. Record actual pre-HUD LDR candidate before first VideoOut draw with optional raw readback to separate upstream scene corruption from GSR2, reject singular/unbounded completed-camera FOV; preserve all 2.1.7 fixes and existing 720p output. This is diagnostic: never claim temporal HUD compositing fixed before device evidence.
+
+
+2026-10-21 R22 ARM64 rebuild after compiling run 39652898177 exposed missing `gow3_settings.h` include in vk_rasterizer.cpp:998/3782. Header included, regression test added; completed GSR2 stage host test run 39655326013 success. Include experimental depth-target write-generation guard, opt-in pre-HUD provenance readback and finite FOV check. Preserve GSR2 Native AA, Quality through Ultra Performance and the existing core; no unverified visual-fix claims.
