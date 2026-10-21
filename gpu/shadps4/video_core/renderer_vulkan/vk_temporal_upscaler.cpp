@@ -2708,9 +2708,7 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
         .render_width = w,
         .render_height = h,
         .preset = applied_preset,
-        .jitter = guest_display_mode_recording
-                      ? std::array<float, 2>{0.0f, 0.0f}
-                      : std::array<float, 2>{sign * jitter[0], sign * jitter[1]},
+        .jitter = {sign * jitter[0], sign * jitter[1]},
         .frame_ms = frame_ms,
         .near_plane = camera_motion.Near(),
         .far_plane = 3000.0f,
@@ -2806,7 +2804,9 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // the camera pair is invalid (and GSR2 resets history). Passing zero
         // here described a different sample position than the one rendered,
         // introducing edge shimmer in every spatial-reset frame.
-        .jitter = {sign * jitter[0], sign * jitter[1]},
+        .jitter = guest_display_mode_recording
+                      ? std::array<float, 2>{0.0f, 0.0f}
+                      : std::array<float, 2>{sign * jitter[0], sign * jitter[1]},
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
