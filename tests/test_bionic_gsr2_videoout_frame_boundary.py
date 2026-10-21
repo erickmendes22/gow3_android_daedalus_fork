@@ -86,6 +86,37 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
                 self.assertAlmostEqual(recovered[0],previous[0],places=6)
                 self.assertAlmostEqual(recovered[1],previous[1],places=6)
 
+    def test_provenance_is_taken_from_real_display_draw_not_assigned_at_flip(self):
+        h = (ROOT/"vk_camera_motion.h").read_text()
+        camera = (ROOT/"vk_camera_motion.cpp").read_text()
+        raster = (ROOT/"vk_rasterizer.cpp").read_text()
+        self.assertIn("void OnDisplayTargetDraw(VAddr guest_address);", h)
+        self.assertIn("struct DisplayTargetCandidate", h)
+        self.assertIn("std::array<DisplayTargetCandidate, MaxDisplayTargetCandidates> display_target_candidates{}", h)
+        draw = raster.split("void Rasterizer::DrawRecord(",1)[1].split(
+            "void Rasterizer::",1)[0]
+        self.assertIn("is_display_draw && scene_started", draw)
+        self.assertIn("camera_motion->OnDisplayTargetDraw(regs.color_buffers[0].Address());",draw)
+        capture = camera.split("void CameraMotion::OnDisplayTargetDraw(",1)[1].split(
+            "void CameraMotion::OnDisplayPass(",1)[0]
+        self.assertIn("candidate.address = guest_address;", capture)
+        self.assertIn("candidate.camera = current;",capture)
+        self.assertIn("candidate.depth = depth_id;",capture)
+        self.assertIn("!current.shader_hash || !depth_id",capture)
+        self.assertIn("if (candidate.address == guest_address)",capture)
+        flip = camera.split("void CameraMotion::OnDisplayPass(",1)[1].split(
+            "void CameraMotion::Overlay(",1)[0]
+        self.assertIn("candidate.address != presented_guest_address",flip)
+        self.assertIn("current = candidate.camera;",flip)
+        self.assertIn("depth_id = candidate.depth;",flip)
+        self.assertIn("current.valid = false;",flip)
+        self.assertIn("depth_id = {};",flip)
+        self.assertIn("display_target_candidates = {};",flip)
+        self.assertIn("GSR2_FRAMEBUFFER_SCENE_MATCH",flip)
+        # The matching camera must be installed BEFORE calculating history.
+        self.assertLess(flip.index("current = candidate.camera;"),
+                        flip.index("completed_history_status ="))
+
     def test_snapshot_is_captured_before_clearing_live_state(self):
         camera = (ROOT/"vk_camera_motion.cpp").read_text()
         snapshot = camera.split("void CameraMotion::OnDisplayPass(",1)[1].split(
