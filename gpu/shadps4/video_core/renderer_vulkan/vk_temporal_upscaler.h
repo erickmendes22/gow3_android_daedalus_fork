@@ -98,6 +98,10 @@ public:
     /// Probe the pre-HUD scene at the first draw targeting a guest VideoOut buffer.
     /// Diagnostic only: never redirect guest rendering or alter the presented image.
     void ProbeGsr2PreHudSource(VAddr guest_address);
+    // Preserve the scene BEFORE guest UI/display-copy draws and select the
+    // matching source at the verified VideoOut flip (three rotating buffers).
+    void CaptureGsr2PreHudScene(VAddr guest_address);
+    void SelectGsr2PreHudScene(VAddr guest_address);
     /// Final image boundary of CUSA01715's one/two MRT forward renderer.
     void OnDisplayBoundary(VideoCore::ImageId color);
 
@@ -281,6 +285,20 @@ private:
     u32 guest_display_depth_width = 0, guest_display_depth_height = 0;
     bool guest_display_mode_recording = false;
     bool guest_display_motion_ready = false;
+    struct PreHudSlot {
+        VAddr guest = 0;
+        VideoCore::UniqueImage image;
+        vk::UniqueImageView view;
+        vk::Format format = vk::Format::eUndefined;
+        u32 width = 0, height = 0;
+        bool captured = false;
+    };
+    std::array<PreHudSlot, 3> pre_hud_slots{};
+    u32 pre_hud_next_slot = 0;
+    int pre_hud_completed_slot = -1;
+    u32 pre_hud_consecutive_matches = 0;
+    bool pre_hud_recording = false;
+    bool PreHudEnabled() const;
     bool guest_display_history_contiguous = false;
     // Every temporal GSR2 input must refer to exactly one fresh, real
     // VideoOut flip. Never silently reuse a scene from a different buffer.
@@ -311,6 +329,9 @@ private:
     vk::UniquePipelineLayout taa_sharpen_pipeline_layout;
     vk::UniquePipeline taa_sharpen_pipeline;
     vk::UniquePipeline taa_sharpen_ldr_pipeline;
+    vk::UniqueDescriptorSetLayout pre_hud_composite_desc_layout;
+    vk::UniquePipelineLayout pre_hud_composite_pipeline_layout;
+    vk::UniquePipeline pre_hud_composite_pipeline;
     // ExtraSharpen: a copy of the upscaled frame (RCAS reads neighbours) and the target views.
     VideoCore::UniqueImage extra_sharpen_image;
     vk::UniqueImageView extra_sharpen_view;
