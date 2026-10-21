@@ -19,3 +19,5 @@ GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffe
 2026-10-21 confirmed log 190657: at frame 12000 matched prehud scene slot but no valid camera history and jitter nonzero. Require completed camera validity for scene jitter, in addition to sameflip stage dump, linear HUD sampling, global mismatch guest fallback.
 
 2026-10-21 log 194900: same-VideoOut-flip 4800/7200/9600 sampled; Qualcomm RGBA16F raw values linear, not dark SRGB; 9600 final loses guest VideoOut color-grading. Restore color-pass linear residual after scene-only GSR2, preserve strong-HUD direct pixels, count ALL actually nonreset temporal dispatches instead of sampling once every 600 frames. Run full host regression gate.
+
+2026-10-21 log 194900 saturated 16/16 adjacent-frame camera source cache with all 64 probes consumed. Raise ONLY per-frame source storage to 32, preserve 64 bounded probes and unchanged shader/pose/projection/cut validity. Validate exact camera regression and scene-HUD color residual.
