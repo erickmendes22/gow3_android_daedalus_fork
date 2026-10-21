@@ -99,10 +99,14 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
             'bool TemporalUpscaler::DisplayOverride(',1)[0]
         on_display=cam.split('void CameraMotion::OnDisplayPass(',1)[1].split(
             'void CameraMotion::Overlay(',1)[0]
-        self.assertLess(on_display.index('completed_history_status ='),
-                        on_display.index('current.valid = false;'))
-        self.assertLess(on_display.index('completed_depth = depth_id;'),
-                        on_display.index('depth_id = {};'))
+        history_snapshot = on_display.index('completed_history_status =')
+        depth_snapshot = on_display.index('completed_depth = depth_id;')
+        # A missing target is intentionally invalidated BEFORE the snapshot;
+        # compare instead with the final per-frame cleanup after the snapshot.
+        self.assertLess(history_snapshot,
+                        on_display.index('current.valid = false;', history_snapshot))
+        self.assertLess(depth_snapshot,
+                        on_display.index('depth_id = {};', depth_snapshot))
         self.assertIn('completed_current = current;', on_display)
         self.assertIn('completed_previous = previous;', on_display)
         self.assertIn('CompletedHistoryValidity()',videoout)
