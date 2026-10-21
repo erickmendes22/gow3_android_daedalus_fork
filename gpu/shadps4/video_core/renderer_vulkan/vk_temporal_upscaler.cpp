@@ -364,6 +364,57 @@ void TemporalUpscaler::OnSceneColor(VideoCore::ImageId color) {
     scene_color = color;
 }
 
+// The last scene-size LDR attachment is only a *candidate* for pre-HUD
+// reconstruction in GoW III. This evidence is recorded at the first VideoOut
+// draw, before the game's subsequent display-copy/HUD draws, and can be
+// correlated with GSR2_VIDEOOUT_SOURCE at the actual requested flip.
+// Do not feed this candidate to temporal history until provenance, image
+// lifetime and the final UI composite have been validated on device.
+void TemporalUpscaler::ProbeGsr2PreHudSource(VAddr guest_address) {
+    if (!guest_address || !Gsr2GuestDisplayMode() ||
+        !std::getenv("GOW3_GSR2_AUTO_PROBE")) return;
+    static u64 candidates = 0;
+    const u64 n = ++candidates;
+    if (n > 5 && n != 480 && n != 2400 && n % 1200 != 0) return;
+    if (!ldr_target) {
+        std::printf("GSR2_PREHUD_CANDIDATE count=%llu guest=%#llx valid=0 reason=no_ldr_target\n",
+                    (unsigned long long)n, (unsigned long long)guest_address);
+        return;
+    }
+    auto& color = texture_cache.GetImage(ldr_target);
+    const auto format = GsrProbeFormat(color.info.pixel_format);
+    const bool pre_hud = !FrameCapture::IsDisplayBuffer(color.info.guest_address);
+    const u32 w = color.info.size.width, h = color.info.size.height;
+    const bool supported = std::strcmp(format, "unsupported") != 0 &&
+                           bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
+    const bool depth = bool(camera_motion.Depth());
+    bool depth_extent = false;
+    if (depth) {
+        const auto& d = texture_cache.GetImage(camera_motion.Depth());
+        depth_extent = d.info.size.width == w && d.info.size.height == h;
+    }
+    std::printf("GSR2_PREHUD_CANDIDATE count=%llu guest=%#llx color_guest=%#llx "
+                "image=%u uid=%llu raster=%ux%u format=%s pre_hud=%d depth=%d "
+                "depth_extent=%d capture=%d\n",
+                (unsigned long long)n, (unsigned long long)guest_address,
+                (unsigned long long)color.info.guest_address, ldr_target.index,
+                (unsigned long long)color.image_uid, w, h, format,
+                int(pre_hud), int(depth), int(depth_extent),
+                int(pre_hud && supported && depth_extent));
+    std::fflush(stdout);
+    // Limit raw readback to three selected frames. This optional probe must
+    // not cause a sustained stall during normal gameplay.
+    if (!pre_hud || !supported || !depth_extent ||
+        (n > 3 && n != 480 && n != 2400)) return;
+    scheduler.EndRendering();
+    runtime.Transit(&color, vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferRead);
+    runtime.FlushBarriers();
+    DumpImages(instance, scheduler, scheduler.CommandBuffer(), int(n),
+               {{color.GetImage(), w, h, 4, "pre_hud_candidate", format}});
+}
+
 namespace {
 float Halton(u32 index, u32 base) {
     float f = 1.0f, result = 0.0f;
