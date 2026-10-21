@@ -27,3 +27,5 @@ ARM64 final GSR2 2.1.7: fill full host extent ow/oh when copying 640x360->1280x7
 Replace previous quarter-screen-only build with 2.1.7 temporal VideoOut: full ow/oh screen, frozen verified camera/depth before OnDisplayPass invalidation, camera reprojection vectors, contiguous history gating, accurate history/reset diagnostics, safe spatial fallback, untouched Native AA.
 
 Superseding build: isolated GSR2 verified temporal source for upscale presets only; Native AA proven unchanged; full guest-to-output blit and corrected temporal context/reset telemetry.
+
+Final temporal Bionic APK: full-screen ow/oh fix, verified frame-frozen camera+scene depth, 2D motion, contiguous history, NativeAA isolated. Six obsolete R6/R11/R12/R13/R14/R16 CI guards updated; run broad stage 39617684624.
