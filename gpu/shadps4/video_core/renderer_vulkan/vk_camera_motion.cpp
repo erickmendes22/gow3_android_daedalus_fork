@@ -367,7 +367,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
                 frame_pose_votes = 2;
                 static unsigned regained = 0;
                 if (++regained <= 6 || regained % 600 == 0)
-                    std::printf("GSR2_CAMERA_REACQUIRED shader=%016llx frame_confirmed=2 count=%u\\n",
+                    std::printf("GSR2_CAMERA_REACQUIRED shader=%016llx frame_confirmed=2 count=%u\n",
                                 static_cast<unsigned long long>(shader_hash), regained);
             } else {
                 frame_pose_votes = 1;
