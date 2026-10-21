@@ -205,8 +205,7 @@ void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView
     // Guest VideoOut is produced after OnDisplayPass. Use its frozen scene
     // camera rather than the reset camera of the next frame.
     RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
-                    completed_current, completed_previous,
-                    completed_current_jitter, completed_previous_jitter, false);
+                    completed_current, completed_previous, {}, {}, false);
 }
 
 void CameraMotion::RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
@@ -686,10 +685,6 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest
         ? Gsr2HistoryValidity() : Gsr2HistoryStatus::MissingCamera;
     completed_current = current;
     completed_previous = previous;
-    // The real VideoOut flip belongs to the scene rendered with this phase;
-    // OnFrameStart changes the phase immediately AFTER this snapshot.
-    completed_current_jitter = jitter;
-    completed_previous_jitter = previous_jitter;
     completed_depth = depth_id;
     // Only the real Presenter::PrepareFrame flip has an address. Ordinary
     // display draws and Native AA never acquire a GSR2 frame generation.
