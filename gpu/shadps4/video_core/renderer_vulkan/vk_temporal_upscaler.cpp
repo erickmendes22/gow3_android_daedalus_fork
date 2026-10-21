@@ -2893,7 +2893,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     constexpr u64 MaxTemporalSceneFlipGap = 4;
     const bool proven_camera_chain =
         camera_motion.CompletedPreviousMatchesTemporalScene();
-    const bool reuse_history = use_scene_motion && guest_display_history_contiguous &&
+    const bool previous_scene_history_eligible = guest_display_history_contiguous;
+    const bool reuse_history = use_scene_motion && previous_scene_history_eligible &&
                                temporal_gap >= 1 && temporal_gap <= MaxTemporalSceneFlipGap &&
                                proven_camera_chain;
     // At dispatch, the flag means THIS candidate may read the existing scene
@@ -2926,6 +2927,11 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         camera_motion.InvalidateTemporalScene();
         guest_display_history_contiguous = false;
         guest_display_last_temporal_flip_generation = 0;
+    } else if (!use_scene_motion) {
+        // The in-between flip ran a completely independent spatial kernel.
+        // Restore eligibility for the next camera-matched scene; no temporal
+        // history image was read, cleared or written by this callback.
+        guest_display_history_contiguous = previous_scene_history_eligible;
     }
     static u64 scene_cadence_dispatched=0, scene_cadence_reused=0;
     if (use_scene_motion) ++scene_cadence_dispatched;
