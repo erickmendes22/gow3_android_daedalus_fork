@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
+import com.gow3.android.R
+import androidx.compose.ui.res.stringResource
 import com.gow3.android.data.FrameGenStorage
 import com.gow3.android.ui.components.LauncherColors
 
@@ -38,7 +40,7 @@ internal fun FrameGenerationCard() {
     fun choose(value: Int) {
         if (storage.setMultiplier(value)) selected = value
         else Toast.makeText(context,
-            "Import your Lossless.dll in Settings → General first.", Toast.LENGTH_LONG).show()
+            context.getString(R.string.framegen_import_first), Toast.LENGTH_LONG).show()
     }
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -47,10 +49,11 @@ internal fun FrameGenerationCard() {
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Text("FRAME GENERATION", color = LauncherColors.gold,
+        Text(stringResource(R.string.framegen_section), color = LauncherColors.gold,
             fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (selected >= 2) "Bloodframe ${selected}x" else "Off · original framerate",
+            Text(if (selected >= 2) stringResource(R.string.framegen_status_on_fmt, selected)
+                else stringResource(R.string.framegen_status_off),
                 modifier = Modifier.weight(1f), color = LauncherColors.textPrimary, fontSize = 14.sp)
             Switch(checked = selected >= 2, onCheckedChange = {
                 choose(if (it) storage.preferredMultiplier() else 0)
@@ -68,8 +71,8 @@ internal fun FrameGenerationCard() {
                     fontWeight = if (selected == multiplier) FontWeight.Bold else FontWeight.Normal)
             }
         }
-        Text(if (dllFound) "Configured for next launch. The in-game drawer can change it live."
-             else "Lossless.dll missing · import in Settings → General.",
+        Text(if (dllFound) stringResource(R.string.framegen_next_launch)
+             else stringResource(R.string.framegen_missing_hint),
              color = LauncherColors.textMuted, fontSize = 11.sp)
     }
 }
