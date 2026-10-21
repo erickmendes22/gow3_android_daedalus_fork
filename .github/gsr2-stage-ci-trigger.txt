@@ -12,3 +12,5 @@ CI: verify temporal history dropout detector, camera capture counters and same-g
 
 Run conservative camera reacquisition CPU safeguards on 2.1.7 experimental branch.
 Validate accurate GSR2 temporal guard status label and camera recovery regression.
+
+Regression: do not let legacy camera pair block proven GoW3 VP recovery or inherit prior shader source.
