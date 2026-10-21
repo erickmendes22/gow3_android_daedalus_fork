@@ -1,3 +1,5 @@
 GSR2 pre-HUD source correlation and projection guard 2026-10-21; run all Bionic host regressions.
 
 2026-10-21: validate depth target write-generation forwarding to GSR2 VideoOut match guard.
+
+R22 2026-10-21: regression check for native ARM64 settings header after vk_rasterizer.cpp undeclared Gow3Settings failure in run 39652898177; depth write-generation safeguards.
