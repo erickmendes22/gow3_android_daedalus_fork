@@ -2698,6 +2698,14 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         return false; // The ordinary guest image remains intact.
     }
     const u32 ow = target_width, oh = target_height;
+    // Only the scene copied BEFORE guest VideoOut UI is eligible for GSR2
+    // temporal history. The fallback remains byte-for-byte the old path.
+    const bool prehud = PreHudEnabled() && pre_hud_completed_slot >= 0 &&
+        pre_hud_composite_pipeline &&
+        pre_hud_slots[pre_hud_completed_slot].image &&
+        pre_hud_slots[pre_hud_completed_slot].width == w &&
+        pre_hud_slots[pre_hud_completed_slot].height == h &&
+        pre_hud_slots[pre_hud_completed_slot].format == source.info.pixel_format;
     if (!EnsureResources(w, h, ow, oh, false)) return false;
     EnsureUiResources(ow, oh, source.info.pixel_format, vk::Format::eD32Sfloat);
 
@@ -2745,6 +2753,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // input-raster presets (Quality/Balanced/Performance/Ultra Performance).
     bool use_scene_motion = Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
                             std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+                            (!PreHudEnabled() || prehud) &&
                             source_matches_flip &&
                             status == CameraMotion::Gsr2HistoryStatus::Valid &&
                             bool(completed_depth);
@@ -2777,8 +2786,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                     vk::PipelineStageFlagBits2::eComputeShader,
                     vk::AccessFlagBits2::eShaderSampledRead);
     runtime.FlushBarriers();
-    const auto source_view = CachedView(source, source.info.pixel_format,
-                                        vk::ImageAspectFlagBits::eColor);
+    const auto guest_view = CachedView(source, source.info.pixel_format,
+                                       vk::ImageAspectFlagBits::eColor);
+    const vk::ImageView source_view = prehud
+        ? *pre_hud_slots[pre_hud_completed_slot].view : guest_view;
     auto cmd = scheduler.CommandBuffer();
     const auto full = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
     const auto all = vk::PipelineStageFlagBits2::eAllCommands;
@@ -2843,7 +2854,9 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const bool reuse_history = use_scene_motion && guest_display_history_contiguous;
     guest_display_motion_ready = use_scene_motion;
     guest_display_mode_recording = true;
+    pre_hud_recording = prehud;
     const bool ok = RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh);
+    pre_hud_recording = false;
     guest_display_mode_recording = false;
     guest_display_motion_ready = false;
     if (!ok) {
