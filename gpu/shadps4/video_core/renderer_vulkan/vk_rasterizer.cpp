@@ -996,6 +996,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const bool defer_gsr2_boundary_to_flip =
         gsr2_bionic && std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
         Gow3Settings::RenderPreset() != Gow3Settings::NativeAA;
+    if (defer_gsr2_boundary_to_flip && camera_motion->Enabled() &&
+        is_display_draw && scene_started) {
+        // This address comes from the guest's color-buffer register at
+        // the actual display-copy draw. The later Presenter address must
+        // match this captured source or temporal history is rejected.
+        camera_motion->OnDisplayTargetDraw(regs.color_buffers[0].Address());
+    }
     if (camera_motion->Enabled() && is_display_draw &&
         !defer_gsr2_boundary_to_flip && (!gsr2_bionic || scene_started)) {
         scene_started = false;
