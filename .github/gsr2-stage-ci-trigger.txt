@@ -42,3 +42,5 @@ GSR2 stage validation: selected real depth view in VideoOut temporal path (fallb
 Final source contracts for depth-validated temporal history after actual GSR2 VideoOut; preserve safe fallback and old NativeAA.
 
 GSR2 final temporal validation: full-screen ow/oh, frozen verified camera, real scene depth, motion compute, actual contiguous history reset and honest context status.
+
+Guard final temporal scene motion only for real reduced-raster GSR2 profiles, leave stable native AA VideoOut synthetic depth and spatial reset unchanged.
