@@ -45,6 +45,30 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("auto& source = texture_cache.GetImage(guest);", present)
         self.assertIn("RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)", present)
 
+    def test_scene_snapshot_matches_exact_flip_and_ui_is_not_in_temporal_history(self):
+        cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
+        hdr = (VK / "vk_temporal_upscaler.h").read_text(encoding="utf-8")
+        rast = (VK / "vk_rasterizer.cpp").read_text(encoding="utf-8")
+        shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp").read_text()
+        build = (ROOT / "gpu/CMakeLists.txt").read_text()
+        shell = (ROOT / "tools/android/bionic/run-bionic.sh").read_text()
+        self.assertIn("CaptureGsr2PreHudScene(VAddr guest_address)", hdr)
+        self.assertIn("SelectGsr2PreHudScene(VAddr guest_address)", hdr)
+        self.assertIn("upscaler->CaptureGsr2PreHudScene(regs.color_buffers[0].Address());", rast)
+        self.assertIn("upscaler->SelectGsr2PreHudScene(guest_address);", rast)
+        self.assertIn("slot->captured = false;", cpp)
+        self.assertIn("cmd.copyImage(color.GetImage()", cpp)
+        self.assertIn("pre_hud_consecutive_matches >= 3", cpp)
+        self.assertIn("pre_hud_slots[pre_hud_completed_slot].view", cpp)
+        self.assertIn("pre_hud_recording = prehud;", cpp)
+        self.assertIn("sampled(guest_view)",cpp)
+        self.assertIn("sampled(*output_view)",cpp)
+        self.assertIn("OutputComposited",shader)
+        self.assertIn("foregroundDifference",shader)
+        self.assertIn("gsr2_prehud_composite.comp",build)
+        self.assertIn('GOW3_GSR2_PREHUD_COMPOSITE:-1',shell)
+        self.assertIn("} else {\n        // Stable fallback",cpp)
+
     def test_reject_non_finite_scene_projection(self):
         cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
         section = cpp.split("bool TemporalUpscaler::PresentGsr2FromGuestDisplay(", 1)[1].split(
