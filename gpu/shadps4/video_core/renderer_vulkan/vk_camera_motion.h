@@ -117,6 +117,12 @@ public:
     [[nodiscard]] VideoCore::ImageId CompletedDepth() const noexcept {
         return completed_depth;
     }
+    [[nodiscard]] VAddr CompletedVideoOutAddress() const noexcept {
+        return completed_videoout_address;
+    }
+    [[nodiscard]] u64 CompletedVideoOutGeneration() const noexcept {
+        return completed_videoout_generation;
+    }
     [[nodiscard]] float CompletedVerticalFov() const noexcept {
         return 2.0f * std::atan(1.0f / completed_current.proj[1]);
     }
@@ -174,7 +180,7 @@ public:
 
     /// The pass copying the finished frame (`frame`, the last target drawn) to the display: the
     /// frame's depth and camera are complete. Records the debug overlay, starts a new frame.
-    void OnDisplayPass(VideoCore::ImageId frame);
+    void OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest_address = 0);
 
 private:
     struct Camera {
@@ -207,6 +213,8 @@ private:
     Camera completed_current, completed_previous;
     Gsr2HistoryStatus completed_history_status = Gsr2HistoryStatus::MissingCamera;
     VideoCore::ImageId completed_depth{};
+    VAddr completed_videoout_address = 0;
+    u64 completed_videoout_generation = 0;
     // Single-frame camera sightings require confirmation on a neighboring display frame.
     // These candidates never become temporal history by themselves.
     Camera current_frame_candidate, previous_frame_candidate;
