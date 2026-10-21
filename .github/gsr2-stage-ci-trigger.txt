@@ -66,3 +66,5 @@ HOST-ONLY 20261021: Diagnose frame mismatch in 141753 log (321600 synthetic disp
 Host-only Phase 2: tag completed real GSR2 VideoOut camera/depth snapshot with exact presented guest address and monotonically increasing flip generation. Assert the Presenter image address matches and temporal history is reused only across consecutive accepted generations; frame missed/rejected triggers reset. No APK build.
 
 Final host-only analytic check: current/previous pixel displacement, GSR2 convert sign, and upscale PrevUV formula agree algebraically for 240p/360p/424p/540p render presets; real guest VideoOut capture / exact source address / generation checks already in branch. NO ARM64 APK build until verified correctness.
+
+Host-only 20261021: Tighten source provenance. At the first real display-copy draw, cache validated scene camera and depth by regs.color_buffers[0].Address(). During Presenter real flip, accept only candidate whose key equals actually presented guest address; otherwise invalidate temporal feed, clear candidates. Prevent tautological address tagging at Presenter and UI overwrites. New regression suite; do not trigger Android APK build.
