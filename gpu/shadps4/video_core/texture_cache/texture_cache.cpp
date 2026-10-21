@@ -1362,6 +1362,18 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
     image.flags |= ImageFlagBits::GpuModified;
     image.usage.depth_target = 1u;
     UpdateImage(image_id);
+    // GoW III GSR2 compares this write generation at scene capture and the
+    // actual VideoOut flip. Color targets already publish writes, but depth
+    // targets previously did not; a rewritten depth surface could therefore
+    // pass the camera/depth history guard with identical UID and generation.
+    // Keep this isolated to the experimental direct-VideoOut path and only
+    // depth-writing binds; do not invalidate history on read-only depth use.
+    static const bool track_gsr2_depth_writes =
+        std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+        std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") != nullptr;
+    if (track_gsr2_depth_writes && desc.depth_write) {
+        PublishAliasWrite(image_id);
+    }
 
     // Register meta data for this depth buffer
     if (desc.info.meta_info.htile_addr) {
