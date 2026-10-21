@@ -62,7 +62,20 @@ void main() {
     // a safe guest fallback rather than blending unrelated temporal history.
     vec3 guest=textureLod(InputVideoOut,uv,0.0).rgb;
     vec3 scene=textureLod(InputGsr2,uv,0.0).rgb;
-    vec3 result=(incompatibleScene!=0u || changed>params.threshold) ? guest:scene;
+    // Even when the guest has not drawn any text/HUD, its display-copy pass
+    // can apply a full-frame color transform. A binary scene/HUD mask drops
+    // those transforms and changes the game's original appearance (observed
+    // in the same-flip 9600 preHUD/VideoOut/final readback).
+    //
+    // Both guest and preHUD are sampled in the SAME linear-light space here
+    // (sRGB decoding happens at the Vulkan sampler). Apply that current-frame
+    // residual AFTER Qualcomm's scene-only temporal history. No postprocess
+    // or HUD signal is fed back to GSR2.
+    vec3 before=textureLod(InputPreHud,uv,0.0).rgb;
+    vec3 restored=clamp(scene + (guest-before),0.0,1.0);
+    // Significant local differences are masks, text and foreground overlays.
+    // Keep their exact guest color without exposing them to scene reprojection.
+    vec3 result=(incompatibleScene!=0u || changed>params.threshold) ? guest:restored;
     if(params.isSrgb!=0u) result=encodeSrgb(result);
     imageStore(OutputComposited,pixel,vec4(result,1.0));
 }
