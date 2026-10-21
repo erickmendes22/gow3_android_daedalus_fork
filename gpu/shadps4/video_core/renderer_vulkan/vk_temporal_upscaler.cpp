@@ -627,7 +627,10 @@ bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
         .arrayLayers = 1,
         .samples = vk::SampleCountFlagBits::e1,
         .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+        // RunScaled and final-VideoOut Native AA use vkCmdClearColorImage
+        // for the zero-motion fallback. Vulkan requires TRANSFER_DST.
+        .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                 vk::ImageUsageFlagBits::eTransferDst,
         .initialLayout = vk::ImageLayout::eUndefined,
     });
     output_image = VideoCore::UniqueImage(device, allocator);
