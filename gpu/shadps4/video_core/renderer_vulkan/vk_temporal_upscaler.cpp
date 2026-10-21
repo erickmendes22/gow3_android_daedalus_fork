@@ -380,6 +380,7 @@ bool TemporalUpscaler::ReducedScene(const VideoCore::Image& color) const {
 }
 
 bool TemporalUpscaler::RasterScaling() const {
+    if (Gsr2GuestDisplayMode()) return false; // Render unmodified guest scene at Native AA.
     return !scaled_session && scene_targets.Reduced() && !done_this_frame;
 }
 
@@ -417,7 +418,7 @@ bool TemporalUpscaler::OnFrameStart() {
     // real reduced-raster input can be passed to GSR2 for that preset.
     if (applied_preset != preset || settings.upscaler == Gow3Settings::UpscalerOff) failed = false;
     const bool active = Active();
-    const bool jitter_on = active && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
+    const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
     // Android has one immutable output target (720p). Use a local effective
     // value, not a write through the const settings reference. This also
@@ -501,6 +502,7 @@ bool TemporalUpscaler::OnFrameStart() {
 }
 
 void TemporalUpscaler::OnDispatch(u64 cs_hash) {
+    if (Gsr2GuestDisplayMode()) return; // Only post-VideoOut image may feed Native AA.
     // Sample the decision once per 256 matching dispatches, at most 24 times.
     // Distinguishes a missing scene/motion feed from a disabled or failed FSR,
     // without flooding Android logcat on every compute dispatch.
@@ -1497,6 +1499,7 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
 }
 
 void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
+    if (Gsr2GuestDisplayMode()) return; // Last LDR target is not the completed guest display.
     // The Bionic GSR2 path uses dynamically reduced SceneTargets, not the old
     // GOW3_ANDROID_FSR_FIXED_OUTPUT / scaled_session override. Previously the
     // unconditional guard below rejected every GSR2 display boundary, so a
@@ -1607,6 +1610,7 @@ void TemporalUpscaler::OnDisplayBoundary(VideoCore::ImageId color) {
 
 void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
                               VideoCore::ImageId depth, bool native_viewport) {
+    if (Gsr2GuestDisplayMode()) return; // Keep native display copy/HUD unmodified.
     if (!Scaled() && vs_hash == ui_trigger_vs) done_this_frame = true;
     if (!Scaled() || !color) {
         return;
@@ -2566,7 +2570,9 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
         .render_width = w,
         .render_height = h,
         .preset = applied_preset,
-        .jitter = {sign * jitter[0], sign * jitter[1]},
+        .jitter = guest_display_mode_recording
+                      ? std::array<float, 2>{0.0f, 0.0f}
+                      : std::array<float, 2>{sign * jitter[0], sign * jitter[1]},
         .frame_ms = frame_ms,
         .near_plane = camera_motion.Near(),
         .far_plane = 3000.0f,
@@ -2598,6 +2604,11 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
     return ok;
 }
 
+bool TemporalUpscaler::Gsr2GuestDisplayMode() const {
+    return std::getenv("GOW3_ANDROID_PORT") && UseGsr2() &&
+           Gow3Settings::RenderPreset() == Gow3Settings::NativeAA;
+}
+
 bool TemporalUpscaler::UseGsr2() const {
     return Gow3Settings::IsGsr2(Gow3Settings::Get().upscaler) && !gsr2_failed;
 }
@@ -2618,7 +2629,9 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     // seen on screen. A history reset makes GSR2 do its current-frame spatial
     // reconstruction while retaining the genuine GSR2 compute dispatch.
     const auto temporal_status = camera_motion.Gsr2HistoryValidity();
-    const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;
+    const bool temporal_ready =
+        !guest_display_mode_recording &&
+        temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;
     // Aggregate, rather than logging on every draw. All 6 outcomes are
     // measured at the point GSR2 actually records a compute dispatch.
     static std::array<u64, 6> history_decisions{};
