@@ -34,6 +34,8 @@ class BionicR7StageTests(unittest.TestCase):
         # masking the original bug by changing math/sampler behavior simultaneously.
         code = source("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         self.assertIn("const VideoCore::ImageId scene = color;",code)
-        self.assertIn('camera_motion.Ready() ? "verified-temporal" : "spatial-reset-no-history"',code)
+        # Real temporal dispatch is valid only after the stricter camera-cut guard.
+        self.assertIn('camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid',code)
+        self.assertIn('"verified-temporal" : "spatial-reset-no-history"',code)
 if __name__ == "__main__":
     unittest.main()
