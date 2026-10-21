@@ -131,6 +131,8 @@ static void GsrProbeGrid(const char* name, const char* format, int generation,
     const bool bgra = bgra8 || bgra8_srgb;
     const auto* p = static_cast<const unsigned char*>(mapped);
     constexpr u32 gw = 32, gh = 18;
+    u32 invalid_fp16 = 0;
+    u32 negative_fp16 = 0;
     std::printf("GSR_STAGE begin=%s size=%ux%u format=%s encoding=%s thumbnail=%ux%u generation=%d\n",
                 name, width, height, format, half ? "linear-f16" :
                 src_srgb ? "srgb-u8" : "linear-u8", gw, gh, generation);
@@ -144,6 +146,12 @@ static void GsrProbeGrid(const char* name, const char* format, int generation,
             const auto* v = p + (size_t(py)*width + px)*bpp;
             unsigned raw_rgb[3]{}, linear_rgb[3]{}, srgb_rgb[3]{};
             for (unsigned c = 0; c < 3; ++c) {
+                if (half) {
+                    const auto* channel = v + c*2;
+                    const unsigned bits = unsigned(channel[0]) | (unsigned(channel[1]) << 8);
+                    invalid_fp16 += (bits & 0x7c00u) == 0x7c00u;
+                    negative_fp16 += (bits & 0x8000u) != 0;
+                }
                 const float raw = half ? GsrProbeHalf(v+c*2)
                                        : float(v[bgra ? 2-c : c])/255.0f;
                 const float linear = src_srgb ? GsrProbeSrgbToLinear(raw) : raw;
@@ -167,6 +175,12 @@ static void GsrProbeGrid(const char* name, const char* format, int generation,
         std::printf("GSR_STAGE stage=%s y=%02u rgb=%s generation=%d\n",name,y,raw_hex,generation);
         std::printf("GSR_STAGE_LINEAR stage=%s y=%02u rgb=%s generation=%d\n",name,y,linear_hex,generation);
         std::printf("GSR_STAGE_SRGB stage=%s y=%02u rgb=%s generation=%d\n",name,y,srgb_hex,generation);
+    }
+    if (half) {
+        // The original probe converted any INF/NAN half pixel to black,
+        // hiding a possible temporal shader divide-by-zero as "dark output".
+        std::printf("GSR_STAGE_FLOAT_HEALTH stage=%s generation=%d invalid_inf_nan=%u negative=%u channels=%u\n",
+                    name, generation, invalid_fp16, negative_fp16, gw*gh*3);
     }
     std::printf("GSR_STAGE end=%s generation=%d\n", name, generation);
     std::fflush(stdout);
