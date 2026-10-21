@@ -2532,7 +2532,12 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // the earlier safe spatial reset without accepting invalid history.
     const auto status = camera_motion.CompletedHistoryValidity();
     const auto completed_depth = camera_motion.CompletedDepth();
-    bool use_scene_motion = status == CameraMotion::Gsr2HistoryStatus::Valid &&
+    // Native AA was already stable: never change its depth/motion behavior.
+    // Enable the experimental temporal scene feed only for verified lower
+    // input-raster presets (Quality/Balanced/Performance/Ultra Performance).
+    bool use_scene_motion = Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
+                            std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+                            status == CameraMotion::Gsr2HistoryStatus::Valid &&
                             bool(completed_depth);
     if (use_scene_motion) {
         const auto& depth = texture_cache.GetImage(completed_depth);
