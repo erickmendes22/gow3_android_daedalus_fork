@@ -2665,6 +2665,18 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // 录制继续而画面冻结 = GPU 侧挂起）。行缓冲下即时落盘。
         ++dispatched;
         ++gsr2_completed_generation;
+        if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
+            (gsr2_completed_generation == 480 ||
+             gsr2_completed_generation == 2400 ||
+             gsr2_completed_generation == 7200)) {
+            std::printf("GSR2_CAPTURE_CONTEXT generation=%llu input=%ux%u output=%ux%u history_status=%u temporal=%d reset=%d still=%d jitter=%.6f,%.6f fov=%.6f\n",
+                        static_cast<unsigned long long>(gsr2_completed_generation),
+                        w, h, ow, oh, static_cast<unsigned>(temporal_status),
+                        int(temporal_ready), int(reset || !temporal_ready),
+                        int(temporal_ready ? camera_motion.CameraStill() : true),
+                        sign * jitter[0], sign * jitter[1],
+                        temporal_ready ? camera_motion.VerticalFov() : 1.04719755f);
+        }
         if (dispatched == 1 || dispatched % 600 == 0) {
             std::printf("Upscaler: GSR 2 recorded frame %llu\n",
                         static_cast<unsigned long long>(dispatched));
