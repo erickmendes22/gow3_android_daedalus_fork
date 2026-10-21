@@ -34,7 +34,7 @@ class VideoOutGsr2Input(unittest.TestCase):
         self.assertIn('std::getenv("GOW3_GSR2_INPUT_RES")', UPSCALE)
         self.assertIn('w != expected_w || h != expected_h', UPSCALE)
         self.assertIn('scene_targets.SetSize(scene_targets.GuestSize());', UPSCALE)
-        self.assertIn('RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh)', UPSCALE)
+        self.assertIn('RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)', UPSCALE)
         self.assertIn('GSR2_VIDEOOUT_SOURCE verified_guest=', UPSCALE)
 
         self.assertIn("if (!EnsureResources(w, h, ow, oh, false)) return false;", UPSCALE)
