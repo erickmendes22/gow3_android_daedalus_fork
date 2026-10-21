@@ -5,3 +5,5 @@ GSR2 2.1.7 forensic host checks:
 - Keep Bionic GSR2 prefill already enabled; do not claim that toggling it fixes the defect.
 
 R20 host retry: capture camera status, jitter and temporal reset under the same GSR2 generation used for all four stages.
+
+R20 host retry: FP16 NaN/Inf heat check for intermediate shader output plus per-generation camera diagnostics.
