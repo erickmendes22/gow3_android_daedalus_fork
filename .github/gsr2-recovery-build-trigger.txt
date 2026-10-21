@@ -9,3 +9,5 @@ Rebuild after replacing obsolete R7 camera_ready label assertion with correct gu
 Final integrated diagnostic build: GSR2 camera reacquisition + v2.1.7 FEX hook crash fixes + complete EN/PT localization. Host validation 39536001378 passed.
 
 Rebuild v2.1.7 with restored visible Snapdragon GSR2 Off/Native AA/Quality/Balanced/Performance/Ultra Performance UI; host regression run 39592060735 success.
+
+GSR2 true source fix: native AA after final VideoOut buffer acquisition, no proxy/HUD redirection; zero motion Vulkan transfer usage. Host tests 39595154151 passed.
