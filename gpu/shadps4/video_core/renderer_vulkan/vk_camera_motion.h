@@ -159,6 +159,9 @@ private:
 
     ObjectMotion* object_motion = nullptr;
     Camera current, previous;
+    // Single-frame camera sightings require confirmation on a neighboring display frame.
+    // These candidates never become temporal history by themselves.
+    Camera current_frame_candidate, previous_frame_candidate;
     bool frame_has_camera = false;
     bool have_pose = false, have_projection = false;
     std::array<float, 12> frame_view{}, frame_inverse{};
