@@ -18,6 +18,67 @@ SAMPLE = re.compile(
 STAGES = ("scene_proxy", "gsr2_output", "ui_blit", "display_final")
 PAIRS = tuple(zip(STAGES[:-1], STAGES[1:]))
 
+# GSR2 exposes cumulative history outcomes every 600 dispatches. Keep the
+# intervals separate: a run may contain thousands of validated temporal
+# frames before the camera feed disappears after a scene transition.
+HISTORY = re.compile(
+    r"^GSR2_HISTORY_GUARD dispatch=(\d+) valid=(\d+) missing=(\d+) "
+    r"shader=(\d+) projection=(\d+) position=(\d+) rotation=(\d+)$"
+)
+CAMERA_VERIFIED = re.compile(r"GOW3_CAMERA_VERIFIED_VP\b")
+
+
+def parse_temporal_history(log: str) -> dict:
+    entries = []
+    for line in log.splitlines():
+        m = HISTORY.search(line.strip())
+        if m:
+            dispatch, valid, missing, shader, projection, position, rotation = map(int, m.groups())
+            entries.append({
+                "dispatch": dispatch, "valid": valid, "missing_camera": missing,
+                "different_shader": shader, "projection_cut": projection,
+                "position_cut": position, "rotation_cut": rotation,
+            })
+    # Some log packs repeat the same run in more than one file. The last
+    # cumulative sample is authoritative for a continuous session.
+    entries.sort(key=lambda row: row["dispatch"])
+    interval = []
+    previous = None
+    for current in entries:
+        if previous and current["dispatch"] <= previous["dispatch"]:
+            previous = current
+            continue
+        if previous:
+            delta_dispatch = current["dispatch"] - previous["dispatch"]
+            delta_valid = current["valid"] - previous["valid"]
+            delta_missing = current["missing_camera"] - previous["missing_camera"]
+            if 0 <= delta_valid <= delta_dispatch and delta_missing >= 0:
+                interval.append({
+                    "from_dispatch": previous["dispatch"],
+                    "to_dispatch": current["dispatch"],
+                    "valid": delta_valid, "missing_camera": delta_missing,
+                    "valid_fraction": round(delta_valid / delta_dispatch, 4),
+                })
+        previous = current
+    latest = entries[-1] if entries else None
+    return {
+        "camera_verified_log_entries": len(CAMERA_VERIFIED.findall(log)),
+        "samples": len(entries),
+        "latest_cumulative": latest,
+        "intervals": interval,
+        "latest_valid_fraction": interval[-1]["valid_fraction"] if interval else None,
+        "temporal_dropout_intervals": [
+            {"from_dispatch": row["from_dispatch"], "to_dispatch": row["to_dispatch"]}
+            for i, row in enumerate(interval) if row["valid"] == 0 and
+            any(older["valid_fraction"] >= 0.5 for older in interval[:i])
+        ],
+        "interpretation": (
+            "Valid history can be intermittent or disappear during menus and scene "
+            "transitions; counts alone do not prove broken camera recovery in gameplay."
+        ),
+    }
+
+
 
 def parse_log(log: str) -> dict[int, dict[str, list]]:
     raw = {}
@@ -94,17 +155,23 @@ def main() -> int:
     parser.add_argument("log", type=Path, help="android-game.log or extracted ZIP log")
     parser.add_argument("--generation", type=int, default=None)
     args = parser.parse_args()
-    frames = parse_log(args.log.read_text(encoding="utf-8", errors="replace"))
+    log_text = args.log.read_text(encoding="utf-8", errors="replace")
+    frames = parse_log(log_text)
+    history = parse_temporal_history(log_text)
     if not frames:
-        print(json.dumps({"error": "No generation-tagged GSR_STAGE_SRGB grids. "
-                                  "Use the instrumented GSR2 branch and GOW3_GSR2_AUTO_PROBE=1."}))
+        if history["samples"]:
+            print(json.dumps({"stage_grids": "not present (use the GSR2 stage diagnostic build)",
+                              "history": history}, indent=2))
+            return 0
+        print(json.dumps({"error": "No temporal history counters or generation-tagged "
+                                  "GSR_STAGE_SRGB grids. Use the 2.1.7 GSR2 diagnostics build."}))
         return 2
     if args.generation is None:
         complete = [gen for gen, data in frames.items() if all(s in data for s in STAGES)]
         generation = max(complete if complete else frames)
     else:
         generation = args.generation
-    print(json.dumps(report(frames, generation), indent=2))
+    print(json.dumps({"stages": report(frames, generation), "history": history}, indent=2))
     return 0 if generation in frames else 2
 
 
