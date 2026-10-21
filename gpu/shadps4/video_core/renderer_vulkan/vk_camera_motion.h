@@ -52,6 +52,22 @@ public:
     [[nodiscard]] bool Ready() const noexcept {
         return current.valid && previous.valid && depth_id;
     }
+    // Diagnostic-only visibility into *why* a temporal dispatch has no history.
+    // Zero overhead in normal builds except when the GSR2 diagnostic log runs.
+    [[nodiscard]] u32 Gsr2HistoryDebugFlags() const noexcept {
+        return (u32(current.valid) << 0) | (u32(previous.valid) << 1) |
+               (u32(bool(depth_id)) << 2) | (u32(current.shader_hash != 0) << 3) |
+               (u32(previous.shader_hash != 0) << 4) |
+               (u32(frame_has_camera) << 5) |
+               (u32(previous_frame_candidate.valid) << 6) |
+               (u32(current_frame_candidate.valid) << 7);
+    }
+    [[nodiscard]] u64 Gsr2CurrentShaderDebug() const noexcept {
+        return current.shader_hash;
+    }
+    [[nodiscard]] u64 Gsr2PreviousShaderDebug() const noexcept {
+        return previous.shader_hash;
+    }
     // R14 applies stricter temporal validity only to GSR2. Other upscalers
     // continue using Ready(), unchanged.
     enum class Gsr2HistoryStatus : u32 {
