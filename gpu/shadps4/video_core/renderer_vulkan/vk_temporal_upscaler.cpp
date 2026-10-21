@@ -2460,7 +2460,142 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
     return true;
 }
 
+// Native AA source correctness: the ONLY image known to match the working
+// non-GSR2 path is the final guest VideoOut surface consumed by Presenter.
+// Earlier LDR attachments may be pre-tonemap or incompletely composited.
+bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Display& display) {
+    if (!Gsr2GuestDisplayMode() || !Active() || !guest) return false;
+    auto& source = texture_cache.GetImage(guest);
+    const u32 w = source.info.size.width;
+    const u32 h = source.info.size.height;
+    if (w != target_width || h != target_height || !w || !h ||
+        FrameCapture::IsDisplayBuffer(source.info.guest_address) == false ||
+        (source.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
+         source.info.pixel_format != vk::Format::eR8G8B8A8Srgb &&
+         source.info.pixel_format != vk::Format::eB8G8R8A8Unorm &&
+         source.info.pixel_format != vk::Format::eB8G8R8A8Srgb)) {
+        static u32 rejected = 0;
+        if (++rejected <= 5)
+            std::printf("GSR2_VIDEOOUT_SOURCE rejected size=%ux%u output=%ux%u format=%s\\n",
+                        w, h, target_width, target_height,
+                        vk::to_string(source.info.pixel_format).c_str());
+        return false; // The ordinary guest image remains intact.
+    }
+    if (!EnsureResources(w, h, w, h, false)) return false;
+    EnsureUiResources(w, h, source.info.pixel_format, vk::Format::eD32Sfloat);
+
+    if (!guest_display_depth || guest_display_depth_width != w ||
+        guest_display_depth_height != h) {
+        scheduler.Finish();
+        guest_display_depth_view.reset();
+        guest_display_depth = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+        guest_display_depth.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D, .format = vk::Format::eR32Sfloat,
+            .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1, .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+        guest_display_depth_view = Check(instance.GetDevice().createImageViewUnique({
+            .image = vk::Image(guest_display_depth), .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eR32Sfloat,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        }));
+        guest_display_depth_width = w;
+        guest_display_depth_height = h;
+    }
+
+    // Source belongs to the normal PS4 display-copy path. No SceneTargets
+    // proxy, upscaled guest render redirection, old display image or UI blit.
+    scheduler.EndRendering();
+    runtime.Transit(&source, vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eComputeShader,
+                    vk::AccessFlagBits2::eShaderSampledRead);
+    runtime.FlushBarriers();
+    const auto source_view = CachedView(source, source.info.pixel_format,
+                                        vk::ImageAspectFlagBits::eColor);
+    auto cmd = scheduler.CommandBuffer();
+    const auto full = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    const auto all = vk::PipelineStageFlagBits2::eAllCommands;
+    const auto barrier = [&](vk::Image image, vk::ImageLayout old_layout,
+                             vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access,
+                             vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access) {
+        const vk::ImageMemoryBarrier2 b{
+            .srcStageMask = src_stage, .srcAccessMask = src_access,
+            .dstStageMask = dst_stage, .dstAccessMask = dst_access,
+            .oldLayout = old_layout, .newLayout = vk::ImageLayout::eGeneral,
+            .image = image, .subresourceRange = full,
+        };
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
+    };
+    constexpr auto transfer = vk::PipelineStageFlagBits2::eTransfer;
+    const auto twrite = vk::AccessFlagBits2::eTransferWrite;
+    const auto tread = vk::AccessFlagBits2::eTransferRead;
+    const auto swrite = vk::AccessFlagBits2::eShaderWrite;
+    const auto sread = vk::AccessFlagBits2::eShaderRead;
+    barrier(vk::Image(guest_display_depth), vk::ImageLayout::eUndefined,
+            all, vk::AccessFlagBits2::eNone, transfer, twrite);
+    // The PS4 final display has NO matching depth attachment. Use a fully
+    // defined far-plane texture, which keeps this first source test spatial.
+    // Never reproject a HUD/movie with scene-only motion/depth.
+    cmd.clearColorImage(vk::Image(guest_display_depth), vk::ImageLayout::eGeneral,
+                        vk::ClearColorValue{std::array<float, 4>{1.f, 1.f, 1.f, 1.f}}, full);
+    barrier(vk::Image(guest_display_depth), vk::ImageLayout::eGeneral,
+            transfer, twrite, vk::PipelineStageFlagBits2::eComputeShader, sread);
+    barrier(vk::Image(motion_image), vk::ImageLayout::eUndefined,
+            all, vk::AccessFlagBits2::eNone, transfer, twrite);
+    cmd.clearColorImage(vk::Image(motion_image), vk::ImageLayout::eGeneral,
+                        vk::ClearColorValue{std::array<float, 4>{0.f, 0.f, 0.f, 0.f}}, full);
+    barrier(vk::Image(motion_image), vk::ImageLayout::eGeneral,
+            transfer, twrite, vk::PipelineStageFlagBits2::eComputeShader, sread);
+    barrier(vk::Image(output_image), vk::ImageLayout::eUndefined,
+            all, vk::AccessFlagBits2::eNone, vk::PipelineStageFlagBits2::eComputeShader,
+            swrite);
+
+    // Real GSR2 compute, but deliberately 1:1 spatial and history-reset while
+    // we isolate input acquisition. The ordinary VideoOut buffer is the fallback.
+    guest_display_mode_recording = true;
+    const bool ok = RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, w, h);
+    guest_display_mode_recording = false;
+    if (!ok) return false;
+    barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
+            vk::PipelineStageFlagBits2::eComputeShader, swrite, transfer, tread);
+    barrier(vk::Image(ui_image), vk::ImageLayout::eUndefined,
+            all, vk::AccessFlagBits2::eNone, transfer, twrite);
+    const vk::ImageBlit region{
+        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+    };
+    cmd.blitImage(vk::Image(output_image), vk::ImageLayout::eGeneral,
+                  vk::Image(ui_image), vk::ImageLayout::eGeneral,
+                  region, vk::Filter::eNearest);
+    barrier(vk::Image(ui_image), vk::ImageLayout::eGeneral,
+            transfer, twrite, all, sread);
+    display = {vk::Image(ui_image), source.info.pixel_format, w, h};
+    static u64 accepted = 0;
+    ++accepted;
+    if (accepted <= 5 || accepted % 600 == 0) {
+        std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
+                    "output=%ux%u dispatch=%llu path=post_videoout_native_aa\\n",
+                    static_cast<unsigned long long>(source.info.guest_address),
+                    w, h, w, h, static_cast<unsigned long long>(accepted));
+    }
+    if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
+        (accepted == 480 || accepted == 2400)) {
+        const char* src_format = GsrProbeFormat(source.info.pixel_format);
+        if (std::strcmp(src_format, "unsupported") != 0)
+            DumpImages(instance, scheduler, cmd, int(accepted),
+                       {{source.GetImage(), w, h, 4, "videoout_original", src_format},
+                        {vk::Image(output_image), w, h, 8, "videoout_gsr2", "rgba16f"},
+                        {vk::Image(ui_image), w, h, 4, "videoout_filtered", src_format}});
+    }
+    return true;
+}
+
 bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
+    if (Gsr2GuestDisplayMode()) return false; // Present the real guest surface instead of a stale intercepted copy.
     std::scoped_lock lock{display_mutex};
     const auto it = displays.find(address);
     if (UseGsr2() && std::getenv("GOW3_GSR2_AUTO_PROBE")) {
