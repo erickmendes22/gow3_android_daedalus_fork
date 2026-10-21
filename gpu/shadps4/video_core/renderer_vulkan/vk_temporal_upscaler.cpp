@@ -2532,11 +2532,24 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // the earlier safe spatial reset without accepting invalid history.
     const auto status = camera_motion.CompletedHistoryValidity();
     const auto completed_depth = camera_motion.CompletedDepth();
+    const u64 flip_generation = camera_motion.CompletedVideoOutGeneration();
+    const bool source_matches_flip =
+        flip_generation != 0 &&
+        flip_generation != guest_display_last_flip_generation &&
+        camera_motion.CompletedVideoOutAddress() == source.info.guest_address;
+    // If any VideoOut flip was skipped or rejected, do NOT blend its
+    // incomplete history with the next presented frame.
+    const bool adjacent_flip =
+        guest_display_last_flip_generation != 0 &&
+        flip_generation == guest_display_last_flip_generation + 1;
+    if (!source_matches_flip || !adjacent_flip)
+        guest_display_history_contiguous = false;
     // Native AA was already stable: never change its depth/motion behavior.
     // Enable the experimental temporal scene feed only for verified lower
     // input-raster presets (Quality/Balanced/Performance/Ultra Performance).
     bool use_scene_motion = Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
                             std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+                            source_matches_flip &&
                             status == CameraMotion::Gsr2HistoryStatus::Valid &&
                             bool(completed_depth);
     if (use_scene_motion) {
@@ -2629,6 +2642,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         return false;
     }
     guest_display_history_contiguous = use_scene_motion;
+    guest_display_last_flip_generation = flip_generation;
     dispatched_last_frame = true;
     barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits2::eComputeShader, swrite, transfer, tread);
@@ -2650,9 +2664,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     static u64 temporal_frames = 0;
     if (reuse_history) ++temporal_frames;
     if (accepted <= 5 || accepted % 600 == 0)
-        std::printf("GSR2_VIDEOOUT_MOTION status=%u real_depth=%d computed_motion=%d history_used=%d cumulative=%llu reset=%d\n",
+        std::printf("GSR2_VIDEOOUT_MOTION status=%u real_depth=%d computed_motion=%d history_used=%d cumulative=%llu reset=%d flip=%llu matched=%d adjacent=%d\n",
             unsigned(status), int(bool(completed_depth)), int(use_scene_motion),
-            int(reuse_history), (unsigned long long)temporal_frames, int(!reuse_history));
+            int(reuse_history), (unsigned long long)temporal_frames, int(!reuse_history),
+            (unsigned long long)flip_generation, int(source_matches_flip), int(adjacent_flip));
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
