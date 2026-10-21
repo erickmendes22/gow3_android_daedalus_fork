@@ -3193,21 +3193,6 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     const bool dispatch_reset =
         (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
         !temporal_ready;
-    // Sampling one out of every 600 VideoOut frames can always hit a loading
-    // frame and misleadingly report reset=1. Report the WHOLE population:
-    // actual Qualcomm dispatches with temporal history enabled, not merely
-    // camera-valid candidates or aggregate VideoOut buffer matches.
-    if (guest_display_mode_recording) {
-        static u64 guest_dispatch_count=0, temporal_dispatch_count=0;
-        ++guest_dispatch_count;
-        if (!dispatch_reset) ++temporal_dispatch_count;
-        if (guest_dispatch_count <= 4 || guest_dispatch_count % 600 == 0)
-            std::printf("GSR2_HISTORY_DISPATCH_TOTAL count=%llu temporal=%llu spatial=%llu last_reset=%d candidate=%d source=%d\n",
-                static_cast<unsigned long long>(guest_dispatch_count),
-                static_cast<unsigned long long>(temporal_dispatch_count),
-                static_cast<unsigned long long>(guest_dispatch_count-temporal_dispatch_count),
-                int(dispatch_reset),int(temporal_ready),int(pre_hud_recording));
-    }
     const std::array<float,2> matched_jitter = guest_display_mode_recording
         ? (pre_hud_recording ? camera_motion.CompletedJitter() : std::array<float,2>{})
         : jitter;
@@ -3258,6 +3243,20 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         gsr2_failed = true; // EnsureResources creates the FSR 3 context next frame (desktop)
         reset = true;
     } else {
+        // Count ONLY successful Qualcomm dispatch records, not attempts.
+        // A camera-valid result is not evidence of active temporal history:
+        // the provider also needs reset=0 and a successful Record().
+        if (guest_display_mode_recording) {
+            static u64 guest_dispatch_count=0, temporal_dispatch_count=0;
+            ++guest_dispatch_count;
+            if (!dispatch_reset) ++temporal_dispatch_count;
+            if (guest_dispatch_count <= 4 || guest_dispatch_count % 600 == 0)
+                std::printf("GSR2_HISTORY_DISPATCH_TOTAL count=%llu temporal=%llu spatial=%llu last_reset=%d candidate=%d source=%d\n",
+                    static_cast<unsigned long long>(guest_dispatch_count),
+                    static_cast<unsigned long long>(temporal_dispatch_count),
+                    static_cast<unsigned long long>(guest_dispatch_count-temporal_dispatch_count),
+                    int(dispatch_reset),int(temporal_ready),int(pre_hud_recording));
+        }
         // 录制完成的帧计数（排障：与「画面冻结」的时间点对照——录制停了 = 调用链问题；
         // 录制继续而画面冻结 = GPU 侧挂起）。行缓冲下即时落盘。
         ++dispatched;
