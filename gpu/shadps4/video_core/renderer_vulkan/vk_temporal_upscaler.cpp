@@ -93,28 +93,80 @@ static float GsrProbeHalf(const unsigned char* ptr) {
         : std::ldexp(float(1024u + mantissa), exponent - 25);
     return (h & 0x8000u) ? -x : x;
 }
+// Vulkan samples sRGB textures in linear light and encodes sRGB attachments
+// again on output. The old log compared raw sRGB 8-bit bytes directly with
+// *linear* GSR2 RGBA16F bytes, misdiagnosing normal gamma decoding as darkening.
+static float GsrProbeSrgbToLinear(float s) {
+    s = std::clamp(s, 0.0f, 1.0f);
+    return s <= 0.04045f ? s / 12.92f
+                         : std::pow((s + 0.055f) / 1.055f, 2.4f);
+}
+static float GsrProbeLinearToSrgb(float v) {
+    v = std::clamp(v, 0.0f, 1.0f);
+    return v <= 0.0031308f ? 12.92f * v
+                           : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+}
+static const char* GsrProbeFormat(vk::Format f) {
+    switch (f) {
+    case vk::Format::eR8G8B8A8Srgb:  return "rgba_srgb";
+    case vk::Format::eB8G8R8A8Srgb:  return "bgra_srgb";
+    case vk::Format::eR8G8B8A8Unorm: return "rgba_unorm";
+    case vk::Format::eB8G8R8A8Unorm: return "bgra_unorm";
+    default: return "unsupported";
+    }
+}
 static void GsrProbeGrid(const char* name, const char* format,
                          u32 width, u32 height, u32 bpp, const void* mapped) {
     if (!mapped || width < 32 || height < 18) return;
+    const bool half = bpp == 8 && std::strcmp(format, "rgba16f") == 0;
+    const bool rgba8 = bpp == 4 && std::strcmp(format, "rgba_unorm") == 0;
+    const bool bgra8 = bpp == 4 && std::strcmp(format, "bgra_unorm") == 0;
+    const bool rgba8_srgb = bpp == 4 && std::strcmp(format, "rgba_srgb") == 0;
+    const bool bgra8_srgb = bpp == 4 && std::strcmp(format, "bgra_srgb") == 0;
+    if (!half && !rgba8 && !bgra8 && !rgba8_srgb && !bgra8_srgb) {
+        std::printf("GSR_STAGE skip=%s unsupported_format=%s bpp=%u\n", name, format, bpp);
+        return; // Never interpret packed 10-bit or unknown formats as RGBA8.
+    }
+    const bool src_srgb = rgba8_srgb || bgra8_srgb;
+    const bool bgra = bgra8 || bgra8_srgb;
     const auto* p = static_cast<const unsigned char*>(mapped);
     constexpr u32 gw = 32, gh = 18;
-    std::printf("GSR_STAGE begin=%s size=%ux%u format=%s thumbnail=%ux%u\n",
-                name, width, height, format, gw, gh);
+    std::printf("GSR_STAGE begin=%s size=%ux%u format=%s encoding=%s thumbnail=%ux%u\n",
+                name, width, height, format, half ? "linear-f16" :
+                src_srgb ? "srgb-u8" : "linear-u8", gw, gh);
     for (u32 y = 0; y < gh; ++y) {
-        char hex[gw * 6 + 1]{};
+        char raw_hex[gw * 6 + 1]{};
+        char linear_hex[gw * 6 + 1]{};
+        char srgb_hex[gw * 6 + 1]{};
         const u32 py = std::min(height - 1, (2*y+1)*height/(2*gh));
         for (u32 x = 0; x < gw; ++x) {
             const u32 px = std::min(width - 1, (2*x+1)*width/(2*gw));
             const auto* v = p + (size_t(py)*width + px)*bpp;
-            unsigned rgb[3]{};
+            unsigned raw_rgb[3]{}, linear_rgb[3]{}, srgb_rgb[3]{};
             for (unsigned c = 0; c < 3; ++c) {
-                const float linear = bpp == 8 ? GsrProbeHalf(v+c*2)
-                                             : float(v[std::strcmp(format,"bgra") == 0 ? 2-c : c])/255.0f;
-                rgb[c] = unsigned(std::round(std::clamp(linear, 0.0f, 1.0f)*255.0f));
+                const float raw = half ? GsrProbeHalf(v+c*2)
+                                       : float(v[bgra ? 2-c : c])/255.0f;
+                const float linear = src_srgb ? GsrProbeSrgbToLinear(raw) : raw;
+                const float srgb = GsrProbeLinearToSrgb(linear);
+                const auto byte = [](float f) {
+                    return unsigned(std::round(std::clamp(f, 0.0f, 1.0f)*255.0f));
+                };
+                raw_rgb[c] = byte(raw);
+                linear_rgb[c] = byte(linear);
+                srgb_rgb[c] = byte(srgb);
             }
-            std::snprintf(hex+x*6, sizeof(hex)-x*6, "%02X%02X%02X",rgb[0],rgb[1],rgb[2]);
+            std::snprintf(raw_hex+x*6, sizeof(raw_hex)-x*6, "%02X%02X%02X",
+                          raw_rgb[0],raw_rgb[1],raw_rgb[2]);
+            std::snprintf(linear_hex+x*6, sizeof(linear_hex)-x*6, "%02X%02X%02X",
+                          linear_rgb[0],linear_rgb[1],linear_rgb[2]);
+            std::snprintf(srgb_hex+x*6, sizeof(srgb_hex)-x*6, "%02X%02X%02X",
+                          srgb_rgb[0],srgb_rgb[1],srgb_rgb[2]);
         }
-        std::printf("GSR_STAGE stage=%s y=%02u rgb=%s\n", name, y, hex);
+        // Keep legacy raw signal for existing parsers. New domains allow
+        // same-frame source/GSR2/UI comparison without the gamma mismatch.
+        std::printf("GSR_STAGE stage=%s y=%02u rgb=%s\n",name,y,raw_hex);
+        std::printf("GSR_STAGE_LINEAR stage=%s y=%02u rgb=%s\n",name,y,linear_hex);
+        std::printf("GSR_STAGE_SRGB stage=%s y=%02u rgb=%s\n",name,y,srgb_hex);
     }
     std::printf("GSR_STAGE end=%s\n", name);
     std::fflush(stdout);
@@ -2009,12 +2061,18 @@ void TemporalUpscaler::RunScaled() {
                                          gsr_probe_frames == 7200;
             if (UseGsr2() && gsr_probe_frame &&
                 std::getenv("GOW3_GSR2_AUTO_PROBE")) {
-                std::printf("GSR_STAGE_CAPTURE dispatch=%llu\n",
-                            static_cast<unsigned long long>(gsr_probe_frames));
-                DumpImages(instance, scheduler, cmdbuf, int(gsr_probe_frames),
-                    {{color_image, source_width, source_height, 4, "scene_proxy", "rgba"},
-                     {vk::Image(output_image), ow, oh, 8, "gsr2_output", "rgba16f"},
-                     {vk::Image(ui_image), ow, oh, 4, "ui_blit", "rgba"}});
+                const char* const source_format = GsrProbeFormat(color.info.pixel_format);
+                std::printf("GSR_STAGE_CAPTURE dispatch=%llu source_format=%s output_format=rgba16f\n",
+                            static_cast<unsigned long long>(gsr_probe_frames), source_format);
+                if (std::strcmp(source_format, "unsupported") == 0) {
+                    std::printf("GSR_STAGE_CAPTURE_UNSUPPORTED vulkan_format=%s\n",
+                                vk::to_string(color.info.pixel_format).c_str());
+                } else {
+                    DumpImages(instance, scheduler, cmdbuf, int(gsr_probe_frames),
+                        {{color_image, source_width, source_height, 4, "scene_proxy", source_format},
+                         {vk::Image(output_image), ow, oh, 8, "gsr2_output", "rgba16f"},
+                         {vk::Image(ui_image), ow, oh, 4, "ui_blit", source_format}});
+                }
             }
             if (const int dump = DumpFrame(); dump >= 0) {
                 DumpImages(instance, scheduler, cmdbuf, dump,
@@ -2415,11 +2473,15 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     if (gsr_capture_final && UseGsr2() &&
         std::getenv("GOW3_GSR2_AUTO_PROBE")) {
         scheduler.EndRendering();
-        const bool bgra = display.format == vk::Format::eB8G8R8A8Unorm ||
-                          display.format == vk::Format::eB8G8R8A8Srgb;
-        DumpImages(instance, scheduler, scheduler.CommandBuffer(), 0,
-                   {{display.image, display.width, display.height, 4,
-                     "display_final", bgra ? "bgra" : "rgba"}});
+        const char* final_format = GsrProbeFormat(display.format);
+        if (std::strcmp(final_format, "unsupported") != 0) {
+            DumpImages(instance, scheduler, scheduler.CommandBuffer(), 0,
+                       {{display.image, display.width, display.height, 4,
+                         "display_final", final_format}});
+        } else {
+            std::printf("GSR_STAGE_CAPTURE_UNSUPPORTED final_format=%s\n",
+                        vk::to_string(display.format).c_str());
+        }
     }
     // Diagnostic capture of the actual completed display buffer, including native UI.
     // GOW3_PRESENT_DUMP_COUNT=N: the trigger dumps N consecutive frames (temporal stability).
