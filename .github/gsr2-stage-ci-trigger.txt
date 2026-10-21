@@ -1,0 +1,5 @@
+GSR2 2.1.7 forensic host checks:
+- Compare exactly matching GSR2 dispatch / guest-present generations, not independent present counters.
+- Compare RGBA16F linear and sRGB 8-bit in a common color domain.
+- Preserve Qualcomm shader, game resolution, Vulkan driver, FEX and public release.
+- Keep Bionic GSR2 prefill already enabled; do not claim that toggling it fixes the defect.
