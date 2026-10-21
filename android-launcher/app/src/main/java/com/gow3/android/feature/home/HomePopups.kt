@@ -49,6 +49,13 @@ private val cheats = listOf(
 private val resolutions = listOf("240p", "360p", "424p", "480p", "540p", "720p",
     "900p", "native", "1440p", "1800p", "4K", "8K")
 private val fpsLimits = listOf("30", "60", "120", "240", "0")
+private val gsrPresets = listOf(
+    "0" to R.string.popup_gsr2_native_aa,
+    "1" to R.string.popup_gsr2_quality,
+    "2" to R.string.popup_gsr2_balanced,
+    "3" to R.string.popup_gsr2_performance,
+    "4" to R.string.popup_gsr2_ultra_performance,
+)
 
 @Composable
 private fun PopupShell(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
@@ -112,6 +119,11 @@ internal fun HomePopup(
     var engine by remember(kind) { mutableStateOf(ini["engine_fps"] ?: "60") }
     var vsync by remember(kind) { mutableStateOf(ini["vsync"] != "0") }
     var resolution by remember(kind) { mutableStateOf(ini["render_resolution"] ?: "720p") }
+    val isBionic = LocalContext.current.packageName == "com.gow3.android.bionic"
+    var gsr2 by remember(kind) { mutableStateOf(ini["upscaler"] == "gsr2") }
+    var gsrPreset by remember(kind) {
+        mutableStateOf((ini["preset"] ?: "0").takeIf { it in listOf("0", "1", "2", "3", "4") } ?: "0")
+    }
     val enabled = remember(kind) { mutableStateMapOf<String, Boolean>().apply {
         cheats.forEach { (key, _) -> put(key, ini[key] == "1") }
     } }
@@ -143,6 +155,28 @@ internal fun HomePopup(
                     }
                 }
                 HomePopupKind.VIDEO -> {
+                    if (isBionic) {
+                        Text(stringResource(R.string.popup_gsr2_title), color = LauncherColors.gold,
+                            fontWeight = FontWeight.Bold)
+                        OptionRow(stringResource(R.string.popup_gsr2_off), !gsr2) { gsr2 = false }
+                        OptionRow(stringResource(R.string.popup_gsr2_on), gsr2) {
+                            gsr2 = true
+                            // Verified GSR2 uses a 720p output; presets change scene raster.
+                            resolution = "720p"
+                        }
+                        if (gsr2) {
+                            Text(stringResource(R.string.popup_gsr2_preset_title),
+                                color = LauncherColors.gold, fontWeight = FontWeight.Bold)
+                            gsrPresets.forEach { (value, label) ->
+                                OptionRow(stringResource(label), gsrPreset == value) {
+                                    gsrPreset = value
+                                }
+                            }
+                            Text(stringResource(R.string.popup_gsr2_720p_notice),
+                                color = LauncherColors.textMuted, fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
                     Text(stringResource(R.string.popup_internal_resolution), color = LauncherColors.gold,
                         fontWeight = FontWeight.Bold)
                     resolutions.forEach { value ->
@@ -151,7 +185,10 @@ internal fun HomePopup(
                             "8K" -> stringResource(R.string.popup_8k_resolution)
                             else -> value
                         }
-                        OptionRow(label, resolution == value) { resolution = value }
+                        // Do not offer a conflicting guest resolution with GSR2.
+                        if (!gsr2 || value == "720p") {
+                            OptionRow(label, resolution == value) { resolution = value }
+                        }
                     }
                     Text(stringResource(R.string.popup_8k_warning),
                         color = LauncherColors.textMuted, fontSize = 12.sp)
@@ -177,7 +214,11 @@ internal fun HomePopup(
                 val updates = when (kind) {
                     HomePopupKind.FPS -> mapOf("fps_limit" to fps, "engine_fps" to engine,
                         "vsync" to if (vsync) "1" else "0")
-                    HomePopupKind.VIDEO -> mapOf("render_resolution" to resolution)
+                    HomePopupKind.VIDEO -> if (isBionic) mapOf(
+                        "render_resolution" to (if (gsr2) "720p" else resolution),
+                        "upscaler" to (if (gsr2) "gsr2" else "off"),
+                        "preset" to gsrPreset,
+                    ) else mapOf("render_resolution" to resolution)
                     HomePopupKind.CHEATS -> enabled.mapValues { if (it.value) "1" else "0" }
                     HomePopupKind.MODS -> emptyMap()
                 }
