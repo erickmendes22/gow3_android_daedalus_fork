@@ -25,3 +25,5 @@ GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffe
 2026-10-21 verify temporal counts only AFTER a successful gsr2->Record, keeping 32/32-source adjacent-camera cache (64 probes fixed), color residual and HUD separation. Regression gate before final native integration.
 
 2026-10-21 log 202739 root-cause 0/16200 temporal: sustained 200 valid scene cameras per 600 VideoOut flips (scene once every three PS4 presentation callbacks). Scene temporal history must stay in separate Qualcomm provider from filler spatial flips; matching shader + full prior scene matrices + saved previous jitter + max four-flip gap; no reuse across unmatched scene camera/cut/provider reset. Add dedicated cadence tests and ARM64 gate.
+
+2026-10-21 scene-cadence test gate retry: update prior motion-jitter regression assertion to accept camera-verified prior scene jitter instead of intermediate VideoOut jitter. All actual CUSA01623 camera projection/hard-reset safety constraints unchanged.
