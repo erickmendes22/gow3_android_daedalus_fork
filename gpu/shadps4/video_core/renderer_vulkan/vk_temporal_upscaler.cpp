@@ -1547,6 +1547,16 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
         return;
     }
     const auto& image = texture_cache.GetImage(color);
+    // At the VideoOut-copy draw GoW III binds a display framebuffer as an
+    // ordinary RGBA8 target. It must not replace the last scene-sized LDR
+    // candidate: that discards the only possible pre-HUD input and makes
+    // ProbeGsr2PreHudSource report the already composited output as "scene".
+    // This only changes which source is remembered for diagnosis; the safe
+    // direct VideoOut presentation and all guest draws remain untouched.
+    if (Gsr2GuestDisplayMode() &&
+        FrameCapture::IsDisplayBuffer(image.info.guest_address)) {
+        return;
+    }
     const auto& depth = texture_cache.GetImage(camera_motion.Depth());
     if ((image.info.pixel_format == vk::Format::eR8G8B8A8Unorm ||
          image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
