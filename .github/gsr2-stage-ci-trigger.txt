@@ -7,3 +7,5 @@ GSR2 2.1.7 forensic host checks:
 R20 host retry: capture camera status, jitter and temporal reset under the same GSR2 generation used for all four stages.
 
 R20 host retry: FP16 NaN/Inf heat check for intermediate shader output plus per-generation camera diagnostics.
+
+CI: verify temporal history dropout detector, camera capture counters and same-generation GSR2 stage color-space analyzer. Engine unchanged.
