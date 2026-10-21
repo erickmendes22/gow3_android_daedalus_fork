@@ -24,3 +24,5 @@ GSR2 Native AA must acquire real VideoOut image after guest UI, use valid transf
 Restored five earlier R6/R11/R13/R14/R16 static invariants adapted to final-VideoOut isolated Native AA mode (remaining presets keep original jitter).
 
 Fix restricted jitter modification to GSR2 Native AA; restore FSR4 original jitter; run all R16 temporal versus VideoOut spatial tests.
+
+GSR2 direct guest VideoOut test all 5 presets via verified 01.02 eboot patch, retain full-screen real guest raster and 1280x720 host output; no SceneTargets double downsample.
