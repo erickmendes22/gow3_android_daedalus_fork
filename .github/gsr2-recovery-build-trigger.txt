@@ -7,3 +7,5 @@ Extra: adjacent-frame candidate with geometric cut checks, current-frame sRGB st
 Rebuild after replacing obsolete R7 camera_ready label assertion with correct guarded history assertion.
 
 Final integrated diagnostic build: GSR2 camera reacquisition + v2.1.7 FEX hook crash fixes + complete EN/PT localization. Host validation 39536001378 passed.
+
+Rebuild v2.1.7 with restored visible Snapdragon GSR2 Off/Native AA/Quality/Balanced/Performance/Ultra Performance UI; host regression run 39592060735 success.
