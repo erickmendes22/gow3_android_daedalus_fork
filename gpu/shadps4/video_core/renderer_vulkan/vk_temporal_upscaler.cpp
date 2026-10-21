@@ -2773,8 +2773,11 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const bool adjacent_flip =
         guest_display_last_flip_generation != 0 &&
         flip_generation == guest_display_last_flip_generation + 1;
-    if (!source_matches_flip || !adjacent_flip)
+    if (!source_matches_flip || !adjacent_flip) {
         guest_display_history_contiguous = false;
+        guest_display_last_temporal_flip_generation = 0;
+        camera_motion.InvalidateTemporalScene();
+    }
     // Native AA was already stable: never change its depth/motion behavior.
     // Enable the experimental temporal scene feed only for verified lower
     // input-raster presets (Quality/Balanced/Performance/Ultra Performance).
@@ -2878,7 +2881,25 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // Direct GSR2 compute from the completed guest VideoOut image. The
     // verified matching scene depth/camera may enable history; missing or
     // mismatched inputs always reset to the safe spatial fallback.
-    const bool reuse_history = use_scene_motion && guest_display_history_contiguous;
+    // GoW III displays a new scene about once per THREE VideoOut flips in
+    // sustained gameplay (202739: 200 valid cameras / 600 flips). The two
+    // filler flips may show loading/HUD but are NOT adjacent scene samples.
+    // Preserve the last validated Qualcomm history in a separate provider;
+    // accept a later scene ONLY if its prior camera matches the one actually
+    // fed to temporal GSR2, in both shader provenance and full pose matrices.
+    const u64 temporal_gap = guest_display_last_temporal_flip_generation &&
+        flip_generation > guest_display_last_temporal_flip_generation
+        ? flip_generation - guest_display_last_temporal_flip_generation : 0;
+    constexpr u64 MaxTemporalSceneFlipGap = 4;
+    const bool proven_camera_chain =
+        camera_motion.CompletedPreviousMatchesTemporalScene();
+    const bool reuse_history = use_scene_motion && guest_display_history_contiguous &&
+                               temporal_gap >= 1 && temporal_gap <= MaxTemporalSceneFlipGap &&
+                               proven_camera_chain;
+    // At dispatch, the flag means THIS candidate may read the existing scene
+    // history. No non-scene flip can have motion from the prior scene, and its
+    // spatial dispatch must never touch the temporal Qualcomm history images.
+    guest_display_history_contiguous = reuse_history;
     guest_display_motion_ready = use_scene_motion;
     guest_display_mode_recording = true;
     pre_hud_recording = prehud;
@@ -2888,9 +2909,35 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     guest_display_motion_ready = false;
     if (!ok) {
         guest_display_history_contiguous = false;
+        camera_motion.InvalidateTemporalScene();
+        guest_display_last_temporal_flip_generation = 0;
         return false;
     }
-    guest_display_history_contiguous = use_scene_motion;
+    if (use_scene_motion) {
+        // The provider now contains exactly THIS camera's color and history.
+        // The next camera-verified scene may be 1..4 VideoOut flips away.
+        camera_motion.CommitCompletedTemporalScene();
+        guest_display_last_temporal_flip_generation = flip_generation;
+        guest_display_history_contiguous = true;
+    } else if (guest_display_last_temporal_flip_generation &&
+               (flip_generation < guest_display_last_temporal_flip_generation ||
+                flip_generation - guest_display_last_temporal_flip_generation >
+                    MaxTemporalSceneFlipGap)) {
+        camera_motion.InvalidateTemporalScene();
+        guest_display_history_contiguous = false;
+        guest_display_last_temporal_flip_generation = 0;
+    }
+    static u64 scene_cadence_dispatched=0, scene_cadence_reused=0;
+    if (use_scene_motion) ++scene_cadence_dispatched;
+    if (reuse_history) ++scene_cadence_reused;
+    static u64 scene_flip_count=0;
+    if (++scene_flip_count <= 5 || scene_flip_count % 600 == 0)
+        std::printf("GSR2_SCENE_CADENCE flips=%llu verified=%llu temporal=%llu gap=%llu chain=%d motion=%d history=%d\n",
+            (unsigned long long)scene_flip_count,
+            (unsigned long long)scene_cadence_dispatched,
+            (unsigned long long)scene_cadence_reused,
+            (unsigned long long)temporal_gap,
+            int(proven_camera_chain),int(use_scene_motion),int(reuse_history));
     guest_display_last_flip_generation = flip_generation;
     dispatched_last_frame = true;
     if (prehud) {
