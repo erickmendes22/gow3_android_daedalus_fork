@@ -25,9 +25,11 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         self.assertIn(".jitter = guest_display_mode_recording",fn)
         self.assertIn(": std::array<float, 2>{sign * jitter[0], sign * jitter[1]},",fn)
         self.assertNotIn(".jitter = temporal_ready ?",fn)
-        self.assertIn(".reset = reset || !temporal_ready,",fn)
+        self.assertIn("const bool dispatch_reset =",fn)
+        self.assertIn("!temporal_ready;",fn)
+        self.assertIn(".reset = dispatch_reset,",fn)
         self.assertIn("const bool temporal_ready =",fn)
-        self.assertIn("!guest_display_mode_recording &&",fn)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",fn)
         self.assertIn("std::getenv(\"GOW3_ANDROID_PORT\")",source)
         self.assertIn("const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter",source)
     def test_invalid_motion_is_cleared_before_gsr2_dispatch(self):
