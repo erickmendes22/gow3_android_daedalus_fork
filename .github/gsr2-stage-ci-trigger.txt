@@ -14,3 +14,5 @@ Run conservative camera reacquisition CPU safeguards on 2.1.7 experimental branc
 Validate accurate GSR2 temporal guard status label and camera recovery regression.
 
 Regression: do not let legacy camera pair block proven GoW3 VP recovery or inherit prior shader source.
+
+Gate FEX NoExec + QTE call/return fixes and fully localized 2.1.7 launcher alongside GSR2 camera recovery.
