@@ -22,8 +22,9 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         fn=source.split("bool TemporalUpscaler::RecordGsr2(",1)[1].split(
             "bool TemporalUpscaler::UseDlss()",1)[0]
-        self.assertIn(".jitter = guest_display_mode_recording",fn)
-        self.assertIn(": std::array<float, 2>{sign * jitter[0], sign * jitter[1]},",fn)
+        self.assertIn("camera_motion.CompletedJitter()", fn)
+        self.assertIn(".jitter = {sign * matched_jitter[0], sign * matched_jitter[1]},", fn)
+        self.assertIn("pre_hud_recording ? camera_motion.CompletedJitter()",fn)
         self.assertNotIn(".jitter = temporal_ready ?",fn)
         self.assertIn("const bool dispatch_reset =",fn)
         self.assertIn("!temporal_ready;",fn)
@@ -31,7 +32,8 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         self.assertIn("const bool temporal_ready =",fn)
         self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",fn)
         self.assertIn("std::getenv(\"GOW3_ANDROID_PORT\")",source)
-        self.assertIn("const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter",source)
+        self.assertIn("PreHudEnabled() && pre_hud_consecutive_matches >= 3", source)
+        self.assertIn("(!Gsr2GuestDisplayMode() || prehud_temporal)",source)
     def test_invalid_motion_is_cleared_before_gsr2_dispatch(self):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         run=source.split("void TemporalUpscaler::RunScaled()",1)[1].split(
