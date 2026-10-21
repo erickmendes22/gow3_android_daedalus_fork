@@ -582,7 +582,11 @@ bool TemporalUpscaler::OnFrameStart() {
     // real reduced-raster input can be passed to GSR2 for that preset.
     if (applied_preset != preset || settings.upscaler == Gow3Settings::UpscalerOff) failed = false;
     const bool active = Active();
-    const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter && !Gow3Toggle::Disabled(1u << 25);
+    // Enable Halton only after three consecutive *verified* pre-HUD captures.
+    // The direct VideoOut fallback itself remains unchanged, never jittered.
+    const bool prehud_temporal = PreHudEnabled() && pre_hud_consecutive_matches >= 3;
+    const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
+                           settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     const int upscaler = settings.upscaler.load();
     // Android has one immutable output target (720p). Use a local effective
     // value, not a write through the const settings reference. This also
@@ -3094,6 +3098,16 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     const bool dispatch_reset =
         (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
         !temporal_ready;
+    const std::array<float,2> matched_jitter = guest_display_mode_recording
+        ? (pre_hud_recording ? camera_motion.CompletedJitter() : std::array<float,2>{})
+        : jitter;
+    if (guest_display_mode_recording && std::getenv("GOW3_GSR2_AUTO_PROBE") &&
+        (history_dispatches <= 5 || history_dispatches % 600 == 0)) {
+        std::printf("GSR2_PREHUD_TEMPORAL dispatch=%llu actual_scene=%d history=%d reset=%d jitter=%g,%g\\n",
+                    (unsigned long long)history_dispatches,int(pre_hud_recording),
+                    int(temporal_ready),int(dispatch_reset),
+                    double(matched_jitter[0]),double(matched_jitter[1]));
+    }
     const bool ok = gsr2->Record({
         .cmdbuf = cmdbuf,
         .color = color,
@@ -3108,9 +3122,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // the camera pair is invalid (and GSR2 resets history). Passing zero
         // here described a different sample position than the one rendered,
         // introducing edge shimmer in every spatial-reset frame.
-        .jitter = guest_display_mode_recording
-                      ? std::array<float, 2>{0.0f, 0.0f}
-                      : std::array<float, 2>{sign * jitter[0], sign * jitter[1]},
+        .jitter = {sign * matched_jitter[0], sign * matched_jitter[1]},
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
@@ -3149,7 +3161,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
                         w, h, ow, oh, static_cast<unsigned>(temporal_status),
                         int(temporal_ready), int(dispatch_reset),
                         int(temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill() : camera_motion.CameraStill()) : true),
-                        sign * jitter[0], sign * jitter[1],
+                        sign * matched_jitter[0], sign * matched_jitter[1]
                         temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov() : camera_motion.VerticalFov()) : 1.04719755f);
         }
         if (dispatched == 1 || dispatched % 600 == 0) {
