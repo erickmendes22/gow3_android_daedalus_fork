@@ -222,6 +222,7 @@ private:
     std::array<float, 12> frame_view{}, frame_inverse{};
     std::array<float, 4> frame_projection{};
     u32 frame_pose_votes = 0, frame_scanned_buffers = 0;
+    u32 frame_extra_source_probes = 0;
     u64 frame_camera_shader_hash = 0;
     bool reported_camera = false;
     // Bounded exact constant capture during two gameplay frames. Enables offline
