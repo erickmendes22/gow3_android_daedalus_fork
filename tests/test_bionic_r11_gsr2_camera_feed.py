@@ -40,8 +40,10 @@ class BionicR11CameraFeed(unittest.TestCase):
         self.assertIn("GOW3_CAMERA_VERIFIED",cam)
         self.assertIn("frame_pose_votes >= 2",cam)
         self.assertIn("const bool temporal_ready =",src)
-        self.assertIn("!guest_display_mode_recording &&",src)
-        self.assertIn(".reset = reset || !temporal_ready,",src)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",src)
+        self.assertIn("const bool dispatch_reset =",src)
+        self.assertIn("!temporal_ready;",src)
+        self.assertIn(".reset = dispatch_reset,",src)
         self.assertIn("GSR2_PRESENT_INIT copied full UI",src)
 
     def test_single_ci_trigger_preserves_prior_regressions(self):
