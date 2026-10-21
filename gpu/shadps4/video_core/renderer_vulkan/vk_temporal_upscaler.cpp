@@ -2524,6 +2524,23 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         guest_display_depth_height = h;
     }
 
+    // If the completed scene has matching depth and verified adjacent camera,
+    // feed REAL depth + camera-reprojected motion to GSR2 instead of clearing
+    // synthetic depth/motion each frame. Missing/mismatched provenance forces
+    // the earlier safe spatial reset without accepting invalid history.
+    const auto status = camera_motion.CompletedHistoryValidity();
+    const auto completed_depth = camera_motion.CompletedDepth();
+    bool use_scene_motion = status == CameraMotion::Gsr2HistoryStatus::Valid &&
+                            bool(completed_depth);
+    if (use_scene_motion) {
+        const auto& depth = texture_cache.GetImage(completed_depth);
+        const auto fmt = depth.info.pixel_format;
+        use_scene_motion = depth.info.size.width == w && depth.info.size.height == h &&
+            (fmt == vk::Format::eD32Sfloat || fmt == vk::Format::eD32SfloatS8Uint ||
+             fmt == vk::Format::eD24UnormS8Uint);
+    }
+    vk::ImageView chosen_depth_view = *guest_display_depth_view;
+
     // Source belongs to the normal PS4 display-copy path. No SceneTargets
     // proxy, upscaled guest render redirection, old display image or UI blit.
     scheduler.EndRendering();
@@ -2552,6 +2569,16 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const auto tread = vk::AccessFlagBits2::eTransferRead;
     const auto swrite = vk::AccessFlagBits2::eShaderWrite;
     const auto sread = vk::AccessFlagBits2::eShaderRead;
+    if (use_scene_motion) {
+        auto& real_depth = texture_cache.GetImage(completed_depth);
+        scheduler.EndRendering();
+        runtime.Transit(&real_depth, vk::ImageLayout::eGeneral,
+                        vk::PipelineStageFlagBits2::eComputeShader,
+                        vk::AccessFlagBits2::eShaderSampledRead);
+        runtime.FlushBarriers();
+        chosen_depth_view = CachedView(real_depth, real_depth.info.pixel_format,
+                                       vk::ImageAspectFlagBits::eDepth);
+    } else {
     barrier(vk::Image(guest_display_depth), vk::ImageLayout::eUndefined,
             all, vk::AccessFlagBits2::eNone, transfer, twrite);
     // The PS4 final display has NO matching depth attachment. Use a fully
@@ -2561,22 +2588,35 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                         vk::ClearColorValue{std::array<float, 4>{1.f, 1.f, 1.f, 1.f}}, full);
     barrier(vk::Image(guest_display_depth), vk::ImageLayout::eGeneral,
             transfer, twrite, vk::PipelineStageFlagBits2::eComputeShader, sread);
+    }
     barrier(vk::Image(motion_image), vk::ImageLayout::eUndefined,
-            all, vk::AccessFlagBits2::eNone, transfer, twrite);
+            all, vk::AccessFlagBits2::eNone,
+            use_scene_motion ? vk::PipelineStageFlagBits2::eComputeShader : transfer,
+            use_scene_motion ? swrite : twrite);
+    if (use_scene_motion) {
+        camera_motion.RecordCompletedMotion(cmd, chosen_depth_view, *motion_view, w, h);
+        barrier(vk::Image(motion_image), vk::ImageLayout::eGeneral,
+                vk::PipelineStageFlagBits2::eComputeShader, swrite,
+                vk::PipelineStageFlagBits2::eComputeShader, sread);
+    } else {
     cmd.clearColorImage(vk::Image(motion_image), vk::ImageLayout::eGeneral,
                         vk::ClearColorValue{std::array<float, 4>{0.f, 0.f, 0.f, 0.f}}, full);
     barrier(vk::Image(motion_image), vk::ImageLayout::eGeneral,
             transfer, twrite, vk::PipelineStageFlagBits2::eComputeShader, sread);
+    }
     barrier(vk::Image(output_image), vk::ImageLayout::eUndefined,
             all, vk::AccessFlagBits2::eNone, vk::PipelineStageFlagBits2::eComputeShader,
             swrite);
 
     // Real GSR2 compute, but deliberately 1:1 spatial and history-reset while
     // we isolate input acquisition. The ordinary VideoOut buffer is the fallback.
+    guest_display_motion_ready = use_scene_motion;
     guest_display_mode_recording = true;
-    const bool ok = RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh);
+    const bool ok = RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh);
     guest_display_mode_recording = false;
+    guest_display_motion_ready = false;
     if (!ok) return false;
+    dispatched_last_frame = true;
     barrier(vk::Image(output_image), vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits2::eComputeShader, swrite, transfer, tread);
     barrier(vk::Image(ui_image), vk::ImageLayout::eUndefined,
@@ -2594,6 +2634,12 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             transfer, twrite, all, sread);
     display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};
     static u64 accepted = 0;
+    static u64 temporal_frames = 0;
+    if (use_scene_motion) ++temporal_frames;
+    if (accepted <= 5 || accepted % 600 == 0)
+        std::printf("GSR2_VIDEOOUT_MOTION status=%u real_depth=%d temporal=%d cumulative=%llu reset=%d\\n",
+            unsigned(status), int(bool(completed_depth)), int(use_scene_motion),
+            (unsigned long long)temporal_frames, int(!use_scene_motion));
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
@@ -2784,9 +2830,11 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     // Zero vectors + stale history produce the severe blue/black smearing
     // seen on screen. A history reset makes GSR2 do its current-frame spatial
     // reconstruction while retaining the genuine GSR2 compute dispatch.
-    const auto temporal_status = camera_motion.Gsr2HistoryValidity();
+    const auto temporal_status = guest_display_mode_recording
+        ? camera_motion.CompletedHistoryValidity()
+        : camera_motion.Gsr2HistoryValidity();
     const bool temporal_ready =
-        !guest_display_mode_recording &&
+        (!guest_display_mode_recording || guest_display_motion_ready) &&
         temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;
     // Aggregate, rather than logging on every draw. All 6 outcomes are
     // measured at the point GSR2 actually records a compute dispatch.
@@ -2830,9 +2878,15 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
-        .vertical_fov = temporal_ready ? camera_motion.VerticalFov() : 1.04719755f,
-        .camera_still = temporal_ready ? camera_motion.CameraStill() : true,
-        .reset = reset || !temporal_ready,
+        .vertical_fov = temporal_ready
+            ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov()
+                                            : camera_motion.VerticalFov())
+            : 1.04719755f,
+        .camera_still = temporal_ready
+            ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill()
+                                            : camera_motion.CameraStill()) : true,
+        .reset = (guest_display_mode_recording ? !dispatched_last_frame : reset) ||
+                 !temporal_ready,
     });
     if (!ok) {
         // Android 的回落目标是 off（FSR 3.1 在该平台是玩家判定无效的路径）；桌面维持 FSR 3.1。
