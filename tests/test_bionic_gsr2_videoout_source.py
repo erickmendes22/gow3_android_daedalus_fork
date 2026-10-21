@@ -26,16 +26,23 @@ class VideoOutGsr2Input(unittest.TestCase):
         self.assertIn("if (Gsr2GuestDisplayMode()) return;", UPSCALE)
         self.assertIn("if (Gsr2GuestDisplayMode()) return false;", UPSCALE)
 
-    def test_native_only_and_safe_fallback(self):
-        self.assertIn("Gow3Settings::RenderPreset() == Gow3Settings::NativeAA;", UPSCALE)
+    def test_verified_real_guest_raster_and_safe_fallback(self):
+        self.assertIn("Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||", UPSCALE)
         self.assertIn("if (!Gsr2GuestDisplayMode() || !Active() || !guest) return false;", UPSCALE)
         self.assertIn("FrameCapture::IsDisplayBuffer(source.info.guest_address) == false", UPSCALE)
-        self.assertIn("if (!EnsureResources(w, h, w, h, false)) return false;", UPSCALE)
+        self.assertIn('std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT")', UPSCALE)
+        self.assertIn('std::getenv("GOW3_GSR2_INPUT_RES")', UPSCALE)
+        self.assertIn('w != expected_w || h != expected_h', UPSCALE)
+        self.assertIn('scene_targets.SetSize(scene_targets.GuestSize());', UPSCALE)
+        self.assertIn('RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh)', UPSCALE)
+        self.assertIn('GSR2_VIDEOOUT_SOURCE verified_guest=', UPSCALE)
+
+        self.assertIn("if (!EnsureResources(w, h, ow, oh, false)) return false;", UPSCALE)
         self.assertIn("if (!ok) return false;", UPSCALE)
         self.assertIn("guest_display_mode_recording = true;", UPSCALE)
         self.assertIn("guest_display_mode_recording = false;", UPSCALE)
         self.assertIn("!guest_display_mode_recording &&", UPSCALE)
-        self.assertIn("display = {vk::Image(ui_image), source.info.pixel_format, w, h};", UPSCALE)
+        self.assertIn("display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};", UPSCALE)
         self.assertIn("bool PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Display& display);", HEADER)
 
     def test_no_guessed_depth_or_motion_for_final_ui_image(self):
