@@ -25,3 +25,5 @@ Retry after fixing native C++ ExtraSharpen w/h undeclared ow/oh (previous run 39
 ARM64 final GSR2 2.1.7: fill full host extent ow/oh when copying 640x360->1280x720 output, regression for quarter-screen; preserve Native AA, ExtraSharpen and other paths. Host suite 39613760690 triggered.
 
 Replace previous quarter-screen-only build with 2.1.7 temporal VideoOut: full ow/oh screen, frozen verified camera/depth before OnDisplayPass invalidation, camera reprojection vectors, contiguous history gating, accurate history/reset diagnostics, safe spatial fallback, untouched Native AA.
+
+Superseding build: isolated GSR2 verified temporal source for upscale presets only; Native AA proven unchanged; full guest-to-output blit and corrected temporal context/reset telemetry.
