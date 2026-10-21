@@ -21,3 +21,5 @@ Upgraded direct GSR2 Quality/Balanced/Performance/Ultra verified lower guest Vid
 Final 2.1.7 Bionic ARM64 direct VideoOut profile 1-4 real raster patch, preserve native original and 720p Native AA; tests success 39602211448.
 
 Retry after fixing native C++ ExtraSharpen w/h undeclared ow/oh (previous run 39602263451), host checks passed 39605772259.
+
+ARM64 final GSR2 2.1.7: fill full host extent ow/oh when copying 640x360->1280x720 output, regression for quarter-screen; preserve Native AA, ExtraSharpen and other paths. Host suite 39613760690 triggered.
