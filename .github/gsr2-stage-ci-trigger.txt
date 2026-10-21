@@ -20,3 +20,5 @@ Gate FEX NoExec + QTE call/return fixes and fully localized 2.1.7 launcher along
 Validate restored Snapdragon Super Resolution Bionic home action, five presets, locale resources and ini-to-runtime opt-in.
 
 GSR2 Native AA must acquire real VideoOut image after guest UI, use valid transfer-destination motion texture, and fall back to real guest on failure.
+
+Restored five earlier R6/R11/R13/R14/R16 static invariants adapted to final-VideoOut isolated Native AA mode (remaining presets keep original jitter).
