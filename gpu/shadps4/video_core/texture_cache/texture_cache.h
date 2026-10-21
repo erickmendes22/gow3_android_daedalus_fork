@@ -77,6 +77,9 @@ public:
         /// gow3: the shader reads with integer coordinates (ImageResource::needs_native), not
         /// normalized sampling. Gates ResolveOverlap's partial height views.
         bool needs_native{true};
+        // A bound depth image can be overwritten without changing its identity.
+        // Track real depth writes separately from read-only depth-test bindings.
+        bool depth_write{false};
 
         ImageDesc() = default;
         ImageDesc(const AmdGpu::Image& image, const Shader::ImageResource& desc)
