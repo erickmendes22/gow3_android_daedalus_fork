@@ -44,3 +44,5 @@ Validated host suite 39634728771: 20261021-131408 shows 1219/9600 valid temporal
 
 
 2026-10-21 R23 GSR2 TEMPORAL UPSCALE build: real Halton subpixel jitter on verified 640x360->720p scene; record completed camera's current/previous jitter before next VideoOut frame, apply to motion and GSR2 dispatch; keep nativeAA unchanged. Source/gamma/old corruption untouched. Updated regression tests validated in run 39663074779. This attempts actual temporal detail reconstruction, not unrelated graphics fixes.
+
+2026-10-21 experimental complete pre-HUD GSR2 graphics pipeline: 3-slot scene-copy snapshots pre-UI, exact VideoOut flip matching, Halton only after verified frames, scene-only GSR history, compute HUD reconstruction from guest-vs-preHUD, original-present fallback, host suite 39675612461 passed. Native compile + APK necessary before device verification.
