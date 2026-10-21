@@ -977,6 +977,13 @@ void TemporalUpscaler::CreatePipelines() {
     taa_sharpen_pipeline = compute(TAA_SHARPEN_COMP, *taa_sharpen_pipeline_layout);
     taa_sharpen_ldr_pipeline = compute(TAA_SHARPEN_LDR_COMP, *taa_sharpen_pipeline_layout);
     if (PreHudEnabled()) {
+        pre_hud_linear_sampler = Check(device.createSamplerUnique({
+            .magFilter=vk::Filter::eLinear,
+            .minFilter=vk::Filter::eLinear,
+            .mipmapMode=vk::SamplerMipmapMode::eNearest,
+            .addressModeU=vk::SamplerAddressMode::eClampToEdge,
+            .addressModeV=vk::SamplerAddressMode::eClampToEdge,
+            .addressModeW=vk::SamplerAddressMode::eClampToEdge}));
         std::array<vk::DescriptorSetLayoutBinding, 4> bindings{};
         for (u32 i=0;i<bindings.size();++i) {
             bindings[i] = {.binding=i,
@@ -2883,7 +2890,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         }
         const auto sampled=[&](vk::ImageView view){
             return vk::DescriptorImageInfo{
-                .sampler=*taa_sampler,.imageView=view,
+                .sampler=*pre_hud_linear_sampler,.imageView=view,
                 .imageLayout=vk::ImageLayout::eGeneral};
         };
         const std::array<vk::DescriptorImageInfo,4> images{{
@@ -2950,6 +2957,23 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                     static_cast<unsigned long long>(source.info.guest_address),
                     w, h, ow, oh, static_cast<unsigned long long>(accepted),
                     prehud ? "pre_hud_temporal_hud_composite" : "post_videoout_native_aa");
+    }
+    // These snapshots are all collected from the SAME canonical VideoOut
+    // flip, unlike the old pre-HUD candidate and post-flip samples.
+    // A same-generation RGB comparison can prove whether the compositor
+    // is rejecting the whole scene or preserving scene detail.
+    if (prehud && std::getenv("GOW3_GSR2_AUTO_PROBE") &&
+        (accepted == 4800 || accepted == 7200 || accepted == 9600)) {
+        const char* fmt = GsrProbeFormat(source.info.pixel_format);
+        if (std::strcmp(fmt,"unsupported") != 0) {
+            scheduler.EndRendering();
+            DumpImages(instance,scheduler,scheduler.CommandBuffer(),int(accepted),
+                {{vk::Image(pre_hud_slots[pre_hud_completed_slot].image),
+                  w,h,4,"sameflip_prehud",fmt},
+                 {source.GetImage(),w,h,4,"sameflip_videoout",fmt},
+                 {vk::Image(output_image),ow,oh,8,"sameflip_gsr2","rgba16f"},
+                 {vk::Image(ui_image),ow,oh,4,"sameflip_composited",fmt}});
+        }
     }
     if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
         (accepted == 480 || accepted == 2400)) {
