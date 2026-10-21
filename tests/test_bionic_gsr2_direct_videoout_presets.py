@@ -79,6 +79,18 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertIn('const u32 ow = target_width, oh = target_height;',source)
         self.assertIn('RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh)',source)
 
+    def test_direct_videoout_blit_copies_full_gsr2_output_not_quarter_screen(self):
+        # 640x360->1280x720 must copy the entire computed output into the
+        # presented 1280x720 UI image. Using input w/h here painted 1/4 screen.
+        cpp=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp').read_text()
+        source=cpp.split('bool TemporalUpscaler::PresentGsr2FromGuestDisplay(',1)[1].split(
+            'bool TemporalUpscaler::DisplayOverride(',1)[0]
+        blit=source.split('const vk::ImageBlit region{',1)[1].split(
+            'cmd.blitImage(',1)[0]
+        self.assertEqual(blit.count('vk::Offset3D{s32(ow), s32(oh), 1}'),2)
+        self.assertNotIn('vk::Offset3D{s32(w), s32(h), 1}',blit)
+        self.assertIn('display = {vk::Image(ui_image), source.info.pixel_format, ow, oh}',source)
+
     def test_shell_exports_host_separately_from_guest_raster(self):
         sh=(ROOT/'tools/android/bionic/run-bionic.sh').read_text()
         self.assertIn('GOW3_GSR2_DIRECT_VIDEOOUT:-0',sh)
