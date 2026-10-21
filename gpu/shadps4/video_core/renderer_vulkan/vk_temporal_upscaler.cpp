@@ -115,7 +115,7 @@ static const char* GsrProbeFormat(vk::Format f) {
     default: return "unsupported";
     }
 }
-static void GsrProbeGrid(const char* name, const char* format,
+static void GsrProbeGrid(const char* name, const char* format, int generation,
                          u32 width, u32 height, u32 bpp, const void* mapped) {
     if (!mapped || width < 32 || height < 18) return;
     const bool half = bpp == 8 && std::strcmp(format, "rgba16f") == 0;
@@ -131,9 +131,9 @@ static void GsrProbeGrid(const char* name, const char* format,
     const bool bgra = bgra8 || bgra8_srgb;
     const auto* p = static_cast<const unsigned char*>(mapped);
     constexpr u32 gw = 32, gh = 18;
-    std::printf("GSR_STAGE begin=%s size=%ux%u format=%s encoding=%s thumbnail=%ux%u\n",
+    std::printf("GSR_STAGE begin=%s size=%ux%u format=%s encoding=%s thumbnail=%ux%u generation=%d\n",
                 name, width, height, format, half ? "linear-f16" :
-                src_srgb ? "srgb-u8" : "linear-u8", gw, gh);
+                src_srgb ? "srgb-u8" : "linear-u8", gw, gh, generation);
     for (u32 y = 0; y < gh; ++y) {
         char raw_hex[gw * 6 + 1]{};
         char linear_hex[gw * 6 + 1]{};
@@ -164,11 +164,11 @@ static void GsrProbeGrid(const char* name, const char* format,
         }
         // Keep legacy raw signal for existing parsers. New domains allow
         // same-frame source/GSR2/UI comparison without the gamma mismatch.
-        std::printf("GSR_STAGE stage=%s y=%02u rgb=%s\n",name,y,raw_hex);
-        std::printf("GSR_STAGE_LINEAR stage=%s y=%02u rgb=%s\n",name,y,linear_hex);
-        std::printf("GSR_STAGE_SRGB stage=%s y=%02u rgb=%s\n",name,y,srgb_hex);
+        std::printf("GSR_STAGE stage=%s y=%02u rgb=%s generation=%d\n",name,y,raw_hex,generation);
+        std::printf("GSR_STAGE_LINEAR stage=%s y=%02u rgb=%s generation=%d\n",name,y,linear_hex,generation);
+        std::printf("GSR_STAGE_SRGB stage=%s y=%02u rgb=%s generation=%d\n",name,y,srgb_hex,generation);
     }
-    std::printf("GSR_STAGE end=%s\n", name);
+    std::printf("GSR_STAGE end=%s generation=%d\n", name, generation);
     std::fflush(stdout);
 }
 
@@ -220,10 +220,10 @@ void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffe
             [allocator = instance.GetAllocator(), buffer, allocation, info, size,
              file = std::string{path}, name = std::string{image.name},
              format = std::string{image.format}, w = image.width, h = image.height,
-             bpp = image.bytes_per_pixel, stage_probe] {
+             bpp = image.bytes_per_pixel, stage_probe, frame] {
                 vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
                 if (stage_probe && bpp >= 4 && (bpp == 4 || bpp == 8)) {
-                    GsrProbeGrid(name.c_str(),format.c_str(),w,h,bpp,info.pMappedData);
+                    GsrProbeGrid(name.c_str(),format.c_str(),frame,w,h,bpp,info.pMappedData);
                 } else if (FILE* f = std::fopen(file.c_str(), "wb")) {
                     std::fwrite(info.pMappedData, 1, size, f);
                     std::fclose(f);
