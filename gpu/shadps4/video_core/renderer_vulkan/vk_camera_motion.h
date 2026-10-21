@@ -108,6 +108,30 @@ public:
             return Gsr2HistoryStatus::RotationCut;
         return Gsr2HistoryStatus::Valid;
     }
+    // Snapshot the most recently completed scene BEFORE OnDisplayPass clears
+    // current/depth for the next frame. Presenter consumes it after guest UI
+    // and VideoOut copying; never use next-frame live camera with old pixels.
+    [[nodiscard]] Gsr2HistoryStatus CompletedHistoryValidity() const noexcept {
+        return completed_history_status;
+    }
+    [[nodiscard]] VideoCore::ImageId CompletedDepth() const noexcept {
+        return completed_depth;
+    }
+    [[nodiscard]] float CompletedVerticalFov() const noexcept {
+        return 2.0f * std::atan(1.0f / completed_current.proj[1]);
+    }
+    [[nodiscard]] bool CompletedCameraStill() const noexcept {
+        if (completed_history_status != Gsr2HistoryStatus::Valid) return false;
+        float diff = 0.0f;
+        for (size_t i = 0; i < completed_current.view.size(); ++i)
+            diff += std::abs(completed_current.view[i] - completed_previous.view[i]);
+        for (size_t i = 0; i < completed_current.proj.size(); ++i)
+            diff += std::abs(completed_current.proj[i] - completed_previous.proj[i]);
+        return diff < 1e-5f;
+    }
+    void RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
+                               vk::ImageView motion_view, u32 width, u32 height);
+
     [[nodiscard]] VideoCore::ImageId Depth() const noexcept {
         return depth_id;
     }
@@ -161,6 +185,10 @@ private:
         bool valid = false;
     };
 
+    void RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
+                         vk::ImageView motion_view, u32 width, u32 height,
+                         const Camera& now, const Camera& before,
+                         std::array<float, 2> now_jitter, std::array<float, 2> before_jitter);
     void Overlay(VideoCore::ImageId frame);
 
     const Instance& instance;
@@ -175,6 +203,9 @@ private:
 
     ObjectMotion* object_motion = nullptr;
     Camera current, previous;
+    Camera completed_current, completed_previous;
+    Gsr2HistoryStatus completed_history_status = Gsr2HistoryStatus::MissingCamera;
+    VideoCore::ImageId completed_depth{};
     // Single-frame camera sightings require confirmation on a neighboring display frame.
     // These candidates never become temporal history by themselves.
     Camera current_frame_candidate, previous_frame_candidate;
