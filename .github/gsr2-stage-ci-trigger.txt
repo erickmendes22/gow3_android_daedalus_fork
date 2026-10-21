@@ -48,3 +48,5 @@ Guard final temporal scene motion only for real reduced-raster GSR2 profiles, le
 R6 R11 R12 R13 R14 R16 C++ temporal guards: require completed camera+depth and actual temporal reset or fallback, never old hardcoded spatial-only expression. Native AA unchanged.
 
 Broad 115-test Bionic regression gate on same GSR2 temporal snapshot branch after updates of legacy R6/R11/R12/R13/R14/R16 source string assertions.
+
+Repeat full Bionic tests with recursive submodule checkout so the ImGui Vulkan compile test has its pinned sources and headers.
