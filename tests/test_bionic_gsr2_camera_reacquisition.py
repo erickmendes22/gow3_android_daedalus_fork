@@ -69,6 +69,22 @@ int main() {
             run = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
+    def test_proven_shader_camera_cannot_be_downgraded_by_legacy_pair(self):
+        # A GoW III RecoverViewProjection result bound to an actual shader
+        # must not be replaced by a later UI/model FindPose candidate which
+        # intentionally has shader_hash=0. That caused history loss after
+        # the initially successful camera sequence in 426p/360p logs.
+        src = CAMERA_CPP.read_text(encoding="utf-8")
+        on_constants = src.split("void CameraMotion::OnConstants(", 1)[1].split(
+            "void CameraMotion::OnGBufferPass(", 1)[0]
+        exact = on_constants.index("Gow3CameraLayout::RecoverViewProjection(")
+        fallback = on_constants.index("if (have_pose && have_projection && frame_pose_votes >= 2 &&")
+        self.assertLess(exact, fallback)
+        guard = on_constants[fallback:fallback + 290]
+        self.assertIn("!(gow3_android_gsr2 && current.valid && current.shader_hash != 0)", guard)
+        self.assertLess(fallback, on_constants.index("current.shader_hash = 0;", fallback))
+        self.assertIn("current.shader_hash = frame_camera_shader_hash;", on_constants)
+
     def test_reacquisition_does_not_disable_temporal_protection(self):
         code = CAMERA_CPP.read_text(encoding="utf-8")
         header = CAMERA_H.read_text(encoding="utf-8")
