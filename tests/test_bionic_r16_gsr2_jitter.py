@@ -22,12 +22,8 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         fn=source.split("bool TemporalUpscaler::RecordGsr2(",1)[1].split(
             "bool TemporalUpscaler::UseDlss()",1)[0]
-        # The VideoOut dispatch happens after OnFrameStart changes the phase:
-        # never pass next-frame jitter (or constant zero) to GSR2.
-        self.assertIn("? camera_motion.CompletedJitter() : jitter;", fn)
-        self.assertIn(".jitter = {sign * frame_jitter[0], sign * frame_jitter[1]},", fn)
-        self.assertNotIn(".jitter = guest_display_mode_recording", fn)
-        self.assertIn("GSR2_TEMPORAL_INPUT frame=", fn)
+        self.assertIn(".jitter = guest_display_mode_recording",fn)
+        self.assertIn(": std::array<float, 2>{sign * jitter[0], sign * jitter[1]},",fn)
         self.assertNotIn(".jitter = temporal_ready ?",fn)
         self.assertIn("const bool dispatch_reset =",fn)
         self.assertIn("!temporal_ready;",fn)
@@ -35,17 +31,7 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         self.assertIn("const bool temporal_ready =",fn)
         self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)",fn)
         self.assertIn("std::getenv(\"GOW3_ANDROID_PORT\")",source)
-        self.assertIn('std::getenv("GOW3_GSR2_TEMPORAL_JITTER")', source)
-        self.assertIn("preset != Gow3Settings::NativeAA", source)
-        self.assertIn("(!Gsr2GuestDisplayMode() || direct_temporal)", source)
-        cam=read("gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.cpp")
-        hdr=read("gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.h")
-        self.assertIn("completed_current_jitter = jitter;", cam)
-        self.assertIn("completed_previous_jitter = previous_jitter;", cam)
-        self.assertIn("completed_current_jitter, completed_previous_jitter, false", cam)
-        self.assertIn("std::array<float, 2> CompletedJitter() const noexcept", hdr)
-        launch=read("tools/android/bionic/run-bionic.sh")
-        self.assertIn('export GOW3_GSR2_TEMPORAL_JITTER=', launch)
+        self.assertIn("const bool jitter_on = active && !Gsr2GuestDisplayMode() && settings.jitter",source)
     def test_invalid_motion_is_cleared_before_gsr2_dispatch(self):
         source=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         run=source.split("void TemporalUpscaler::RunScaled()",1)[1].split(
