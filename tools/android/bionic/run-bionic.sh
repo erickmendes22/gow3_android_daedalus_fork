@@ -113,10 +113,17 @@ eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_C
 # Do not force the desktop 1080p GSR2 output when the verified game patch uses
 # another native target: the temporal targets must match the actual guest frame.
 if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
-    case "${GOW3_PATCH_INPUT_RES:-}" in
-      *x*) export GOW3_OUTPUT_RES="$GOW3_PATCH_INPUT_RES" ;;
-    esac
-    echo "GSR2: selected in gow3.ini, preset=$(sed -n 's/^preset=//p' "$GOW3_CONFIG" | tail -1), output=${GOW3_OUTPUT_RES:-game-native}"
+    if [ "${GOW3_GSR2_DIRECT_VIDEOOUT:-0}" = 1 ]; then
+        # The guest is SHA-patched to the selected REAL input raster. The
+        # Snapdragon provider writes a separate 720p host image; unlike the
+        # previous SceneTargets path there is no proxy/downsample/re-render.
+        export GOW3_OUTPUT_RES="${GOW3_GSR2_OUTPUT_RES:-1280x720}"
+    else
+        case "${GOW3_PATCH_INPUT_RES:-}" in
+          *x*) export GOW3_OUTPUT_RES="$GOW3_PATCH_INPUT_RES" ;;
+        esac
+    fi
+    echo "GSR2: selected in gow3.ini, preset=$(sed -n 's/^preset=//p' "$GOW3_CONFIG" | tail -1), input=${GOW3_GSR2_INPUT_RES:-guest-native}, output=${GOW3_OUTPUT_RES:-game-native} direct_videoout=${GOW3_GSR2_DIRECT_VIDEOOUT:-0}"
 else
     unset GOW3_OUTPUT_RES
 fi
