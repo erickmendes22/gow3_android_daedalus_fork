@@ -11,3 +11,5 @@ GSR2 jitter R23 host gate: replace stale spatial-only assertion in test_bionic_g
 2026-10-21 GSR2 pre-HUD pipeline groundwork: retain last genuine LDR scene when guest binds VideoOut color; do not dispatch jitter over composite or change present path. Regression test validates last-scene provenance and direct-mode no-output-change contract.
 
 GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffer exact flip provenance, Qualcomm temporal GSR2 input, post-HUD merge shader, frame-matched jitter and stable fallback. Run source and regression gate before ARM64 native APK.
+
+2026-10-21 after native C++ failure: Vulkan UniqueImage explicit default constructor fix, ensure pre-HUD slot array constructs, and bounded diagnostic newline correction. Verify host tests before ARM64 build retry.
