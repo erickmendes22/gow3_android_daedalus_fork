@@ -38,10 +38,12 @@ class VideoOutGsr2Input(unittest.TestCase):
         self.assertIn('GSR2_VIDEOOUT_SOURCE verified_guest=', UPSCALE)
 
         self.assertIn("if (!EnsureResources(w, h, ow, oh, false)) return false;", UPSCALE)
-        self.assertIn("if (!ok) return false;", UPSCALE)
+        self.assertIn("if (!ok) {", UPSCALE)
+        self.assertIn("guest_display_history_contiguous = false;", UPSCALE)
+        self.assertIn("return false;", UPSCALE)
         self.assertIn("guest_display_mode_recording = true;", UPSCALE)
         self.assertIn("guest_display_mode_recording = false;", UPSCALE)
-        self.assertIn("!guest_display_mode_recording &&", UPSCALE)
+        self.assertIn("(!guest_display_mode_recording || guest_display_motion_ready)", UPSCALE)
         self.assertIn("display = {vk::Image(ui_image), source.info.pixel_format, ow, oh};", UPSCALE)
         self.assertIn("bool PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Display& display);", HEADER)
 
