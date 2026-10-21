@@ -78,10 +78,12 @@ int main() {
         on_constants = src.split("void CameraMotion::OnConstants(", 1)[1].split(
             "void CameraMotion::OnGBufferPass(", 1)[0]
         exact = on_constants.index("Gow3CameraLayout::RecoverViewProjection(")
-        fallback = on_constants.index("if (have_pose && have_projection && frame_pose_votes >= 2 &&")
-        self.assertLess(exact, fallback)
-        guard = on_constants[fallback:fallback + 290]
-        self.assertIn("!(gow3_android_gsr2 && current.valid && current.shader_hash != 0)", guard)
+        guard = on_constants.index("const bool keep_verified_camera =")
+        fallback = on_constants.index("if (have_pose && have_projection && frame_pose_votes >= 2 &&\n        !keep_verified_camera)")
+        self.assertLess(exact, guard)
+        self.assertLess(guard, fallback)
+        self.assertIn("gow3_android_gsr2 && current.valid && current.shader_hash != 0", on_constants[guard:guard + 190])
+        self.assertIn("GSR2_CAMERA_PROVENANCE_PROTECTED", on_constants)
         self.assertLess(fallback, on_constants.index("current.shader_hash = 0;", fallback))
         self.assertIn("current.shader_hash = frame_camera_shader_hash;", on_constants)
 
