@@ -316,6 +316,33 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
         const auto recovered = Gow3CameraLayout::RecoverViewProjection(
             data, float_count, buffer_slot);
         if (recovered.valid) {
+            // Prefer a recovered source seen in the preceding display frame.
+            // This helps cinematic/cutscene shaders which bind a valid camera
+            // only once per frame, without accepting arbitrary new matrices.
+            const bool same_source_last_frame =
+                previous_frame_candidate.valid &&
+                previous_frame_candidate.shader_hash == shader_hash;
+            if (!current_frame_candidate.valid ||
+                (same_source_last_frame &&
+                 current_frame_candidate.shader_hash != shader_hash)) {
+                current_frame_candidate.view = recovered.view;
+                current_frame_candidate.inv_view = recovered.inverse;
+                current_frame_candidate.proj = recovered.projection;
+                current_frame_candidate.shader_hash = shader_hash;
+                current_frame_candidate.valid = true;
+            }
+            bool adjacent_confirmed = false;
+            if (gow3_android_gsr2 && same_source_last_frame) {
+                Gow3CameraLayout::GoW3ViewProjection earlier{};
+                earlier.view = previous_frame_candidate.view;
+                earlier.inverse = previous_frame_candidate.inv_view;
+                earlier.projection = previous_frame_candidate.proj;
+                earlier.position = {
+                    earlier.inverse[3], earlier.inverse[7], earlier.inverse[11]};
+                earlier.valid = true;
+                adjacent_confirmed =
+                    Gow3CameraLayout::CompatibleAdjacentCameraSamples(earlier, recovered);
+            }
             // Draw calls within a scene may move slightly (animated camera).
             // Demand two independently bound coherent camera projections
             // before allowing temporal history to be used.
@@ -333,6 +360,15 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             }
             if (coherent) {
                 frame_pose_votes = std::min(frame_pose_votes + 1, 3u);
+            } else if (adjacent_confirmed) {
+                // Two independent display frames, same proven shader and
+                // geometrically continuous camera. This only verifies CURRENT
+                // frame; last frame's invalid GSR2 history remains reset.
+                frame_pose_votes = 2;
+                static unsigned regained = 0;
+                if (++regained <= 6 || regained % 600 == 0)
+                    std::printf("GSR2_CAMERA_REACQUIRED shader=%016llx frame_confirmed=2 count=%u\\n",
+                                static_cast<unsigned long long>(shader_hash), regained);
             } else {
                 frame_pose_votes = 1;
             }
@@ -444,6 +480,14 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
     }
     if (debug_overlay && frame && depth_id && current.valid && previous.valid) {
         Overlay(frame);
+    }
+    // Consecutive-frame recovery is a separate evidence channel from actual
+    // history. A frame with no valid recovered sample must break that chain.
+    const char* chosen = std::getenv("GOW3_UPSCALER");
+    if (std::getenv("GOW3_ANDROID_PORT") && chosen &&
+        std::strcmp(chosen, "gsr2") == 0) {
+        previous_frame_candidate = current_frame_candidate;
+        current_frame_candidate.valid = false;
     }
     // Freeze the just completed scene camera as the previous frame. The next
     // scene must acquire its own transform before history may be reprojected.
