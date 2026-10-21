@@ -277,6 +277,7 @@ private:
     vk::UniqueImageView guest_display_depth_view;
     u32 guest_display_depth_width = 0, guest_display_depth_height = 0;
     bool guest_display_mode_recording = false;
+    bool guest_display_motion_ready = false;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
