@@ -69,6 +69,34 @@ int main() {
             run = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
+    def test_multiple_shader_candidates_survive_one_frame_only(self):
+        # The 12:39 log recovered distinct camera shaders after the autosave
+        # cinematic, but the single previous_frame_candidate slot discarded
+        # some before an adjacent frame could confirm them.
+        c = CAMERA_CPP.read_text(encoding="utf-8")
+        h = CAMERA_H.read_text(encoding="utf-8")
+        self.assertIn("static constexpr size_t MaxFrameCameraSources = 16;", h)
+        self.assertIn("std::array<Camera, MaxFrameCameraSources> current_frame_sources{}", h)
+        self.assertIn("std::array<Camera, MaxFrameCameraSources> previous_frame_sources{}", h)
+        source = c.split("void CameraMotion::OnConstants(", 1)[1].split(
+            "void CameraMotion::OnGBufferPass(", 1)[0]
+        self.assertIn("candidate.shader_hash == shader_hash", source)
+        self.assertIn("prior_source = &candidate;", source)
+        self.assertIn("const bool same_source_last_frame = prior_source != nullptr;", source)
+        self.assertIn("earlier.view = prior_source->view;", source)
+        self.assertIn("CompatibleAdjacentCameraSamples(earlier, recovered)", source)
+        self.assertIn("GSR2_CAMERA_MULTI_SOURCE_RECOVERED", source)
+        self.assertIn("source_slot->valid = true;", source)
+        boundary = c.split("void CameraMotion::OnDisplayPass(", 1)[1].split(
+            "void CameraMotion::Overlay(", 1)[0]
+        self.assertIn("previous_frame_sources = current_frame_sources;", boundary)
+        self.assertIn("current_frame_sources = {};", boundary)
+        self.assertLess(boundary.index("previous_frame_sources = current_frame_sources;"),
+                        boundary.index("current_frame_sources = {};"))
+        # Keep original single-slot source and real-geometry cut protection.
+        self.assertIn("previous_frame_candidate.shader_hash == shader_hash", source)
+        self.assertIn("!keep_verified_camera", source)
+
     def test_proven_shader_camera_cannot_be_downgraded_by_legacy_pair(self):
         # A GoW III RecoverViewProjection result bound to an actual shader
         # must not be replaced by a later UI/model FindPose candidate which
