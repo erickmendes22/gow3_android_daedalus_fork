@@ -52,6 +52,7 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp").read_text()
         build = (ROOT / "gpu/CMakeLists.txt").read_text()
         shell = (ROOT / "tools/android/bionic/run-bionic.sh").read_text()
+        self.assertIn("PreHudSlot() : image{} {}", hdr)
         self.assertIn("CaptureGsr2PreHudScene(VAddr guest_address)", hdr)
         self.assertIn("SelectGsr2PreHudScene(VAddr guest_address)", hdr)
         self.assertIn("upscaler->CaptureGsr2PreHudScene(regs.color_buffers[0].Address());", rast)
