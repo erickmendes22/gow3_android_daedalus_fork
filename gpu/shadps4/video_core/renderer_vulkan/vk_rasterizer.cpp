@@ -989,8 +989,15 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const bool gsr2_bionic = std::getenv("GOW3_ANDROID_PORT") &&
                              std::getenv("GOW3_UPSCALER") &&
                              std::strcmp(std::getenv("GOW3_UPSCALER"), "gsr2") == 0;
+    // One guest frame can write dozens of registered VideoOut targets, but
+    // only SubmitFlipInternal identifies which surface is REALLY presented.
+    // Do not advance the scene camera, depth, jitter or GSR2 history on an
+    // arbitrary display-target DRAW. Gsr2OnVideoOutFlip() does that at flip.
+    const bool defer_gsr2_boundary_to_flip =
+        gsr2_bionic && std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+        Gow3Settings::RenderPreset() != Gow3Settings::NativeAA;
     if (camera_motion->Enabled() && is_display_draw &&
-        (!gsr2_bionic || scene_started)) {
+        !defer_gsr2_boundary_to_flip && (!gsr2_bionic || scene_started)) {
         scene_started = false;
         // Previous color attachment is the completed frame, before the
         // guest's display-copy draw. Depth is cleared by OnDisplayPass.
@@ -3757,6 +3764,44 @@ void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& s
                                          : std::string{"-"},
                            vs.pgm_hash, ps ? ps->pgm_hash : 0);
     });
+}
+
+void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
+    const char* selected = std::getenv("GOW3_UPSCALER");
+    if (!std::getenv("GOW3_ANDROID_PORT") ||
+        !std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") || !selected ||
+        std::strcmp(selected, "gsr2") != 0 ||
+        Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||
+        !camera_motion->Enabled())
+        return;
+
+    // The GPU command thread reaches this from VideoOutDriver::SubmitFlipInternal.
+    // Wait for Stage B to finish recording older draws before reading the
+    // camera/depth gathered from their uniforms. Without this, camera and
+    // actual VideoOut surface can belong to different GPU submissions.
+    DrainDrawPipe();
+    static u64 videoout_frames = 0;
+    ++videoout_frames;
+    const bool had_scene = scene_started;
+    const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
+    // The canonical scene-to-VideoOut boundary is one per REAL requested
+    // guest flip. Never consume it in DrawRecord's intermediate display draws.
+    camera_motion->OnDisplayPass({});
+    if (upscaler->OnFrameStart()) {
+        object_motion->InvalidateHistory();
+        camera_motion->InvalidateHistory();
+    }
+    camera_motion->SetJitter(upscaler->Jitter());
+    object_motion->OnFrameStart();
+    scene_started = false;
+    NoteFrameStart();
+    if (videoout_frames <= 6 || videoout_frames % 600 == 0) {
+        std::printf("GSR2_VIDEOOUT_BOUNDARY flip=%llu guest=%#llx scene=%d camera=%d status=%u\n",
+                    static_cast<unsigned long long>(videoout_frames),
+                    static_cast<unsigned long long>(guest_address), int(had_scene),
+                    int(had_camera),
+                    unsigned(camera_motion->CompletedHistoryValidity()));
+    }
 }
 
 void Rasterizer::NoteFrameStart() {
