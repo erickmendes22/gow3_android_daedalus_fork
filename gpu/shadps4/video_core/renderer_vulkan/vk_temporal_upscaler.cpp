@@ -2583,9 +2583,9 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             all, vk::AccessFlagBits2::eNone, transfer, twrite);
     const vk::ImageBlit region{
         .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+        .srcOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
         .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(w), s32(h), 1}},
+        .dstOffsets = std::array{vk::Offset3D{}, vk::Offset3D{s32(ow), s32(oh), 1}},
     };
     cmd.blitImage(vk::Image(output_image), vk::ImageLayout::eGeneral,
                   vk::Image(ui_image), vk::ImageLayout::eGeneral,
