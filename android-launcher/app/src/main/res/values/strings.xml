@@ -331,4 +331,16 @@
     <string name="framegen_status_on_fmt">Bloodframe %1$dx</string>
     <string name="framegen_next_launch">Configured for next launch. The in-game menu can change it live.</string>
     <string name="framegen_missing_hint">Lossless.dll missing · import in Settings.</string>
+    <string name="home_gsr2_summary_fmt">Snapdragon Super Resolution · %1$s</string>
+    <string name="popup_gsr2_title">Snapdragon Super Resolution (GSR2)</string>
+    <string name="popup_gsr2_off">Off</string>
+    <string name="popup_gsr2_on">On · GSR2 temporal upscaling</string>
+    <string name="popup_gsr2_preset_title">GSR2 quality preset</string>
+    <string name="popup_gsr2_native_aa">Native AA (720p → 720p)</string>
+    <string name="popup_gsr2_quality">Quality</string>
+    <string name="popup_gsr2_balanced">Balanced</string>
+    <string name="popup_gsr2_performance">Performance</string>
+    <string name="popup_gsr2_ultra_performance">Ultra Performance</string>
+    <string name="popup_gsr2_720p_notice">Experimental. GSR2 uses the verified 720p game output; quality presets change internal rendering resolution. Changes take effect at next launch.</string>
+    <string name="popup_gsr2_summary_off">Off</string>
 </resources>
