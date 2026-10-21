@@ -69,6 +69,25 @@ int main() {
             run = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
+    def test_verified_frame_continues_bounded_multisource_discovery(self):
+        src = CAMERA_CPP.read_text(encoding="utf-8")
+        header = CAMERA_H.read_text(encoding="utf-8")
+        self.assertIn("u32 frame_extra_source_probes = 0;", header)
+        scan = src.split("void CameraMotion::OnConstants(", 1)[1].split(
+            "void CameraMotion::OnGBufferPass(", 1)[0]
+        self.assertIn("frame_extra_source_probes >= 64", scan)
+        self.assertIn("source.valid && source.shader_hash == shader_hash", scan)
+        self.assertIn("++frame_extra_source_probes;", scan)
+        self.assertLess(scan.index("++frame_extra_source_probes;"),
+                        scan.index("Gow3CameraLayout::RecoverViewProjection("))
+        self.assertIn("current.shader_hash == frame_camera_shader_hash", scan)
+        boundary = src.split("void CameraMotion::OnDisplayPass(", 1)[1].split(
+            "void CameraMotion::Overlay(", 1)[0]
+        self.assertIn("GSR2_CAMERA_SOURCE_POOL", boundary)
+        self.assertIn("frame_extra_source_probes = 0;", boundary)
+        self.assertLess(boundary.index("previous_frame_sources = current_frame_sources;"),
+                        boundary.index("frame_extra_source_probes = 0;"))
+
     def test_multiple_shader_candidates_survive_one_frame_only(self):
         # The 12:39 log recovered distinct camera shaders after the autosave
         # cinematic, but the single previous_frame_candidate slot discarded
