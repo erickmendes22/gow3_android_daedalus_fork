@@ -26,6 +26,14 @@ class SceneCadence(unittest.TestCase):
         self.assertIn("auto& provider = spatial_videoout ? gsr2_spatial : gsr2;",record)
         self.assertIn("const bool spatial_videoout = guest_display_mode_recording &&",record)
         self.assertIn("const bool provider_changed =", start)
+        self.assertIn("recent_verified_scene",start)
+        self.assertIn("CompletedVideoOutGeneration()",start)
+        self.assertIn('GOW3_GSR2_INPUT_RES',start)
+        self.assertIn("Motion::JitterPhases(input_w,target_width)",start)
+        self.assertIn("camera_motion.CompletedHistoryValidity() != CameraMotion::Gsr2HistoryStatus::Valid)",start)
+        # Neither VideoOut fillers nor toggling their camera eligibility can
+        # advance the real scene's Halton phase.
+        self.assertIn("return changed;\n    jitter_index = jitter_index % phases + 1;",start)
         self.assertIn('changed && (!PreHudEnabled() || provider_changed)', start)
         self.assertIn("constexpr u64 MaxTemporalSceneFlipGap = 4;",present)
         self.assertIn("CompletedPreviousMatchesTemporalScene()",present)
