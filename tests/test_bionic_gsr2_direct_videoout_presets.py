@@ -65,6 +65,20 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
                 self.assertNotIn('GOW3_GSR2_INPUT_RES',plan['updates'])
                 self.assertNotIn('GOW3_GSR2_OUTPUT_RES',plan['updates'])
 
+    def test_sharpen_blit_uses_its_local_dimensions(self):
+        # Regression: an overly broad w/h -> ow/oh replacement broke ARM64
+        # compilation in ExtraSharpen(), which has only w and h parameters.
+        cpp=(ROOT/'gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp').read_text()
+        sharpen=cpp.split('void TemporalUpscaler::ExtraSharpen(',1)[1].split(
+            'void TemporalUpscaler::OnBlendedSceneDraw(',1)[0]
+        self.assertNotIn('s32(ow)',sharpen)
+        self.assertNotIn('s32(oh)',sharpen)
+        self.assertEqual(sharpen.count('vk::Offset3D{s32(w), s32(h), 1}'),2)
+        source=cpp.split('bool TemporalUpscaler::PresentGsr2FromGuestDisplay(',1)[1].split(
+            'bool TemporalUpscaler::DisplayOverride(',1)[0]
+        self.assertIn('const u32 ow = target_width, oh = target_height;',source)
+        self.assertIn('RecordGsr2(cmd, source_view, *guest_display_depth_view, w, h, ow, oh)',source)
+
     def test_shell_exports_host_separately_from_guest_raster(self):
         sh=(ROOT/'tools/android/bionic/run-bionic.sh').read_text()
         self.assertIn('GOW3_GSR2_DIRECT_VIDEOOUT:-0',sh)
