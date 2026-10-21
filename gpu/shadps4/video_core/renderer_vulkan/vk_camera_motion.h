@@ -188,7 +188,8 @@ private:
     void RecordMotionFor(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
                          vk::ImageView motion_view, u32 width, u32 height,
                          const Camera& now, const Camera& before,
-                         std::array<float, 2> now_jitter, std::array<float, 2> before_jitter);
+                         std::array<float, 2> now_jitter, std::array<float, 2> before_jitter,
+                         bool include_object_motion);
     void Overlay(VideoCore::ImageId frame);
 
     const Instance& instance;
