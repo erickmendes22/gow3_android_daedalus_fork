@@ -31,3 +31,5 @@ Superseding build: isolated GSR2 verified temporal source for upscale presets on
 Final temporal Bionic APK: full-screen ow/oh fix, verified frame-frozen camera+scene depth, 2D motion, contiguous history, NativeAA isolated. Six obsolete R6/R11/R12/R13/R14/R16 CI guards updated; run broad stage 39617684624.
 
 GSR2 next verified-camera priority fix 20261021: logs confirm 426x240 and 640x360 actual temporal history for ~1929 and ~1150 dispatches, then shader_hash=0 camera starvation; preserve proven recovered shader camera against later legacy fallback, add bounded GSR2_CAMERA_PROVENANCE_PROTECTED. Full-screen blit Native AA remain unchanged.
+
+R27 post-save temporal fix: 12:39 input GSR2 resets after AUTOSAVE cinematic, camera remains shader-valid on non-presented scene frames. Introduce 16-source per-shader candidates limited to immediately previous scene, same real matrix/geometric confirmation and spatial cut fallback. Host full regression 39629110712 successful; build ARM64 APK now.
