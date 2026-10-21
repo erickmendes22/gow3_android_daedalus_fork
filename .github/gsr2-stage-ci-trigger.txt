@@ -3,3 +3,5 @@ GSR2 pre-HUD source correlation and projection guard 2026-10-21; run all Bionic 
 2026-10-21: validate depth target write-generation forwarding to GSR2 VideoOut match guard.
 
 R22 2026-10-21: regression check for native ARM64 settings header after vk_rasterizer.cpp undeclared Gow3Settings failure in run 39652898177; depth write-generation safeguards.
+
+2026-10-21: Direct GSR2 frame-matched temporal jitter, camera motion reproject includes completed Halton phase. Native AA unaffected. R16 jitter regression replaced by true completed-frame contract. This is strictly GSR2 upscale quality work, not corruption investigation.
