@@ -84,7 +84,8 @@ int main() {
         self.assertIn("GOW3_CAMERA_VERIFIED_VP",src)
         # Never enable history with fake camera matrices.
         up=(ROOT/"gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp").read_text()
-        self.assertIn("const bool temporal_ready = temporal_status == CameraMotion::Gsr2HistoryStatus::Valid;",up)
+        self.assertIn("const bool temporal_ready =",up)
+        self.assertIn("!guest_display_mode_recording &&",up)
         self.assertIn(".reset = reset || !temporal_ready,",up)
 
     def test_r13_single_gated_build(self):
