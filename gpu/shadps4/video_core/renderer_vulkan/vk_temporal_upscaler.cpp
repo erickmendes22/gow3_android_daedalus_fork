@@ -2476,7 +2476,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
          source.info.pixel_format != vk::Format::eB8G8R8A8Srgb)) {
         static u32 rejected = 0;
         if (++rejected <= 5)
-            std::printf("GSR2_VIDEOOUT_SOURCE rejected size=%ux%u output=%ux%u format=%s\\n",
+            std::printf("GSR2_VIDEOOUT_SOURCE rejected size=%ux%u output=%ux%u format=%s\n",
                         w, h, target_width, target_height,
                         vk::to_string(source.info.pixel_format).c_str());
         return false; // The ordinary guest image remains intact.
@@ -2578,7 +2578,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
-                    "output=%ux%u dispatch=%llu path=post_videoout_native_aa\\n",
+                    "output=%ux%u dispatch=%llu path=post_videoout_native_aa\n",
                     static_cast<unsigned long long>(source.info.guest_address),
                     w, h, w, h, static_cast<unsigned long long>(accepted));
     }
