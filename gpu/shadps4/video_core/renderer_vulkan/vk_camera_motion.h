@@ -180,6 +180,10 @@ public:
 
     /// The pass copying the finished frame (`frame`, the last target drawn) to the display: the
     /// frame's depth and camera are complete. Records the debug overlay, starts a new frame.
+    // Record the verified scene camera/depth at the FIRST actual draw into
+    // the corresponding registered guest framebuffer, before the HUD's
+    // vertex constants can replace the source camera.
+    void OnDisplayTargetDraw(VAddr guest_address);
     void OnDisplayPass(VideoCore::ImageId frame, VAddr presented_guest_address = 0);
 
 private:
@@ -214,6 +218,15 @@ private:
     Gsr2HistoryStatus completed_history_status = Gsr2HistoryStatus::MissingCamera;
     VideoCore::ImageId completed_depth{};
     VAddr completed_videoout_address = 0;
+    // Camera/depth provenance is recorded at the rendering boundary, not
+    // manufactured later from Presenter::PrepareFrame's requested address.
+    struct DisplayTargetCandidate {
+        VAddr address = 0;
+        Camera camera{};
+        VideoCore::ImageId depth{};
+    };
+    static constexpr size_t MaxDisplayTargetCandidates = 32;
+    std::array<DisplayTargetCandidate, MaxDisplayTargetCandidates> display_target_candidates{};
     u64 completed_videoout_generation = 0;
     // Single-frame camera sightings require confirmation on a neighboring display frame.
     // These candidates never become temporal history by themselves.
