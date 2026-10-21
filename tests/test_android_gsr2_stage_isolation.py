@@ -63,6 +63,8 @@ class Gsr2StageIsolation(unittest.TestCase):
             "it->second.gsr2_seed_generation",
             "GSR_STAGE_FINAL generation=",
             "GSR2_CAPTURE_CONTEXT generation=",
+            "GSR_STAGE_FLOAT_HEALTH stage=",
+            "invalid_inf_nan=%u",
         ):
             with self.subTest(key=key):
                 self.assertIn(key, code)
