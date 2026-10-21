@@ -11,3 +11,5 @@ Final integrated diagnostic build: GSR2 camera reacquisition + v2.1.7 FEX hook c
 Rebuild v2.1.7 with restored visible Snapdragon GSR2 Off/Native AA/Quality/Balanced/Performance/Ultra Performance UI; host regression run 39592060735 success.
 
 GSR2 true source fix: native AA after final VideoOut buffer acquisition, no proxy/HUD redirection; zero motion Vulkan transfer usage. Host tests 39595154151 passed.
+
+Rebuild post VideoOut GSR2 NativeAA after v2.1.7 R6/R11/R13/R14/R16 tests repaired for guarded final-frame mode; host suite 39595733539 success.
