@@ -2054,21 +2054,23 @@ void TemporalUpscaler::RunScaled() {
             // not require the user to create or copy any trigger file.
             // Capture meaningful gameplay frames, not the first (often black)
             // intro/menu frame. Three spaced captures allow cross-stage analysis.
-            static u64 gsr_probe_frames = 0;
-            ++gsr_probe_frames;
-            const bool gsr_probe_frame = gsr_probe_frames == 480 ||
-                                         gsr_probe_frames == 2400 ||
-                                         gsr_probe_frames == 7200;
+            // A dispatch count and a present count are NOT the same frame on
+            // GoW III's triple-buffered display. Capture by successful GSR2
+            // generation so the eventual display copy can be matched exactly.
+            const u64 captured_generation = gsr2_completed_generation;
+            const bool gsr_probe_frame = captured_generation == 480 ||
+                                         captured_generation == 2400 ||
+                                         captured_generation == 7200;
             if (UseGsr2() && gsr_probe_frame &&
                 std::getenv("GOW3_GSR2_AUTO_PROBE")) {
                 const char* const source_format = GsrProbeFormat(color.info.pixel_format);
-                std::printf("GSR_STAGE_CAPTURE dispatch=%llu source_format=%s output_format=rgba16f\n",
-                            static_cast<unsigned long long>(gsr_probe_frames), source_format);
+                std::printf("GSR_STAGE_CAPTURE generation=%llu source_format=%s output_format=rgba16f\n",
+                            static_cast<unsigned long long>(captured_generation), source_format);
                 if (std::strcmp(source_format, "unsupported") == 0) {
                     std::printf("GSR_STAGE_CAPTURE_UNSUPPORTED vulkan_format=%s\n",
                                 vk::to_string(color.info.pixel_format).c_str());
                 } else {
-                    DumpImages(instance, scheduler, cmdbuf, int(gsr_probe_frames),
+                    DumpImages(instance, scheduler, cmdbuf, int(captured_generation),
                         {{color_image, source_width, source_height, 4, "scene_proxy", source_format},
                          {vk::Image(output_image), ow, oh, 8, "gsr2_output", "rgba16f"},
                          {vk::Image(ui_image), ow, oh, 4, "ui_blit", source_format}});
@@ -2445,9 +2447,14 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
         // because GoW III rotates three display buffers. Capture a full
         // three-buffer cycle with 0/1/2 residues instead.
         if (++queries <= 12 || queries % 1200 <= 2) {
-            std::printf("GSR2_PRESENT_QUERY guest=%#llx match=%d valid=%d buffers=%zu count=%u\n",
+            const u64 seeded = it == displays.end() ? 0 : it->second.gsr2_seed_generation;
+            std::printf("GSR2_PRESENT_QUERY guest=%#llx match=%d valid=%d buffers=%zu count=%u seed_generation=%llu latest_generation=%llu frame_lag=%llu\n",
                         (unsigned long long)address, int(it != displays.end()),
-                        int(it != displays.end() && it->second.valid), displays.size(), queries);
+                        int(it != displays.end() && it->second.valid), displays.size(), queries,
+                        static_cast<unsigned long long>(seeded),
+                        static_cast<unsigned long long>(gsr2_completed_generation),
+                        static_cast<unsigned long long>(
+                            gsr2_completed_generation >= seeded ? gsr2_completed_generation-seeded : 0));
         }
     }
     if (it == displays.end() || !it->second.valid) {
@@ -2466,16 +2473,25 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     // Capture the actual game display-copy target, after the PS4 draw consumed
     // ui_image. If GSR2 output and ui_image are sound but this is not, the
     // defect is after the GSR dispatch, not the Snapdragon compute pipeline.
-    static unsigned gsr_probe_present_frames = 0;
-    const bool gsr_capture_final = ++gsr_probe_present_frames == 480 ||
-                                   gsr_probe_present_frames == 2400 ||
-                                   gsr_probe_present_frames == 7200;
+    static u64 last_captured_generation = 0;
+    const u64 seeded_generation = it->second.gsr2_seed_generation;
+    const bool gsr_capture_final =
+        (seeded_generation == 480 || seeded_generation == 2400 || seeded_generation == 7200) &&
+        seeded_generation != last_captured_generation;
     if (gsr_capture_final && UseGsr2() &&
         std::getenv("GOW3_GSR2_AUTO_PROBE")) {
+        // The host display target was seeded from THIS exact GSR2 generation.
+        // Comparing by the old unrelated present count could mix two of the
+        // PS4 guest's three buffers and invent non-existent frame corruption.
+        last_captured_generation = seeded_generation;
+        std::printf("GSR_STAGE_FINAL generation=%llu guest=%#llx latest_generation=%llu\n",
+                    static_cast<unsigned long long>(seeded_generation),
+                    static_cast<unsigned long long>(address),
+                    static_cast<unsigned long long>(gsr2_completed_generation));
         scheduler.EndRendering();
         const char* final_format = GsrProbeFormat(display.format);
         if (std::strcmp(final_format, "unsupported") != 0) {
-            DumpImages(instance, scheduler, scheduler.CommandBuffer(), 0,
+            DumpImages(instance, scheduler, scheduler.CommandBuffer(), int(seeded_generation),
                        {{display.image, display.width, display.height, 4,
                          "display_final", final_format}});
         } else {
