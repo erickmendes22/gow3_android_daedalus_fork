@@ -125,6 +125,10 @@ public:
         u32 width, height;
     };
     bool DisplayOverride(VAddr address, Display& display);
+    // Bionic Native AA: consume the *actual completed VideoOut guest image*
+    // after the game's display-copy/UI draws, rather than a speculative LDR
+    // render target before those draws. Fall back to guest frame on failure.
+    bool PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Display& display);
 
 private:
     /// gow3: views of guest images the upscaler reads, kept across frames: FSR 4 registers
@@ -174,6 +178,7 @@ private:
     /// FSR 4 is selected, possible in this session (not GOW3_RENDER_RES) and has not failed.
     [[nodiscard]] bool UseFsr4() const;
     [[nodiscard]] bool UseGsr2() const;
+    [[nodiscard]] bool Gsr2GuestDisplayMode() const;
     /// gow3: DLSS selected and the bridge is ready (NVIDIA RTX, gow3_dlss.dll).
     [[nodiscard]] bool UseDlss() const;
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
@@ -268,6 +273,10 @@ private:
     bool fsr4_failed = false;
     std::unique_ptr<GsrUpscaler> gsr2;
     bool gsr2_failed = false;
+    VideoCore::UniqueImage guest_display_depth;
+    vk::UniqueImageView guest_display_depth_view;
+    u32 guest_display_depth_width = 0, guest_display_depth_height = 0;
+    bool guest_display_mode_recording = false;
     bool dlss_failed = false;
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
