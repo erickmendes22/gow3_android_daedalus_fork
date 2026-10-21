@@ -2946,9 +2946,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     ++accepted;
     if (accepted <= 5 || accepted % 600 == 0) {
         std::printf("GSR2_VIDEOOUT_SOURCE verified_guest=%#llx raster=%ux%u "
-                    "output=%ux%u dispatch=%llu path=post_videoout_native_aa\n",
+                    "output=%ux%u dispatch=%llu path=%s\n",
                     static_cast<unsigned long long>(source.info.guest_address),
-                    w, h, ow, oh, static_cast<unsigned long long>(accepted));
+                    w, h, ow, oh, static_cast<unsigned long long>(accepted),
+                    prehud ? "pre_hud_temporal_hud_composite" : "post_videoout_native_aa");
     }
     if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
         (accepted == 480 || accepted == 2400)) {
