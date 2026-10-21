@@ -88,10 +88,36 @@ def derive(game, config, state_path, env):
     updates['GOW3_READBACK_LINEAR_SOURCE'] = (
         'override' if 'GOW3_READBACK_LINEAR' in env else 'android-safe-default')
     identity_check = patch_profile_status(game)
+    from patches import CUSA01715_0102_ANDROID_SHA
+    # The repaired Native AA samples the real, completed VideoOut frame.
+    # For enlarged presets the only equally trustworthy *reduced* source is
+    # the verified guest image itself after patching the 01.02 eboot geometry
+    # and post-process allocation. A post-hoc 720p downsample offers no GPU gain.
+    verified_gsr2_eboot = (gsr2_requested and
+        identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
+        identity_check['app_version'] == '01.02' and
+        identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
+        identity_check['reason'] == 'validated')
+    gsr2_preset = ini.get('preset', '0').strip()
+    gsr2_native_input_by_preset = {
+        '0': ('720p', '1280x720'),
+        '1': ('540p', '960x540'),
+        '2': ('424p', '752x424'),
+        '3': ('360p', '640x360'),
+        '4': ('240p', '426x240'),
+    }
+    if verified_gsr2_eboot and gsr2_preset in gsr2_native_input_by_preset:
+        # Launch-only graphics override: no change to the user's stored 720p
+        # output choice or the known-good resolution when GSR2 is switched off.
+        patch_name, pixel_size = gsr2_native_input_by_preset[gsr2_preset]
+        graphics = dict(graphics, render_resolution=patch_name)
+        updates['GOW3_GSR2_DIRECT_VIDEOOUT'] = '1'
+        updates['GOW3_GSR2_INPUT_RES'] = pixel_size
+        updates['GOW3_GSR2_OUTPUT_RES'] = '1280x720'
+        updates['GOW3_UPSCALER_SOURCE'] = 'gsr2-verified-videoout'
     resolution = graphics['render_resolution']
     if android_port and resolution in graphics_options.DIRECT_RESOLUTIONS:
-        from patches import CUSA01715_0102_ANDROID_SHA
-        if (identity_check['title_id'] == 'CUSA01715' and
+        if (identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
             identity_check['app_version'] == '01.02' and
             identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
             identity_check['reason'] == 'validated'):
@@ -127,11 +153,13 @@ def derive(game, config, state_path, env):
             # default 1920x1080. This retail CUSA01623/01715 01.02 SHA is
             # byte-validated and the actual 720p resolution patch is selected.
             from patches import CUSA01715_0102_ANDROID_SHA
-            if (gsr2_requested and identity['title_id'] in ('CUSA01623', 'CUSA01715') and
-                    identity['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
-                    'Resolution Patch - 720p' in names):
-                updates['GOW3_PATCH_INPUT_RES'] = '1280x720'
-                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-720p-target'
+            if (verified_gsr2_eboot and 'Resolution Patch - 720p' in names and
+                    gsr2_preset in gsr2_native_input_by_preset):
+                # Use the actual patched guest raster as the GSR2 source.
+                # Keep the *host* output fixed at 1280x720 regardless of preset.
+                actual_input = gsr2_native_input_by_preset[gsr2_preset][1]
+                updates['GOW3_PATCH_INPUT_RES'] = actual_input
+                updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-videoout-input'
             # This exact-address patch belongs only to the supplied and
             # verified eboot revision. Other builds retain their shadows.
             shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
