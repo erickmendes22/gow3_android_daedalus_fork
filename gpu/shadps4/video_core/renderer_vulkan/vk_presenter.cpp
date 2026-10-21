@@ -409,6 +409,10 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     static const char* frame_dump_trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
+    // The actual guest flip, not arbitrary draws into any of the game's
+    // registered display targets, defines the GSR2 camera/depth frame.
+    // This is a no-op for Native AA, desktop and other upscalers.
+    rasterizer->Gsr2OnVideoOutFlip(cpu_address);
     // gow3: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
     bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);
