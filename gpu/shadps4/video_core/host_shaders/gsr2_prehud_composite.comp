@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+// GoW III: reconstruct the pre-HUD scene with GSR2, then restore PS4 UI drawn
+// into the guest VideoOut buffer. Never put UI pixels in GSR temporal history.
+// The GPU compares two snapshots from the SAME guest frame: the last LDR scene
+// before the first display-copy draw, and the finished VideoOut color.
+layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
+layout(binding=0) uniform sampler2D InputPreHud;
+layout(binding=1) uniform sampler2D InputVideoOut;
+layout(binding=2) uniform sampler2D InputGsr2;
+layout(binding=3, rgba8) uniform writeonly image2D OutputComposited;
+layout(push_constant) uniform Params {
+    uvec2 renderSize;
+    uvec2 outputSize;
+    uint isSrgb;
+    float threshold;
+} params;
+
+vec3 encodeSrgb(vec3 c) {
+    c=clamp(c,0.0,1.0);
+    return mix(c*12.92,1.055*pow(c,vec3(1.0/2.4))-0.055,
+               vec3(greaterThan(c,vec3(0.0031308))));
+}
+float foregroundDifference(ivec2 p) {
+    p=clamp(p,ivec2(0),ivec2(params.renderSize)-1);
+    vec3 before=texelFetch(InputPreHud,p,0).rgb;
+    vec3 after=texelFetch(InputVideoOut,p,0).rgb;
+    return max(max(abs(before.r-after.r),abs(before.g-after.g)),abs(before.b-after.b));
+}
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(uvec2(pixel),params.outputSize))) return;
+    vec2 uv=(vec2(pixel)+0.5)/vec2(params.outputSize);
+    ivec2 low=clamp(ivec2(uv*vec2(params.renderSize)),ivec2(0),ivec2(params.renderSize)-1);
+    // Dilate changed regions by one source pixel: text outlines and HUD masks
+    // must not inherit the jittered history of the background.
+    float changed=0.0;
+    for(int y=-1;y<=1;++y)
+      for(int x=-1;x<=1;++x)
+        changed=max(changed,foregroundDifference(low+ivec2(x,y)));
+    // Stable clear colors, menus, or unverified postprocessing always have
+    // a safe guest fallback rather than blending unrelated temporal history.
+    vec3 guest=textureLod(InputVideoOut,uv,0.0).rgb;
+    vec3 scene=textureLod(InputGsr2,uv,0.0).rgb;
+    vec3 result=changed>params.threshold ? guest:scene;
+    if(params.isSrgb!=0u) result=encodeSrgb(result);
+    imageStore(OutputComposited,pixel,vec4(result,1.0));
+}
