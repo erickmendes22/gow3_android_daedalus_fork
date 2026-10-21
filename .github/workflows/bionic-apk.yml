@@ -2,7 +2,7 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020]
+    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020]
     paths:
       - '.github/r14-build-trigger.txt'
       - '.github/r15-build-trigger.txt'
@@ -12,6 +12,7 @@ on:
       - '.github/r19-build-trigger.txt'
       - '.github/release-2.1.7-build-trigger.txt'
       - '.github/gsr2-diagnostic-build-trigger.txt'
+      - '.github/gsr2-recovery-build-trigger.txt'
   workflow_dispatch:
 
 permissions:
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020'
+    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -98,7 +99,7 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
-          name: Daedalus-GSR2-StageDiagnostic-v2.1.7-arm64
+          name: Daedalus-GSR2-CameraRecovery-v2.1.7-arm64
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
