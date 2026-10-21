@@ -37,12 +37,18 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
                     plan=launch_env.derive(folder,ini,folder/"state.json",{"GOW3_ANDROID_PORT":"1"})
                 up=plan['updates']
                 self.assertEqual(up['GOW3_UPSCALER'],'gsr2')
-                self.assertEqual(up['GOW3_GSR2_DIRECT_VIDEOOUT'],'1')
-                self.assertEqual(up['GOW3_GSR2_INPUT_RES'],raster)
                 self.assertEqual(up['GOW3_PATCH_INPUT_RES'],raster)
-                self.assertEqual(up['GOW3_GSR2_OUTPUT_RES'],'1280x720')
-                self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-gsr2-videoout-input')
-                self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-verified-videoout')
+                if p == 0:
+                    # 1:1 native path was already fixed and must not change.
+                    self.assertNotIn('GOW3_GSR2_DIRECT_VIDEOOUT',up)
+                    self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-gsr2-720p-target')
+                    self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-native-aa-1to1')
+                else:
+                    self.assertEqual(up['GOW3_GSR2_DIRECT_VIDEOOUT'],'1')
+                    self.assertEqual(up['GOW3_GSR2_INPUT_RES'],raster)
+                    self.assertEqual(up['GOW3_GSR2_OUTPUT_RES'],'1280x720')
+                    self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-gsr2-videoout-input')
+                    self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-verified-videoout')
                 self.assertIn('Resolution Patch - 720p',plan['patch_names'])
                 self.assertNotIn('render_resolution='+choice,ini.read_text() if choice!='720p' else '')
                 self.assertIn('render_resolution=720p',ini.read_text())
