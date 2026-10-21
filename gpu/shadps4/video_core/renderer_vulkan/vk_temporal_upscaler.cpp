@@ -701,8 +701,20 @@ bool TemporalUpscaler::OnFrameStart() {
     }
     // CameraMotion::OnDisplayPass has already cleared Depth(). Use the context's render
     // size, which survives the frame boundary (Performance 960 -> 1920 needs 32 phases).
-    const u32 phases = Scaled() ? Motion::JitterPhases(render_width, target_width)
+    u32 phases = Scaled() ? Motion::JitterPhases(render_width, target_width)
         : Motion::JitterPhases(scene_targets.Size().width, scene_targets.GuestSize().width);
+    if (PreHudEnabled()) {
+        // In direct EBOOT-raster mode SceneTargets remains guest-native (not
+        // the real 640x360 input). Derive Halton phases from the VERIFIED
+        // patched input and 1280x720 output: 2x enlargement needs 32 phases,
+        // not the guest-proxy 1:1 default. Never infer a smaller guest source.
+        unsigned input_w=0, input_h=0;
+        const char* size=std::getenv("GOW3_GSR2_INPUT_RES");
+        if (size && std::sscanf(size,"%ux%u",&input_w,&input_h)==2 &&
+            input_w>=320 && input_h>=180 && input_w<target_width &&
+            input_h<target_height)
+            phases=Motion::JitterPhases(input_w,target_width);
+    }
     // A duplicate VideoOut flip does not advance the scene camera/sample.
     // Hold the phase already assigned to the next real scene until a VERIFIED
     // scene arrives. This is distinct from turning jitter off: fallback stays
