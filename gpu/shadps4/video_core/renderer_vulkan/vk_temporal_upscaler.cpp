@@ -415,6 +415,118 @@ void TemporalUpscaler::ProbeGsr2PreHudSource(VAddr guest_address) {
                {{color.GetImage(), w, h, 4, "pre_hud_candidate", format}});
 }
 
+bool TemporalUpscaler::PreHudEnabled() const {
+    const char* mode = std::getenv("GOW3_GSR2_PREHUD_COMPOSITE");
+    return mode && mode[0] == '1' && Gsr2GuestDisplayMode() &&
+           Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
+           std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT");
+}
+
+// Called exactly BEFORE the first guest draw into each VideoOut target. Copy
+// the completed scene now: a later HUD/resolve pass may reuse its allocation.
+void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
+    if (!PreHudEnabled() || !guest || !ldr_target) return;
+    auto& color = texture_cache.GetImage(ldr_target);
+    const u32 w = color.info.size.width, h = color.info.size.height;
+    if (FrameCapture::IsDisplayBuffer(color.info.guest_address) ||
+        (color.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
+         color.info.pixel_format != vk::Format::eR8G8B8A8Srgb) ||
+        !camera_motion.Depth() || !w || !h ||
+        w >= target_width || h >= target_height ||
+        !bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc))
+        return;
+    auto& depth = texture_cache.GetImage(camera_motion.Depth());
+    if (depth.info.size.width != w || depth.info.size.height != h) return;
+    PreHudSlot* slot = nullptr;
+    for (auto& s : pre_hud_slots)
+        if (s.guest == guest) { slot = &s; break; }
+    if (!slot) {
+        slot = &pre_hud_slots[pre_hud_next_slot++ % pre_hud_slots.size()];
+        slot->captured = false;
+        slot->guest = guest;
+    }
+    if (slot->captured) return;
+    if (!slot->image || slot->width != w || slot->height != h ||
+        slot->format != color.info.pixel_format) {
+        scheduler.Finish();
+        slot->view.reset();
+        slot->image = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+        slot->image.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = color.info.pixel_format,
+            .extent = {w,h,1}, .mipLevels = 1, .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eSampled |
+                     vk::ImageUsageFlagBits::eTransferDst |
+                     vk::ImageUsageFlagBits::eTransferSrc,
+            .initialLayout = vk::ImageLayout::eUndefined});
+        slot->view = Check(instance.GetDevice().createImageViewUnique({
+            .image = vk::Image(slot->image), .viewType = vk::ImageViewType::e2D,
+            .format = color.info.pixel_format,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+        slot->width = w; slot->height = h; slot->format = color.info.pixel_format;
+    }
+    scheduler.EndRendering();
+    runtime.Transit(&color, vk::ImageLayout::eTransferSrcOptimal,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferRead);
+    runtime.FlushBarriers();
+    auto cmd = scheduler.CommandBuffer();
+    const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor,0,1,0,1};
+    const vk::ImageMemoryBarrier2 to_copy{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .image = vk::Image(slot->image), .subresourceRange = range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_copy});
+    const vk::ImageCopy copy{
+        .srcSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+        .dstSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+        .extent={w,h,1}};
+    cmd.copyImage(color.GetImage(), vk::ImageLayout::eTransferSrcOptimal,
+                  vk::Image(slot->image), vk::ImageLayout::eTransferDstOptimal,copy);
+    const vk::ImageMemoryBarrier2 to_sample{
+        .srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask=vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask=vk::AccessFlagBits2::eShaderSampledRead,
+        .oldLayout=vk::ImageLayout::eTransferDstOptimal,
+        .newLayout=vk::ImageLayout::eGeneral,
+        .image=vk::Image(slot->image), .subresourceRange=range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_sample});
+    slot->captured = true;
+    static u32 captures=0;
+    if (++captures<=4 || captures%600==0)
+        std::printf("GSR2_PREHUD_CAPTURE count=%u guest=%#llx scene=%#llx size=%ux%u\\n",
+                    captures,(unsigned long long)guest,
+                    (unsigned long long)color.info.guest_address,w,h);
+}
+
+void TemporalUpscaler::SelectGsr2PreHudScene(VAddr guest) {
+    pre_hud_completed_slot = -1;
+    if (!PreHudEnabled()) return;
+    for (size_t i=0;i<pre_hud_slots.size();++i) {
+        auto& slot = pre_hud_slots[i];
+        if (slot.guest == guest && slot.captured) {
+            pre_hud_completed_slot = int(i);
+            slot.captured = false;
+            pre_hud_consecutive_matches =
+                std::min(pre_hud_consecutive_matches + 1u, 100u);
+            break;
+        }
+    }
+    if (pre_hud_completed_slot < 0) pre_hud_consecutive_matches = 0;
+    static u32 flips=0;
+    if (++flips<=4 || flips%600==0)
+        std::printf("GSR2_PREHUD_FLIP flip=%u guest=%#llx scene_slot=%d stable=%u\\n",
+                    flips,(unsigned long long)guest,
+                    pre_hud_completed_slot, pre_hud_consecutive_matches);
+}
+
 namespace {
 float Halton(u32 index, u32 base) {
     float f = 1.0f, result = 0.0f;
