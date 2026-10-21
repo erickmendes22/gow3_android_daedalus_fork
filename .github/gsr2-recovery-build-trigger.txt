@@ -3,3 +3,5 @@ Gated host checks: https://github.com/erickmendes22/gow3_android_daedalus_fork/a
 Base: research/2.1.7-gsr2-srgb-stage-isolation-20261020
 Fix: legacy fallback cannot suppress exact camera recovery or inherit stale shader hash.
 Extra: adjacent-frame candidate with geometric cut checks, current-frame sRGB stage correlation.
+
+Rebuild after replacing obsolete R7 camera_ready label assertion with correct guarded history assertion.
