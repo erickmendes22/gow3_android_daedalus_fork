@@ -114,6 +114,10 @@ eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_C
 # another native target: the temporal targets must match the actual guest frame.
 if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
     if [ "${GOW3_GSR2_DIRECT_VIDEOOUT:-0}" = 1 ]; then
+        # Real GSR2 pre-HUD composition. Each guest flip chooses a scene
+        # snapshot before UI and only then computes GSR2. Native AA bypasses it.
+        # Set to 0 to force the last known-stable post-VideoOut path.
+        export GOW3_GSR2_PREHUD_COMPOSITE="${GOW3_GSR2_PREHUD_COMPOSITE:-1}"
         # The guest is SHA-patched to the selected REAL input raster. The
         # Snapdragon provider writes a separate 720p host image; unlike the
         # previous SceneTargets path there is no proxy/downsample/re-render.
