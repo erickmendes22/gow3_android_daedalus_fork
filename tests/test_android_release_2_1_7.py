@@ -57,8 +57,9 @@ class Release217(unittest.TestCase):
         home=read("android-launcher/app/src/main/java/com/gow3/android/feature/home/HomeScreen.kt")
         popups=read("android-launcher/app/src/main/java/com/gow3/android/feature/home/HomePopups.kt")
         settings=read("android-launcher/app/src/main/java/com/gow3/android/feature/settings/GeneralSettingsScreen.kt")
-        for label in ("FPS e VSync", "Vídeo e resolução", "Mods", "Cheats"):
-            self.assertIn(label,home)
+        for resource in ("R.string.home_fps_summary_fmt", "R.string.home_resolution_summary_fmt",
+                         "R.string.home_mods_action", "R.string.home_cheats_action"):
+            self.assertIn(resource,home)
         self.assertIn("Dialog(onDismissRequest = onDismiss)",popups)
         self.assertIn("render_resolution",popups)
         self.assertIn("auto_qte",popups)
