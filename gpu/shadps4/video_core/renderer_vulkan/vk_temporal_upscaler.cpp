@@ -23,6 +23,7 @@
 #include "video_core/host_shaders/taa_comp.h"
 #include "video_core/host_shaders/taa_sharpen_comp.h"
 #include "video_core/host_shaders/taa_sharpen_ldr_comp.h"
+#include "video_core/host_shaders/gsr2_prehud_composite_comp.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -971,6 +972,24 @@ void TemporalUpscaler::CreatePipelines() {
     storage_layout(2, taa_sharpen_desc_layout, taa_sharpen_pipeline_layout, sizeof(float));
     taa_sharpen_pipeline = compute(TAA_SHARPEN_COMP, *taa_sharpen_pipeline_layout);
     taa_sharpen_ldr_pipeline = compute(TAA_SHARPEN_LDR_COMP, *taa_sharpen_pipeline_layout);
+    if (PreHudEnabled()) {
+        std::array<vk::DescriptorSetLayoutBinding, 4> bindings{};
+        for (u32 i=0;i<bindings.size();++i) {
+            bindings[i] = {.binding=i,
+                .descriptorType=i<3 ? vk::DescriptorType::eCombinedImageSampler
+                                    : vk::DescriptorType::eStorageImage,
+                .descriptorCount=1, .stageFlags=vk::ShaderStageFlagBits::eCompute};
+        }
+        pre_hud_composite_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount=u32(bindings.size()), .pBindings=bindings.data()}));
+        const vk::PushConstantRange push{vk::ShaderStageFlagBits::eCompute,0,24};
+        pre_hud_composite_pipeline_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount=1, .pSetLayouts=&*pre_hud_composite_desc_layout,
+            .pushConstantRangeCount=1, .pPushConstantRanges=&push}));
+        pre_hud_composite_pipeline = compute(GSR2_PREHUD_COMPOSITE_COMP,
+                                             *pre_hud_composite_pipeline_layout);
+    }
     {
         std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
         for (u32 i = 0; i < bindings.size(); ++i) {
