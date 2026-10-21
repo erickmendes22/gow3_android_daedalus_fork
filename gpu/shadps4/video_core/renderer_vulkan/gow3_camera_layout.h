@@ -147,6 +147,38 @@ struct GoW3ViewProjection {
     float near_plane = 0.f;
     bool valid = false;
 };
+// A single scene-shader camera sample per display frame is insufficient for
+// intraframe voting. Permit a second, INDEPENDENT frame to confirm the same
+// source, but only when the recovered transforms agree geometrically. Never
+// bypass the existing GSR2 camera/history cut guard with this check.
+inline bool CompatibleAdjacentCameraSamples(const GoW3ViewProjection& a,
+                                             const GoW3ViewProjection& b) {
+    if (!a.valid || !b.valid) return false;
+    for (unsigned i = 0; i < 4; ++i) {
+        const float x = a.projection[i], y = b.projection[i];
+        if (!std::isfinite(x) || !std::isfinite(y) ||
+            std::abs(x - y) > (i < 2 ? 0.055f : 0.008f))
+            return false;
+    }
+    float motion_squared = 0.f;
+    for (unsigned i = 0; i < 3; ++i) {
+        if (!std::isfinite(a.position[i]) || !std::isfinite(b.position[i]))
+            return false;
+        const float displacement = a.position[i] - b.position[i];
+        motion_squared += displacement * displacement;
+    }
+    if (motion_squared > 4.0f) return false; // reject camera cuts / changed models
+    float dot = 0.f, norm_a = 0.f, norm_b = 0.f;
+    for (unsigned i = 0; i < 3; ++i) {
+        const float x = a.view[8 + i], y = b.view[8 + i];
+        if (!std::isfinite(x) || !std::isfinite(y)) return false;
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    return norm_a >= 0.9f && norm_b >= 0.9f &&
+           dot >= 0.98f * std::sqrt(norm_a * norm_b);
+}
 inline GoW3ViewProjection RecoverViewProjection(const float* data, size_t count,
                                                  unsigned buffer_slot) {
     GoW3ViewProjection out{};
