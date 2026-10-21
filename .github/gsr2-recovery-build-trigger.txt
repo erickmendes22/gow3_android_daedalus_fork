@@ -50,3 +50,5 @@ Validated host suite 39634728771: 20261021-131408 shows 1219/9600 valid temporal
 2026-10-21 pre-HUD arm64 native retry after real clang error fix in Vulkan unique array constructor (PreHudSlot() : image{} {}). Gamma, GSR2 frame provenance, HUD composite and fallback regression suite success 39678012594. Avoid changes to current stable release.
 
 2026-10-21 new controlled build after 190657: 16-site global scene mismatch guard to avoid compositor ghosting; linear sampling for VideoOut HUD; disable scene jitter when completed camera invalid (frame 12000 repro); GPU dump all FOUR stages from a single exact VideoOut flip at 4800/7200/9600; host suite 39686020438 passed. Native build must pass before artifact shared.
+
+2026-10-21 after sameflip GPU stage analysis of 194900: GSR2 linear is not dark; add actual same-frame VideoOut linear-light residual to temporally upscaled scene and preserve HUD masks; test synthetic color correction; count cumulative GSR2 dispatches without reset. Static test run 39689941731 success. Build ARM64 for compilation validation; do not describe graphics fixed until gameplay confirms temporal stability.
