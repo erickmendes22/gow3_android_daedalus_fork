@@ -64,6 +64,28 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         self.assertLess(func.index("guest_display_last_flip_generation = flip_generation;"),
                         func.index("GSR2_VIDEOOUT_MOTION"))
 
+    def test_motion_direction_and_units_match_gsr2_history_uv(self):
+        # GoW3 camera_motion: previous_uv - current_uv in render pixels.
+        # GSR2 convert: negate and scale by 2/renderSize into clip units.
+        # GSR2 upscale: PrevUV = currentUV - .5 * converted_clip.
+        camera_glsl=(ROOT.parent/"host_shaders"/"camera_motion.comp").read_text()
+        convert=(ROOT.parent/"host_shaders"/"gsr2_convert.comp").read_text()
+        upscale=(ROOT.parent/"host_shaders"/"gsr2_upscale.comp").read_text()
+        self.assertIn("const vec2 motion = (prev_uv - scene_uv) * size;",camera_glsl)
+        self.assertIn("vec2 motion = -texelFetch(InputMotion, InputPos, 0).xy * 2.0 * params.renderSizeRcp;",convert)
+        self.assertIn("vec2 PrevUV = clamp(-0.5 * Motion + Hruv",upscale)
+        for w,h in ((426,240),(640,360),(752,424),(960,540)):
+            for current,previous in (((.5,.5),(.501,.503)),
+                                     ((.21,.78),(.209,.781)),
+                                     ((.87,.09),(.868,.091))):
+                motion=((previous[0]-current[0])*w,
+                        (previous[1]-current[1])*h)
+                converted=(-2*motion[0]/w,-2*motion[1]/h)
+                recovered=(current[0]-.5*converted[0],
+                           current[1]-.5*converted[1])
+                self.assertAlmostEqual(recovered[0],previous[0],places=6)
+                self.assertAlmostEqual(recovered[1],previous[1],places=6)
+
     def test_snapshot_is_captured_before_clearing_live_state(self):
         camera = (ROOT/"vk_camera_motion.cpp").read_text()
         snapshot = camera.split("void CameraMotion::OnDisplayPass(",1)[1].split(
