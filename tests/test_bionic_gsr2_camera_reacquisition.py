@@ -90,6 +90,7 @@ int main() {
             ".reset = reset || !temporal_ready,",
             "cmdbuf.clearColorImage(vk::Image(motion_image)",
             "GSR2_HISTORY_GUARD dispatch=",
+            "camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid",
         ):
             self.assertIn(expression, upscaler)
 
