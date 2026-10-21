@@ -97,7 +97,8 @@ int main() {
         ):
             self.assertIn(expression, header)
         for expression in (
-            ".reset = reset || !temporal_ready,",
+            ".reset = (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||",
+            "!temporal_ready,",
             "cmdbuf.clearColorImage(vk::Image(motion_image)",
             "GSR2_HISTORY_GUARD dispatch=",
             "camera_motion.Gsr2HistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid",
