@@ -19,9 +19,9 @@ class R8(unittest.TestCase):
     def test_capture_mature_frames_and_actual_presenter(self):
         s=read("gpu/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp")
         p=read("gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp")
-        for keyword in ("gsr_probe_frames == 480", "gsr_probe_frames == 2400",
-                        "gsr_probe_frames == 7200", "GSR2_DISPLAY_DRAW",
-                        "GSR2_PRESENT_QUERY"):
+        for keyword in ("captured_generation == 480", "captured_generation == 2400",
+                        "captured_generation == 7200", "GSR2_DISPLAY_DRAW",
+                        "GSR2_PRESENT_QUERY", "GSR_STAGE_FINAL generation="):
             self.assertIn(keyword,s)
         self.assertIn("GSR2_PRESENTER actual_guest=",p)
         self.assertIn("int(upscaled)",p)
