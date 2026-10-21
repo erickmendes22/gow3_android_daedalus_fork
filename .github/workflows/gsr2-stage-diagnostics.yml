@@ -22,6 +22,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_android_gsr2_*.py' -v
           python3 -m unittest discover -s tests -p 'test_bionic_gsr2_camera_reacquisition.py' -v
+          python3 -m unittest discover -s tests -p 'test_bionic_gsr2_videoout_source.py' -v
           python3 -m unittest discover -s tests -p 'test_android_fex_noexec_regression.py' -v
           python3 -m unittest discover -s tests -p 'test_android_launcher_i18n_217.py' -v
           python3 -m unittest discover -s tests -p 'test_android_release_2_1_7.py' -v
