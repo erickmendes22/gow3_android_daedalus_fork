@@ -468,7 +468,7 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
     if (have_pose && have_projection && frame_pose_votes >= 2 && keep_verified_camera) {
         static unsigned protected_frames = 0;
         if (++protected_frames <= 4 || protected_frames % 1200 == 0)
-            std::printf("GSR2_CAMERA_PROVENANCE_PROTECTED count=%u shader=%016llx legacy_votes=%u\\n",
+            std::printf("GSR2_CAMERA_PROVENANCE_PROTECTED count=%u shader=%016llx legacy_votes=%u\n",
                         protected_frames,
                         static_cast<unsigned long long>(current.shader_hash),
                         frame_pose_votes);
