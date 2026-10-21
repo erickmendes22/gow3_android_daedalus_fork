@@ -121,10 +121,10 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         camera = (ROOT/"vk_camera_motion.cpp").read_text()
         snapshot = camera.split("void CameraMotion::OnDisplayPass(",1)[1].split(
             "void CameraMotion::Overlay(",1)[0]
-        self.assertLess(snapshot.index("completed_history_status ="),
-                        snapshot.index("current.valid = false;"))
-        self.assertLess(snapshot.index("completed_depth = depth_id;"),
-                        snapshot.index("depth_id = {};"))
+        history = snapshot.index("completed_history_status =")
+        depth = snapshot.index("completed_depth = depth_id;")
+        self.assertLess(history, snapshot.index("current.valid = false;", history))
+        self.assertLess(depth, snapshot.index("depth_id = {};", depth))
 
 if __name__ == "__main__":
     unittest.main()
