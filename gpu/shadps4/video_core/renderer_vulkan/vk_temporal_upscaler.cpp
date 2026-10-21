@@ -3161,7 +3161,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
                         w, h, ow, oh, static_cast<unsigned>(temporal_status),
                         int(temporal_ready), int(dispatch_reset),
                         int(temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill() : camera_motion.CameraStill()) : true),
-                        sign * matched_jitter[0], sign * matched_jitter[1]
+                        sign * matched_jitter[0], sign * matched_jitter[1],
                         temporal_ready ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov() : camera_motion.VerticalFov()) : 1.04719755f);
         }
         if (dispatched == 1 || dispatched % 600 == 0) {
