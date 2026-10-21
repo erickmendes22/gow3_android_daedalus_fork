@@ -27,7 +27,27 @@ float foregroundDifference(ivec2 p) {
     vec3 after=texelFetch(InputVideoOut,p,0).rgb;
     return max(max(abs(before.r-after.r),abs(before.g-after.g)),abs(before.b-after.b));
 }
+// A non-matching scene target must NEVER be composited over the real guest
+// output. Sample 16 well-distributed regions first. These samples belong to
+// the same canonical VideoOut flip, not an unrelated candidate readback.
+shared uint incompatibleScene;
 void main() {
+    if (gl_LocalInvocationIndex == 0u) {
+        uint different=0u;
+        for (int y=0; y<4; ++y) {
+            for (int x=0; x<4; ++x) {
+                ivec2 checkpoint=ivec2(
+                    (uint(2*x+1)*params.renderSize.x)/8u,
+                    (uint(2*y+1)*params.renderSize.y)/8u);
+                different+=uint(foregroundDifference(checkpoint)>params.threshold);
+            }
+        }
+        // A fullscreen difference signals a display-copy/tonemap/menu, not a
+        // handful of HUD glyphs. Present the original guest without mixing
+        // its pixels with the temporal history of a different scene.
+        incompatibleScene=uint(different>=12u);
+    }
+    barrier();
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
     if(any(greaterThanEqual(uvec2(pixel),params.outputSize))) return;
     vec2 uv=(vec2(pixel)+0.5)/vec2(params.outputSize);
@@ -42,7 +62,7 @@ void main() {
     // a safe guest fallback rather than blending unrelated temporal history.
     vec3 guest=textureLod(InputVideoOut,uv,0.0).rgb;
     vec3 scene=textureLod(InputGsr2,uv,0.0).rgb;
-    vec3 result=changed>params.threshold ? guest:scene;
+    vec3 result=(incompatibleScene!=0u || changed>params.threshold) ? guest:scene;
     if(params.isSrgb!=0u) result=encodeSrgb(result);
     imageStore(OutputComposited,pixel,vec4(result,1.0));
 }
