@@ -89,12 +89,15 @@ int main() {
                         boundary.index("frame_extra_source_probes = 0;"))
 
     def test_multiple_shader_candidates_survive_one_frame_only(self):
-        # The 12:39 log recovered distinct camera shaders after the autosave
+        # The 19:49 log saturated all 16 source slots on most gameplay frames.
+        # The 12:39 log also recovered distinct camera shaders after autosave.
         # cinematic, but the single previous_frame_candidate slot discarded
         # some before an adjacent frame could confirm them.
         c = CAMERA_CPP.read_text(encoding="utf-8")
         h = CAMERA_H.read_text(encoding="utf-8")
-        self.assertIn("static constexpr size_t MaxFrameCameraSources = 16;", h)
+        self.assertIn("static constexpr size_t MaxFrameCameraSources = 32;", h)
+        # Increasing storage cannot relax the 64-probe CPU budget.
+        self.assertIn("frame_extra_source_probes >= 64", source)
         self.assertIn("std::array<Camera, MaxFrameCameraSources> current_frame_sources{}", h)
         self.assertIn("std::array<Camera, MaxFrameCameraSources> previous_frame_sources{}", h)
         source = c.split("void CameraMotion::OnConstants(", 1)[1].split(
