@@ -333,7 +333,20 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
     // Do not let it suppress the exact GoW3 view-projection detector for the
     // rest of the display frame, especially after a scene or shader change.
     if (frame_has_camera && frame_pose_votes >= 3 &&
-        (!gow3_android_gsr2 || current.shader_hash != 0)) return;
+        (!gow3_android_gsr2 || current.shader_hash != 0)) {
+        // The selected frame camera is already proven. In GSR2, continue
+        // collecting previously unseen vertex-shader camera sources for the
+        // next display frame; the old unconditional return made the 16-entry
+        // adjacent-frame cache effectively a single-shader cache.
+        // Never rescan a recovered shader or exceed 64 additional probes.
+        if (!gow3_android_gsr2 || buffer_slot != 1 ||
+            frame_extra_source_probes >= 64)
+            return;
+        for (const auto& source : current_frame_sources)
+            if (source.valid && source.shader_hash == shader_hash)
+                return;
+        ++frame_extra_source_probes;
+    }
     if (gow3_android_gsr2 && buffer_slot == 1 && float_count >= 32) {
         const auto recovered = Gow3CameraLayout::RecoverViewProjection(
             data, float_count, buffer_slot);
@@ -446,7 +459,12 @@ void CameraMotion::OnConstants(const float* data, size_t float_count, u64 shader
             frame_projection = recovered.projection;
             frame_camera_shader_hash = shader_hash;
             have_pose = have_projection = true;
-            if (frame_pose_votes >= 2) {
+            if (frame_pose_votes >= 2 &&
+                (!gow3_android_gsr2 || !current.valid || !current.shader_hash ||
+                 current.shader_hash == frame_camera_shader_hash)) {
+                // Do not replace a verified scene camera with a different
+                // later shadow/postprocess shader. Keep the extra source in
+                // current_frame_sources for next-frame correlation instead.
                 current.view = frame_view;
                 current.inv_view = frame_inverse;
                 current.proj = frame_projection;
@@ -576,8 +594,21 @@ void CameraMotion::OnDisplayPass(VideoCore::ImageId frame) {
         std::strcmp(chosen, "gsr2") == 0) {
         previous_frame_candidate = current_frame_candidate;
         current_frame_candidate.valid = false;
+        if (std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT")) {
+            static unsigned source_frames = 0;
+            ++source_frames;
+            if (source_frames <= 4 || source_frames % 600 == 0) {
+                unsigned unique_sources = 0;
+                for (const auto& source : current_frame_sources)
+                    unique_sources += unsigned(source.valid);
+                std::printf("GSR2_CAMERA_SOURCE_POOL frame=%u unique=%u extra_probes=%u selected_shader=%016llx\n",
+                            source_frames, unique_sources, frame_extra_source_probes,
+                            static_cast<unsigned long long>(current.shader_hash));
+            }
+        }
         previous_frame_sources = current_frame_sources;
         current_frame_sources = {};
+        frame_extra_source_probes = 0;
     }
     // Preserve the completed scene's true depth and verified adjacent cameras
     // for the later Presenter VideoOut dispatch. This cannot be reconstructed
