@@ -96,8 +96,11 @@ void main()
     vec4 History = textureLod(PrevHistoryOutput, PrevUV, 0.0);
     vec3 HistoryColor = History.xyz;
     float Historyw = History.w;
-    invalidReprojection = invalidReprojection || any(isnan(HistoryColor)) ||
-                          any(isinf(HistoryColor));
+    // Invalid half-float alpha from any previously corrupted history entry
+    // must also invalidate this pixel before Wfactor enters the Lanczos
+    // kernel. clamp(abs(NaN),0,1) remains NaN on Vulkan GPUs.
+    invalidReprojection = invalidReprojection || isnan(Historyw) || isinf(Historyw) ||
+                          any(isnan(HistoryColor)) || any(isinf(HistoryColor));
     if (invalidReprojection) HistoryColor=vec3(0.0);
     float Wfactor = invalidReprojection ? 0.0
         : clamp(abs(Historyw), 0.0, 1.0);
