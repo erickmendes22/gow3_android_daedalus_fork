@@ -37,7 +37,7 @@ def fit_grade(pairs):
         max(abs(clamp(a[k]*gain[k]+bias[k], 0, 1)-b[k]) for k in range(3)) > 0.12
         for a, b in pairs
     )
-    return gain, bias, (1.0 if len(accepted) < 8 else smoothstep(3.0, 11.0, float(bad))), bad
+    return gain, bias, (1.0 if len(accepted) < 8 else smoothstep(12.0, 15.0, float(bad))), bad
 
 
 class Gsr2GradeTests(unittest.TestCase):
@@ -46,8 +46,11 @@ class Gsr2GradeTests(unittest.TestCase):
         self.assertIn("shared vec3 gradeGain;", shader)
         self.assertIn("shared vec3 gradeBias;", shader)
         self.assertIn("sumXY*rcpCount-meanX*meanY", shader)
-        self.assertIn("smoothstep(3.0,11.0,bad);", shader)
+        self.assertIn("smoothstep(12.0,15.0,bad);", shader)
         self.assertNotIn("incompatibleScene=uint(different>=5u)", shader)
+        self.assertIn("foregroundResidual(", shader)
+        self.assertIn("residualEdge=maxChannel(residual-neighborhood)", shader)
+        self.assertIn("smoothstep(0.28,0.65,opaqueDifference)", shader)
         self.assertIn("vec3 result=mix(restored,guest,guestWeight);", shader)
 
     def test_widespread_brightness_grade_is_not_incompatible(self):
