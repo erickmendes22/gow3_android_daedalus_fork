@@ -68,10 +68,11 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("foregroundDifference",shader)
         self.assertIn("vec3 before=textureLod(InputPreHud,uv,0.0).rgb;",shader)
         self.assertIn("vec3 restored=clamp(scene + (guest-before),0.0,1.0);",shader)
-        self.assertIn("changed>params.threshold) ? guest:restored;",shader)
+        self.assertIn("mix(restored,guest,overlayWeight)",shader)
+        self.assertIn("smoothstep(params.threshold*0.5",shader)
         self.assertIn("GSR2_HISTORY_DISPATCH_TOTAL",cpp)
         self.assertIn("incompatibleScene",shader)
-        self.assertIn("different>=12u",shader)
+        self.assertIn("different>=5u",shader)
         self.assertIn("barrier();",shader)
         self.assertIn("sameflip_prehud",cpp)
         self.assertIn("sameflip_videoout",cpp)
@@ -82,6 +83,22 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("gsr2_prehud_composite.comp",build)
         self.assertIn('GOW3_GSR2_PREHUD_COMPOSITE:-1',shell)
         self.assertIn("} else {\n        // Stable fallback",cpp)
+
+    def test_intermitent_full_screen_compositor_mismatch_fails_closed(self):
+        # Device log 212023, four-stage captures at frame 7200: seven out of
+        # sixteen widely spaced sites differ after the game's display copy.
+        # The previous 12/16 rule composed broad unmatched regions of the
+        # temporally reconstructed scene with the guest VideoOut, producing
+        # alternating whole-screen corruption.
+        mismatch_count = 7
+        self.assertTrue(mismatch_count >= 5)
+        self.assertFalse(mismatch_count >= 12)
+        # A mere localized HUD change must not force a fullscreen fallback.
+        self.assertFalse(2 >= 5)
+        shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp").read_text()
+        self.assertIn("incompatibleScene=uint(different>=5u)", shader)
+        self.assertIn("vec3 result=incompatibleScene!=0u ? guest", shader)
+        self.assertIn("smoothstep(params.threshold*0.5", shader)
 
     def test_same_frame_postprocess_is_restored_without_temporal_hud_contamination(self):
         # Identity-GSR input must reconstruct EXACTLY the final VideoOut
