@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #version 450
-// GoW III: reconstruct the pre-HUD scene with GSR2, then restore PS4 UI drawn
-// into the guest VideoOut buffer. Never put UI pixels in GSR temporal history.
-// The GPU compares two snapshots from the SAME guest frame: the last LDR scene
-// before the first display-copy draw, and the finished VideoOut color.
+// GoW III: scene-only Qualcomm GSR2 followed by the original PS4 VideoOut
+// postprocess/HUD. Nothing from the HUD enters Qualcomm temporal history.
+// Compare TWO snapshots from the EXACT SAME VideoOut flip.
 layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
 layout(binding=0) uniform sampler2D InputPreHud;
 layout(binding=1) uniform sampler2D InputVideoOut;
@@ -21,74 +20,91 @@ vec3 encodeSrgb(vec3 c) {
     return mix(c*12.92,1.055*pow(c,vec3(1.0/2.4))-0.055,
                vec3(greaterThan(c,vec3(0.0031308))));
 }
+// Workgroup-shared GLOBAL grade: every 8x8 group independently calculates
+// EXACTLY the same grade from the SAME 16 stable screen positions, avoiding
+// per-tile brightness jumps at workgroup boundaries.
+shared vec3 gradeGain;
+shared vec3 gradeBias;
+shared float guestFallbackWeight;
+
+ivec2 checkpointPixel(int x,int y) {
+    return clamp(ivec2((uint(2*x+1)*params.renderSize.x)/8u,
+                       (uint(2*y+1)*params.renderSize.y)/8u),
+                 ivec2(0),ivec2(params.renderSize)-1);
+}
+vec3 applyGrade(vec3 color) {
+    return clamp(color*gradeGain+gradeBias,0.0,1.0);
+}
 float foregroundDifference(ivec2 p) {
     p=clamp(p,ivec2(0),ivec2(params.renderSize)-1);
-    vec3 before=texelFetch(InputPreHud,p,0).rgb;
+    vec3 before=applyGrade(texelFetch(InputPreHud,p,0).rgb);
     vec3 after=texelFetch(InputVideoOut,p,0).rgb;
-    return max(max(abs(before.r-after.r),abs(before.g-after.g)),abs(before.b-after.b));
+    vec3 difference=abs(before-after);
+    return max(difference.r,max(difference.g,difference.b));
 }
-// A non-matching scene target must NEVER be composited over the real guest
-// output. Sample 16 well-distributed regions first. These samples belong to
-// the same canonical VideoOut flip, not an unrelated candidate readback.
-shared uint incompatibleScene;
 void main() {
     if (gl_LocalInvocationIndex == 0u) {
-        uint different=0u;
-        for (int y=0; y<4; ++y) {
-            for (int x=0; x<4; ++x) {
-                ivec2 checkpoint=ivec2(
-                    (uint(2*x+1)*params.renderSize.x)/8u,
-                    (uint(2*y+1)*params.renderSize.y)/8u);
-                different+=uint(foregroundDifference(checkpoint)>params.threshold);
-            }
+        // The PS4 display-copy commonly changes brightness and color over
+        // MOST of the screen, even though the scene's geometry is identical.
+        // The previous 5/16 raw-difference threshold misclassified a normal
+        // grade as a different scene, switching the entire screen between
+        // Qualcomm history and raw VideoOut from one flip to the next.
+        // Fit a bounded affine grade in LINEAR light, then measure residual
+        // structural mismatch AFTER removing the global brightness change.
+        vec3 sumX=vec3(0.0),sumY=vec3(0.0);
+        vec3 sumXX=vec3(0.0),sumXY=vec3(0.0);
+        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
+            ivec2 p=checkpointPixel(x,y);
+            vec3 a=texelFetch(InputPreHud,p,0).rgb;
+            vec3 b=texelFetch(InputVideoOut,p,0).rgb;
+            sumX+=a;sumY+=b;sumXX+=a*a;sumXY+=a*b;
         }
-        // A fullscreen difference signals a display-copy/tonemap/menu, not a
-        // handful of HUD glyphs. Present the original guest without mixing
-        // its pixels with the temporal history of a different scene.
-        // The old 12/16 threshold missed 7200's full-screen color-pass
-        // mismatch (7/16 sampled sites changed): it then mixed whole
-        // regions of GSR history and raw VideoOut in one frame, appearing
-        // as screen-wide alternating/corrupted patches on the device.
-        // At >=5/16 geographically distributed sites, fall back coherently
-        // for this flip. A few HUD glyphs may trigger a safe full-frame
-        // fallback, never a spatially torn composite.
-        incompatibleScene=uint(different>=5u);
+        vec3 meanX=sumX*(1.0/16.0),meanY=sumY*(1.0/16.0);
+        vec3 variance=max(sumXX*(1.0/16.0)-meanX*meanX,vec3(0.0));
+        vec3 covariance=sumXY*(1.0/16.0)-meanX*meanY;
+        vec3 fitted=clamp(covariance/max(variance,vec3(0.00002)),
+                          vec3(0.55),vec3(2.25));
+        gradeGain=mix(vec3(1.0),fitted,
+                      vec3(greaterThan(variance,vec3(0.00002))));
+        gradeBias=clamp(meanY-gradeGain*meanX,vec3(-0.28),vec3(0.28));
+
+        float bad=0.0;
+        for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
+            ivec2 p=checkpointPixel(x,y);
+            vec3 estimated=applyGrade(texelFetch(InputPreHud,p,0).rgb);
+            vec3 observed=texelFetch(InputVideoOut,p,0).rgb;
+            vec3 delta=abs(estimated-observed);
+            bad+=float(max(delta.r,max(delta.g,delta.b))>0.12);
+        }
+        // Gradual, coherent WHOLE-screen fallback only on true residual
+        // disagreement. Pure color grading gives few mismatches and keeps
+        // temporal scene detail; unrelated scenes/menus give many and keep
+        // the unmodified PS4 framebuffer. No abrupt 5/16 binary switch.
+        guestFallbackWeight=smoothstep(3.0,11.0,bad);
     }
     barrier();
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
-    if(any(greaterThanEqual(uvec2(pixel),params.outputSize))) return;
+    if(any(greaterThanEqual(uvec2(pixel),params.outputSize)))return;
     vec2 uv=(vec2(pixel)+0.5)/vec2(params.outputSize);
-    ivec2 low=clamp(ivec2(uv*vec2(params.renderSize)),ivec2(0),ivec2(params.renderSize)-1);
-    // Dilate changed regions by one source pixel: text outlines and HUD masks
-    // must not inherit the jittered history of the background.
+    ivec2 low=clamp(ivec2(uv*vec2(params.renderSize)),
+                    ivec2(0),ivec2(params.renderSize)-1);
     float changed=0.0;
     for(int y=-1;y<=1;++y)
-      for(int x=-1;x<=1;++x)
-        changed=max(changed,foregroundDifference(low+ivec2(x,y)));
-    // Stable clear colors, menus, or unverified postprocessing always have
-    // a safe guest fallback rather than blending unrelated temporal history.
+        for(int x=-1;x<=1;++x)
+            changed=max(changed,foregroundDifference(low+ivec2(x,y)));
+
     vec3 guest=textureLod(InputVideoOut,uv,0.0).rgb;
-    vec3 scene=textureLod(InputGsr2,uv,0.0).rgb;
-    // Even when the guest has not drawn any text/HUD, its display-copy pass
-    // can apply a full-frame color transform. A binary scene/HUD mask drops
-    // those transforms and changes the game's original appearance (observed
-    // in the same-flip 9600 preHUD/VideoOut/final readback).
-    //
-    // Both guest and preHUD are sampled in the SAME linear-light space here
-    // (sRGB decoding happens at the Vulkan sampler). Apply that current-frame
-    // residual AFTER Qualcomm's scene-only temporal history. No postprocess
-    // or HUD signal is fed back to GSR2.
+    vec3 gsrScene=textureLod(InputGsr2,uv,0.0).rgb;
     vec3 before=textureLod(InputPreHud,uv,0.0).rgb;
-    vec3 restored=clamp(scene + (guest-before),0.0,1.0);
-    // Significant local differences are masks, text and foreground overlays.
-    // Keep their exact guest color without exposing them to scene reprojection.
-    // Do not switch hard between two full-frame pipelines at every moving
-    // HUD/color-grade boundary. Smooth the pixel mask after its 3x3 dilation
-    // while retaining exact original guest pixels for opaque overlays.
+    // Reconstruct in the original display color space. Retain localized
+    // nonlinear color corrections as a same-frame residual AFTER GSR2,
+    // never in the temporal scene history.
+    vec3 restored=clamp(applyGrade(gsrScene)+
+                        (guest-applyGrade(before)),0.0,1.0);
     float overlayWeight=smoothstep(params.threshold*0.5,
                                    params.threshold*2.0,changed);
-    vec3 result=incompatibleScene!=0u ? guest
-                                      : mix(restored,guest,overlayWeight);
-    if(params.isSrgb!=0u) result=encodeSrgb(result);
+    float guestWeight=max(overlayWeight,guestFallbackWeight);
+    vec3 result=mix(restored,guest,guestWeight);
+    if(params.isSrgb!=0u)result=encodeSrgb(result);
     imageStore(OutputComposited,pixel,vec4(result,1.0));
 }
