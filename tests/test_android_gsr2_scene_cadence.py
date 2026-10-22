@@ -44,6 +44,14 @@ class SceneCadence(unittest.TestCase):
         self.assertIn("last_temporal_scene_camera",cam)
         self.assertIn("completed_previous.shader_hash != last_temporal_scene_camera.shader_hash",cam)
         self.assertIn("last_temporal_scene_jitter",camcpp)
+        self.assertIn("const Camera& prior_scene = continuing_scene",camcpp)
+        self.assertIn("completed_current, prior_scene,",camcpp)
+        self.assertIn("last_temporal_scene_camera.view[i]) > 0.002f",cam)
+        self.assertIn("last_temporal_scene_camera.proj[i]) > 0.0005f",cam)
+        upscale = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp").read_text()
+        self.assertIn("vec3 historyBeforeClamp=HistoryColor;",upscale)
+        self.assertIn("float discrepancy=max(",upscale)
+        self.assertIn("alpha=max(alpha,rejectHistory);",upscale)
         self.assertNotIn("guest_display_history_contiguous = use_scene_motion;",present)
 
     def test_one_scene_every_three_videoout_callbacks(self):
