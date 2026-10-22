@@ -37,3 +37,5 @@ GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffe
 2026-10-21 21:59 guard tests rerun: original test expected direct raw InputMotion sample in SGSR2 convert. Update test to require the SAME sign/units after validating offscreen raw historyUV and forcing only invalid samples spatial. Real temporal in-bounds movement remains unchanged. Recheck entire host test suite before ARM64 build.
 
 2026-10-21 rerun after adapting final legacy assertion: SGSR2 PrevUV mathematical reprojection is unchanged, now first computes raw unbounded previous UV to forbid border-clamped stale history, then clamps safe. Regression source checks both the raw formula and pixel-history rejection for invalid reprojection.
+
+2026-10-21 final invalid-motion SGSR2 gate: reject previous UV outside frame, NaN/Inf motion and History RGBA16F including alpha; ensure only invalid pixels spatial while others accumulate temporal; enforce current jitter source index < raster extents. Tests updated for original mathematically equivalent motion sign and raw previous UV before clamp.
