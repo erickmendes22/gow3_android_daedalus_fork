@@ -71,9 +71,10 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("vec3 result=mix(restored,guest,guestWeight);",shader)
         self.assertIn("smoothstep(params.threshold*0.5",shader)
         self.assertIn("GSR2_HISTORY_DISPATCH_TOTAL",cpp)
+        self.assertIn("kept<8.0 ? 1.0",shader)
         self.assertIn("gradeGain",shader)
         self.assertIn("gradeBias",shader)
-        self.assertIn("guestFallbackWeight=smoothstep(3.0,11.0,bad);",shader)
+        self.assertIn("smoothstep(3.0,11.0,bad);",shader)
         self.assertIn("barrier();",shader)
         self.assertIn("sameflip_prehud",cpp)
         self.assertIn("sameflip_videoout",cpp)
@@ -91,11 +92,11 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         # 215958 at flip 9600 also has a widespread display copy grade.
         # Brightening the SAME scene is not evidence of a different scene.
         shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp").read_text()
-        self.assertIn("vec3 covariance=sumXY*(1.0/16.0)-meanX*meanY;",shader)
+        self.assertIn("vec3 covariance=sumXY*rcpCount-meanX*meanY;",shader)
         self.assertIn("gradeGain=mix(vec3(1.0),fitted,",shader)
         self.assertIn("gradeBias=clamp(meanY-gradeGain*meanX",shader)
         self.assertIn("vec3 estimated=applyGrade(texelFetch(InputPreHud,p,0).rgb);",shader)
-        self.assertIn("guestFallbackWeight=smoothstep(3.0,11.0,bad);",shader)
+        self.assertIn("smoothstep(3.0,11.0,bad);",shader)
         self.assertNotIn("incompatibleScene=uint(different>=5u)",shader)
         self.assertIn("smoothstep(params.threshold*0.5",shader)
 
