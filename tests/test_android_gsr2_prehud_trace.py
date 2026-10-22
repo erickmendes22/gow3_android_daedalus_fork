@@ -130,7 +130,11 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("GSR2_DEPTH_SNAPSHOT_COMP", cpp)
         self.assertIn("const bool depth_compute_ok =", cpp)
         self.assertIn("!depth_copy_ok && depth_format_ok", cpp)
-        self.assertIn("depth.info.num_samples == 1", cpp)
+        self.assertIn("depth.info.num_samples == 1", cpp)  # transfer copy only
+        self.assertIn("depth.info.num_samples >= 1", cpp)  # compute allows 2x MSAA
+        self.assertIn("const bool depth_msaa = depth.info.num_samples > 1;",cpp)
+        self.assertIn("GSR2_DEPTH_SNAPSHOT_MS_COMP",cpp)
+        self.assertIn("depth_msaa ? *pre_hud_depth_pipeline_ms",cpp)
         self.assertIn("vk::ImageUsageFlagBits::eSampled", cpp)
         self.assertIn("slot->depth_format = snapshot_format;", cpp)
         self.assertIn("cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,", cpp)
@@ -140,6 +144,11 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("texelFetch(InputDepth,pixel,0).r", shader)
         self.assertIn("imageStore(FrozenDepth,pixel,", shader)
         self.assertIn("gsr2_depth_snapshot.comp", cmake)
+        self.assertIn("gsr2_depth_snapshot_ms.comp", cmake)
+        ms = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_depth_snapshot_ms.comp").read_text()
+        self.assertIn("uniform sampler2DMS InputDepthMS;",ms)
+        self.assertIn("texelFetch(InputDepthMS,pixel,0).r",ms)
+        self.assertIn("imageStore(FrozenDepth,pixel,",ms)
 
     def test_reject_non_finite_scene_projection(self):
         cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
