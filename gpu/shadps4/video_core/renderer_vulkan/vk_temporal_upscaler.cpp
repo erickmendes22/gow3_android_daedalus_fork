@@ -447,6 +447,8 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
         slot->guest = guest;
     }
     if (slot->captured) return;
+    slot->depth_valid = false;
+    slot->depth_id = {};
     if (!slot->image || slot->width != w || slot->height != h ||
         slot->format != color.info.pixel_format) {
         scheduler.Finish();
@@ -468,10 +470,47 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
             .subresourceRange = {vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
         slot->width = w; slot->height = h; slot->format = color.info.pixel_format;
     }
+    // Keep color and depth immutable until the canonical VideoOut flip.
+    // TextureCache identity is not sufficient: the GPU may write again into
+    // the same depth allocation without reallocating it.
+    const vk::Format df = depth.info.pixel_format;
+    const bool depth_copy_ok =
+        (df == vk::Format::eD32Sfloat ||
+         df == vk::Format::eD32SfloatS8Uint ||
+         df == vk::Format::eD24UnormS8Uint) &&
+        depth.info.num_samples == 1 &&
+        bool(depth.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
+    if (depth_copy_ok &&
+        (!slot->depth_image || slot->depth_format != df ||
+         slot->depth_width != w || slot->depth_height != h)) {
+        scheduler.Finish();
+        slot->depth_view.reset();
+        slot->depth_image =
+            VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+        slot->depth_image.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = df, .extent = {w,h,1}, .mipLevels = 1,
+            .arrayLayers = 1, .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eSampled |
+                     vk::ImageUsageFlagBits::eTransferDst,
+            .initialLayout = vk::ImageLayout::eUndefined});
+        slot->depth_view = Check(instance.GetDevice().createImageViewUnique({
+            .image = vk::Image(slot->depth_image),
+            .viewType = vk::ImageViewType::e2D, .format = df,
+            .subresourceRange = {vk::ImageAspectFlagBits::eDepth,0,1,0,1}}));
+        slot->depth_format = df;
+        slot->depth_width = w;
+        slot->depth_height = h;
+    }
     scheduler.EndRendering();
     runtime.Transit(&color, vk::ImageLayout::eTransferSrcOptimal,
                     vk::PipelineStageFlagBits2::eTransfer,
                     vk::AccessFlagBits2::eTransferRead);
+    if (depth_copy_ok)
+        runtime.Transit(&depth, vk::ImageLayout::eTransferSrcOptimal,
+                        vk::PipelineStageFlagBits2::eTransfer,
+                        vk::AccessFlagBits2::eTransferRead);
     runtime.FlushBarriers();
     auto cmd = scheduler.CommandBuffer();
     const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor,0,1,0,1};
@@ -499,6 +538,42 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
         .newLayout=vk::ImageLayout::eGeneral,
         .image=vk::Image(slot->image), .subresourceRange=range};
     cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_sample});
+    if (depth_copy_ok) {
+        const vk::ImageSubresourceRange drange{
+            vk::ImageAspectFlagBits::eDepth,0,1,0,1};
+        const vk::ImageMemoryBarrier2 to_depth_copy{
+            .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead |
+                           vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask=vk::AccessFlagBits2::eTransferWrite,
+            .oldLayout=vk::ImageLayout::eUndefined,
+            .newLayout=vk::ImageLayout::eTransferDstOptimal,
+            .image=vk::Image(slot->depth_image),.subresourceRange=drange};
+        cmd.pipelineBarrier2({
+            .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_depth_copy});
+        const vk::ImageCopy dcopy{
+            .srcSubresource={vk::ImageAspectFlagBits::eDepth,0,0,1},
+            .dstSubresource={vk::ImageAspectFlagBits::eDepth,0,0,1},
+            .extent={w,h,1}};
+        cmd.copyImage(depth.GetImage(),vk::ImageLayout::eTransferSrcOptimal,
+                      vk::Image(slot->depth_image),
+                      vk::ImageLayout::eTransferDstOptimal,dcopy);
+        const vk::ImageMemoryBarrier2 to_depth_sample{
+            .srcStageMask=vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask=vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask=vk::AccessFlagBits2::eShaderSampledRead,
+            .oldLayout=vk::ImageLayout::eTransferDstOptimal,
+            .newLayout=vk::ImageLayout::eGeneral,
+            .image=vk::Image(slot->depth_image),.subresourceRange=drange};
+        cmd.pipelineBarrier2({
+            .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_depth_sample});
+        slot->depth_id = camera_motion.Depth();
+        slot->depth_uid = depth.image_uid;
+        slot->depth_alias_generation = depth.alias_generation;
+        slot->depth_valid = true;
+    }
     slot->captured = true;
     static u32 captures=0;
     if (++captures<=4 || captures%600==0)
@@ -2836,6 +2911,23 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
         use_scene_motion = depth.info.size.width == w && depth.info.size.height == h &&
             (fmt == vk::Format::eD32Sfloat || fmt == vk::Format::eD32SfloatS8Uint ||
              fmt == vk::Format::eD24UnormS8Uint);
+        if (prehud && use_scene_motion) {
+            const auto& slot = pre_hud_slots[pre_hud_completed_slot];
+            // A missing/recycled depth snapshot must NEVER use temporal history.
+            use_scene_motion = slot.depth_valid && bool(slot.depth_view) &&
+                slot.depth_id == completed_depth &&
+                slot.depth_uid == depth.image_uid &&
+                slot.depth_alias_generation == depth.alias_generation;
+            if (!use_scene_motion) {
+                static u64 pair_rejected = 0;
+                if (++pair_rejected <= 5 || pair_rejected % 600 == 0)
+                    std::printf("GSR2_PREHUD_DEPTH_PAIR rejected=%llu slot=%d valid=%d id=%d uid=%d alias=%d\n",
+                        (unsigned long long)pair_rejected,pre_hud_completed_slot,
+                        int(slot.depth_valid),int(slot.depth_id == completed_depth),
+                        int(slot.depth_uid == depth.image_uid),
+                        int(slot.depth_alias_generation == depth.alias_generation));
+            }
+        }
     }
     vk::ImageView chosen_depth_view = *guest_display_depth_view;
 
@@ -2870,14 +2962,19 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const auto swrite = vk::AccessFlagBits2::eShaderWrite;
     const auto sread = vk::AccessFlagBits2::eShaderRead;
     if (use_scene_motion) {
-        auto& real_depth = texture_cache.GetImage(completed_depth);
-        scheduler.EndRendering();
-        runtime.Transit(&real_depth, vk::ImageLayout::eGeneral,
-                        vk::PipelineStageFlagBits2::eComputeShader,
-                        vk::AccessFlagBits2::eShaderSampledRead);
-        runtime.FlushBarriers();
-        chosen_depth_view = CachedView(real_depth, real_depth.info.pixel_format,
-                                       vk::ImageAspectFlagBits::eDepth);
+        if (prehud) {
+            chosen_depth_view = *pre_hud_slots[pre_hud_completed_slot].depth_view;
+        } else {
+            // Preserve the pre-existing non-preHUD and Native-AA paths.
+            auto& real_depth = texture_cache.GetImage(completed_depth);
+            scheduler.EndRendering();
+            runtime.Transit(&real_depth, vk::ImageLayout::eGeneral,
+                            vk::PipelineStageFlagBits2::eComputeShader,
+                            vk::AccessFlagBits2::eShaderSampledRead);
+            runtime.FlushBarriers();
+            chosen_depth_view = CachedView(real_depth, real_depth.info.pixel_format,
+                                           vk::ImageAspectFlagBits::eDepth);
+        }
     } else {
     barrier(vk::Image(guest_display_depth), vk::ImageLayout::eUndefined,
             all, vk::AccessFlagBits2::eNone, transfer, twrite);
