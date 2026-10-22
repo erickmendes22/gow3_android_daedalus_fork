@@ -1,3 +1,5 @@
 GSR2 pre-HUD depth snapshot fallback via compute for sampleable depth without TransferSrc.
 Includes frozen R32Sfloat resource, Vulkan synchronization, persistent provenance checks, and automatic source tests.
 Build ARM64 Bionic experimental APK. Not a confirmed visual fix without Redmagic validation.
+
+Revision: includes compiled GLSL header gsr2_depth_snapshot_comp.h in vk_temporal_upscaler.cpp.
