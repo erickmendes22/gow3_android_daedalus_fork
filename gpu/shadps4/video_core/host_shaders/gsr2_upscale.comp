@@ -293,6 +293,12 @@ void main()
     rectboxmax = min(rectboxmax, boxmax);
     rectboxmin = max(rectboxmin, boxmin);
 
+    // Measure the ORIGINAL reprojected history before neighborhood clipping.
+    // A wrong old frame can pass the camera-shader checks yet contribute a
+    // completely unrelated full-screen color/shape. History that disagrees
+    // materially with the current spatial reconstruction must lose weight,
+    // rather than visibly replacing the new scene for several frames.
+    vec3 historyBeforeClamp=HistoryColor;
     vec3 clampedcolor = clamp(HistoryColor, rectboxmin, rectboxmax);
     float startLerpValue = params.MinLerpContribution; //params.MinLerpContribution; //MinLerpContribution;
     if ((abs(mda.x) + abs(mda.y)) > 0.000001) startLerpValue = 0.0;
@@ -305,6 +311,14 @@ void main()
     ////blend color
     float alphasum = max(EPSILON, basealpha + Upsampledcw.w);
     float alpha = clamp(Upsampledcw.w / alphasum + float(params.reset), 0.0, 1.0);
+    // Qualcomm history remains fully temporal where reprojection is coherent,
+    // but reject an abruptly unrelated history neighborhood (scene cuts,
+    // missing/incorrect motion, or a stale compositor input). This is a
+    // per-pixel CURRENT frame consistency test, not a hard spatial-only mode.
+    vec3 disagreement=abs(historyBeforeClamp-Upsampledcw.xyz);
+    float discrepancy=max(disagreement.x,max(disagreement.y,disagreement.z));
+    float rejectHistory=smoothstep(0.055,0.145,discrepancy);
+    alpha=max(alpha,rejectHistory);
     Upsampledcw.xyz = mix(HistoryColor, Upsampledcw.xyz, alpha);
     
     imageStore(HistoryOutput, ivec2(gl_GlobalInvocationID.xy), vec4(Upsampledcw.xyz, Wfactor));
