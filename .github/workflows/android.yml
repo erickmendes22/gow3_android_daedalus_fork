@@ -3,7 +3,7 @@ name: android
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'fix/2.1.7-gsr2-atomic-depth-20261022']
     tags: ['v*']
   workflow_dispatch:
 
