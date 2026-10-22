@@ -474,14 +474,30 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
     // TextureCache identity is not sufficient: the GPU may write again into
     // the same depth allocation without reallocating it.
     const vk::Format df = depth.info.pixel_format;
+    const bool depth_format_ok =
+        df == vk::Format::eD32Sfloat ||
+        df == vk::Format::eD32SfloatS8Uint ||
+        df == vk::Format::eD24UnormS8Uint;
     const bool depth_copy_ok =
-        (df == vk::Format::eD32Sfloat ||
-         df == vk::Format::eD32SfloatS8Uint ||
-         df == vk::Format::eD24UnormS8Uint) &&
-        depth.info.num_samples == 1 &&
+        depth_format_ok && depth.info.num_samples == 1 &&
         bool(depth.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
-    if (depth_copy_ok &&
-        (!slot->depth_image || slot->depth_format != df ||
+    const bool depth_compute_ok =
+        !depth_copy_ok && depth_format_ok && depth.info.num_samples == 1 &&
+        bool(depth.usage_flags & vk::ImageUsageFlagBits::eSampled) &&
+        bool(pre_hud_depth_pipeline);
+    const bool depth_snapshot_ok = depth_copy_ok || depth_compute_ok;
+    const vk::Format snapshot_format = depth_copy_ok ? df : vk::Format::eR32Sfloat;
+    if (!depth_snapshot_ok) {
+        static u64 unavailable = 0;
+        if (++unavailable <= 5 || unavailable % 600 == 0)
+            std::printf("GSR2_PREHUD_DEPTH_UNAVAILABLE count=%llu format=%s samples=%u transfer=%d sampled=%d\\n",
+                        (unsigned long long)unavailable,vk::to_string(df).c_str(),
+                        depth.info.num_samples,
+                        int(bool(depth.usage_flags & vk::ImageUsageFlagBits::eTransferSrc)),
+                        int(bool(depth.usage_flags & vk::ImageUsageFlagBits::eSampled)));
+    }
+    if (depth_snapshot_ok &&
+        (!slot->depth_image || slot->depth_format != snapshot_format ||
          slot->depth_width != w || slot->depth_height != h)) {
         scheduler.Finish();
         slot->depth_view.reset();
@@ -489,17 +505,21 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
             VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
         slot->depth_image.Create(vk::ImageCreateInfo{
             .imageType = vk::ImageType::e2D,
-            .format = df, .extent = {w,h,1}, .mipLevels = 1,
+            .format = snapshot_format, .extent = {w,h,1}, .mipLevels = 1,
             .arrayLayers = 1, .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eSampled |
-                     vk::ImageUsageFlagBits::eTransferDst,
+                     vk::ImageUsageFlagBits::eTransferDst |
+                     (depth_copy_ok ? vk::ImageUsageFlags{}
+                         : vk::ImageUsageFlags{vk::ImageUsageFlagBits::eStorage}),
             .initialLayout = vk::ImageLayout::eUndefined});
         slot->depth_view = Check(instance.GetDevice().createImageViewUnique({
             .image = vk::Image(slot->depth_image),
-            .viewType = vk::ImageViewType::e2D, .format = df,
-            .subresourceRange = {vk::ImageAspectFlagBits::eDepth,0,1,0,1}}));
-        slot->depth_format = df;
+            .viewType = vk::ImageViewType::e2D, .format = snapshot_format,
+            .subresourceRange = {
+                depth_copy_ok ? vk::ImageAspectFlagBits::eDepth
+                              : vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+        slot->depth_format = snapshot_format;
         slot->depth_width = w;
         slot->depth_height = h;
     }
@@ -511,6 +531,10 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
         runtime.Transit(&depth, vk::ImageLayout::eTransferSrcOptimal,
                         vk::PipelineStageFlagBits2::eTransfer,
                         vk::AccessFlagBits2::eTransferRead);
+    else if (depth_compute_ok)
+        runtime.Transit(&depth, vk::ImageLayout::eGeneral,
+                        vk::PipelineStageFlagBits2::eComputeShader,
+                        vk::AccessFlagBits2::eShaderSampledRead);
     runtime.FlushBarriers();
     auto cmd = scheduler.CommandBuffer();
     const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor,0,1,0,1};
@@ -569,6 +593,63 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
             .image=vk::Image(slot->depth_image),.subresourceRange=drange};
         cmd.pipelineBarrier2({
             .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&to_depth_sample});
+    } else if (depth_compute_ok) {
+        // Store linear depth in an independent R32_SFLOAT image. It remains
+        // immutable across subsequent guest draws and is safe to sample by
+        // both the motion reconstruction and Qualcomm GSR2.
+        const vk::ImageSubresourceRange drange{
+            vk::ImageAspectFlagBits::eColor,0,1,0,1};
+        const vk::ImageMemoryBarrier2 write_depth{
+            .srcStageMask=vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask=vk::AccessFlagBits2::eMemoryRead |
+                           vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask=vk::AccessFlagBits2::eShaderWrite,
+            .oldLayout=vk::ImageLayout::eUndefined,
+            .newLayout=vk::ImageLayout::eGeneral,
+            .image=vk::Image(slot->depth_image),.subresourceRange=drange};
+        cmd.pipelineBarrier2({
+            .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&write_depth});
+        const auto source_depth_view = CachedView(depth, df,
+                                                  vk::ImageAspectFlagBits::eDepth);
+        const std::array<vk::DescriptorImageInfo,2> images{{
+            {.sampler=*pre_hud_linear_sampler,.imageView=source_depth_view,
+             .imageLayout=vk::ImageLayout::eGeneral},
+            {.imageView=*slot->depth_view,.imageLayout=vk::ImageLayout::eGeneral}
+        }};
+        const std::array<vk::WriteDescriptorSet,2> writes{{
+            {.dstBinding=0,.descriptorCount=1,
+             .descriptorType=vk::DescriptorType::eCombinedImageSampler,
+             .pImageInfo=&images[0]},
+            {.dstBinding=1,.descriptorCount=1,
+             .descriptorType=vk::DescriptorType::eStorageImage,
+             .pImageInfo=&images[1]}
+        }};
+        const std::array<u32,2> dimensions{w,h};
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute,*pre_hud_depth_pipeline);
+        cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
+                                 *pre_hud_depth_pipeline_layout,0,writes);
+        cmd.pushConstants(*pre_hud_depth_pipeline_layout,
+                          vk::ShaderStageFlagBits::eCompute,0,
+                          sizeof(dimensions),dimensions.data());
+        cmd.dispatch((w+7)/8,(h+7)/8,1);
+        const vk::ImageMemoryBarrier2 sample_depth{
+            .srcStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask=vk::AccessFlagBits2::eShaderWrite,
+            .dstStageMask=vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask=vk::AccessFlagBits2::eShaderSampledRead,
+            .oldLayout=vk::ImageLayout::eGeneral,
+            .newLayout=vk::ImageLayout::eGeneral,
+            .image=vk::Image(slot->depth_image),.subresourceRange=drange};
+        cmd.pipelineBarrier2({
+            .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&sample_depth});
+        static u64 compute_snapshots=0;
+        if (++compute_snapshots<=5 || compute_snapshots%600==0)
+            std::printf("GSR2_PREHUD_DEPTH_COMPUTE count=%llu format=%s\\n",
+                        (unsigned long long)compute_snapshots,
+                        vk::to_string(df).c_str());
+    }
+    if (depth_snapshot_ok) {
         slot->depth_id = camera_motion.Depth();
         slot->depth_uid = depth.image_uid;
         slot->depth_alias_generation = depth.alias_generation;
@@ -1125,6 +1206,26 @@ void TemporalUpscaler::CreatePipelines() {
             .pushConstantRangeCount=1, .pPushConstantRanges=&push}));
         pre_hud_composite_pipeline = compute(GSR2_PREHUD_COMPOSITE_COMP,
                                              *pre_hud_composite_pipeline_layout);
+        // The pre-HUD scene occasionally uses a depth attachment without
+        // TransferSrc. Sample it at the same draw as the saved color instead
+        // of pairing a later (mutable) depth texture with older color.
+        const std::array<vk::DescriptorSetLayoutBinding, 2> depth_bindings{{
+            {.binding=0,.descriptorType=vk::DescriptorType::eCombinedImageSampler,
+             .descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute},
+            {.binding=1,.descriptorType=vk::DescriptorType::eStorageImage,
+             .descriptorCount=1,.stageFlags=vk::ShaderStageFlagBits::eCompute}
+        }};
+        pre_hud_depth_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount=u32(depth_bindings.size()),
+            .pBindings=depth_bindings.data()}));
+        const vk::PushConstantRange depth_push{
+            vk::ShaderStageFlagBits::eCompute,0,2*sizeof(u32)};
+        pre_hud_depth_pipeline_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount=1,.pSetLayouts=&*pre_hud_depth_desc_layout,
+            .pushConstantRangeCount=1,.pPushConstantRanges=&depth_push}));
+        pre_hud_depth_pipeline=compute(GSR2_DEPTH_SNAPSHOT_COMP,
+                                       *pre_hud_depth_pipeline_layout);
     }
     {
         std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
