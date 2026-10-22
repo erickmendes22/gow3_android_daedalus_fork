@@ -1,5 +1,3 @@
-GSR2 atomic color/depth capture and pre-HUD compositor isolation
-Source: vk_temporal_upscaler.cpp / vk_temporal_upscaler.h / gsr2_prehud_composite.comp
-Target: ARM64 Bionic release APK 2.1.7
-Validation: dedicated CI native build + APK signature
-Do not publish or merge as confirmed graphics fix without device validation.
+GSR2 pre-HUD depth snapshot fallback via compute for sampleable depth without TransferSrc.
+Includes frozen R32Sfloat resource, Vulkan synchronization, persistent provenance checks, and automatic source tests.
+Build ARM64 Bionic experimental APK. Not a confirmed visual fix without Redmagic validation.
