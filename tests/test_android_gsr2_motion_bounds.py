@@ -50,6 +50,7 @@ class MotionBounds(unittest.TestCase):
         self.assertIn("any(isnan(rawPrevUV))",s)
         self.assertIn("any(isinf(rawPrevUV))",s)
         self.assertIn("invalidReprojection ? 0.0",s)
+        self.assertIn("isnan(Historyw) || isinf(Historyw)",s)
         self.assertIn("if (invalidReprojection) alpha=1.0;",s)
         self.assertIn("clamp(ivec2(Jitteruv * InputInfoViewportSize)",s)
         self.assertIn("ivec2(params.renderSize)-ivec2(1)",s)
