@@ -293,6 +293,15 @@ private:
         VAddr guest = 0;
         VideoCore::UniqueImage image;
         vk::UniqueImageView view;
+        // Depth from the exact same pre-HUD draw as the saved color.
+        VideoCore::UniqueImage depth_image;
+        vk::UniqueImageView depth_view;
+        VideoCore::ImageId depth_id{};
+        u64 depth_uid = 0;
+        u64 depth_alias_generation = 0;
+        vk::Format depth_format = vk::Format::eUndefined;
+        u32 depth_width = 0, depth_height = 0;
+        bool depth_valid = false;
         vk::Format format = vk::Format::eUndefined;
         u32 width = 0, height = 0;
         bool captured = false;
