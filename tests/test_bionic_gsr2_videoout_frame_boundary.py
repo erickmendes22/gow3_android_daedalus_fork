@@ -75,7 +75,9 @@ class Gsr2VideoOutFrameBoundary(unittest.TestCase):
         self.assertIn("vec2 motionPixels = texelFetch(InputMotion, InputPos, 0).xy;",convert)
         self.assertIn("vec2 motion = -motionPixels * 2.0 * params.renderSizeRcp;",convert)
         self.assertIn("depthclip=1.0;",convert)
-        self.assertIn("vec2 PrevUV = clamp(-0.5 * Motion + Hruv",upscale)
+        self.assertIn("vec2 rawPrevUV = -0.5 * Motion + Hruv;",upscale)
+        self.assertIn("vec2 PrevUV = clamp(rawPrevUV",upscale)
+        self.assertIn("if (invalidReprojection) alpha=1.0;",upscale)
         for w,h in ((426,240),(640,360),(752,424),(960,540)):
             for current,previous in (((.5,.5),(.501,.503)),
                                      ((.21,.78),(.209,.781)),
