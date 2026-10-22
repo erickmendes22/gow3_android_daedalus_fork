@@ -45,7 +45,7 @@ class Gsr2GradeTests(unittest.TestCase):
         shader = SHADER.read_text()
         self.assertIn("shared vec3 gradeGain;", shader)
         self.assertIn("shared vec3 gradeBias;", shader)
-        self.assertIn("sumXY*(1.0/16.0)-meanX*meanY", shader)
+        self.assertIn("sumXY*rcpCount-meanX*meanY", shader)
         self.assertIn("smoothstep(3.0,11.0,bad);", shader)
         self.assertNotIn("incompatibleScene=uint(different>=5u)", shader)
         self.assertIn("vec3 result=mix(restored,guest,guestWeight);", shader)
