@@ -53,15 +53,24 @@ void main() {
         // structural mismatch AFTER removing the global brightness change.
         vec3 sumX=vec3(0.0),sumY=vec3(0.0);
         vec3 sumXX=vec3(0.0),sumXY=vec3(0.0);
+        float kept=0.0;
         for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
             ivec2 p=checkpointPixel(x,y);
             vec3 a=texelFetch(InputPreHud,p,0).rgb;
             vec3 b=texelFetch(InputVideoOut,p,0).rgb;
+            // Opaque HUD elements and abrupt scene substitutions are NOT
+            // global color grades. Exclude these high-disagreement outliers
+            // from the fit, otherwise two white glyph samples can skew ALL
+            // scene colors and make the fallback weight oscillate.
+            vec3 d=abs(a-b);
+            if(max(d.r,max(d.g,d.b))>0.55)continue;
             sumX+=a;sumY+=b;sumXX+=a*a;sumXY+=a*b;
+            kept+=1.0;
         }
-        vec3 meanX=sumX*(1.0/16.0),meanY=sumY*(1.0/16.0);
-        vec3 variance=max(sumXX*(1.0/16.0)-meanX*meanX,vec3(0.0));
-        vec3 covariance=sumXY*(1.0/16.0)-meanX*meanY;
+        float rcpCount=1.0/max(kept,1.0);
+        vec3 meanX=sumX*rcpCount,meanY=sumY*rcpCount;
+        vec3 variance=max(sumXX*rcpCount-meanX*meanX,vec3(0.0));
+        vec3 covariance=sumXY*rcpCount-meanX*meanY;
         vec3 fitted=clamp(covariance/max(variance,vec3(0.00002)),
                           vec3(0.55),vec3(2.25));
         gradeGain=mix(vec3(1.0),fitted,
@@ -80,7 +89,8 @@ void main() {
         // disagreement. Pure color grading gives few mismatches and keeps
         // temporal scene detail; unrelated scenes/menus give many and keep
         // the unmodified PS4 framebuffer. No abrupt 5/16 binary switch.
-        guestFallbackWeight=smoothstep(3.0,11.0,bad);
+        guestFallbackWeight=kept<8.0 ? 1.0
+                                      : smoothstep(3.0,11.0,bad);
     }
     barrier();
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
