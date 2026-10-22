@@ -147,17 +147,17 @@ public:
             return false;
         for (size_t i=0; i<completed_previous.view.size(); ++i) {
             if (!std::isfinite(completed_previous.view[i]) ||
-                std::abs(completed_previous.view[i] - last_temporal_scene_camera.view[i]) > 0.03f)
+                std::abs(completed_previous.view[i] - last_temporal_scene_camera.view[i]) > 0.002f)
                 return false;
             if (!std::isfinite(completed_previous.inv_view[i]) ||
                 std::abs(completed_previous.inv_view[i] -
-                         last_temporal_scene_camera.inv_view[i]) > 0.03f)
+                         last_temporal_scene_camera.inv_view[i]) > 0.002f)
                 return false;
         }
         for (size_t i=0; i<completed_previous.proj.size(); ++i)
             if (!std::isfinite(completed_previous.proj[i]) ||
                 std::abs(completed_previous.proj[i] -
-                         last_temporal_scene_camera.proj[i]) > 0.005f)
+                         last_temporal_scene_camera.proj[i]) > 0.0005f)
                 return false;
         return true;
     }
