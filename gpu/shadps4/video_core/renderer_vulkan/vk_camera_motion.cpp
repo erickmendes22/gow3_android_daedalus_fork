@@ -209,8 +209,14 @@ void CameraMotion::RecordCompletedMotion(vk::CommandBuffer cmdbuf, vk::ImageView
     // saved jitter; raw previous_jitter belongs to the immediately prior
     // VideoOut callback, which can be a spatial-only duplicate.
     const bool continuing_scene = CompletedPreviousMatchesTemporalScene();
+    // The previous VideoOut callback may not have rendered a scene. Even
+    // when its shader matrices look approximately equal, never reproject
+    // Qualcomm's retained history through that *different* snapshot.
+    // Motion and Halton must refer to the SAME last temporal GSR2 scene.
+    const Camera& prior_scene = continuing_scene
+        ? last_temporal_scene_camera : completed_previous;
     RecordMotionFor(cmdbuf, depth_view, motion_view, width, height,
-                    completed_current, completed_previous,
+                    completed_current, prior_scene,
                     completed_current_jitter,
                     continuing_scene ? last_temporal_scene_jitter
                                      : completed_previous_jitter, false);
