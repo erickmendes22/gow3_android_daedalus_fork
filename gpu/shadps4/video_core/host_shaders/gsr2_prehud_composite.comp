@@ -35,12 +35,18 @@ ivec2 checkpointPixel(int x,int y) {
 vec3 applyGrade(vec3 color) {
     return clamp(color*gradeGain+gradeBias,0.0,1.0);
 }
-float foregroundDifference(ivec2 p) {
+// Guest postprocessing can apply a spatially varying tone curve to the ENTIRE
+// image. A large pointwise difference is therefore not sufficient evidence of
+// HUD/UI. Its high-frequency spatial residual is a stronger discriminator.
+vec3 foregroundResidual(ivec2 p) {
     p=clamp(p,ivec2(0),ivec2(params.renderSize)-1);
     vec3 before=applyGrade(texelFetch(InputPreHud,p,0).rgb);
     vec3 after=texelFetch(InputVideoOut,p,0).rgb;
-    vec3 difference=abs(before-after);
-    return max(difference.r,max(difference.g,difference.b));
+    return after-before;
+}
+float maxChannel(vec3 v) {
+    v=abs(v);
+    return max(v.r,max(v.g,v.b));
 }
 void main() {
     if (gl_LocalInvocationIndex == 0u) {
@@ -85,12 +91,12 @@ void main() {
             vec3 delta=abs(estimated-observed);
             bad+=float(max(delta.r,max(delta.g,delta.b))>0.12);
         }
-        // Gradual, coherent WHOLE-screen fallback only on true residual
-        // disagreement. Pure color grading gives few mismatches and keeps
-        // temporal scene detail; unrelated scenes/menus give many and keep
-        // the unmodified PS4 framebuffer. No abrupt 5/16 binary switch.
+        // Sparse checkpoints cannot classify an entire image as unrelated
+        // after 3/16 tone-map outliers: in the 215958 scene this disabled
+        // Qualcomm across most pixels. Only obvious widespread disagreement
+        // is allowed to replace the whole reconstructed scene.
         guestFallbackWeight=kept<8.0 ? 1.0
-                                      : smoothstep(3.0,11.0,bad);
+                                      : smoothstep(12.0,15.0,bad);
     }
     barrier();
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
@@ -98,10 +104,18 @@ void main() {
     vec2 uv=(vec2(pixel)+0.5)/vec2(params.outputSize);
     ivec2 low=clamp(ivec2(uv*vec2(params.renderSize)),
                     ivec2(0),ivec2(params.renderSize)-1);
-    float changed=0.0;
+    vec3 residual=foregroundResidual(low);
+    vec3 neighborhood=vec3(0.0);
     for(int y=-1;y<=1;++y)
         for(int x=-1;x<=1;++x)
-            changed=max(changed,foregroundDifference(low+ivec2(x,y)));
+            neighborhood+=foregroundResidual(low+ivec2(x,y));
+    neighborhood*=1.0/9.0;
+    // A nonlinear brightness correction leaves coherent, smooth residuals;
+    // new HUD glyphs and panels introduce local edges in the residual.
+    // Also preserve very large opaque overlays even when their interiors
+    // are flat (no local edge).
+    float residualEdge=maxChannel(residual-neighborhood);
+    float opaqueDifference=maxChannel(residual);
 
     vec3 guest=textureLod(InputVideoOut,uv,0.0).rgb;
     vec3 gsrScene=textureLod(InputGsr2,uv,0.0).rgb;
@@ -111,8 +125,8 @@ void main() {
     // never in the temporal scene history.
     vec3 restored=clamp(applyGrade(gsrScene)+
                         (guest-applyGrade(before)),0.0,1.0);
-    float overlayWeight=smoothstep(params.threshold*0.5,
-                                   params.threshold*2.0,changed);
+    float overlayWeight=max(smoothstep(0.06,0.16,residualEdge),
+                            smoothstep(0.28,0.65,opaqueDifference));
     float guestWeight=max(overlayWeight,guestFallbackWeight);
     vec3 result=mix(restored,guest,guestWeight);
     if(params.isSrgb!=0u)result=encodeSrgb(result);
