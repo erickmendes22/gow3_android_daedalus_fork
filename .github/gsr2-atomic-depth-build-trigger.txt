@@ -3,3 +3,5 @@ Includes frozen R32Sfloat resource, Vulkan synchronization, persistent provenanc
 Build ARM64 Bionic experimental APK. Not a confirmed visual fix without Redmagic validation.
 
 Revision: includes compiled GLSL header gsr2_depth_snapshot_comp.h in vk_temporal_upscaler.cpp.
+
+2026-10-22: Fix MSAA 2x D32SfloatS8Uint capture using GSR2_DEPTH_SNAPSHOT_MS_COMP; log 074313.
