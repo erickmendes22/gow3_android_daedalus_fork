@@ -45,7 +45,14 @@ void main() {
         // A fullscreen difference signals a display-copy/tonemap/menu, not a
         // handful of HUD glyphs. Present the original guest without mixing
         // its pixels with the temporal history of a different scene.
-        incompatibleScene=uint(different>=12u);
+        // The old 12/16 threshold missed 7200's full-screen color-pass
+        // mismatch (7/16 sampled sites changed): it then mixed whole
+        // regions of GSR history and raw VideoOut in one frame, appearing
+        // as screen-wide alternating/corrupted patches on the device.
+        // At >=5/16 geographically distributed sites, fall back coherently
+        // for this flip. A few HUD glyphs may trigger a safe full-frame
+        // fallback, never a spatially torn composite.
+        incompatibleScene=uint(different>=5u);
     }
     barrier();
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
@@ -75,7 +82,13 @@ void main() {
     vec3 restored=clamp(scene + (guest-before),0.0,1.0);
     // Significant local differences are masks, text and foreground overlays.
     // Keep their exact guest color without exposing them to scene reprojection.
-    vec3 result=(incompatibleScene!=0u || changed>params.threshold) ? guest:restored;
+    // Do not switch hard between two full-frame pipelines at every moving
+    // HUD/color-grade boundary. Smooth the pixel mask after its 3x3 dilation
+    // while retaining exact original guest pixels for opaque overlays.
+    float overlayWeight=smoothstep(params.threshold*0.5,
+                                   params.threshold*2.0,changed);
+    vec3 result=incompatibleScene!=0u ? guest
+                                      : mix(restored,guest,overlayWeight);
     if(params.isSrgb!=0u) result=encodeSrgb(result);
     imageStore(OutputComposited,pixel,vec4(result,1.0));
 }
