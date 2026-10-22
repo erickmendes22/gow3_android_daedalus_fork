@@ -81,8 +81,26 @@ void main()
         depthclip = clamp(1.0f - Wdepth*0.25, 0.0, 1.0);
     }
 
-    // Render pixels, previous - current  ->  clip units (2 per render size), current - previous.
-    vec2 motion = -texelFetch(InputMotion, InputPos, 0).xy * 2.0 * params.renderSizeRcp;
+    // Render pixels, previous - current -> clip units, current - previous.
+    // The source camera motion can be invalid for sky, camera cuts and guest
+    // depth disocclusions. Prior code passed a huge/out-of-frame vector to
+    // SGSR, which subsequently CLAMPED the previous UV to an edge and
+    // stretched unrelated history colors across the frame.
+    vec2 motionPixels = texelFetch(InputMotion, InputPos, 0).xy;
+    vec2 sceneUV = (vec2(InputPos) + 0.5) * params.renderSizeRcp;
+    vec2 historyUV = sceneUV + motionPixels * params.renderSizeRcp;
+    bool motionInvalid = any(isnan(motionPixels)) || any(isinf(motionPixels)) ||
+        any(greaterThan(abs(motionPixels), vec2(params.renderSize))) ||
+        any(lessThan(historyUV, vec2(0.0))) ||
+        any(greaterThanEqual(historyUV, vec2(1.0)));
+    // Invalid pixels must not read the temporal history at all; the value 1
+    // forces current-frame reconstruction in the Qualcomm upscale blending
+    // rule. Keep valid pixels fully temporal, including their real motion.
+    if (motionInvalid) {
+        motionPixels=vec2(0.0);
+        depthclip=1.0;
+    }
+    vec2 motion = -motionPixels * 2.0 * params.renderSizeRcp;
 
     ////////////compute luma
     vec3 Colorrgb = texelFetch(InputColor, InputPos, 0).xyz;
