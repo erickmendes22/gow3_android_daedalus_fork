@@ -67,12 +67,13 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("OutputComposited",shader)
         self.assertIn("foregroundDifference",shader)
         self.assertIn("vec3 before=textureLod(InputPreHud,uv,0.0).rgb;",shader)
-        self.assertIn("vec3 restored=clamp(scene + (guest-before),0.0,1.0);",shader)
-        self.assertIn("mix(restored,guest,overlayWeight)",shader)
+        self.assertIn("vec3 restored=clamp(applyGrade(gsrScene)+",shader)
+        self.assertIn("vec3 result=mix(restored,guest,guestWeight);",shader)
         self.assertIn("smoothstep(params.threshold*0.5",shader)
         self.assertIn("GSR2_HISTORY_DISPATCH_TOTAL",cpp)
-        self.assertIn("incompatibleScene",shader)
-        self.assertIn("different>=5u",shader)
+        self.assertIn("gradeGain",shader)
+        self.assertIn("gradeBias",shader)
+        self.assertIn("guestFallbackWeight=smoothstep(3.0,11.0,bad);",shader)
         self.assertIn("barrier();",shader)
         self.assertIn("sameflip_prehud",cpp)
         self.assertIn("sameflip_videoout",cpp)
@@ -84,21 +85,19 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn('GOW3_GSR2_PREHUD_COMPOSITE:-1',shell)
         self.assertIn("} else {\n        // Stable fallback",cpp)
 
-    def test_intermitent_full_screen_compositor_mismatch_fails_closed(self):
-        # Device log 212023, four-stage captures at frame 7200: seven out of
-        # sixteen widely spaced sites differ after the game's display copy.
-        # The previous 12/16 rule composed broad unmatched regions of the
-        # temporally reconstructed scene with the guest VideoOut, producing
-        # alternating whole-screen corruption.
-        mismatch_count = 7
-        self.assertTrue(mismatch_count >= 5)
-        self.assertFalse(mismatch_count >= 12)
-        # A mere localized HUD change must not force a fullscreen fallback.
-        self.assertFalse(2 >= 5)
+    def test_global_grade_is_not_mistaken_for_a_scene_change(self):
+        # Device captures: 212023 at flip 7200 has large global color change
+        # that previously triggered the binary 5/16 fullscreen fallback;
+        # 215958 at flip 9600 also has a widespread display copy grade.
+        # Brightening the SAME scene is not evidence of a different scene.
         shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp").read_text()
-        self.assertIn("incompatibleScene=uint(different>=5u)", shader)
-        self.assertIn("vec3 result=incompatibleScene!=0u ? guest", shader)
-        self.assertIn("smoothstep(params.threshold*0.5", shader)
+        self.assertIn("vec3 covariance=sumXY*(1.0/16.0)-meanX*meanY;",shader)
+        self.assertIn("gradeGain=mix(vec3(1.0),fitted,",shader)
+        self.assertIn("gradeBias=clamp(meanY-gradeGain*meanX",shader)
+        self.assertIn("vec3 estimated=applyGrade(texelFetch(InputPreHud,p,0).rgb);",shader)
+        self.assertIn("guestFallbackWeight=smoothstep(3.0,11.0,bad);",shader)
+        self.assertNotIn("incompatibleScene=uint(different>=5u)",shader)
+        self.assertIn("smoothstep(params.threshold*0.5",shader)
 
     def test_same_frame_postprocess_is_restored_without_temporal_hud_contamination(self):
         # Identity-GSR input must reconstruct EXACTLY the final VideoOut
