@@ -25,10 +25,11 @@ def fit_grade(pairs):
     assert len(pairs) == 16
     gain, bias = [], []
     for k in range(3):
-        ax = sum(p[0][k] for p in pairs)/16.0
-        ay = sum(p[1][k] for p in pairs)/16.0
-        var = sum((p[0][k]-ax)**2 for p in pairs)/16.0
-        cov = sum((p[0][k]-ax)*(p[1][k]-ay) for p in pairs)/16.0
+        accepted = [p for p in pairs if max(abs(p[0][i]-p[1][i]) for i in range(3)) <= 0.55]
+        ax = sum(p[0][k] for p in accepted)/max(len(accepted), 1)
+        ay = sum(p[1][k] for p in accepted)/max(len(accepted), 1)
+        var = sum((p[0][k]-ax)**2 for p in accepted)/max(len(accepted), 1)
+        cov = sum((p[0][k]-ax)*(p[1][k]-ay) for p in accepted)/max(len(accepted), 1)
         g = clamp(cov / max(var, 0.00002), 0.55, 2.25) if var > 0.00002 else 1.0
         gain.append(g)
         bias.append(clamp(ay-g*ax, -0.28, 0.28))
@@ -36,7 +37,7 @@ def fit_grade(pairs):
         max(abs(clamp(a[k]*gain[k]+bias[k], 0, 1)-b[k]) for k in range(3)) > 0.12
         for a, b in pairs
     )
-    return gain, bias, smoothstep(3.0, 11.0, float(bad)), bad
+    return gain, bias, (1.0 if len(accepted) < 8 else smoothstep(3.0, 11.0, float(bad))), bad
 
 
 class Gsr2GradeTests(unittest.TestCase):
@@ -45,7 +46,7 @@ class Gsr2GradeTests(unittest.TestCase):
         self.assertIn("shared vec3 gradeGain;", shader)
         self.assertIn("shared vec3 gradeBias;", shader)
         self.assertIn("sumXY*(1.0/16.0)-meanX*meanY", shader)
-        self.assertIn("guestFallbackWeight=smoothstep(3.0,11.0,bad);", shader)
+        self.assertIn("smoothstep(3.0,11.0,bad);", shader)
         self.assertNotIn("incompatibleScene=uint(different>=5u)", shader)
         self.assertIn("vec3 result=mix(restored,guest,guestWeight);", shader)
 
@@ -78,8 +79,8 @@ class Gsr2GradeTests(unittest.TestCase):
         after[3] = (1.0, 1.0, 1.0)
         after[7] = (1.0, 1.0, 1.0)
         _g, _b, fallback, bad = fit_grade(list(zip(before, after)))
-        self.assertLess(fallback, 1.0)
-        self.assertLess(bad, 11)
+        self.assertEqual(fallback, 0.0)
+        self.assertEqual(bad, 2)
 
 
 if __name__ == "__main__":
