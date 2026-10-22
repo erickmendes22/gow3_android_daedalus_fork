@@ -122,6 +122,25 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertGreater(abs(1.0 - 0.1), threshold)
         self.assertEqual((1.0 if abs(1.0 - 0.1) > threshold else 0.1), 1.0)
 
+    def test_pre_hud_depth_is_frozen_even_without_transfer_src(self):
+        cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
+        hdr = (VK / "vk_temporal_upscaler.h").read_text(encoding="utf-8")
+        shader = (ROOT / "gpu/shadps4/video_core/host_shaders/gsr2_depth_snapshot.comp").read_text()
+        cmake = (ROOT / "gpu/CMakeLists.txt").read_text()
+        self.assertIn("GSR2_DEPTH_SNAPSHOT_COMP", cpp)
+        self.assertIn("const bool depth_compute_ok =", cpp)
+        self.assertIn("!depth_copy_ok && depth_format_ok", cpp)
+        self.assertIn("depth.info.num_samples == 1", cpp)
+        self.assertIn("vk::ImageUsageFlagBits::eSampled", cpp)
+        self.assertIn("slot->depth_format = snapshot_format;", cpp)
+        self.assertIn("cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,", cpp)
+        self.assertIn("if (depth_snapshot_ok) {", cpp)
+        self.assertIn("slot->depth_valid = true;", cpp)
+        self.assertIn("pre_hud_depth_pipeline", hdr)
+        self.assertIn("texelFetch(InputDepth,pixel,0).r", shader)
+        self.assertIn("imageStore(FrozenDepth,pixel,", shader)
+        self.assertIn("gsr2_depth_snapshot.comp", cmake)
+
     def test_reject_non_finite_scene_projection(self):
         cpp = (VK / "vk_temporal_upscaler.cpp").read_text(encoding="utf-8")
         section = cpp.split("bool TemporalUpscaler::PresentGsr2FromGuestDisplay(", 1)[1].split(
