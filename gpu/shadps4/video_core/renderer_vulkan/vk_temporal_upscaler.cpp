@@ -25,6 +25,7 @@
 #include "video_core/host_shaders/taa_sharpen_ldr_comp.h"
 #include "video_core/host_shaders/gsr2_prehud_composite_comp.h"
 #include "video_core/host_shaders/gsr2_depth_snapshot_comp.h"
+#include "video_core/host_shaders/gsr2_depth_snapshot_ms_comp.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -482,16 +483,21 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
     const bool depth_copy_ok =
         depth_format_ok && depth.info.num_samples == 1 &&
         bool(depth.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
+    // MSAA depth cannot be copied into a single-sample image with vkCmdCopyImage.
+    // The game's D32S8 attachment uses two samples; sample it with a
+    // dedicated sampler2DMS shader and freeze sample zero into R32_SFLOAT.
+    const bool depth_msaa = depth.info.num_samples > 1;
     const bool depth_compute_ok =
-        !depth_copy_ok && depth_format_ok && depth.info.num_samples == 1 &&
+        !depth_copy_ok && depth_format_ok && depth.info.num_samples >= 1 &&
         bool(depth.usage_flags & vk::ImageUsageFlagBits::eSampled) &&
-        bool(pre_hud_depth_pipeline);
+        (depth_msaa ? bool(pre_hud_depth_pipeline_ms)
+                    : bool(pre_hud_depth_pipeline));
     const bool depth_snapshot_ok = depth_copy_ok || depth_compute_ok;
     const vk::Format snapshot_format = depth_copy_ok ? df : vk::Format::eR32Sfloat;
     if (!depth_snapshot_ok) {
         static u64 unavailable = 0;
         if (++unavailable <= 5 || unavailable % 600 == 0)
-            std::printf("GSR2_PREHUD_DEPTH_UNAVAILABLE count=%llu format=%s samples=%u transfer=%d sampled=%d\\n",
+            std::printf("GSR2_PREHUD_DEPTH_UNAVAILABLE count=%llu format=%s samples=%u transfer=%d sampled=%d\n",
                         (unsigned long long)unavailable,vk::to_string(df).c_str(),
                         depth.info.num_samples,
                         int(bool(depth.usage_flags & vk::ImageUsageFlagBits::eTransferSrc)),
@@ -627,7 +633,9 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
              .pImageInfo=&images[1]}
         }};
         const std::array<u32,2> dimensions{w,h};
-        cmd.bindPipeline(vk::PipelineBindPoint::eCompute,*pre_hud_depth_pipeline);
+        const auto depth_pipeline = depth_msaa ? *pre_hud_depth_pipeline_ms
+                                               : *pre_hud_depth_pipeline;
+        cmd.bindPipeline(vk::PipelineBindPoint::eCompute,depth_pipeline);
         cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
                                  *pre_hud_depth_pipeline_layout,0,writes);
         cmd.pushConstants(*pre_hud_depth_pipeline_layout,
@@ -646,9 +654,9 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
             .imageMemoryBarrierCount=1,.pImageMemoryBarriers=&sample_depth});
         static u64 compute_snapshots=0;
         if (++compute_snapshots<=5 || compute_snapshots%600==0)
-            std::printf("GSR2_PREHUD_DEPTH_COMPUTE count=%llu format=%s\\n",
+            std::printf("GSR2_PREHUD_DEPTH_COMPUTE count=%llu format=%s samples=%u\n",
                         (unsigned long long)compute_snapshots,
-                        vk::to_string(df).c_str());
+                        vk::to_string(df).c_str(),depth.info.num_samples);
     }
     if (depth_snapshot_ok) {
         slot->depth_id = camera_motion.Depth();
@@ -1227,6 +1235,8 @@ void TemporalUpscaler::CreatePipelines() {
             .pushConstantRangeCount=1,.pPushConstantRanges=&depth_push}));
         pre_hud_depth_pipeline=compute(GSR2_DEPTH_SNAPSHOT_COMP,
                                        *pre_hud_depth_pipeline_layout);
+        pre_hud_depth_pipeline_ms=compute(GSR2_DEPTH_SNAPSHOT_MS_COMP,
+                                          *pre_hud_depth_pipeline_layout);
     }
     {
         std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
