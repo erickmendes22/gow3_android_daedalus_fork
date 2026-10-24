@@ -1,6 +1,10 @@
 name: Daedalus Fork Bionic APK
 
 on:
+  pull_request:
+    branches: [fix/2.1.7-fex-noexec-hook-crashes-20261020]
+    paths:
+      - '.github/2.1.7-mali-panvk-build-trigger.txt'
   push:
     branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, fix/2.1.7-en-pt-ui-localization-20261020, fix/2.1.7-fex-noexec-hook-crashes-20261020, feature/2.1.7-fix-mali-panvk-no-gsr-20261024]
     paths:
@@ -25,7 +29,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/fix/2.1.7-en-pt-ui-localization-20261020' || github.ref == 'refs/heads/fix/2.1.7-fex-noexec-hook-crashes-20261020' || github.ref == 'refs/heads/feature/2.1.7-fix-mali-panvk-no-gsr-20261024'
+    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/fix/2.1.7-en-pt-ui-localization-20261020' || github.ref == 'refs/heads/fix/2.1.7-fex-noexec-hook-crashes-20261020' || github.ref == 'refs/heads/feature/2.1.7-fix-mali-panvk-no-gsr-20261024' || (github.event_name == 'pull_request' && github.head_ref == 'feature/2.1.7-fix-mali-panvk-no-gsr-20261024')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
