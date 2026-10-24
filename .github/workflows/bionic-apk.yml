@@ -2,7 +2,7 @@ name: Daedalus Fork Bionic APK
 
 on:
   push:
-    branches: [android, experimental-bionic, fix/bionic-savedata-rich-load-ui-20261017]
+    branches: [android, experimental-bionic, fix/bionic-savedata-rich-load-ui-20261017, feature/bionic-pre-gsr-mali-panvk-20261024]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/android' || github.ref == 'refs/heads/experimental-bionic' || github.ref == 'refs/heads/fix/bionic-savedata-rich-load-ui-20261017'
+    if: github.ref == 'refs/heads/android' || github.ref == 'refs/heads/experimental-bionic' || github.ref == 'refs/heads/fix/bionic-savedata-rich-load-ui-20261017' || github.ref == 'refs/heads/feature/bionic-pre-gsr-mali-panvk-20261024'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -83,7 +83,7 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
-          name: Daedalus-Fork-Bionic-arm64
+          name: Daedalus-Fork-PreGSR-Mali-PanVK-arm64
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
