@@ -85,8 +85,12 @@ public final class GpuDriverManager {
             if (in==null) throw new IOException("Cannot open driver ZIP");
             result=DriverArchive.install(root(context),in,Build.VERSION.SDK_INT,file -> {
                 JSONObject json=new JSONObject(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
-                if (json.getInt("schemaVersion")!=1) throw new IOException("Unsupported driver package schema");
-                return new DriverArchive.Metadata(json.getString("name"),json.getString("libraryName"),json.getInt("minApi"));
+                // PanVK and most standard adrenotools ZIPs omit the fork's
+                // private schemaVersion. Keep rejecting unknown explicit schemas.
+                if (json.has("schemaVersion") && json.optInt("schemaVersion")!=1)
+                    throw new IOException("Unsupported driver package schema");
+                return new DriverArchive.Metadata(json.optString("name","Android Vulkan driver"),
+                                                  json.getString("libraryName"),json.optInt("minApi",28));
             });
         }
         select(context,"custom:"+result.id); return result;
