@@ -224,7 +224,8 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
     // only if the launch environment explicitly selected "gsr2".
     const bool android_port = std::getenv("GOW3_ANDROID_PORT") != nullptr;
     const bool snapdragon_gsr2 = env && std::strcmp(env, "gsr2") == 0;
-    enabled = (!android_port || snapdragon_gsr2) &&
+    enabled = !android_port && // 2.1.7 Fix Bionic: native resolution, no GSR2
+              (!android_port || snapdragon_gsr2) &&
               !(env && std::strcmp(env, "none") == 0);
     if (const char* hash = std::getenv("GOW3_UPSCALE_BEFORE_CS")) {
         trigger_hash = std::strtoull(hash, nullptr, 16);
@@ -2506,6 +2507,9 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
 }
 
 bool TemporalUpscaler::UseGsr2() const {
+    // The 2.1.7 Fix Mali build intentionally never enables GSR2 in the
+    // Bionic game process. Keep the rest of the 2.1.7 renderer intact.
+    if (std::getenv("GOW3_ANDROID_PORT")) return false;
     return Gow3Settings::IsGsr2(Gow3Settings::Get().upscaler) && !gsr2_failed;
 }
 

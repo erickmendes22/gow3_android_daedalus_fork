@@ -1,0 +1,5 @@
+Build 2.1.7 Fix Bionic ARM64 with Bloodborne PanVK v3.2 support.
+Base: fix/2.1.7-fex-noexec-hook-crashes-20261020 (2.1.7; QTE and startup fixes preserved).
+No GSR2 runtime activation. Verify signed package, bundled PanVK zip SHA256, APK version.
+
+Build rerun: validate old r7/r8/r9 GSR2-only tests under the no-GSR 2.1.7 Mali configuration.

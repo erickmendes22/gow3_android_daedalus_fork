@@ -42,6 +42,6 @@ class R9(unittest.TestCase):
         self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019",workflow)
         self.assertIn("cancel-in-progress: true",workflow)
         script=src("tools/android/bionic/run-bionic.sh")
-        self.assertIn("export GOW3_GSR2_AUTO_PROBE=1",script)
-        self.assertIn("export GOW3_GSR2_PREFILL_DISPLAY=1",script)
+        self.assertIn("unset GOW3_GSR2_AUTO_PROBE GOW3_GSR2_PREFILL_DISPLAY",script)
+        self.assertIn("unset GOW3_GSR2_AUTO_PROBE GOW3_GSR2_PREFILL_DISPLAY",script)
 if __name__=="__main__": unittest.main()

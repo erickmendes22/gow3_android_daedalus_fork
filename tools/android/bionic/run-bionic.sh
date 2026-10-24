@@ -92,11 +92,8 @@ mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || true)
 [ -n "$mem_kb" ] && [ "$mem_kb" -gt 0 ] && export GOW3_DEVICE_MEM_MB=${GOW3_DEVICE_MEM_MB:-$((mem_kb/1024))}
 # Select game rendering resolution directly.
 export GOW3_ANDROID_PORT=1
-# R7 forensic probe: one 32x18 RGB readback per GSR2 Vulkan stage, written
-# into android-game.log. No image substitution and no framegen/HUD changes.
-export GOW3_GSR2_AUTO_PROBE=1
-# Experimental R8 correctness: initialize every GSR2 display tile before native UI.
-export GOW3_GSR2_PREFILL_DISPLAY=1
+# 2.1.7 Fix Mali branch: disable the historical GSR2 forensic probes.
+unset GOW3_GSR2_AUTO_PROBE GOW3_GSR2_PREFILL_DISPLAY
 # Upstream in-process bloodframe is opt-in; settings can update this file live.
 export GOW3_LSFG_STATE_FILE="$base/framegen.state"
 export GOW3_LSFG_LIB="$runtime/lib/libbloodframe.so"
@@ -110,16 +107,10 @@ export GOW3_UPSCALER=none
 export GOW3_FSR1=0
 export GOW3_RCAS=0
 eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)"
-# Do not force the desktop 1080p GSR2 output when the verified game patch uses
-# another native target: the temporal targets must match the actual guest frame.
-if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
-    case "${GOW3_PATCH_INPUT_RES:-}" in
-      *x*) export GOW3_OUTPUT_RES="$GOW3_PATCH_INPUT_RES" ;;
-    esac
-    echo "GSR2: selected in gow3.ini, preset=$(sed -n 's/^preset=//p' "$GOW3_CONFIG" | tail -1), output=${GOW3_OUTPUT_RES:-game-native}"
-else
-    unset GOW3_OUTPUT_RES
-fi
+# Never activate Snapdragon GSR2 on this pre-GSR test route. The FEX,
+# texture, QTE, and saves fixes of 2.1.7 remain in place.
+export GOW3_UPSCALER=none
+unset GOW3_OUTPUT_RES
 echo "Bloodframe: state=$GOW3_LSFG_STATE_FILE dll=$([ -s "$GOW3_LSFG_DLL" ] && echo available || echo missing) lib=$([ -s "$GOW3_LSFG_LIB" ] && echo available || echo missing)"
 
 # Report what will actually be patched into the verified CUSA01715 eboot, not

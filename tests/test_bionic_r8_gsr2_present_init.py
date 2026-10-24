@@ -27,7 +27,7 @@ class R8(unittest.TestCase):
         self.assertIn("int(upscaled)",p)
         self.assertIn("GsrProbeGrid(",s)
         script=read("tools/android/bionic/run-bionic.sh")
-        self.assertIn("export GOW3_GSR2_PREFILL_DISPLAY=1",script)
+        self.assertIn("unset GOW3_GSR2_AUTO_PROBE GOW3_GSR2_PREFILL_DISPLAY",script)
     def test_one_gated_ci(self):
         ci=read(".github/workflows/bionic-apk.yml")
         self.assertIn("r14-build-trigger.txt",ci)
