@@ -9,10 +9,19 @@ DRIVER_HASH="68d4eccc1442cb0bef08228c90127388e68bf6087898abc492c717b9a06ca61f"
 
 
 class MaliPanvkTests(unittest.TestCase):
-    def test_branch_does_not_include_gsr2(self):
+    def test_gsr2_cannot_run_in_217_fix_bionic(self):
         text=UPSCALER.read_text()
-        for term in ("GSR2", "Gsr2", "gsr2"):
-            self.assertNotIn(term,text)
+        # Retain 2.1.7 rendering fixes rather than replacing the renderer
+        # with the older 2.1.6.4 version. Disable GSR2 for the Android port.
+        self.assertIn('if (std::getenv("GOW3_ANDROID_PORT")) return false;',text)
+        self.assertIn('enabled = !android_port &&',text)
+        runner=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
+        self.assertIn('export GOW3_UPSCALER=none',runner)
+
+    def test_base_version_is_217(self):
+        gradle=(ROOT/"android-launcher/app/build.gradle.kts").read_text()
+        self.assertIn('versionName = "2.1.7-bionic"',gradle)
+        self.assertNotIn('2.1.6-daedalus.4',gradle)
 
     def test_auto_select_is_strictly_mali_android15(self):
         text=(JAVA/"GpuDriverManager.java").read_text()
