@@ -31,6 +31,7 @@ public class Context {
  public String getString(int id) { return "fixture error "+id; }
  public Prefs getSharedPreferences(String n,int mode) { return prefs; }
  public ContentResolver getContentResolver() { return new ContentResolver(); }
+ public android.content.res.AssetManager getAssets() { return new android.content.res.AssetManager(); }
  public static class Prefs {
   final Map<String,String> values=new HashMap<>();
   public String getString(String k,String d) { return values.getOrDefault(k,d); }
@@ -42,11 +43,17 @@ public class Context {
 'android/content/ContentResolver.java':'''package android.content;
 public class ContentResolver { public java.io.InputStream openInputStream(android.net.Uri uri) throws java.io.IOException { throw new java.io.IOException("unused"); } }''',
 'android/net/Uri.java':'package android.net; public class Uri {}',
-'android/os/Build.java':'package android.os; public class Build { public static class VERSION { public static final int SDK_INT=30; } }',
+'android/os/Build.java':'package android.os; public class Build { public static String HARDWARE="test"; public static String SOC_MANUFACTURER="fixture"; public static class VERSION { public static final int SDK_INT=30; } }',
+'android/content/res/AssetManager.java':'package android.content.res; public class AssetManager { public java.io.InputStream open(String p) throws java.io.IOException { throw new java.io.IOException("unused"); } }',
+'android/util/Log.java':'package android.util; public class Log { public static int w(String tag,String msg,Throwable t) { return 0; } }',
 'com/gow3/android/R.java':'package com.gow3.android; public class R { public static class string { public static final int gpu_driver_invalid=1,gpu_driver_wrong_abi=2,gpu_driver_newer_android=3; } }',
 'org/json/JSONObject.java':'''package org.json; public class JSONObject {
  public JSONObject(String text) {} public int getInt(String name) { throw new UnsupportedOperationException(); }
  public String getString(String name) { throw new UnsupportedOperationException(); }
+ public boolean has(String name) { return false; }
+ public int optInt(String name) { return 0; }
+ public int optInt(String name,int fallback) { return fallback; }
+ public String optString(String name,String fallback) { return fallback; }
 }''',
 'Harness.java':'''import java.io.*; import java.util.*;
 import ro.cobrabm.fexdroid.GpuDriverManager;
