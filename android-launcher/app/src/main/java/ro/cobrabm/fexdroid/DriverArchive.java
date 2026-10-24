@@ -139,6 +139,14 @@ public final class DriverArchive {
             Installed result=read(root,id,api); validateLibrary(result.library); return result;
         } finally { clean(stage); Files.deleteIfExists(archive.toPath()); }
     }
+    /** Remove only a canonical SHA256-addressed installation; no arbitrary paths. */
+    public static void delete(File root,String id) throws IOException {
+        if (!id.matches("[0-9a-f]{64}")) throw invalid();
+        root=root.getCanonicalFile();
+        File target=child(root,id);
+        if (target.exists()) clean(target);
+    }
+
     public static Installed read(File root,String id,int api) throws IOException {
         if (!id.matches("[0-9a-f]{64}")) throw invalid();
         File dir=child(root,id); Properties info=new Properties();
