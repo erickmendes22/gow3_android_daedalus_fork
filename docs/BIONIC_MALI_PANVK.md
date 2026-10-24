@@ -1,6 +1,6 @@
 # Experimental Mali GPU support (pre-GSR Bionic branch)
 
-This branch starts from `fix/2.1.7-fex-noexec-hook-crashes-20261020` (GoW III Daedalus 2.1.7 Fix Bionic, with no Snapdragon GSR2 renderer). It does not merge any subsequent GSR2 work.
+This branch starts from `fix/2.1.7-fex-noexec-hook-crashes-20261020` (GoW III Daedalus 2.1.7 Fix Bionic). Unlike the older 2.1.6.4 PanVK prototype, this branch retains the 2.1.7 FEX/NoExec, QTE, texture, save and UI fixes. The Bionic launcher and renderer forcibly disable Snapdragon GSR2 at runtime; historical desktop GSR2 source code remains in the 2.1.7 tree rather than being replaced wholesale with older 2.1.6.4 renderer files. It does not merge the subsequent GSR2 experimental branches.
 
 ## Scope
 
