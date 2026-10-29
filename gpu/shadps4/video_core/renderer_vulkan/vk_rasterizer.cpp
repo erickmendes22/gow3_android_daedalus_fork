@@ -44,6 +44,40 @@ static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     return push_data;
 }
 
+// GoW III uses more than one scene depth attachment. Requiring every 3D draw
+// to use CameraMotion::Depth() excluded valid later forward passes from jitter,
+// even when the final 640x360 VideoOut includes that geometry. Only extend
+// jitter to VERIFIED native-resolution 3D color/depth passes in direct GSR2;
+// display buffers, HUD, shadow maps and unrelated resolutions stay untouched.
+static bool Gow3VerifiedNativeJitterTarget(const VideoCore::Image& color,
+                                           const VideoCore::Image& depth,
+                                           const AmdGpu::Regs& regs) {
+    struct Config { u32 width = 0; u32 height = 0; bool enabled = false; };
+    static const Config config = [] {
+        Config result{};
+        const char* mode = std::getenv("GOW3_UPSCALER");
+        const char* prehud = std::getenv("GOW3_GSR2_PREHUD");
+        const char* size = std::getenv("GOW3_GSR2_INPUT_RES");
+        unsigned w = 0, h = 0;
+        result.enabled = std::getenv("GOW3_ANDROID_PORT") &&
+            std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+            mode && std::strcmp(mode, "gsr2") == 0 &&
+            prehud && prehud[0] == '1' &&
+            size && std::sscanf(size, "%ux%u", &w, &h) == 2 &&
+            w >= 320 && h >= 180 && w <= 1280 && h <= 720;
+        result.width = w;
+        result.height = h;
+        return result;
+    }();
+    if (!config.enabled || !regs.depth_control.depth_enable ||
+        FrameCapture::IsDisplayBuffer(color.info.guest_address))
+        return false;
+    return color.info.size.width == config.width &&
+           color.info.size.height == config.height &&
+           depth.info.size.width == config.width &&
+           depth.info.size.height == config.height;
+}
+
 Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime& runtime_,
                        AmdGpu::Liverpool* liverpool_)
     : instance{instance_}, scheduler{scheduler_}, runtime{runtime_}, page_manager{this},
@@ -1164,7 +1198,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // gow3: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
-    if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
+    const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
+        Gow3VerifiedNativeJitterTarget(texture_cache.GetImage(cb_descs[0].first),
+                                       texture_cache.GetImage(db_desc.first), regs);
+    if (upscaler->Enabled() && db_desc.first &&
+        (db_desc.first == camera_motion->Depth() || eligible_native_scene) &&
         (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
     }
@@ -1308,7 +1346,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     push_data.yoffset *= target_scale[1];
     pipeline->BindResources(set_writes, push_data);
     draw_jitter = {};
-    if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth()) {
+    const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
+        Gow3VerifiedNativeJitterTarget(texture_cache.GetImage(cb_descs[0].first),
+                                       texture_cache.GetImage(db_desc.first), regs);
+    if (upscaler->Enabled() && db_desc.first &&
+        (db_desc.first == camera_motion->Depth() || eligible_native_scene)) {
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
