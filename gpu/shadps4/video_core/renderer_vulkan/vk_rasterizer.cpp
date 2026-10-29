@@ -50,8 +50,9 @@ static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
 // even when the final 640x360 VideoOut includes that geometry. Only extend
 // jitter to VERIFIED native-resolution 3D color/depth passes in direct GSR2;
 // display buffers, HUD, shadow maps and unrelated resolutions stay untouched.
-static bool Gow3VerifiedNativeJitterTarget(const VideoCore::Image& color,
-                                           const VideoCore::Image& depth,
+static bool Gow3VerifiedNativeJitterTarget(VideoCore::TextureCache& cache,
+                                           VideoCore::ImageId color_id,
+                                           VideoCore::ImageId depth_id,
                                            const AmdGpu::Regs& regs) {
     struct Config { u32 width = 0; u32 height = 0; bool enabled = false; };
     static const Config config = [] {
@@ -70,8 +71,13 @@ static bool Gow3VerifiedNativeJitterTarget(const VideoCore::Image& color,
         result.height = h;
         return result;
     }();
-    if (!config.enabled || !regs.depth_control.depth_enable ||
-        FrameCapture::IsDisplayBuffer(color.info.guest_address))
+    if (!config.enabled || !color_id || !depth_id ||
+        !regs.depth_control.depth_enable)
+        return false;
+    // Avoid TextureCache lookups for every ordinary draw when GSR2 is inactive.
+    const auto& color = cache.GetImage(color_id);
+    const auto& depth = cache.GetImage(depth_id);
+    if (FrameCapture::IsDisplayBuffer(color.info.guest_address))
         return false;
     return color.info.size.width == config.width &&
            color.info.size.height == config.height &&
@@ -1200,8 +1206,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
     const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
-        Gow3VerifiedNativeJitterTarget(texture_cache.GetImage(cb_descs[0].first),
-                                       texture_cache.GetImage(db_desc.first), regs);
+        Gow3VerifiedNativeJitterTarget(texture_cache, cb_descs[0].first,
+                                       db_desc.first, regs);
     if (upscaler->Enabled() && db_desc.first &&
         (db_desc.first == camera_motion->Depth() || eligible_native_scene) &&
         (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
@@ -1348,8 +1354,8 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     pipeline->BindResources(set_writes, push_data);
     draw_jitter = {};
     const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
-        Gow3VerifiedNativeJitterTarget(texture_cache.GetImage(cb_descs[0].first),
-                                       texture_cache.GetImage(db_desc.first), regs);
+        Gow3VerifiedNativeJitterTarget(texture_cache, cb_descs[0].first,
+                                       db_desc.first, regs);
     if (upscaler->Enabled() && db_desc.first &&
         (db_desc.first == camera_motion->Depth() || eligible_native_scene)) {
         draw_jitter = upscaler->Jitter();
