@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/gsr2-atomic-depth-build-trigger.txt'
   push:
-    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029]
+    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029, fix/2.1.7-gsr2-native-frame-motion-20261029]
     paths:
       - '.github/r14-build-trigger.txt'
       - '.github/r15-build-trigger.txt'
@@ -19,6 +19,7 @@ on:
       - '.github/gsr2-recovery-build-trigger.txt'
       - '.github/gsr2-atomic-depth-build-trigger.txt'
       - '.github/gsr2-capture-build-trigger.txt'
+      - '.github/gsr2-native-compile-trigger.txt'
   workflow_dispatch:
 
 permissions:
@@ -30,7 +31,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || github.ref == 'refs/heads/fix/2.1.7-gsr2-capture-history-20261029' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022' || github.head_ref == 'fix/2.1.7-gsr2-capture-history-20261029'))
+    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || github.ref == 'refs/heads/fix/2.1.7-gsr2-capture-history-20261029' || github.ref == 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022' || github.head_ref == 'fix/2.1.7-gsr2-capture-history-20261029'))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -85,27 +86,32 @@ jobs:
         shell: bash -el {0}
         run: bash tools/android/bionic/build_runtime.sh
       - name: Build pinned MIT Bloodframe 2x/3x/4x engine
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
         shell: bash
         run: |
           export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
           bash tools/android/build_framegen.sh
           test -s out/bionic/lib/libbloodframe.so
       - name: Build Android PKG extractor
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_pkg.sh
       - name: Preserve experimental signing key across builds
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
         uses: actions/cache@v4
         with:
           path: .local-deps/android/bionic-development.keystore
           key: bionic-development-signing-v1
       - name: Package, sign and validate experimental APK
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
           name: Daedalus-GSR2-Capture-History-v2.1.7-arm64
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
