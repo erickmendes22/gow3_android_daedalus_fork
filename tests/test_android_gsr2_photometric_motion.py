@@ -44,15 +44,18 @@ class Gsr2PhotometricHistory(unittest.TestCase):
                                    (1, 0): .043, (-1, 0): .040})
         self.assertGreaterEqual(cost, .012)
 
-    def test_shader_has_real_pixel_matching_before_history_blend(self):
-        self.assertIn("float Gow3HistoryPatchError(", SHADER)
+    def test_match_against_real_prior_native_frame_not_reconstructed_history(self):
+        self.assertIn("uniform usampler2D PreviousNativeYCoCg;", SHADER)
+        self.assertIn("float Gow3NativePatchError(", SHADER)
+        self.assertIn("texelFetch(PreviousNativeYCoCg, previous + taps[i], 0)", SHADER)
         self.assertIn("const ivec2 taps[5]", SHADER)
-        self.assertIn("const vec2 shifts[16]", SHADER)
-        self.assertIn("staticError * 0.82", SHADER)
-        self.assertIn("bestError < 0.012", SHADER)
+        self.assertIn("const ivec2 shifts[16]", SHADER)
+        self.assertIn("modelError + 0.00012 < bestError * 0.82", SHADER)
+        self.assertIn("bestError < 0.002", SHADER)
         self.assertIn("Motion = (Hruv - PrevUV) * 2.0;", SHADER)
         self.assertIn("invalidReprojection = true;", SHADER)
-        self.assertLess(SHADER.index("Gow3HistoryPatchError(Hruv, InputPos)"),
+        self.assertNotIn("Gow3HistoryPatchError", SHADER)
+        self.assertLess(SHADER.index("Gow3NativePatchError(InputPos, ivec2(0))"),
                         SHADER.index("float Wfactor ="))
 
 if __name__ == "__main__":
