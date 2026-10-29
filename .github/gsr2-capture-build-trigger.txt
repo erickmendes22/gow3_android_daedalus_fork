@@ -8,3 +8,5 @@ Build after capture metadata corrections; exact completed VideoOut shader and CU
 Fix capture interaction: 3-second delayed raw frame sampling after dismissing Android menu.
 
 Single final APK validation 2026-10-29: complete VideoOut RGB source matched to verified MSAA depth/motion; preserve raw early scene A/B and fix sRGB output.
+
+CI retest: fix a provably failing GSR2 full_color assert in test_android_gsr2_complete_videoout.py. Confirmed all 45 new assertIn patterns against branch source. Only one Bionic APK workflow on this trigger.
