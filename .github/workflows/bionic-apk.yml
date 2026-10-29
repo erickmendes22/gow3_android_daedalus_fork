@@ -2,12 +2,11 @@ name: Daedalus Fork Bionic APK
 
 on:
   pull_request:
-    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029]
+    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
     paths:
       - '.github/gsr2-atomic-depth-build-trigger.txt'
-      - '.github/gsr2-capture-build-trigger.txt'
   push:
-    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
+    branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029]
     paths:
       - '.github/r14-build-trigger.txt'
       - '.github/r15-build-trigger.txt'
