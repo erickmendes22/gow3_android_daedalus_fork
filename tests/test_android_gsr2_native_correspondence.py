@@ -38,6 +38,18 @@ class NativeTemporalCorrespondence(unittest.TestCase):
         self.assertLess(transfer, copy)
         self.assertLess(copy, advance)
 
+    def test_verified_scene_jitter_does_not_touch_hud_or_unmatched_buffers(self):
+        raster = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+        self.assertIn("Gow3VerifiedNativeJitterTarget(", raster)
+        self.assertIn('std::getenv("GOW3_GSR2_PREHUD")', raster)
+        self.assertIn('std::getenv("GOW3_GSR2_INPUT_RES")', raster)
+        self.assertIn('FrameCapture::IsDisplayBuffer(color.info.guest_address)', raster)
+        self.assertIn('regs.depth_control.depth_enable', raster)
+        self.assertIn('color.info.size.width == config.width', raster)
+        self.assertIn('depth.info.size.height == config.height', raster)
+        self.assertEqual(raster.count("const bool eligible_native_scene ="), 2)
+        self.assertIn("db_desc.first == camera_motion->Depth() || eligible_native_scene", raster)
+
     def test_reprojected_history_remains_live_and_rejected_locally(self):
         self.assertIn("Gow3NativePatchError(InputPos, ivec2(0))", UPSCALE)
         self.assertIn("Gow3NativePatchError(InputPos, modelOffset)", UPSCALE)
