@@ -2,9 +2,10 @@ name: Daedalus Fork Bionic APK
 
 on:
   pull_request:
-    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020]
+    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029]
     paths:
       - '.github/gsr2-atomic-depth-build-trigger.txt'
+      - '.github/gsr2-capture-build-trigger.txt'
   push:
     branches: [fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
     paths:
@@ -18,6 +19,7 @@ on:
       - '.github/gsr2-diagnostic-build-trigger.txt'
       - '.github/gsr2-recovery-build-trigger.txt'
       - '.github/gsr2-atomic-depth-build-trigger.txt'
+      - '.github/gsr2-capture-build-trigger.txt'
   workflow_dispatch:
 
 permissions:
@@ -29,7 +31,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || (github.event_name == 'pull_request' && github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022')
+    if: github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || github.ref == 'refs/heads/fix/2.1.7-gsr2-capture-history-20261029' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022' || github.head_ref == 'fix/2.1.7-gsr2-capture-history-20261029'))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -104,7 +106,7 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
-          name: Daedalus-GSR2-AtomicDepth-v2.1.7-arm64
+          name: Daedalus-GSR2-Capture-History-v2.1.7-arm64
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
