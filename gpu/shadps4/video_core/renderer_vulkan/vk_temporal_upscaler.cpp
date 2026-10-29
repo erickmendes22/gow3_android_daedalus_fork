@@ -192,7 +192,8 @@ static void GsrProbeGrid(const char* name, const char* format, int generation,
 /// Copies `images` into host buffers after the commands recorded so far and writes them to
 /// files once the GPU is done.
 void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
-                int frame, std::initializer_list<DumpImage> images) {
+                int frame, std::initializer_list<DumpImage> images,
+                bool force_raw = false) {
     static const std::string dir = [] {
         const char* env = std::getenv("GOW3_DUMP_DIR");
         return std::string{env && env[0] ? env : "out/dump"};
@@ -232,7 +233,9 @@ void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffe
         char path[512];
         std::snprintf(path, sizeof(path), "%s/f%03d_%s_%ux%u_%s.raw", dir.c_str(), frame,
                       image.name, image.width, image.height, image.format);
-        const bool stage_probe = std::getenv("GOW3_GSR2_AUTO_PROBE") != nullptr;
+        // The user-requested capture must save raw bytes even when the
+        // historical 32x18 log probe is enabled for automatic sampling.
+        const bool stage_probe = !force_raw && std::getenv("GOW3_GSR2_AUTO_PROBE") != nullptr;
         scheduler.DeferPriorityOperation(
             [allocator = instance.GetAllocator(), buffer, allocation, info, size,
              file = std::string{path}, name = std::string{image.name},
@@ -3285,6 +3288,46 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                  {source.GetImage(),w,h,4,"sameflip_videoout",fmt},
                  {vk::Image(output_image),ow,oh,8,"sameflip_gsr2","rgba16f"},
                  {vk::Image(ui_image),ow,oh,4,"sameflip_composited",fmt}});
+        }
+    }
+    // Same canonical pre-HUD flip, same motion dispatch, same GSR2 output.
+    // Unlike the legacy DumpFrame() site in RunScaled(), this is the actual
+    // Android direct-VideoOut path used by CUSA01623. Keep raw data even if
+    // GSR2_AUTO_PROBE prints tiny grids to the log.
+    if (const int capture_frame = DumpFrame(); capture_frame >= 0) {
+        const char* fmt = GsrProbeFormat(source.info.pixel_format);
+        if (std::strcmp(fmt, "unsupported") != 0) {
+            const bool captured_depth = prehud &&
+                pre_hud_slots[pre_hud_completed_slot].depth_valid &&
+                bool(pre_hud_slots[pre_hud_completed_slot].depth_image);
+            const bool depth_is_r32 = captured_depth &&
+                pre_hud_slots[pre_hud_completed_slot].depth_format == vk::Format::eR32Sfloat;
+            // Source image formats and bpp are explicitly included in file
+            // names; never lie about the snapshot aspect or its encoding.
+            DumpImages(instance, scheduler, cmd, capture_frame, {
+                {prehud ? vk::Image(pre_hud_slots[pre_hud_completed_slot].image) :
+                          source.GetImage(), w,h,4,"input",fmt},
+                {source.GetImage(),w,h,4,"videoout",fmt},
+                {vk::Image(motion_image),w,h,4,"motion","rg16f"},
+                {vk::Image(output_image),ow,oh,8,"output","rgba16f"},
+                {vk::Image(ui_image),ow,oh,4,"composited","rgba_unorm"}
+            }, true);
+            if (depth_is_r32) {
+                DumpImages(instance, scheduler, cmd, capture_frame, {
+                    {vk::Image(pre_hud_slots[pre_hud_completed_slot].depth_image),
+                     w,h,4,"depth","r32f",vk::ImageAspectFlagBits::eColor}
+                }, true);
+            }
+            std::printf("GSR2_CAPTURE_FRAME index=%d flip=%llu input=%ux%u output=%ux%u "
+                        "prehud=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
+                        "camera_shader=%016llx executable=CUSA01623_01.02\\n",
+                        capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
+                        int(prehud),int(use_scene_motion),int(!reuse_history),
+                        int(depth_is_r32),(unsigned long long)temporal_gap,
+                        (unsigned long long)camera_motion.Gsr2CurrentShaderDebug());
+            std::fflush(stdout);
+        } else {
+            std::printf("GSR2_CAPTURE_REJECT format=%s\\n",fmt);
         }
     }
     if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
