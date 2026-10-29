@@ -804,34 +804,45 @@ public final class GameActivity extends Activity {
     // A capture is always user-initiated. No GPU readbacks run on ordinary
     // sessions and no app-owned game data leaves the device automatically.
     private void startGsr2Capture() {
-        closeDrawer();
         if (game==null) {
             new AlertDialog.Builder(this).setMessage("Start the game before capturing GSR2.")
                 .setPositiveButton("OK",null).show();
             return;
         }
-        worker.execute(() -> {
-            try {
-                File dir=gsr2CaptureDir();
-                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create capture directory");
-                for (File file : dir.listFiles()==null ? new File[0] : dir.listFiles())
-                    if (file.isFile() && !file.delete())
-                        throw new IOException("Cannot clear previous capture: "+file.getName());
-                File trigger=new File(BASE,"gsr2-capture.trigger");
-                try (FileOutputStream out=new FileOutputStream(trigger)) {
-                    out.write("capture\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                }
-                runOnUiThread(() -> new AlertDialog.Builder(this)
-                    .setTitle("GSR2 capture armed")
-                    .setMessage("Resume gameplay and move the camera for several seconds. " +
-                        "The renderer will save six matched input, motion, depth and output frames. " +
-                        "Then open the menu and choose Export GSR2 capture ZIP.")
-                    .setPositiveButton("OK",null).show());
-            } catch (Exception ex) {
-                runOnUiThread(() -> new AlertDialog.Builder(this)
-                    .setMessage("GSR2 capture failed: "+ex.getMessage()).setPositiveButton("OK",null).show());
-            }
-        });
+        // First explain the sampling. Never start GPU readback while this
+        // modal dialog still covers the user's view or while the drawer
+        // animation is being dismissed.
+        new AlertDialog.Builder(this)
+            .setTitle("Capture GSR2 temporal scaling")
+            .setMessage("Move the camera during gameplay. After pressing Start, " +
+                "capture begins in three seconds and saves six consecutive " +
+                "input/depth/motion/output frames. Export the ZIP from this menu afterwards.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Start",(d,w) -> {
+                closeDrawer();
+                main.postDelayed(() -> worker.execute(() -> {
+                    try {
+                        File dir=gsr2CaptureDir();
+                        if (!dir.isDirectory() && !dir.mkdirs())
+                            throw new IOException("Cannot create capture directory");
+                        File[] previous=dir.listFiles();
+                        if (previous!=null) for (File file:previous)
+                            if (file.isFile() && !file.delete())
+                                throw new IOException("Cannot clear previous capture: "+file.getName());
+                        File trigger=new File(BASE,"gsr2-capture.trigger");
+                        try (FileOutputStream out=new FileOutputStream(trigger)) {
+                            out.write("capture\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "GSR2 capture started. Export the ZIP after gameplay.",
+                            android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception ex) {
+                        runOnUiThread(() -> new AlertDialog.Builder(this)
+                            .setMessage("GSR2 capture failed: "+ex.getMessage())
+                            .setPositiveButton("OK",null).show());
+                    }
+                }),3000);
+            }).show();
     }
 
     private void exportGsr2Capture() {
