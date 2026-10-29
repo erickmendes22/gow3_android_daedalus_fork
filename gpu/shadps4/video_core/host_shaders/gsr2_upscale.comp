@@ -84,6 +84,35 @@ vec3 SampleHistoryCatmullRom(vec2 uv)
     return c / wsum;
 }
 
+// Verify historical motion in the same YCoCg space SGSR stores in its
+// history_image. In GoW III the recovered ModelToPreProj matrix can belong to
+// one rendered model, NOT the camera of all pixels on the final VideoOut.
+// Five actual texel comparisons prevent a single similarly colored pixel
+// from hijacking a camera or animated-object match.
+float Gow3HistoryPatchError(vec2 previousUv, ivec2 currentPixel)
+{
+    if (any(lessThan(previousUv, vec2(0.012))) ||
+        any(greaterThan(previousUv, vec2(0.988))))
+        return 1.0e10;
+    const ivec2 taps[5] = ivec2[5](
+        ivec2(0, 0), ivec2(-1, 0), ivec2(1, 0),
+        ivec2(0, -1), ivec2(0, 1));
+    float cost = 0.0;
+    for (int i = 0; i < 5; ++i) {
+        ivec2 pos = clamp(currentPixel + taps[i], ivec2(0),
+                          ivec2(params.renderSize) - ivec2(1));
+        vec3 actual = DecodeColor(texelFetch(YCoCgColor, pos, 0).x);
+        vec2 uv = clamp(previousUv + vec2(taps[i]) * params.renderSizeRcp,
+                        vec2(0.0), vec2(1.0));
+        vec3 historic = textureLod(PrevHistoryOutput, uv, 0.0).xyz;
+        if (any(isnan(historic)) || any(isinf(historic)))
+            return 1.0e10;
+        vec3 delta = actual - historic;
+        cost += dot(delta * delta, vec3(2.5, 0.8, 0.8));
+    }
+    return cost / 5.0;
+}
+
 void main()
 {
     if (any(greaterThanEqual(gl_GlobalInvocationID.xy, params.displaySize))) return;
@@ -128,37 +157,57 @@ void main()
     vec3 HistoryColor = params.historyFilter != 0u ? SampleHistoryCatmullRom(PrevUV) : History.xyz;
     float Historyw = History.w;
 
-    // GoW III CUSA01623 01.02: the recovered ModelToPreProj matrix is not a
-    // single motion field for the fully composited VideoOut. Actual 2026-10-29
-    // six-frame captures show 1-2px vectors on nearly motionless scenery.
-    // Sampling the prior frame at those positions multiplies the image error.
-    // Compare the TWO candidate history locations in the same YCoCg domain as
-    // the current scene, before computing any history weight or clamp.
-    // Use motion only when it really aligns the image. A static match wins
-    // only by a substantial margin, so true camera/object motion still works.
-    // We do not turn temporal accumulation off or globally zero all vectors.
-    float candidateMotionPixels = length(Motion * vec2(params.renderSize) * 0.5);
-    if (!invalidReprojection && candidateMotionPixels > 0.25) {
-        vec3 currentYCoCg = DecodeColor(texelFetch(YCoCgColor, InputPos, 0).x);
-        vec4 noMotionHistory = textureLod(PrevHistoryOutput, Hruv, 0.0);
-        vec3 noMotionColor = noMotionHistory.xyz;
-        vec3 movingDelta = abs(HistoryColor - currentYCoCg);
-        vec3 staticDelta = abs(noMotionColor - currentYCoCg);
-        float movingError = max(movingDelta.x, max(movingDelta.y, movingDelta.z));
-        float staticError = max(staticDelta.x, max(staticDelta.y, staticDelta.z));
-        bool stableCandidate = !any(isnan(noMotionColor)) &&
-                               !any(isinf(noMotionColor)) &&
-                               !isnan(noMotionHistory.w) &&
-                               !isinf(noMotionHistory.w);
-        // Source ZIP (2), background without HUD: raw pixel reprojection
-        // error 0.087..0.095 -> 0.022..0.027 after a 0.75-relative
-        // photometric choice. Compare in actual SGSR tonemapped YCoCg here.
-        if (stableCandidate && staticError < 0.16 &&
-            staticError + 0.008 < movingError * 0.75) {
+    // The model-derived GoW III camera vectors do not match the actual
+    // VideoOut motion in the 29-Oct-2026 temporal captures. ZIP (2) and (3)
+    // show a near-static backdrop receiving 1..7 render-pixel motion.
+    // Do not merely compare one pixel at (motion, zero): establish
+    // the real previous-image correspondence with a local 2D patch search.
+    // Search is only needed for pixels with poor camera/static matches;
+    // this leaves stable regions cheap and keeps actual moving objects.
+    if (params.reset == 0u) {
+        float staticError = Gow3HistoryPatchError(Hruv, InputPos);
+        float motionError = invalidReprojection ? 1.0e10
+            : Gow3HistoryPatchError(rawPrevUV, InputPos);
+        vec2 bestUV = Hruv;
+        float bestError = staticError;
+        if (motionError + 0.00012 < staticError * 0.82) {
+            bestUV = rawPrevUV;
+            bestError = motionError;
+        }
+        // The neighborhood is in render pixels, NOT display pixels.
+        // Search both camera and static origins for actor/particle motion.
+        if (bestError > 0.0006) {
+            const vec2 shifts[16] = vec2[16](
+                vec2(-4, 0), vec2(4, 0), vec2(0, -4), vec2(0, 4),
+                vec2(-2,-2), vec2(-2, 2), vec2(2,-2), vec2(2, 2),
+                vec2(-1, 0), vec2(1, 0), vec2(0,-1), vec2(0, 1),
+                vec2(-1,-1), vec2(-1, 1), vec2(1,-1), vec2(1, 1));
+            for (int i=0; i<16; ++i) {
+                vec2 at = Hruv + shifts[i] * params.renderSizeRcp;
+                float cost = Gow3HistoryPatchError(at, InputPos)
+                           + 0.00003 * length(shifts[i]);
+                if (cost + 0.00004 < bestError) {
+                    bestUV = at;
+                    bestError = cost;
+                }
+            }
+        }
+        // A newly exposed pixel, changed effect or HUD overlay may not
+        // exist in the prior history. Reject its history instead of dragging
+        // some arbitrarily nearest scene color over the new object.
+        if (bestError < 0.012 &&
+            all(greaterThanEqual(bestUV, vec2(0.0))) &&
+            all(lessThan(bestUV, vec2(1.0)))) {
+            PrevUV = bestUV;
+            vec4 selected = textureLod(PrevHistoryOutput, PrevUV, 0.0);
             HistoryColor = params.historyFilter != 0u
-                ? SampleHistoryCatmullRom(Hruv) : noMotionColor;
-            Historyw = noMotionHistory.w;
-            Motion = vec2(0.0);
+                ? SampleHistoryCatmullRom(PrevUV) : selected.xyz;
+            Historyw = selected.w;
+            // For SGSR: prevUV = currentUV - 0.5 * motionClip.
+            Motion = (Hruv - PrevUV) * 2.0;
+            invalidReprojection = false;
+        } else {
+            invalidReprojection = true;
         }
     }
     // Invalid half-float alpha from any previously corrupted history entry
