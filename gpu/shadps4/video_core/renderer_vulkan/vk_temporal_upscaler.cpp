@@ -3324,7 +3324,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                         capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
                         int(prehud),int(use_scene_motion),int(!reuse_history),
                         int(depth_is_r32),(unsigned long long)temporal_gap,
-                        (unsigned long long)camera_motion.Gsr2CurrentShaderDebug());
+                        (unsigned long long)camera_motion.CompletedCurrentShaderDebug());
             std::fflush(stdout);
         } else {
             std::printf("GSR2_CAPTURE_REJECT format=%s\n",fmt);
