@@ -29,7 +29,7 @@ class FullVideoOutRegression(unittest.TestCase):
         self.assertIn('"early_prehud",fmt',UPS)
         self.assertIn('complete_videoout || !prehud ? source.GetImage()',UPS)
         self.assertIn('"full_videoout_temporal"',UPS)
-        self.assertIn('"full_color=%d temporal=%d',UPS)
+        self.assertIn('full_color=%d temporal=%d',UPS)
         self.assertIn('fNNN_early_prehud_WxH_',APP)
         self.assertIn('HUD is not isolated',APP)
 
