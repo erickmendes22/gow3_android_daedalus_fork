@@ -305,7 +305,7 @@ public final class GameActivity extends Activity {
 
         if (bionicRuntime()) {
             menuItem("ic_frames","Capture GSR2 temporal scaling",
-                "6 frames · input, depth, motion, output and HUD",this::startGsr2Capture);
+                "6 temporal frames (reset=0) · all raw buffers",this::startGsr2Capture);
             menuItem("ic_restore","Export GSR2 capture ZIP",
                 "Save raw frames and the game log for analysis",this::exportGsr2Capture);
         }
@@ -815,8 +815,9 @@ public final class GameActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("Capture GSR2 temporal scaling")
             .setMessage("Move the camera during gameplay. After pressing Start, " +
-                "capture begins in three seconds and saves six consecutive " +
-                "input/depth/motion/output frames. Export the ZIP from this menu afterwards.")
+                "capture arms in three seconds and waits for six GSR2 temporal frames " +
+                "(reset=0, valid camera motion), skipping spatial fallback frames. " +
+                "Move the camera while playing, then export the ZIP from this menu.")
             .setNegativeButton("Cancel",null)
             .setPositiveButton("Start",(d,w) -> {
                 closeDrawer();
@@ -834,7 +835,7 @@ public final class GameActivity extends Activity {
                             out.write("capture\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         }
                         runOnUiThread(() -> android.widget.Toast.makeText(this,
-                            "GSR2 capture started. Export the ZIP after gameplay.",
+                            "GSR2 temporal capture armed. Play until six history frames are recorded.",
                             android.widget.Toast.LENGTH_LONG).show());
                     } catch (Exception ex) {
                         runOnUiThread(() -> new AlertDialog.Builder(this)
@@ -883,7 +884,8 @@ public final class GameActivity extends Activity {
                             "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+
                             "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\n"+
                             "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\n"+
-                            "The game log contains frame/flip/camera provenance, complete_color and reset status.\n"+
+                            "The game log contains frame/flip/camera provenance, full_color and reset status.\n"+
+                            "This capture selects ONLY successful temporal history frames (reset=0).\n"+
                             "The old early preHUD color lacked Kratos, enemies and effects while depth included them.\n"+
                             "Full VideoOut source is an experimental correctness test; the HUD is not isolated from its temporal history yet.\n";
                         zip.putNextEntry(new ZipEntry("README.txt"));
