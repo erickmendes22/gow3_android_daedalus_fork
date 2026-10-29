@@ -1212,7 +1212,7 @@ void TemporalUpscaler::CreatePipelines() {
         pre_hud_composite_desc_layout = Check(device.createDescriptorSetLayoutUnique({
             .flags=vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
             .bindingCount=u32(bindings.size()), .pBindings=bindings.data()}));
-        const vk::PushConstantRange push{vk::ShaderStageFlagBits::eCompute,0,24};
+        const vk::PushConstantRange push{vk::ShaderStageFlagBits::eCompute,0,28};
         pre_hud_composite_pipeline_layout = Check(device.createPipelineLayoutUnique({
             .setLayoutCount=1, .pSetLayouts=&*pre_hud_composite_desc_layout,
             .pushConstantRangeCount=1, .pPushConstantRanges=&push}));
@@ -3055,7 +3055,13 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     runtime.FlushBarriers();
     const auto guest_view = CachedView(source, source.info.pixel_format,
                                        vk::ImageAspectFlagBits::eColor);
-    const vk::ImageView source_view = prehud
+    // Six actual GSR2 frames showed that early preHUD color contains only
+    // background, while same-frame depth and VideoOut contain animated actors.
+    // Use FULL final VideoOut for GSR2 color/depth/motion consistency.
+    // Optional GOW3_GSR2_USE_EARLY_PREHUD=1 restores old source for A/B.
+    const bool complete_videoout = prehud &&
+        !std::getenv("GOW3_GSR2_USE_EARLY_PREHUD");
+    const vk::ImageView source_view = complete_videoout ? guest_view : prehud
         ? *pre_hud_slots[pre_hud_completed_slot].view : guest_view;
     auto cmd = scheduler.CommandBuffer();
     const auto full = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
@@ -3221,12 +3227,18 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                                    :vk::DescriptorType::eStorageImage,
                 .pImageInfo=&images[i]};
         }
-        struct Params {std::array<u32,2> input,output;u32 srgb;float threshold;};
+        struct Params {
+            std::array<u32,2> input,output;
+            u32 srgb;
+            float threshold;
+            u32 complete_videoout;
+        };
+        static_assert(sizeof(Params)==28);
         const Params params{
             {w,h},{ow,oh},
             u32(source.info.pixel_format==vk::Format::eR8G8B8A8Srgb ||
                 source.info.pixel_format==vk::Format::eB8G8R8A8Srgb),
-            0.045f};
+            0.045f, u32(complete_videoout)};
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute,*pre_hud_composite_pipeline);
         cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
                                  *pre_hud_composite_pipeline_layout,0,writes);
@@ -3271,7 +3283,9 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                     "output=%ux%u dispatch=%llu path=%s\n",
                     static_cast<unsigned long long>(source.info.guest_address),
                     w, h, ow, oh, static_cast<unsigned long long>(accepted),
-                    prehud ? "pre_hud_temporal_hud_composite" : "post_videoout_native_aa");
+                    prehud ? (complete_videoout ? "full_videoout_temporal" :
+                                                  "early_prehud_temporal")
+                           : "post_videoout_native_aa");
     }
     // These snapshots are all collected from the SAME canonical VideoOut
     // flip, unlike the old pre-HUD candidate and post-flip samples.
@@ -3305,9 +3319,12 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             // Source image formats and bpp are explicitly included in file
             // names; never lie about the snapshot aspect or its encoding.
             DumpImages(instance, scheduler, cmd, capture_frame, {
-                {prehud ? vk::Image(pre_hud_slots[pre_hud_completed_slot].image) :
-                          source.GetImage(), w,h,4,"input",fmt},
+                {complete_videoout || !prehud ? source.GetImage() :
+                          vk::Image(pre_hud_slots[pre_hud_completed_slot].image),
+                 w,h,4,"input",fmt},
                 {source.GetImage(),w,h,4,"videoout",fmt},
+                {prehud ? vk::Image(pre_hud_slots[pre_hud_completed_slot].image) :
+                          source.GetImage(), w,h,4,"early_prehud",fmt},
                 {vk::Image(motion_image),w,h,4,"motion","rg16f"},
                 {vk::Image(output_image),ow,oh,8,"output","rgba16f"},
                 {vk::Image(ui_image),ow,oh,4,"composited","rgba_unorm"}
@@ -3319,10 +3336,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                 }, true);
             }
             std::printf("GSR2_CAPTURE_FRAME index=%d flip=%llu input=%ux%u output=%ux%u "
-                        "prehud=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
+                        "prehud=%d full_color=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
                         "camera_shader=%016llx executable=CUSA01623_01.02\n",
                         capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
-                        int(prehud),int(use_scene_motion),int(!reuse_history),
+                        int(prehud),int(complete_videoout),int(use_scene_motion),int(!reuse_history),
                         int(depth_is_r32),(unsigned long long)temporal_gap,
                         (unsigned long long)camera_motion.CompletedCurrentShaderDebug());
             std::fflush(stdout);
