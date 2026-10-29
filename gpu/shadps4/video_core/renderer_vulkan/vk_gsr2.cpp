@@ -66,9 +66,9 @@ struct GsrUpscaler::Impl {
     bool pipelines_failed = false;
 
     // render 尺寸的中间图像与 display 尺寸的历史（两张，逐帧交换）。
-    VideoCore::UniqueImage mdc_image, ycocg_image;
+    VideoCore::UniqueImage mdc_image, ycocg_image, previous_native_ycocg_image;
     VideoCore::UniqueImage history_image[2];
-    vk::UniqueImageView mdc_view, ycocg_view, history_view[2];
+    vk::UniqueImageView mdc_view, ycocg_view, previous_native_ycocg_view, history_view[2];
     u32 render_w = 0, render_h = 0, display_w = 0, display_h = 0;
     u32 current = 0;
     bool fresh = true;
@@ -114,18 +114,19 @@ struct GsrUpscaler::Impl {
             return false;
         }
         const auto make_layout = [&](vk::UniqueDescriptorSetLayout& layout,
-                                     vk::UniquePipelineLayout& pipeline_layout) {
-            std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
-            for (u32 i = 0; i < bindings.size(); ++i) {
+                                     vk::UniquePipelineLayout& pipeline_layout, bool native_history) {
+            std::array<vk::DescriptorSetLayoutBinding, 6> bindings{};
+            const u32 count = native_history ? 6u : 5u;
+            for (u32 i = 0; i < count; ++i) {
                 bindings[i] = {.binding = i,
-                               .descriptorType = i < 3 ? vk::DescriptorType::eCombinedImageSampler
-                                                       : vk::DescriptorType::eStorageImage,
+                               .descriptorType = (i < 3 || i == 5) ? vk::DescriptorType::eCombinedImageSampler
+                                                            : vk::DescriptorType::eStorageImage,
                                .descriptorCount = 1,
                                .stageFlags = vk::ShaderStageFlagBits::eCompute};
             }
             layout = Check(device.createDescriptorSetLayoutUnique({
                 .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
-                .bindingCount = u32(bindings.size()),
+                .bindingCount = count,
                 .pBindings = bindings.data(),
             }));
             const vk::PushConstantRange push{vk::ShaderStageFlagBits::eCompute, 0, sizeof(Params)};
@@ -136,8 +137,8 @@ struct GsrUpscaler::Impl {
                 .pPushConstantRanges = &push,
             }));
         };
-        make_layout(convert_layout, convert_pipeline_layout);
-        make_layout(upscale_layout, upscale_pipeline_layout);
+        make_layout(convert_layout, convert_pipeline_layout, false);
+        make_layout(upscale_layout, upscale_pipeline_layout, true);
         const auto sampler = [&](vk::Filter filter) {
             return Check(device.createSamplerUnique({
                 .magFilter = filter, .minFilter = filter,
@@ -197,9 +198,11 @@ struct GsrUpscaler::Impl {
         // 正在录制的 command buffer 一起提交，所以用延迟销毁）。
         if (mdc_image) {
             scheduler.DeferOperation([images = std::array{std::move(mdc_image), std::move(ycocg_image),
+                                                          std::move(previous_native_ycocg_image),
                                                           std::move(history_image[0]),
                                                           std::move(history_image[1])},
                                       views = std::array{std::move(mdc_view), std::move(ycocg_view),
+                                                          std::move(previous_native_ycocg_view),
                                                          std::move(history_view[0]),
                                                          std::move(history_view[1])}]() mutable {
                 for (auto& view : views) view.reset();
@@ -208,7 +211,12 @@ struct GsrUpscaler::Impl {
         }
         const auto sampled_storage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled;
         MakeImage(mdc_image, mdc_view, vk::Format::eR16G16B16A16Sfloat, rw, rh, sampled_storage);
-        MakeImage(ycocg_image, ycocg_view, vk::Format::eR32Uint, rw, rh, sampled_storage);
+        MakeImage(ycocg_image, ycocg_view, vk::Format::eR32Uint, rw, rh,
+                  sampled_storage | vk::ImageUsageFlagBits::eTransferSrc);
+        // Last frame's native YCoCg, untouched by the upscale/history filters.
+        MakeImage(previous_native_ycocg_image, previous_native_ycocg_view,
+                  vk::Format::eR32Uint, rw, rh,
+                  vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst);
         for (u32 i = 0; i < 2; ++i) {
             MakeImage(history_image[i], history_view[i], vk::Format::eR16G16B16A16Sfloat, ow, oh,
                       sampled_storage | vk::ImageUsageFlagBits::eTransferDst);
@@ -279,7 +287,7 @@ struct GsrUpscaler::Impl {
         };
         const auto rw = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite;
         const auto rw_all = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
-        std::array<vk::ImageMemoryBarrier2, 4> barriers{};
+        std::array<vk::ImageMemoryBarrier2, 5> barriers{};
         // 中间图像与输出：每帧都整帧重写。
         barriers[0] = {.srcStageMask = all, .srcAccessMask = rw_all, .dstStageMask = compute,
                        .dstAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
@@ -295,6 +303,15 @@ struct GsrUpscaler::Impl {
         barriers[3] = barriers[2];
         barriers[3].dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead;
         barriers[3].image = vk::Image(history_image[previous]);
+        // Persisted native previous input has to be readable by the temporal shader.
+        barriers[4] = {.srcStageMask = all,
+                       .srcAccessMask = rw_all | vk::AccessFlagBits2::eTransferWrite,
+                       .dstStageMask = compute,
+                       .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+                       .oldLayout = clear ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+                       .newLayout = vk::ImageLayout::eGeneral,
+                       .image = vk::Image(previous_native_ycocg_image),
+                       .subresourceRange = range};
         if (clear) {
             // 不能有陈旧或未初始化的历史（NaN 会顶着零权重活下来）。
             for (auto* b : {&barriers[2], &barriers[3]}) {
@@ -366,7 +383,7 @@ struct GsrUpscaler::Impl {
             const std::array<vk::DescriptorImageInfo, 5> infos{
                 image(*nearest, frame.color), image(*nearest, frame.depth),
                 image(*nearest, frame.motion), image({}, *mdc_view), image({}, *ycocg_view)};
-            const std::array<vk::WriteDescriptorSet, 5> writes{
+            const std::array<vk::WriteDescriptorSet, 6> writes{
                 write(0, sampled, &infos[0]), write(1, sampled, &infos[1]),
                 write(2, sampled, &infos[2]), write(3, storage, &infos[3]),
                 write(4, storage, &infos[4])};
@@ -388,14 +405,15 @@ struct GsrUpscaler::Impl {
         };
         cmd.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &converted});
         {
-            const std::array<vk::DescriptorImageInfo, 5> infos{
+            const std::array<vk::DescriptorImageInfo, 6> infos{
                 image(*linear, *history_view[previous]), image(*linear, *mdc_view),
                 image(*nearest, *ycocg_view), image({}, frame.output),
-                image({}, *history_view[current])};
+                image({}, *history_view[current]),
+                image(*nearest, *previous_native_ycocg_view)};
             const std::array<vk::WriteDescriptorSet, 5> writes{
                 write(0, sampled, &infos[0]), write(1, sampled, &infos[1]),
                 write(2, sampled, &infos[2]), write(3, storage, &infos[3]),
-                write(4, storage, &infos[4])};
+                write(4, storage, &infos[4]), write(5, sampled, &infos[5])};
             cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *upscale_pipeline);
             cmd.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *upscale_pipeline_layout, 0,
                                      writes);
@@ -403,6 +421,28 @@ struct GsrUpscaler::Impl {
                               sizeof(params), &params);
             cmd.dispatch((frame.output_width + 7) / 8, (frame.output_height + 7) / 8, 1);
         }
+        // Read yesterday's raw input before overwriting it with today's native data.
+        const auto transfer = vk::PipelineStageFlagBits2::eTransfer;
+        const std::array<vk::ImageMemoryBarrier2, 2> copy_barriers{{
+            {.srcStageMask = compute, .srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+             .dstStageMask = transfer, .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+             .oldLayout = vk::ImageLayout::eGeneral, .newLayout = vk::ImageLayout::eGeneral,
+             .image = vk::Image(ycocg_image), .subresourceRange = range},
+            {.srcStageMask = compute, .srcAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+             .dstStageMask = transfer, .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+             .oldLayout = vk::ImageLayout::eGeneral, .newLayout = vk::ImageLayout::eGeneral,
+             .image = vk::Image(previous_native_ycocg_image), .subresourceRange = range},
+        }};
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = u32(copy_barriers.size()),
+                              .pImageMemoryBarriers = copy_barriers.data()});
+        const vk::ImageCopy native_copy{
+            .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .extent = {frame.render_width, frame.render_height, 1},
+        };
+        cmd.copyImage(vk::Image(ycocg_image), vk::ImageLayout::eGeneral,
+                      vk::Image(previous_native_ycocg_image), vk::ImageLayout::eGeneral,
+                      native_copy);
         if (profile) {
             cmd.writeTimestamp2(all, *pool, slice * kQueries + 2);
             recorded[slice] = true;
