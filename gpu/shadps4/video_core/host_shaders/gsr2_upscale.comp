@@ -96,7 +96,9 @@ float Gow3NativePatchError(ivec2 currentPixel, ivec2 displacement)
         ivec2(0, 0), ivec2(-1, 0), ivec2(1, 0),
         ivec2(0, -1), ivec2(0, 1));
     ivec2 previous = currentPixel + displacement;
-    if (any(lessThan(previous, ivec2(1))) ||
+    if (any(lessThan(currentPixel, ivec2(1))) ||
+        any(greaterThanEqual(currentPixel, ivec2(params.renderSize) - ivec2(1))) ||
+        any(lessThan(previous, ivec2(1))) ||
         any(greaterThanEqual(previous, ivec2(params.renderSize) - ivec2(1))))
         return 1.0e10;
     float cost = 0.0;
