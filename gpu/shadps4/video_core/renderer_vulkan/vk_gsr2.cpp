@@ -383,7 +383,7 @@ struct GsrUpscaler::Impl {
             const std::array<vk::DescriptorImageInfo, 5> infos{
                 image(*nearest, frame.color), image(*nearest, frame.depth),
                 image(*nearest, frame.motion), image({}, *mdc_view), image({}, *ycocg_view)};
-            const std::array<vk::WriteDescriptorSet, 6> writes{
+            const std::array<vk::WriteDescriptorSet, 5> writes{
                 write(0, sampled, &infos[0]), write(1, sampled, &infos[1]),
                 write(2, sampled, &infos[2]), write(3, storage, &infos[3]),
                 write(4, storage, &infos[4])};
@@ -410,7 +410,7 @@ struct GsrUpscaler::Impl {
                 image(*nearest, *ycocg_view), image({}, frame.output),
                 image({}, *history_view[current]),
                 image(*nearest, *previous_native_ycocg_view)};
-            const std::array<vk::WriteDescriptorSet, 5> writes{
+            const std::array<vk::WriteDescriptorSet, 6> writes{
                 write(0, sampled, &infos[0]), write(1, sampled, &infos[1]),
                 write(2, sampled, &infos[2]), write(3, storage, &infos[3]),
                 write(4, storage, &infos[4]), write(5, sampled, &infos[5])};
