@@ -1,0 +1,2 @@
+Host-only regression run. Native GSR2 source-matching tests; no APK build or release.
+Original branch: fix/2.1.7-gsr2-capture-history-20261029
