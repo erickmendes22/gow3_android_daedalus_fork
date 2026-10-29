@@ -30,6 +30,15 @@ jobs:
           glslangValidator -V --target-env vulkan1.2 -S comp gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp -o "$RUNNER_TEMP/gsr2_upscale.spv"
           test -s "$RUNNER_TEMP/gsr2_convert.spv"
           test -s "$RUNNER_TEMP/gsr2_upscale.spv"
+      - name: Compile Vulkan GSR2 compute stages (no APK)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq glslang-tools spirv-tools
+          for shader in gpu/shadps4/video_core/host_shaders/gsr2_convert.comp gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp gpu/shadps4/video_core/host_shaders/gsr2_prehud_composite.comp; do
+            spv="${RUNNER_TEMP}/$(basename "$shader").spv"
+            glslangValidator -V --target-env vulkan1.2 -S comp -o "$spv" "$shader"
+            spirv-val --target-env vulkan1.2 "$spv"
+          done
       - name: Verify GSR2 gamma, stages, exact generation and safeguards
         run: |
           python3 -m unittest discover -s tests -p 'test_android_gsr2_*.py' -v
