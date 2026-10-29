@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <utility>
 
 #include "video_core/host_shaders/gsr2_convert_comp.h"
@@ -32,7 +33,7 @@ struct Params {
     float min_lerp_contribution;
     u32 same_camera;
     u32 reset;
-    u32 pad;
+    u32 history_filter; ///< 0 bilinear, 1 Catmull-Rom (Bloodborne)
 };
 static_assert(sizeof(Params) == 64);
 
@@ -346,6 +347,9 @@ struct GsrUpscaler::Impl {
         params.min_lerp_contribution = min_lerp;
         params.same_camera = frame.camera_still || force_nine_tap ? 1u : 0u;
         params.reset = clear ? 1u : 0u;
+        const char* history_mode = std::getenv("GOW3_GSR2_HISTORY");
+        params.history_filter = history_mode && (std::strcmp(history_mode, "bilinear") == 0 ||
+                                                 std::strcmp(history_mode, "0") == 0) ? 0u : 1u;
 
         const auto image = [](vk::Sampler sampler, vk::ImageView view) {
             return vk::DescriptorImageInfo{.sampler = sampler, .imageView = view,
