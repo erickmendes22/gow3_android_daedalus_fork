@@ -6,3 +6,5 @@ CI trigger 2026-10-29: dedicated GSR2 temporal capture APK build.
 Build after capture metadata corrections; exact completed VideoOut shader and CUSA01623 markers.
 
 Fix capture interaction: 3-second delayed raw frame sampling after dismissing Android menu.
+
+Single final APK validation 2026-10-29: complete VideoOut RGB source matched to verified MSAA depth/motion; preserve raw early scene A/B and fix sRGB output.
