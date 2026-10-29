@@ -109,9 +109,9 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
         with:
           name: Daedalus-GSR2-Capture-History-v2.1.7-arm64
-        if: github.ref != 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029'
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
