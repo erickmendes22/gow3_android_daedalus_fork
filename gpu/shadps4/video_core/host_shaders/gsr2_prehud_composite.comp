@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #version 450
-// GoW III: scene-only Qualcomm GSR2 followed by the original PS4 VideoOut
-// postprocess/HUD. Nothing from the HUD enters Qualcomm temporal history.
-// Compare TWO snapshots from the EXACT SAME VideoOut flip.
+// GoW III: full VideoOut GSR2 scene recovery with a legacy early-preHUD A/B.
+// A real capture showed that the early preHUD candidate excludes all the
+// foreground characters/effects even though its depth contains those objects.
+// The complete-source path avoids that mismatched scene/depth pair; further
+// UI-specific masking must be validated independently.
 layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
 layout(binding=0) uniform sampler2D InputPreHud;
 layout(binding=1) uniform sampler2D InputVideoOut;
@@ -13,6 +15,7 @@ layout(push_constant) uniform Params {
     uvec2 outputSize;
     uint isSrgb;
     float threshold;
+    uint completeVideoOut;
 } params;
 
 vec3 encodeSrgb(vec3 c) {
@@ -49,6 +52,21 @@ float maxChannel(vec3 v) {
     return max(v.r,max(v.g,v.b));
 }
 void main() {
+    // The 2026-10-29 raw capture proved that the early LDR target contains
+    // scenery, but misses Kratos, combat effects and enemies. The complete
+    // guest VideoOut contains the actual visible world. Reproject that FULL
+    // image, not the stale background plus post-hoc spatial character overlay.
+    // Both image and depth are from this canonical flip. UI may still need a
+    // real HUD-stage mask; no shader-hash heuristics are silently invented.
+    if (params.completeVideoOut != 0u) {
+        ivec2 px=ivec2(gl_GlobalInvocationID.xy);
+        if(any(greaterThanEqual(uvec2(px),params.outputSize)))return;
+        vec2 uv=(vec2(px)+0.5)/vec2(params.outputSize);
+        vec3 scene=textureLod(InputGsr2,uv,0.0).rgb;
+        vec3 outColor=params.isSrgb!=0u ? encodeSrgb(scene) : clamp(scene,0.0,1.0);
+        imageStore(OutputComposited,px,vec4(outColor,1.0));
+        return;
+    }
     if (gl_LocalInvocationIndex == 0u) {
         // The PS4 display-copy commonly changes brightness and color over
         // MOST of the screen, even though the scene's geometry is identical.
