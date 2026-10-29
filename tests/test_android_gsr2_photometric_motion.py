@@ -47,7 +47,7 @@ class Gsr2PhotometricHistory(unittest.TestCase):
     def test_match_against_real_prior_native_frame_not_reconstructed_history(self):
         self.assertIn("uniform usampler2D PreviousNativeYCoCg;", SHADER)
         self.assertIn("float Gow3NativePatchError(", SHADER)
-        self.assertIn("texelFetch(PreviousNativeYCoCg, previous + taps[i], 0)", SHADER)
+        self.assertIn("PreviousNativeYCoCg, previous + taps[i], 0).x", SHADER)
         self.assertIn("const ivec2 taps[5]", SHADER)
         self.assertIn("const ivec2 shifts[16]", SHADER)
         self.assertIn("modelError + 0.00012 < bestError * 0.82", SHADER)
