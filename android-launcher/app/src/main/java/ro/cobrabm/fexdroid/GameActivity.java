@@ -861,6 +861,8 @@ public final class GameActivity extends Activity {
                     if (stream==null) throw new IOException("Cannot write destination");
                     try (ZipOutputStream zip=new ZipOutputStream(stream)) {
                         String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\n"+
+                            "eboot SHA256: 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c\n"+
+                            "eboot markers: VelocityPass.fx@0x359ed6, PS3_VelocityConstant@0x36125f, PS3_bIsAntiAliased@0x361158\n"+
                             "Names: fNNN_input_WxH_rgba_srgb.raw (4 bytes/pixel; format as named),\n"+
                             "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\n"+
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
