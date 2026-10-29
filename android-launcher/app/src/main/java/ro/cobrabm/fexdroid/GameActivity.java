@@ -819,7 +819,7 @@ public final class GameActivity extends Activity {
                         throw new IOException("Cannot clear previous capture: "+file.getName());
                 File trigger=new File(BASE,"gsr2-capture.trigger");
                 try (FileOutputStream out=new FileOutputStream(trigger)) {
-                    out.write("capture\\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.write("capture\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 }
                 runOnUiThread(() -> new AlertDialog.Builder(this)
                     .setTitle("GSR2 capture armed")
@@ -860,16 +860,16 @@ public final class GameActivity extends Activity {
                 try (OutputStream stream=getContentResolver().openOutputStream(uri)) {
                     if (stream==null) throw new IOException("Cannot write destination");
                     try (ZipOutputStream zip=new ZipOutputStream(stream)) {
-                        String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\\n"+
-                            "Names: fNNN_input_WxH_rgba_srgb.raw (4 bytes/pixel; format as named),\\n"+
-                            "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\\n"+
-                            "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\\n"+
-                            "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\\n"+
-                            "fNNN_composited_WxH_rgba_unorm.raw (RGBA8 with HUD),\\n"+
-                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\\n"+
-                            "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\\n"+
-                            "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\\n"+
-                            "The game log contains frame/flip/camera provenance and temporal reset status.\\n";
+                        String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\n"+
+                            "Names: fNNN_input_WxH_rgba_srgb.raw (4 bytes/pixel; format as named),\n"+
+                            "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\n"+
+                            "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
+                            "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\n"+
+                            "fNNN_composited_WxH_rgba_unorm.raw (RGBA8 with HUD),\n"+
+                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+
+                            "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\n"+
+                            "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\n"+
+                            "The game log contains frame/flip/camera provenance and temporal reset status.\n";
                         zip.putNextEntry(new ZipEntry("README.txt"));
                         zip.write(readme.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         zip.closeEntry();
