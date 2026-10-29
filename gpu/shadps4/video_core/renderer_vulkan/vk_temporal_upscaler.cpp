@@ -58,10 +58,13 @@ FfxVkPortableImage Describe(vk::Image image, vk::Format format, u32 width, u32 h
 /// the upscaler's images of the next GOW3_DUMP_FRAMES (8) frames as raw files
 /// <dir>/fNNN_<name>_<w>x<h>_<format>.raw, for checking temporal stability offline.
 /// Returns the frame number to dump, or -1.
-int DumpFrame() {
+// The Android GSR2 capture must not spend its six slots on spatial-reset
+// duplicates: wait for real temporal GSR2 history (motion + reset=0).
+// Other upscalers retain the original immediate DumpFrame() behavior.
+int DumpFrame(bool eligible = true) {
     static const char* trigger = std::getenv("GOW3_DUMP_TRIGGER");
     static int remaining = 0, index = 0, polls = 0;
-    if (!trigger) {
+    if (!trigger || !eligible) {
         return -1;
     }
     if (remaining == 0) {
@@ -3308,7 +3311,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // Unlike the legacy DumpFrame() site in RunScaled(), this is the actual
     // Android direct-VideoOut path used by CUSA01623. Keep raw data even if
     // GSR2_AUTO_PROBE prints tiny grids to the log.
-    if (const int capture_frame = DumpFrame(); capture_frame >= 0) {
+    if (const int capture_frame = DumpFrame(reuse_history); capture_frame >= 0) {
         const char* fmt = GsrProbeFormat(source.info.pixel_format);
         if (std::strcmp(fmt, "unsupported") != 0) {
             const bool captured_depth = prehud &&
