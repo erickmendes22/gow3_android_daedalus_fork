@@ -874,7 +874,8 @@ public final class GameActivity extends Activity {
                         String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\n"+
                             "eboot SHA256: 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c\n"+
                             "eboot markers: VelocityPass.fx@0x359ed6, PS3_VelocityConstant@0x36125f, PS3_bIsAntiAliased@0x361158\n"+
-                            "Names: fNNN_input_WxH_rgba_srgb.raw (4 bytes/pixel; format as named),\n"+
+                            "Names: fNNN_input_WxH_*.raw (ACTUAL selected GSR2 color; now complete VideoOut),\n"+
+                            "fNNN_early_prehud_WxH_*.raw (former incomplete early scene for comparison),\n"+
                             "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\n"+
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
                             "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\n"+
@@ -882,7 +883,9 @@ public final class GameActivity extends Activity {
                             "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+
                             "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\n"+
                             "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\n"+
-                            "The game log contains frame/flip/camera provenance and temporal reset status.\n";
+                            "The game log contains frame/flip/camera provenance, complete_color and reset status.\n"+
+                            "The old early preHUD color lacked Kratos, enemies and effects while depth included them.\n"+
+                            "Full VideoOut source is an experimental correctness test; the HUD is not isolated from its temporal history yet.\n";
                         zip.putNextEntry(new ZipEntry("README.txt"));
                         zip.write(readme.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         zip.closeEntry();
