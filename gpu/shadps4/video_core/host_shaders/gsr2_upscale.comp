@@ -127,6 +127,40 @@ void main()
     // invalid-reprojection, NaN and neighborhood rejection guards below.
     vec3 HistoryColor = params.historyFilter != 0u ? SampleHistoryCatmullRom(PrevUV) : History.xyz;
     float Historyw = History.w;
+
+    // GoW III CUSA01623 01.02: the recovered ModelToPreProj matrix is not a
+    // single motion field for the fully composited VideoOut. Actual 2026-10-29
+    // six-frame captures show 1-2px vectors on nearly motionless scenery.
+    // Sampling the prior frame at those positions multiplies the image error.
+    // Compare the TWO candidate history locations in the same YCoCg domain as
+    // the current scene, before computing any history weight or clamp.
+    // Use motion only when it really aligns the image. A static match wins
+    // only by a substantial margin, so true camera/object motion still works.
+    // We do not turn temporal accumulation off or globally zero all vectors.
+    float candidateMotionPixels = length(Motion * vec2(params.renderSize) * 0.5);
+    if (!invalidReprojection && candidateMotionPixels > 0.25) {
+        vec3 currentYCoCg = DecodeColor(texelFetch(YCoCgColor, InputPos, 0).x);
+        vec4 noMotionHistory = textureLod(PrevHistoryOutput, Hruv, 0.0);
+        vec3 noMotionColor = noMotionHistory.xyz;
+        vec3 movingDelta = abs(HistoryColor - currentYCoCg);
+        vec3 staticDelta = abs(noMotionColor - currentYCoCg);
+        float movingError = max(movingDelta.x, max(movingDelta.y, movingDelta.z));
+        float staticError = max(staticDelta.x, max(staticDelta.y, staticDelta.z));
+        bool stableCandidate = !any(isnan(noMotionColor)) &&
+                               !any(isinf(noMotionColor)) &&
+                               !isnan(noMotionHistory.w) &&
+                               !isinf(noMotionHistory.w);
+        // Source ZIP (2), background without HUD: raw pixel reprojection
+        // error 0.087..0.095 -> 0.022..0.027 after a 0.75-relative
+        // photometric choice. Compare in actual SGSR tonemapped YCoCg here.
+        if (stableCandidate && staticError < 0.16 &&
+            staticError + 0.008 < movingError * 0.75) {
+            HistoryColor = params.historyFilter != 0u
+                ? SampleHistoryCatmullRom(Hruv) : noMotionColor;
+            Historyw = noMotionHistory.w;
+            Motion = vec2(0.0);
+        }
+    }
     // Invalid half-float alpha from any previously corrupted history entry
     // must also invalidate this pixel before Wfactor enters the Lanczos
     // kernel. clamp(abs(NaN),0,1) remains NaN on Vulkan GPUs.
