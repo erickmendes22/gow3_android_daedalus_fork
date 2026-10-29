@@ -27,6 +27,12 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.OutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -47,7 +53,7 @@ public final class GameActivity extends Activity {
     private String gameDir;
     /** An optional update folder (e.g. CUSA01740-patch): laid over the game at start. */
     private String updateDir;
-    private static final int REQUEST_FOLDER=1, REQUEST_STORAGE=2;
+    private static final int REQUEST_FOLDER=1, REQUEST_STORAGE=2, REQUEST_GSR2_CAPTURE_ZIP=3;
     private SurfaceHolder pendingHolder;
     private final Handler main=new Handler(Looper.getMainLooper());
     // The native ImGui menu and Android graphics settings share gow3.ini.
@@ -296,6 +302,13 @@ public final class GameActivity extends Activity {
                 setDetail(perfHudItem,on ? "On" : "Off");
             }
         });
+
+        if (bionicRuntime()) {
+            menuItem("ic_frames","Capture GSR2 temporal scaling",
+                "6 frames · input, depth, motion, output and HUD",this::startGsr2Capture);
+            menuItem("ic_restore","Export GSR2 capture ZIP",
+                "Save raw frames and the game log for analysis",this::exportGsr2Capture);
+        }
 
         section("Controls");
         controllerItem=menuItem("ic_gamepad","On-screen controller","",() -> {
@@ -681,6 +694,11 @@ public final class GameActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data) {
         super.onActivityResult(code,result,data);
+        if (code==REQUEST_GSR2_CAPTURE_ZIP) {
+            if (result==RESULT_OK && data!=null && data.getData()!=null)
+                writeGsr2CaptureZip(data.getData());
+            return;
+        }
         if (code!=REQUEST_FOLDER) return;
         if (result!=RESULT_OK || data==null || data.getData()==null) { if (!hasGame()) askGameFolder(false); return; }
         File dir=folderOf(data.getData());
@@ -781,6 +799,109 @@ public final class GameActivity extends Activity {
         } catch (Exception ex) { android.util.Log.e("God of War III","text answer: "+ex); return; }
         if (!temporary.renameTo(result)) android.util.Log.e("God of War III","text answer: rename failed");
     }
+    private File gsr2CaptureDir() { return new File(BASE,"out/gsr2-capture"); }
+
+    // A capture is always user-initiated. No GPU readbacks run on ordinary
+    // sessions and no app-owned game data leaves the device automatically.
+    private void startGsr2Capture() {
+        closeDrawer();
+        if (game==null) {
+            new AlertDialog.Builder(this).setMessage("Start the game before capturing GSR2.")
+                .setPositiveButton("OK",null).show();
+            return;
+        }
+        worker.execute(() -> {
+            try {
+                File dir=gsr2CaptureDir();
+                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create capture directory");
+                for (File file : dir.listFiles()==null ? new File[0] : dir.listFiles())
+                    if (file.isFile() && !file.delete())
+                        throw new IOException("Cannot clear previous capture: "+file.getName());
+                File trigger=new File(BASE,"gsr2-capture.trigger");
+                try (FileOutputStream out=new FileOutputStream(trigger)) {
+                    out.write("capture\\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setTitle("GSR2 capture armed")
+                    .setMessage("Resume gameplay and move the camera for several seconds. " +
+                        "The renderer will save six matched input, motion, depth and output frames. " +
+                        "Then open the menu and choose Export GSR2 capture ZIP.")
+                    .setPositiveButton("OK",null).show());
+            } catch (Exception ex) {
+                runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setMessage("GSR2 capture failed: "+ex.getMessage()).setPositiveButton("OK",null).show());
+            }
+        });
+    }
+
+    private void exportGsr2Capture() {
+        File dir=gsr2CaptureDir();
+        File[] saved=dir.listFiles((d,name) -> name.endsWith(".raw"));
+        if (saved==null || saved.length==0) {
+            new AlertDialog.Builder(this).setMessage("No temporal capture yet. Use Capture GSR2 temporal scaling during gameplay first.")
+                .setPositiveButton("OK",null).show();
+            return;
+        }
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_TITLE,"GodOfWar3-GSR2-Input-Motion-Depth-Output.zip");
+        try { startActivityForResult(intent,REQUEST_GSR2_CAPTURE_ZIP); }
+        catch (Exception ex) { error("Cannot open ZIP save dialog: "+ex); }
+    }
+
+    private void writeGsr2CaptureZip(android.net.Uri uri) {
+        worker.execute(() -> {
+            try {
+                File dir=gsr2CaptureDir();
+                File[] raw=dir.listFiles((d,name) -> name.endsWith(".raw"));
+                if (raw==null || raw.length==0) throw new IOException("No GSR2 frames captured");
+                java.util.Arrays.sort(raw, java.util.Comparator.comparing(File::getName));
+                try (OutputStream stream=getContentResolver().openOutputStream(uri)) {
+                    if (stream==null) throw new IOException("Cannot write destination");
+                    try (ZipOutputStream zip=new ZipOutputStream(stream)) {
+                        String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\\n"+
+                            "Names: fNNN_input_WxH_rgba_srgb.raw (4 bytes/pixel; format as named),\\n"+
+                            "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\\n"+
+                            "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\\n"+
+                            "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\\n"+
+                            "fNNN_composited_WxH_rgba_unorm.raw (RGBA8 with HUD),\\n"+
+                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\\n"+
+                            "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\\n"+
+                            "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\\n"+
+                            "The game log contains frame/flip/camera provenance and temporal reset status.\\n";
+                        zip.putNextEntry(new ZipEntry("README.txt"));
+                        zip.write(readme.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        zip.closeEntry();
+                        byte[] buffer=new byte[65536];
+                        for (File file:raw) {
+                            zip.putNextEntry(new ZipEntry("frames/"+file.getName()));
+                            try (FileInputStream in=new FileInputStream(file)) {
+                                for (int n;(n=in.read(buffer))!=-1;) zip.write(buffer,0,n);
+                            }
+                            zip.closeEntry();
+                        }
+                        File log=new File(BASE,"logs/android-game.log");
+                        if (log.isFile()) {
+                            zip.putNextEntry(new ZipEntry("logs/android-game.log"));
+                            try (FileInputStream in=new FileInputStream(log)) {
+                                for (int n;(n=in.read(buffer))!=-1;) zip.write(buffer,0,n);
+                            }
+                            zip.closeEntry();
+                        }
+                    }
+                }
+                runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setMessage("GSR2 capture ZIP exported ("+raw.length+" raw files).")
+                    .setPositiveButton("OK",null).show());
+            } catch (Exception ex) {
+                runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setMessage("Could not export GSR2 capture: "+ex.getMessage())
+                    .setPositiveButton("OK",null).show());
+            }
+        });
+    }
+
     /** The last value of a gow3.ini setting (as run-gow3.sh reads it), or null. */
     private String setting(String key) {
         String value=null;
