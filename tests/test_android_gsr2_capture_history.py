@@ -38,6 +38,15 @@ class Gsr2CaptureHistory(unittest.TestCase):
         self.assertIn("bool force_raw = false",src)
         self.assertIn("!force_raw && std::getenv",src)
 
+    def test_capture_waits_for_actual_temporal_history(self):
+        src=CPP.read_text()
+        self.assertIn("int DumpFrame(bool eligible = true)",src)
+        self.assertIn("if (!trigger || !eligible)",src)
+        self.assertIn("DumpFrame(reuse_history)",src)
+        app=APP.read_text()
+        self.assertIn("skipping spatial fallback frames",app)
+        self.assertIn("ONLY successful temporal history frames (reset=0)",app)
+
     def test_in_game_menu_can_capture_and_export_without_root(self):
         app=APP.read_text()
         self.assertIn("Capture GSR2 temporal scaling",app)
