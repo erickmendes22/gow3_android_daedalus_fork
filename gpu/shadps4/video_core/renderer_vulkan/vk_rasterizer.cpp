@@ -3,6 +3,7 @@
 
 #include <xxhash.h>
 #include <string_view>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include "video_core/renderer_vulkan/ui_composition.h"
