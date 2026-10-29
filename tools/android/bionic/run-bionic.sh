@@ -13,6 +13,12 @@ export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/" FEX_APP_DATA_LOCATION="$HOME/.f
 export GOW3_BIONIC_RUNNER="$base/run-bionic.sh"
 export GOW3_CONFIG="$base/gow3.ini"
 mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/logs"
+# The in-game capture menu writes this trigger. The renderer dumps 6 actual
+# consecutive GSR2 VideoOut dispatches (raw scene/depth/motion/output) here.
+export GOW3_DUMP_DIR="$base/out/gsr2-capture"
+export GOW3_DUMP_TRIGGER="$base/gsr2-capture.trigger"
+export GOW3_DUMP_FRAMES=6
+mkdir -p "$GOW3_DUMP_DIR"
 [ -f "$GOW3_CONFIG" ] || cp "$base/gow3.default.ini" "$GOW3_CONFIG"
 setting() { sed -n "s/^$1=//p" "$GOW3_CONFIG" | tail -n 1; }
 chip=$("$runtime/bin/kgsl-chip-id" 2>/dev/null || true)
