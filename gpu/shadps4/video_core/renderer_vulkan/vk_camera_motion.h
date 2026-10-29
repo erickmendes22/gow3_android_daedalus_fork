@@ -123,6 +123,7 @@ public:
     [[nodiscard]] u64 CompletedVideoOutGeneration() const noexcept {
         return completed_videoout_generation;
     }
+    [[nodiscard]] u64 CompletedCurrentShaderDebug() const noexcept { return completed_current.shader_hash; }
     [[nodiscard]] std::array<float, 2> CompletedJitter() const noexcept { return completed_current_jitter; }
     [[nodiscard]] float CompletedVerticalFov() const noexcept {
         return 2.0f * std::atan(1.0f / completed_current.proj[1]);
