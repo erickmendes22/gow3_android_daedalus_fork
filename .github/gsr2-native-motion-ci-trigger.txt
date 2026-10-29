@@ -6,3 +6,5 @@ Run second host gate: GLSL -> SPIR-V compilation and existing temporal regressio
 SPIR-V shader validation pass after native-frame motion integration.
 
 Validate direct VideoOut forward raster jitter eligibility after real ZIP4 measurements.
+
+Final CI after guarding TextureCache queries by verified native mode.
