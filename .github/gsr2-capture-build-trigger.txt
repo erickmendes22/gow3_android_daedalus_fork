@@ -12,3 +12,5 @@ Single final APK validation 2026-10-29: complete VideoOut RGB source matched to 
 CI retest: fix a provably failing GSR2 full_color assert in test_android_gsr2_complete_videoout.py. Confirmed all 45 new assertIn patterns against branch source. Only one Bionic APK workflow on this trigger.
 
 2026-10-29 temporal-only capture verification: second real-device archive (1) had 6/6 spatial reset frames (full VideoOut input but motion=0); first archive had 6/6 true temporal frames with incomplete LDR input. Skip spatial frames and wait for six real history (reset=0) frames with complete VideoOut. One Bionic APK workflow only.
+
+GSR2 actual shader correction 2026-10-29: photometric validation in gsr2_upscale.comp against false ~1-2 pixel ModelToPreProj camera vectors. Offline six-frame ZIP (2): background prev-frame reprojection error reduced from 0.087-0.095 to 0.022-0.027 on five pairs. Adds tests/test_android_gsr2_photometric_motion.py. Build only via existing Bionic APK workflow; no duplicate workflow.
