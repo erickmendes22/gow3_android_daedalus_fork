@@ -5,8 +5,10 @@ on:
     branches:
       - research/2.1.7-gsr2-srgb-stage-isolation-20261020
       - fix/2.1.7-gsr2-camera-reacquisition-20261020
+      - fix/2.1.7-gsr2-native-frame-motion-20261029
     paths:
       - '.github/gsr2-stage-ci-trigger.txt'
+      - '.github/gsr2-native-motion-ci-trigger.txt'
   workflow_dispatch:
 
 permissions:
