@@ -1,2 +1,4 @@
 Experimental GoW III 2.1.7 GSR2: Bloodborne Catmull-Rom history + capture six same-flip frames (input, depth, motion, output, composited, videoout) with in-game ZIP export.
 Based on GSR2 AtomicDepth #165, source eboot CUSA01623 01.02 SHA256 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c.
+
+CI trigger 2026-10-29: dedicated GSR2 temporal capture APK build.
