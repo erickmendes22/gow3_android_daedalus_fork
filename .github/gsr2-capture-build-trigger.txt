@@ -10,3 +10,5 @@ Fix capture interaction: 3-second delayed raw frame sampling after dismissing An
 Single final APK validation 2026-10-29: complete VideoOut RGB source matched to verified MSAA depth/motion; preserve raw early scene A/B and fix sRGB output.
 
 CI retest: fix a provably failing GSR2 full_color assert in test_android_gsr2_complete_videoout.py. Confirmed all 45 new assertIn patterns against branch source. Only one Bionic APK workflow on this trigger.
+
+2026-10-29 temporal-only capture verification: second real-device archive (1) had 6/6 spatial reset frames (full VideoOut input but motion=0); first archive had 6/6 true temporal frames with incomplete LDR input. Skip spatial frames and wait for six real history (reset=0) frames with complete VideoOut. One Bionic APK workflow only.
