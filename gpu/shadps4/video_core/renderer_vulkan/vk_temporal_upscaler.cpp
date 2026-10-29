@@ -3320,14 +3320,14 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             }
             std::printf("GSR2_CAPTURE_FRAME index=%d flip=%llu input=%ux%u output=%ux%u "
                         "prehud=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
-                        "camera_shader=%016llx executable=CUSA01623_01.02\\n",
+                        "camera_shader=%016llx executable=CUSA01623_01.02\n",
                         capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
                         int(prehud),int(use_scene_motion),int(!reuse_history),
                         int(depth_is_r32),(unsigned long long)temporal_gap,
                         (unsigned long long)camera_motion.Gsr2CurrentShaderDebug());
             std::fflush(stdout);
         } else {
-            std::printf("GSR2_CAPTURE_REJECT format=%s\\n",fmt);
+            std::printf("GSR2_CAPTURE_REJECT format=%s\n",fmt);
         }
     }
     if (std::getenv("GOW3_GSR2_AUTO_PROBE") &&
