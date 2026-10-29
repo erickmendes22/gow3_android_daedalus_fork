@@ -2,3 +2,5 @@ Host-only regression run. Native GSR2 source-matching tests; no APK build or rel
 Original branch: fix/2.1.7-gsr2-capture-history-20261029
 
 Run second host gate: GLSL -> SPIR-V compilation and existing temporal regression tests.
+
+SPIR-V shader validation pass after native-frame motion integration.
