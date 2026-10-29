@@ -1,3 +1,5 @@
 Native build validation for GSR2 native-input motion correction.
 Source-check, Android launcher, Bionic CPU/GPU and native runtime are compiled.
 No APK is packaged or advertised as visually corrected.
+
+Re-run after correcting the workflow YAML syntax; compile only.
