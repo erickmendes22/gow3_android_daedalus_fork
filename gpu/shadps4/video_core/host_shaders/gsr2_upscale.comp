@@ -40,6 +40,8 @@ layout(binding = 1) uniform sampler2D MotionDepthClipAlphaBuffer;
 layout(binding = 2) uniform usampler2D YCoCgColor;
 layout(binding = 3, rgba16f) uniform writeonly image2D SceneColorOutput;
 layout(binding = 4, rgba16f) uniform writeonly image2D HistoryOutput;
+// Unmodified previous *native* input, not a filtered or temporally accumulated history.
+layout(binding = 5) uniform usampler2D PreviousNativeYCoCg;
 
 layout(push_constant) uniform Params
 {
@@ -84,30 +86,26 @@ vec3 SampleHistoryCatmullRom(vec2 uv)
     return c / wsum;
 }
 
-// Verify historical motion in the same YCoCg space SGSR stores in its
-// history_image. In GoW III the recovered ModelToPreProj matrix can belong to
-// one rendered model, NOT the camera of all pixels on the final VideoOut.
-// Five actual texel comparisons prevent a single similarly colored pixel
-// from hijacking a camera or animated-object match.
-float Gow3HistoryPatchError(vec2 previousUv, ivec2 currentPixel)
+// Verify actual raster displacement between successive unmodified VideoOut inputs.
+// GoW III's recovered ModelToPreProj is sometimes a model matrix; model-derived
+// motion cannot be trusted for the full scene. Matching against reconstructed
+// history fed its own ghosting/aliasing back into the motion estimator.
+float Gow3NativePatchError(ivec2 currentPixel, ivec2 displacement)
 {
-    if (any(lessThan(previousUv, vec2(0.012))) ||
-        any(greaterThan(previousUv, vec2(0.988))))
-        return 1.0e10;
     const ivec2 taps[5] = ivec2[5](
         ivec2(0, 0), ivec2(-1, 0), ivec2(1, 0),
         ivec2(0, -1), ivec2(0, 1));
+    ivec2 previous = currentPixel + displacement;
+    if (any(lessThan(previous, ivec2(1))) ||
+        any(greaterThanEqual(previous, ivec2(params.renderSize) - ivec2(1))))
+        return 1.0e10;
     float cost = 0.0;
     for (int i = 0; i < 5; ++i) {
-        ivec2 pos = clamp(currentPixel + taps[i], ivec2(0),
-                          ivec2(params.renderSize) - ivec2(1));
-        vec3 actual = DecodeColor(texelFetch(YCoCgColor, pos, 0).x);
-        vec2 uv = clamp(previousUv + vec2(taps[i]) * params.renderSizeRcp,
-                        vec2(0.0), vec2(1.0));
-        vec3 historic = textureLod(PrevHistoryOutput, uv, 0.0).xyz;
-        if (any(isnan(historic)) || any(isinf(historic)))
-            return 1.0e10;
-        vec3 delta = actual - historic;
+        vec3 nowYCoCg = DecodeColor(texelFetch(
+            YCoCgColor, currentPixel + taps[i], 0).x);
+        vec3 lastYCoCg = DecodeColor(texelFetch(
+            PreviousNativeYCoCg, previous + taps[i], 0).x);
+        vec3 delta = nowYCoCg - lastYCoCg;
         cost += dot(delta * delta, vec3(2.5, 0.8, 0.8));
     }
     return cost / 5.0;
@@ -157,55 +155,54 @@ void main()
     vec3 HistoryColor = params.historyFilter != 0u ? SampleHistoryCatmullRom(PrevUV) : History.xyz;
     float Historyw = History.w;
 
-    // The model-derived GoW III camera vectors do not match the actual
-    // VideoOut motion in the 29-Oct-2026 temporal captures. ZIP (2) and (3)
-    // show a near-static backdrop receiving 1..7 render-pixel motion.
-    // Do not merely compare one pixel at (motion, zero): establish
-    // the real previous-image correspondence with a local 2D patch search.
-    // Search is only needed for pixels with poor camera/static matches;
-    // this leaves stable regions cheap and keeps actual moving objects.
+    // All candidate errors are measured between TWO ORIGINAL native frames.
+    // A locally stable background must not be reprojected by a wrong model
+    // matrix (the (4) capture shows ~2px model vectors against <0.02px true flow).
+    // Search discrete native-pixel offsets only where the static match is poor.
     if (params.reset == 0u) {
-        float staticError = Gow3HistoryPatchError(Hruv, InputPos);
-        float motionError = invalidReprojection ? 1.0e10
-            : Gow3HistoryPatchError(rawPrevUV, InputPos);
-        vec2 bestUV = Hruv;
-        float bestError = staticError;
-        if (motionError + 0.00012 < staticError * 0.82) {
-            bestUV = rawPrevUV;
-            bestError = motionError;
+        float bestError = Gow3NativePatchError(InputPos, ivec2(0));
+        ivec2 bestOffset = ivec2(0);
+        ivec2 modelOffset = ivec2(round((rawPrevUV - Hruv) *
+                                       vec2(params.renderSize)));
+        bool modelWithinRange = !invalidReprojection &&
+                                all(lessThanEqual(abs(modelOffset), ivec2(8)));
+        if (modelWithinRange) {
+            float modelError = Gow3NativePatchError(InputPos, modelOffset);
+            if (modelError + 0.00012 < bestError * 0.82) {
+                bestOffset = modelOffset;
+                bestError = modelError;
+            }
         }
-        // The neighborhood is in render pixels, NOT display pixels.
-        // Search both camera and static origins for actor/particle motion.
         if (bestError > 0.0006) {
-            const vec2 shifts[16] = vec2[16](
-                vec2(-4, 0), vec2(4, 0), vec2(0, -4), vec2(0, 4),
-                vec2(-2,-2), vec2(-2, 2), vec2(2,-2), vec2(2, 2),
-                vec2(-1, 0), vec2(1, 0), vec2(0,-1), vec2(0, 1),
-                vec2(-1,-1), vec2(-1, 1), vec2(1,-1), vec2(1, 1));
-            for (int i=0; i<16; ++i) {
-                vec2 at = Hruv + shifts[i] * params.renderSizeRcp;
-                float cost = Gow3HistoryPatchError(at, InputPos)
-                           + 0.00003 * length(shifts[i]);
+            const ivec2 shifts[16] = ivec2[16](
+                ivec2(-4, 0), ivec2(4, 0), ivec2(0, -4), ivec2(0, 4),
+                ivec2(-2,-2), ivec2(-2, 2), ivec2(2,-2), ivec2(2, 2),
+                ivec2(-1, 0), ivec2(1, 0), ivec2(0,-1), ivec2(0, 1),
+                ivec2(-1,-1), ivec2(-1, 1), ivec2(1,-1), ivec2(1, 1));
+            for (int i = 0; i < 16; ++i) {
+                float cost = Gow3NativePatchError(InputPos, shifts[i]) +
+                             0.00003 * length(vec2(shifts[i]));
                 if (cost + 0.00004 < bestError) {
-                    bestUV = at;
+                    bestOffset = shifts[i];
                     bestError = cost;
                 }
             }
         }
-        // A newly exposed pixel, changed effect or HUD overlay may not
-        // exist in the prior history. Reject its history instead of dragging
-        // some arbitrarily nearest scene color over the new object.
-        if (bestError < 0.012 &&
-            all(greaterThanEqual(bestUV, vec2(0.0))) &&
-            all(lessThan(bestUV, vec2(1.0)))) {
-            PrevUV = bestUV;
-            vec4 selected = textureLod(PrevHistoryOutput, PrevUV, 0.0);
-            HistoryColor = params.historyFilter != 0u
-                ? SampleHistoryCatmullRom(PrevUV) : selected.xyz;
-            Historyw = selected.w;
-            // For SGSR: prevUV = currentUV - 0.5 * motionClip.
-            Motion = (Hruv - PrevUV) * 2.0;
-            invalidReprojection = false;
+        // Rejection is local: missing pixels, HUD transitions and particles
+        // use the present spatial sample, not an unrelated temporal pixel.
+        if (bestError < 0.002) {
+            PrevUV = Hruv + vec2(bestOffset) * params.renderSizeRcp;
+            if (all(greaterThanEqual(PrevUV, vec2(0.0))) &&
+                all(lessThan(PrevUV, vec2(1.0)))) {
+                vec4 selected = textureLod(PrevHistoryOutput, PrevUV, 0.0);
+                HistoryColor = params.historyFilter != 0u
+                    ? SampleHistoryCatmullRom(PrevUV) : selected.xyz;
+                Historyw = selected.w;
+                Motion = (Hruv - PrevUV) * 2.0;
+                invalidReprojection = false;
+            } else {
+                invalidReprojection = true;
+            }
         } else {
             invalidReprojection = true;
         }
@@ -435,7 +432,7 @@ void main()
     vec3 historyBeforeClamp=HistoryColor;
     vec3 clampedcolor = clamp(HistoryColor, rectboxmin, rectboxmax);
     float startLerpValue = params.MinLerpContribution; //params.MinLerpContribution; //MinLerpContribution;
-    if ((abs(mda.x) + abs(mda.y)) > 0.000001) startLerpValue = 0.0;
+    if ((abs(Motion.x) + abs(Motion.y)) > 0.000001) startLerpValue = 0.0;
 	float lerpcontribution = (any(greaterThan(rectboxmin, HistoryColor)) || any(greaterThan(HistoryColor, rectboxmax))) ? startLerpValue : 1.0f;
 
 	HistoryColor = mix(clampedcolor, HistoryColor, clamp(lerpcontribution, 0.0, 1.0));
