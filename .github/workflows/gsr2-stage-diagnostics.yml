@@ -22,6 +22,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Compile actual GSR2 compute shaders to Vulkan SPIR-V
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq glslang-tools
+          glslangValidator -V --target-env vulkan1.2 -S comp gpu/shadps4/video_core/host_shaders/gsr2_convert.comp -o "$RUNNER_TEMP/gsr2_convert.spv"
+          glslangValidator -V --target-env vulkan1.2 -S comp gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp -o "$RUNNER_TEMP/gsr2_upscale.spv"
+          test -s "$RUNNER_TEMP/gsr2_convert.spv"
+          test -s "$RUNNER_TEMP/gsr2_upscale.spv"
       - name: Verify GSR2 gamma, stages, exact generation and safeguards
         run: |
           python3 -m unittest discover -s tests -p 'test_android_gsr2_*.py' -v
