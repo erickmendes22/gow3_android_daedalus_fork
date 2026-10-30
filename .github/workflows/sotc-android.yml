@@ -60,3 +60,50 @@ jobs:
           name: sotc-bionic-lowmem-preboot-only
           path: out/sotc-android/libsotc-lowmem.a
           if-no-files-found: error
+
+  fex-jit:
+    name: Build SotC FEX ARM64 guest-context backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install ARM64 NDK and native build tools
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build cmake pkg-config
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Build pinned host headers
+        shell: bash -el {0}
+        run: bash ci/setup-deps.sh "$CONDA_PREFIX"
+      - name: Compile the actual embedded FEX CPU backend with new fiber context API
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_cpu.sh
+      - name: Verify ARM64 FEX guest-context exports
+        run: |
+          lib=out/bionic/lib/libgow3cpu.so
+          test -s "$lib"
+          "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$lib" | grep -q AArch64
+          "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D "$lib" | grep -q guest_context_get
+          "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D "$lib" | grep -q guest_context_set
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-fex-arm64-native-only
+          path: out/bionic/lib/libgow3cpu.so
+          retention-days: 7
+          if-no-files-found: error
