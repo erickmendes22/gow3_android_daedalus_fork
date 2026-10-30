@@ -357,6 +357,6 @@
     <string name="controller_cross">CROSS</string>
     <string name="controller_square">SQUARE</string>
     <string name="settings_fullscreen_title">Fullscreen (fill display)</string>
-    <string name="settings_fullscreen_desc">Off: original centered 16:9 with system bars. On: immersive full display. Applies at next launch.</string>
+    <string name="settings_fullscreen_desc">Off: original centered 16:9 with system bars. On: immersive full display. Applies in-game after Apply and restart, or at the next launch.</string>
     <string name="gpu_driver_mali_notice">Mali CSF (Android 15+): Automatic uses experimental PanVK 3.2 on supported models. Unsupported Mali uses system Vulkan. PanVK is not for Adreno.</string>
 </resources>

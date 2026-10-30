@@ -320,6 +320,6 @@
     <string name="controller_cross">X</string>
     <string name="controller_square">QUADRADO</string>
     <string name="settings_fullscreen_title">Tela cheia (preencher tela)</string>
-    <string name="settings_fullscreen_desc">Desativado: 16:9 centralizado com barras do Android. Ativado: tela inteira imersiva. Aplica na próxima execução.</string>
+    <string name="settings_fullscreen_desc">Desativado: 16:9 centralizado com barras do Android. Ativado: tela inteira imersiva. Aplica ao reiniciar o jogo, ou na próxima execução.</string>
     <string name="gpu_driver_mali_notice">Mali CSF (Android 15+): Automático usa PanVK 3.2 experimental nos modelos compatíveis. Mali não compatível usa Vulkan do sistema. PanVK não é para Adreno.</string>
 </resources>

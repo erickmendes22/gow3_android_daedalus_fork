@@ -44,6 +44,11 @@ public final class Gow3Present {
         return "bridge running: bionic present on " + socketPath;
     }
 
+    /** Apply window mode to the renderer even if the game process stays alive. */
+    public static synchronized void updateFullscreen(boolean enabled) {
+        nativeSetFullscreen(enabled);
+    }
+
     private static synchronized void setSurface(Surface surface) { nativeSetSurface(surface); }
 
     /** Frames the game has presented to the app so far. */

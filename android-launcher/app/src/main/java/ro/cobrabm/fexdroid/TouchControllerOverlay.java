@@ -307,9 +307,10 @@ final class TouchControllerOverlay extends View {
             case "l2": // magic rune
                 c.drawCircle(0,0,16,paint);c.drawCircle(0,0,5,paint);
                 c.drawLine(-23,0,-12,0,paint);c.drawLine(12,0,23,0,paint);break;
-            case "r1": // crossed chained blades
-                c.drawLine(-17,-19,16,18,paint);c.drawLine(16,-19,-17,18,paint);
-                c.drawLine(-20,-13,-12,-21,paint);c.drawLine(12,-21,20,-13,paint);break;
+            case "r1": // interact/grapple: paired chain links
+                c.drawRoundRect(-23,-11,2,11,10,10,paint);
+                c.drawRoundRect(-2,-11,23,11,10,10,paint);
+                c.drawLine(-10,0,10,0,paint);break;
             case "r2": // spark / item
                 c.drawLine(0,-21,-8,-1,paint);c.drawLine(-8,-1,5,-1,paint);
                 c.drawLine(5,-1,-3,21,paint);c.drawLine(-3,21,15,-7,paint);break;
@@ -328,12 +329,11 @@ final class TouchControllerOverlay extends View {
             case "options":
                 c.drawLine(-11,-16,-11,16,paint);c.drawLine(11,-16,11,16,paint);break;
             case "touchpad":c.drawRoundRect(-22,-14,22,14,6,6,paint);break;
-            default:
-                paint.setStyle(Paint.Style.FILL);
-                paint.setTypeface(Typeface.DEFAULT_BOLD);
-                paint.setTextAlign(Paint.Align.CENTER);
-                paint.setTextSize(21);
-                c.drawText(name.equals("l3") ? "L3" : "R3",0,7,paint);
+            default: // Stick-clicks: glyph only; physical L3/R3 ID is below.
+                c.drawCircle(0,0,11,paint);
+                c.drawLine(0,-15,0,-8,paint);
+                c.drawLine(-15,0,-8,0,paint);
+                c.drawLine(8,0,15,0,paint);
         }
         c.restore();
         if (preferences.getBoolean("overlay_button_labels",true) &&

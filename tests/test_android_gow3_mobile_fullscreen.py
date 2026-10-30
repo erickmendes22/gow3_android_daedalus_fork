@@ -29,6 +29,14 @@ class Gow3MobileFullscreen(unittest.TestCase):
         self.assertIn('WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()',game)
         self.assertIn('getCurrentWindowMetrics().getBounds()',game)
         self.assertIn('screen.requestApplyInsets()',game)
+        self.assertIn('Gow3Present.updateFullscreen(fullscreen)',game)
+        bridge=load(JAVA/"Gow3Present.java")
+        native=load(ROOT/"tools/android/bionic/present/gow3present.c")
+        self.assertIn('public static synchronized void updateFullscreen(boolean enabled)',bridge)
+        self.assertIn('nativeSetFullscreen(enabled)',bridge)
+        self.assertIn('_Atomic int fullscreen;',native)
+        self.assertIn('atomic_load(&S.fullscreen)',native)
+        self.assertIn('atomic_store(&S.fullscreen, enabled != 0)',native)
 
     def test_mobile_captions_are_only_gamepad_button_ids(self):
         overlay=load(JAVA/"TouchControllerOverlay.java")

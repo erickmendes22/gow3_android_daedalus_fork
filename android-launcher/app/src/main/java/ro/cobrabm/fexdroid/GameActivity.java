@@ -510,6 +510,7 @@ public final class GameActivity extends Activity {
         // Galaxy A55 and other non-16:9 screens: OFF preserves Android bars
         // and the centred 16:9 picture. ON fills the entire display.
         boolean fullscreen="1".equals(setting("android_fullscreen"));
+        if (bionicRuntime()) Gow3Present.updateFullscreen(fullscreen);
         int flags=fullscreen ?
             (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
              View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
