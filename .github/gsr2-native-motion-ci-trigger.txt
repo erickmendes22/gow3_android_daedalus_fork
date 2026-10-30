@@ -26,3 +26,5 @@ Update photometric test assertions from outdated 16 sparse vectors / 0.0006 thre
 ZIP10/ZIP11 2026-10-30: finished 3D from observed depth-enabled->depthless boundary after combat effects (draw80 in captured frame) instead of first incomplete VideoOut copy; source regression + SPIRV validation.
 
 Rerun ZIP11 finished-3D source tests after updating obsolete README text assertion.
+
+2026-10-30 ZIP12 ZIP13: validate measured real-native (-1,+3)/(-1,+4) missing from the sparse search. CPU offline old vs camera-Y 5x3 replay changes 34-48% of mismatches in affected scene ROIs and reduces rejected-history fraction by ~6-13pp. Reverted an unrelated unproven grade change. Validate only this specific motion correction, SPIRV, and tests.
