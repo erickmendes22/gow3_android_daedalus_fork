@@ -76,6 +76,29 @@ endif()
     text=text.replace('SDL_Delay(50);','std::this_thread::sleep_for(std::chrono::milliseconds(50));')
     s.write_text(text)
 
+    # SotC's x86-only timing and spin instructions must be translated when
+    # building native aarch64. Keep both original fast paths on desktop.
+    stats=out/'shadps4/video_core/sotc_stats.h'
+    stats_text=stats.read_text()
+    stats_text=swap(stats_text,'    return __builtin_ia32_rdtsc();',
+"""#if defined(__aarch64__)
+    uint64_t ticks;
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(ticks));
+    return ticks;
+#else
+    return __builtin_ia32_rdtsc();
+#endif""",'SotC CPU cycle counter')
+    stats.write_text(stats_text)
+    tex=out/'shadps4/video_core/texture_cache/texture_cache.h'
+    tex_text=tex.read_text()
+    tex_text=swap(tex_text,'            __builtin_ia32_pause();',
+"""#if defined(__aarch64__)
+            __asm__ volatile("yield" ::: "memory");
+#else
+            __builtin_ia32_pause();
+#endif""",'SotC texture-cache spin instruction')
+    tex.write_text(tex_text)
+
     # The original in-game menu expects desktop SDL events. On Android the
     # overlay remains available as an ImGui Vulkan compositor; input will be
     # forwarded by the Android controller/IME bridge, not SDL.
