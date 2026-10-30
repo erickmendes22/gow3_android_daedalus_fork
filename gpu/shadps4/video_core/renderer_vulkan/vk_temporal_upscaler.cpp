@@ -3565,7 +3565,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                     "output=%ux%u dispatch=%llu path=%s\n",
                     static_cast<unsigned long long>(source.info.guest_address),
                     w, h, ow, oh, static_cast<unsigned long long>(accepted),
-                    prehud ? (post_scene ? "post_scene_copy_temporal" :
+                    prehud ? (post_scene ?
+                                  (pre_hud_slots[pre_hud_completed_slot].post_scene_final_valid
+                                   ? "finished_3d_before_depthless_temporal"
+                                   : "early_display_copy_temporal") :
                               complete_videoout ? "full_videoout_temporal" :
                                                   "early_prehud_temporal")
                            : "post_videoout_native_aa");
@@ -3629,11 +3632,14 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             }
             std::printf("GSR2_CAPTURE_FRAME index=%d flip=%llu input=%ux%u output=%ux%u "
                         "prehud=%d full_color=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
-                        "camera_shader=%016llx executable=CUSA01623_01.02\n",
+                        "camera_shader=%016llx finished_3d=%d after_draw=%u "
+                        "executable=CUSA01623_01.02\n",
                         capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
                         int(prehud),int(complete_videoout || post_scene),int(use_scene_motion),int(!reuse_history),
                         int(depth_is_r32),(unsigned long long)temporal_gap,
-                        (unsigned long long)camera_motion.CompletedCurrentShaderDebug());
+                        (unsigned long long)camera_motion.CompletedCurrentShaderDebug(),
+                        int(post_scene && pre_hud_slots[pre_hud_completed_slot].post_scene_final_valid),
+                        post_scene ? pre_hud_slots[pre_hud_completed_slot].post_scene_completed_draws : 0);
             std::fflush(stdout);
         } else {
             std::printf("GSR2_CAPTURE_REJECT format=%s\n",fmt);
