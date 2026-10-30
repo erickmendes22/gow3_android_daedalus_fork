@@ -140,6 +140,28 @@ endif()
     std::FILE* f = std::fopen(tmp.c_str(), "wb");
 #endif''','SotC cache pack write')
     cache.write_text(cache_code)
+    pipeline=out/'shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
+    pipeline_text=pipeline.read_text()
+    pipeline_text=swap(pipeline_text,
+         'if (std::FILE* f = _wfopen(path.c_str(), L"rb")) {',
+         '''#ifdef _WIN32
+        std::FILE* cache_file = _wfopen(path.c_str(), L"rb");
+#else
+        std::FILE* cache_file = std::fopen(path.c_str(), "rb");
+#endif
+        if (std::FILE* f = cache_file) {''',
+         'SotC driver cache load')
+    pipeline_text=swap(pipeline_text, 'tmp += L".tmp";', 'tmp += ".tmp";',
+                       'SotC driver cache temporary path')
+    pipeline_text=swap(pipeline_text,
+         'std::FILE* f = _wfopen(tmp.c_str(), L"wb");',
+         '''#ifdef _WIN32
+    std::FILE* f = _wfopen(tmp.c_str(), L"wb");
+#else
+    std::FILE* f = std::fopen(tmp.c_str(), "wb");
+#endif''',
+         'SotC driver cache store')
+    pipeline.write_text(pipeline_text)
     page=out/'shadps4/video_core/page_manager.cpp'
     page_code=page.read_text()
     page_code=swap(page_code,'char where[MAX_PATH] = "?";',
