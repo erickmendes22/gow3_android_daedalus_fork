@@ -139,6 +139,18 @@ public final class DriverArchive {
             Installed result=read(root,id,api); validateLibrary(result.library); return result;
         } finally { clean(stage); Files.deleteIfExists(archive.toPath()); }
     }
+    /**
+     * Remove a broken cached driver by its trusted SHA-256 directory name.
+     * Never accept paths/relative traversal or delete any other driver.
+     */
+    public static void delete(File root,String id) throws IOException {
+        if (id==null || !id.matches("[0-9a-f]{64}")) throw invalid();
+        File directory=child(root.getCanonicalFile(),id);
+        if (Files.exists(directory.toPath(),java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            clean(directory);
+        }
+    }
+
     public static Installed read(File root,String id,int api) throws IOException {
         if (!id.matches("[0-9a-f]{64}")) throw invalid();
         File dir=child(root,id); Properties info=new Properties();

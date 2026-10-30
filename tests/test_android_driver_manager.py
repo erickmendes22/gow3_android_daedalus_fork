@@ -77,6 +77,7 @@ public class EGL14 {
  public String getString(String name) { throw new UnsupportedOperationException(); }
  public boolean has(String name) { return false; }
  public int optInt(String name,int fallback) { return fallback; }
+ public int optInt(String name) { return 0; }
  public String optString(String name,String fallback) { return fallback; }
 }''',
 'Harness.java':'''import java.io.*; import java.util.*;
