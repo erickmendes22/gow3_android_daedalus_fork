@@ -8,3 +8,5 @@ SPIR-V shader validation pass after native-frame motion integration.
 Validate direct VideoOut forward raster jitter eligibility after real ZIP4 measurements.
 
 Final CI after guarding TextureCache queries by verified native mode.
+
+Validate post-scene snapshot source, actor/depth preservation, and new same-flip ZIP capture fields (2026-10-30).
