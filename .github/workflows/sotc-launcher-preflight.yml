@@ -1,0 +1,19 @@
+name: SotC Android launcher source checks
+on:
+  push:
+    branches: [sotc-apk-integration]
+permissions:
+  contents: read
+jobs:
+  launcher:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Validate SotC shell and Android game launcher input
+        run: |
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          grep -Fq -- '--sotc-cmdline' ports/sotc/android/run-sotc-bionic.sh
+          grep -q 'BBPROBE5' ports/sotc/android/run-sotc-bionic.sh
