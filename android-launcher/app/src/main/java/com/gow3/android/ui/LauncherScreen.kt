@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,58 +61,73 @@ internal fun LauncherScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(LauncherTab.HOME.ordinal) }
     val tab = LauncherTab.entries[selectedTab]
+    val isSotc = LocalContext.current.packageName == "com.sotc.android.daedalus"
 
     Scaffold(
         containerColor = Color.Transparent,
-        bottomBar = { BottomNavigation(tab) { selectedTab = it.ordinal } },
+        bottomBar = { BottomNavigation(tab,isSotc) { selectedTab = it.ordinal } },
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            Image(
-                painter = painterResource(R.drawable.bg_wallpaper),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+            if (isSotc) {
+                SotcBackdrop()
+            } else {
+                Image(
+                    painter = painterResource(R.drawable.bg_wallpaper),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Brush.radialGradient(listOf(LauncherColors.backgroundTop.copy(alpha = 0.55f), LauncherColors.backgroundBottom.copy(alpha = 0.85f)), radius = 950f)),
+                    .background(Brush.radialGradient(
+                        if (isSotc) listOf(Color(0x99081619),Color(0xE0050A0B))
+                        else listOf(LauncherColors.backgroundTop.copy(alpha = 0.55f), LauncherColors.backgroundBottom.copy(alpha = 0.85f)),
+                        radius = 950f)),
             )
-            when (tab) {
-                LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg, onInstallUpdatePkg, pkgInstallBusy, pkgInstallMessage, pkgGeneration, onChangeLanguage)
-                LauncherTab.MODS -> ModsScreen()
-                LauncherTab.ABOUT -> AboutScreen(saves, logs, onChangeLanguage)
+            if (isSotc) {
+                SotcScreen(selectedTab,onStartGame,onChooseGameFolder,onChooseUpdateFolder,
+                    onInstallBasePkg,onInstallUpdatePkg,pkgInstallBusy,pkgInstallMessage,
+                    pkgGeneration,saves,logs,onChangeLanguage)
+            } else {
+                when (tab) {
+                    LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg,
+                        onInstallUpdatePkg, pkgInstallBusy, pkgInstallMessage, pkgGeneration, onChangeLanguage)
+                    LauncherTab.MODS -> ModsScreen()
+                    LauncherTab.ABOUT -> AboutScreen(saves, logs, onChangeLanguage)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BottomNavigation(selectedTab: LauncherTab, onTabSelected: (LauncherTab) -> Unit) {
+private fun BottomNavigation(selectedTab: LauncherTab,isSotc:Boolean, onTabSelected: (LauncherTab) -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(LauncherColors.backgroundBottom),
+            .background(if(isSotc) Color(0xFF071013) else LauncherColors.backgroundBottom),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             modifier = Modifier
                 .widthIn(max = 420.dp)
-                .background(LauncherColors.backgroundBottom)
+                .background(if(isSotc) Color(0xFF071013) else LauncherColors.backgroundBottom)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(LauncherColors.navSurface)
-                .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = 0.35f)), RoundedCornerShape(28.dp))
+                .background(if(isSotc) SotcPalette.panel else LauncherColors.navSurface)
+                .border(BorderStroke(1.dp, (if(isSotc) SotcPalette.edge else LauncherColors.gold).copy(alpha = 0.35f)), RoundedCornerShape(28.dp))
                 .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME, stringResource(R.string.nav_home), "⌂", onTabSelected)
-            NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS, stringResource(R.string.nav_mods), "⚙", onTabSelected)
-            NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT, stringResource(R.string.nav_about), "ⓘ", onTabSelected)
+            NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME, stringResource(R.string.nav_home), "⌂", isSotc,onTabSelected)
+            NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS, stringResource(R.string.nav_mods), "⚙", isSotc,onTabSelected)
+            NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT, stringResource(R.string.nav_about), "ⓘ", isSotc,onTabSelected)
         }
     }
 
@@ -123,6 +139,7 @@ private fun RowScope.NavItem(
     selected: Boolean,
     label: String,
     icon: String,
+    isSotc:Boolean,
     onTabSelected: (LauncherTab) -> Unit,
 ) {
     Column(
@@ -130,12 +147,12 @@ private fun RowScope.NavItem(
             .weight(1f)
             .height(48.dp)
             .clip(RoundedCornerShape(26.dp))
-            .background(if (selected) LauncherColors.crimson else Color.Transparent)
+            .background(if (selected) (if(isSotc) SotcPalette.teal else LauncherColors.crimson) else Color.Transparent)
             .clickable { onTabSelected(tab) },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(icon, color = if (selected) LauncherColors.textPrimary else LauncherColors.textMuted, fontSize = 17.sp, lineHeight = 17.sp)
-        Text(label, color = if (selected) LauncherColors.textPrimary else LauncherColors.textMuted, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, letterSpacing = 0.3.sp, maxLines = 1)
+        Text(icon, color = if (selected) (if(isSotc) SotcPalette.text else LauncherColors.textPrimary) else LauncherColors.textMuted, fontSize = 17.sp, lineHeight = 17.sp)
+        Text(label, color = if (selected) (if(isSotc) SotcPalette.text else LauncherColors.textPrimary) else LauncherColors.textMuted, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, letterSpacing = 0.3.sp, maxLines = 1)
     }
 }
