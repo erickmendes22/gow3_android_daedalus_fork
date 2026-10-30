@@ -91,8 +91,56 @@ jobs:
             "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
           cmake --build out/sotc-android/cmake --target bbgpu --parallel "$GOW3_JOBS"
           test -s out/sotc-android/cmake/libbbgpu.so
-          "$llvm/bin/llvm-readelf" -h out/sotc-android/cmake/libbbgpu.so | grep -q AArch64
-          "$llvm/bin/llvm-nm" -D out/sotc-android/cmake/libbbgpu.so | grep -q bbgpu_init
+          # Do not pipe llvm-nm to grep -q under pipefail: grep closes early,
+          # llvm-nm reports an output-stream EPIPE (exit 74) even on a good ELF.
+          "$llvm/bin/llvm-readelf" -h out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-header.txt
+          grep -Fq AArch64 out/sotc-android/cmake/elf-header.txt
+          "$llvm/bin/llvm-nm" -D --defined-only out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-exports.txt
+          grep -Eq '[[:space:]]bbgpu_init
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Check all SotC HLE imports resolve from the FEX main executable
+        run: |
+          python3 ports/sotc/android/verify_sotc_link.py \
+            --ndk "$GOW3_NDK" \
+            --renderer out/sotc-android/cmake/libbbgpu.so \
+            --probe out/bionic/bin/gow3-probe
+          python3 tools/android/bionic/verify_bionic.py \
+            --ndk "$GOW3_NDK" --root out/bionic --complete
+      - name: Create independent SotC Android game runtime and APK
+        run: |
+          python3 ports/sotc/android/package_sotc_runtime.py \
+            --ndk "$GOW3_NDK" --upstream upstream-sotc \
+            --renderer out/sotc-android/cmake/libbbgpu.so
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.1-boot-test
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.1-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.1-boot-test-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sotc-android-apk-build-diagnostics
+          path: |
+            out/bionic/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/logs
+            .local-deps/android/bionic-build/*.log
+            out/release/sotc-badging.txt
+          if-no-files-found: ignore
+ out/sotc-android/cmake/elf-exports.txt
       - uses: actions/cache/save@v4
         if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
         with:
