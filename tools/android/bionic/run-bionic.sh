@@ -17,6 +17,8 @@ mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/l
 # consecutive GSR2 VideoOut dispatches (raw scene/depth/motion/output) here.
 export GOW3_DUMP_DIR="$base/out/gsr2-capture"
 export GOW3_DUMP_TRIGGER="$base/gsr2-capture.trigger"
+# Separate one-flip per-draw framebuffer probe, enabled only by the menu action.
+export GOW3_GSR2_STAGE_TRIGGER="$base/gsr2-stages.trigger"
 export GOW3_DUMP_FRAMES=6
 mkdir -p "$GOW3_DUMP_DIR"
 [ -f "$GOW3_CONFIG" ] || cp "$base/gow3.default.ini" "$GOW3_CONFIG"
