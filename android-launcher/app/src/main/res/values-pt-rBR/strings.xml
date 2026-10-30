@@ -297,13 +297,14 @@
     <string name="home_gsr2_summary_fmt">Snapdragon Super Resolution · %1$s</string>
     <string name="popup_gsr2_title">Snapdragon Super Resolution (GSR2)</string>
     <string name="popup_gsr2_off">Desativado</string>
-    <string name="popup_gsr2_on">Ativado · Upscale temporal GSR2</string>
+    <string name="popup_gsr2_on">Ativado · Filtro espacial GSR2 (sem upscale temporal)</string>
     <string name="popup_gsr2_preset_title">Perfil de qualidade do GSR2</string>
     <string name="popup_gsr2_native_aa">Native AA (720p → 720p)</string>
     <string name="popup_gsr2_quality">Qualidade</string>
     <string name="popup_gsr2_balanced">Equilibrado</string>
     <string name="popup_gsr2_performance">Desempenho</string>
     <string name="popup_gsr2_ultra_performance">Ultra Desempenho</string>
-    <string name="popup_gsr2_720p_notice">Experimental. O GSR2 usa a saída de jogo verificada em 720p; os perfis alteram a resolução interna. As mudanças valem no próximo início.</string>
+    <string name="popup_gsr2_720p_notice">Filtro espacial 1:1, sem reconstrução temporal ou histórico. Funciona na resolução selecionada do jogo, inclusive 8K, sujeito a memória GPU. Reinicie o jogo.</string>
     <string name="popup_gsr2_summary_off">Desativado</string>
+    <string name="popup_gsr2_spatial_notice">GSR2 é apenas um filtro espacial, NÃO um upscale temporal. Preserva a resolução do jogo e não acumula quadros. Reinicie para aplicar.</string>
 </resources>
