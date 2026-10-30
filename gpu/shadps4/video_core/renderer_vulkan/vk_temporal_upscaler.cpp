@@ -455,6 +455,7 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
         slot->guest = guest;
     }
     if (slot->captured) return;
+    slot->post_scene_valid = false;
     slot->depth_valid = false;
     slot->depth_id = {};
     if (!slot->image || slot->width != w || slot->height != h ||
@@ -676,6 +677,86 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
         std::printf("GSR2_PREHUD_CAPTURE count=%u guest=%#llx scene=%#llx size=%ux%u\n",
                     captures,(unsigned long long)guest,
                     (unsigned long long)color.info.guest_address,w,h);
+}
+
+// Capture at the SECOND guest VideoOut draw boundary. The first draw has
+// finished writing the frame; subsequent draws can add HUD/menus. Never
+// confuse the earlier scene-sized LDR target with a completed color image.
+void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
+                                                    VideoCore::ImageId target) {
+    if (!PreHudEnabled() || !guest || !target) return;
+    PreHudSlot* slot = nullptr;
+    for (auto& s : pre_hud_slots)
+        if (s.guest == guest && s.captured) { slot = &s; break; }
+    if (!slot || slot->post_scene_valid) return;
+    auto& color = texture_cache.GetImage(target);
+    const u32 w = color.info.size.width, h = color.info.size.height;
+    if (color.info.guest_address != guest ||
+        !FrameCapture::IsDisplayBuffer(color.info.guest_address) ||
+        color.info.pixel_format != slot->format ||
+        w != slot->width || h != slot->height ||
+        color.info.num_samples != 1 ||
+        !bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc))
+        return;
+    if (!slot->post_scene_image) {
+        scheduler.Finish();
+        slot->post_scene_image =
+            VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+        slot->post_scene_image.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D, .format = slot->format,
+            .extent = {w,h,1}, .mipLevels = 1, .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eSampled |
+                     vk::ImageUsageFlagBits::eTransferDst |
+                     vk::ImageUsageFlagBits::eTransferSrc,
+            .initialLayout = vk::ImageLayout::eUndefined});
+        slot->post_scene_view = Check(instance.GetDevice().createImageViewUnique({
+            .image = vk::Image(slot->post_scene_image),
+            .viewType = vk::ImageViewType::e2D, .format = slot->format,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+    }
+    scheduler.EndRendering();
+    runtime.Transit(&color, vk::ImageLayout::eTransferSrcOptimal,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferRead);
+    runtime.FlushBarriers();
+    auto cmd = scheduler.CommandBuffer();
+    const vk::ImageSubresourceRange range{
+        vk::ImageAspectFlagBits::eColor,0,1,0,1};
+    const vk::ImageMemoryBarrier2 write{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead |
+                         vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .image = vk::Image(slot->post_scene_image),
+        .subresourceRange = range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&write});
+    const vk::ImageCopy copy{
+        .srcSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+        .dstSubresource={vk::ImageAspectFlagBits::eColor,0,0,1},
+        .extent={w,h,1}};
+    cmd.copyImage(color.GetImage(),vk::ImageLayout::eTransferSrcOptimal,
+                  vk::Image(slot->post_scene_image),
+                  vk::ImageLayout::eTransferDstOptimal,copy);
+    const vk::ImageMemoryBarrier2 read{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = vk::Image(slot->post_scene_image),
+        .subresourceRange = range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&read});
+    slot->post_scene_valid = true;
+    static u64 copied = 0;
+    if (++copied <= 5 || copied % 600 == 0)
+        std::printf("GSR2_POST_SCENE_CAPTURE count=%llu guest=%#llx size=%ux%u after_draw=1\n",
+                    (unsigned long long)copied,(unsigned long long)guest,w,h);
 }
 
 void TemporalUpscaler::SelectGsr2PreHudScene(VAddr guest) {
