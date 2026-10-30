@@ -67,8 +67,15 @@ if(ANDROID)
     # FFmpeg's Android NEON assembly uses direct ADRP references to global
     # fft tables. Hide symbols from the statically linked FFmpeg archives in
     # this shared object, so AArch64 resolves those references locally.
+    # The NDK toolchain adds --no-undefined to every shared library. SotC's
+    # renderer deliberately imports runtime_* from the native FEX main
+    # executable, which exports them with --export-dynamic. Override that
+    # linker restriction only for bbgpu, and check each unresolved runtime_*
+    # against the real executable in verify_sotc_link.py before packaging.
+    # -z undefs cancels the earlier NDK --no-undefined/-z defs in LLD.
     target_link_options(bbgpu PRIVATE
-        "-Wl,--exclude-libs,libavformat.a:libavcodec.a:libavutil.a:libswscale.a:libswresample.a")
+        "-Wl,--exclude-libs,libavformat.a:libavcodec.a:libavutil.a:libswscale.a:libswresample.a"
+        "-Wl,-z,undefs")
 endif()
 """
     c.write_text(t)
