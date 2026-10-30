@@ -16,3 +16,5 @@ Rerun stage tests after updating outdated HUD source assertion for new post-scen
 2026-10-30: validate one-flip per-guest VideoOut render-stage timeline and new Android menu capture. No unverified automatic GSR2 source switch.
 
 ZIP (7): exact source 1..16 unchanged, first actual changes 16..32, after32 final tone curve+HUD; review 17..48 frames and unverified native-raster jitter guard from ZIP (6).
+
+ZIP8/ZIP9 2026-10-30: measured +3/+1 native scene flow, fix missing SGSR native-flow integer candidate offsets and prune with center-tap error lower bound, preserve zero jitter, run real Vulkan SPIRV and source tests.
