@@ -17,3 +17,5 @@ Trigger full signed experimental Bionic APK packaging and artifact upload after 
 ZIP8/ZIP9 real measured +3/+1 native flow: signed Android Bionic APK including 30 original-native candidates, center-tap pruning, bounded fractional history reprojection. Native jitter guard unchanged.
 
 ZIP10/ZIP11 2026-10-30: native Android compile and signed experimental APK from dynamic 3D-to-depthless scene snapshot; keep zero jitter and original early-copy fallback.
+
+ZIP11: rerun Android native compile and package signed diagnostic APK after Stage CI 41060408686 passed; dynamic completed-3D capture from depth-enabled to depthless transitions.
