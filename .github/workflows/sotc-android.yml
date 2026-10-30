@@ -57,7 +57,7 @@ jobs:
           "$ndk/bin/llvm-readelf" -h out/sotc-android/window_android.o | grep -q AArch64
       - name: Exercise real SotC NID resolver against original table
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
             -I. -Isrc -c src/runtime.c -o "$RUNNER_TEMP/sotc-runtime.o"
           cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,--gc-sections \
             tests/test_sotc_nid_runtime.c "$RUNNER_TEMP/sotc-runtime.o" \
