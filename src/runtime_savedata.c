@@ -350,5 +350,16 @@ static const RuntimeExport exports[]={
     {"sceSaveDataSetSaveDataMemory",memory_set},
 };
 uintptr_t runtime_savedata_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
+/* SotC quit guard counts active mounts. GoW3 does not track a writable
+ * mount bit, so conservatively count all mounts until unmounted.
+ */
+int runtime_savedata_mounted(void) {
+    int count=0;
+    pthread_mutex_lock(&lock);
+    for(int i=0;i<SLOTS;++i) count+=!!slots[i].used;
+    pthread_mutex_unlock(&lock);
+    return count;
+}
+
 void runtime_savedata_report(void) { printf("Runtime: save data mounts=%zu, memory writes=%zu\n",mounts_done,memory_writes); }
 

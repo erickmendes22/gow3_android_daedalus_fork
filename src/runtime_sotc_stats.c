@@ -36,3 +36,10 @@ void runtime_memory_cache_stats(uint64_t *misses,uint64_t *stale,uint64_t *fast)
     if(fast) *fast=0;
 }
 uint64_t runtime_file_read_ns_take(void) { return 0; }
+
+/* SotC heap guard is unavailable until the game's heap allocation can be
+ * captured from FEX guest callbacks. Report zero so GPU never assumes the
+ * guarded table has been discovered.
+ */
+uintptr_t runtime_sotc_heap(void) { return 0; }
+uintptr_t runtime_sotc_heap_table(void) { return 0; }

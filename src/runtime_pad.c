@@ -481,9 +481,26 @@ static ABI int32_t pad_info(int32_t handle, ControllerInfo *info) {
     pthread_mutex_unlock(&lock);
     return 0;
 }
+/* SotC overlay's vibration control. The mobile pad path has no host
+ * vibration bridge yet; disabling it reliably suppresses guest requests.
+ */
+static int sotc_rumble_on=-1;
+int runtime_rumble_enabled(void) {
+    int v=__atomic_load_n(&sotc_rumble_on,__ATOMIC_ACQUIRE);
+    if(v<0) {
+        const char *e=getenv("SOTC_RUMBLE");
+        v=!(e && *e=='0');
+        __atomic_store_n(&sotc_rumble_on,v,__ATOMIC_RELEASE);
+    }
+    return v;
+}
+void runtime_rumble_set(int on) {
+    __atomic_store_n(&sotc_rumble_on,on ? 1 : 0,__ATOMIC_RELEASE);
+}
 static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
     if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
     if (!param) return ERR_INVALID_ARG;
+    if (!runtime_rumble_enabled()) return 0;
     pthread_mutex_lock(&lock);
 #ifndef __ANDROID__
     SDL_Gamepad *g=current_gamepad();

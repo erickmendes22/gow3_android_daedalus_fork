@@ -271,6 +271,18 @@ static ABI int32_t audio_close(int32_t handle) {
     return p ? 0 : error;
 }
 /* `pace`: wait for this port's next period. sceAudioOutOutputs waits once for all its ports. */
+/* The SotC in-game volume slider controls actual PCM output, not just UI.
+ * Read atomically from the mix/output thread. Default 100% preserves GoW3 audio.
+ */
+static int sotc_master_volume_percent=100;
+void runtime_audio_set_volume_percent(int pct) {
+    if (pct<25) pct=25;
+    if (pct>400) pct=400;
+    __atomic_store_n(&sotc_master_volume_percent,pct,__ATOMIC_RELAXED);
+}
+int runtime_audio_volume_percent(void) {
+    return __atomic_load_n(&sotc_master_volume_percent,__ATOMIC_RELAXED);
+}
 static int32_t output_port(int32_t handle, const void *data, int pace) {
     int32_t error=0;
     pthread_mutex_lock(&table_lock);
@@ -287,7 +299,7 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
         for (size_t f=0;f<(size_t)p->frames;++f) for (int c=0;c<p->channels;++c) {
             int target=p->channels==8 && !p->std_layout ? remap[c] : c;
             size_t from=f*(size_t)p->channels+(size_t)c, to=f*(size_t)p->channels+(size_t)target;
-            float gain=(float)p->volume[c]/VOLUME_0DB;
+            float gain=((float)p->volume[c]/VOLUME_0DB)*(runtime_audio_volume_percent()/100.0f);
             if (p->is_float) { float v; memcpy(&v,(const char *)data+from*4,4); v*=gain; memcpy(converted+to*4,&v,4); }
             else { int16_t v; memcpy(&v,(const char *)data+from*2,2); v=(int16_t)((float)v*gain); memcpy(converted+to*2,&v,2); }
         }

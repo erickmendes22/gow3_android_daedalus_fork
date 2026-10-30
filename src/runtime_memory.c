@@ -824,6 +824,21 @@ int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {
     read_unlock();
     return result;
 }
+/* Original SotC GPU page-fault diagnostics on the GoW3 VMA table. */
+void runtime_memory_describe(uintptr_t address,char *out,size_t capacity) {
+    if(!out || !capacity) return;
+    read_lock();
+    const size_t i=vma_index(address);
+    int kind=0,prot=-1;
+    uintptr_t start=0,end=0;
+    if(i<vma_count && vmas[i].start<=address) {
+        kind=vmas[i].kind; prot=vmas[i].prot;
+        start=vmas[i].start; end=vmas[i].end;
+    }
+    read_unlock();
+    snprintf(out,capacity,"vma kind %d prot %#x [%#llx,%#llx)",kind,prot,
+        (unsigned long long)start,(unsigned long long)end);
+}
 void runtime_memory_report(void) {
     printf("Runtime: direct memory allocations=%zu, maps=%zu, live=%" PRIu64 ", budget=%" PRIu64 "\n",
            allocations, maps, live_bytes, POOL_SIZE);
