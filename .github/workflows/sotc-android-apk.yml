@@ -76,6 +76,7 @@ jobs:
         shell: bash -el {0}
         run: |
           bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
           bash tools/android/bionic/build_runtime.sh
           bash tools/android/bionic/build_python.sh
           bash tools/android/bionic/build_pkg.sh
