@@ -1,0 +1,43 @@
+name: SotC ARM64 SRT validation (no APK)
+on:
+  push:
+    branches:
+      - audit/sotc-arm64-srt-20261030
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sotc-arm64-srt-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+      - name: Exercise portable SRT pointer chains, 512-dword shader windows and null roots
+        run: |
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_sotc_arm64_srt.cpp -o /tmp/sotc-srt-verify
+          /tmp/sotc-srt-verify
+      - name: Stage original SotC renderer with real ARM64 SRT, no APK
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_renderer.py
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          p=out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes
+          grep -Fq 'SotcArm64Srt::Run' "$p/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'OpCopyWindow' "$p/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'CopyFlatbufPlacement' "$p/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'const void* SrtWalkerCode' "$p/srt.h"
+          grep -Fq 'SrtWalkerCode(walker_func)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+          ! grep -Fq 'FlattenExtendedUserdataPass unimplemented for target architecture.' "$p/flatten_extended_userdata_pass.cpp"
+      - name: Validate other SotC host ABI tests and no hidden GoW3 runtime header dependency
+        run: |
+          ! grep -Fq '../../../../../src/runtime.h' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+          python3 ports/sotc/android/check_imgui_loader.py out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
