@@ -25,7 +25,7 @@ jobs:
           repository: AjncSystem/ShadowOfTheColossus-PC
           ref: 27f376d602cefad357299295fa51edad587272d5
           path: upstream-sotc
-          submodules: false
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -67,6 +67,10 @@ jobs:
         shell: bash -el {0}
         run: |
           set -euo pipefail
+          # This renderer embeds FidelityFX sources as a git submodule; missing
+          # sources used to fail in CMake after building FEX for ~10 minutes.
+          test -s upstream-sotc/gpu/third_party/fsr-vulkan/src/ffx_vk_fsr3_3_1_6_framegen.cpp ||
+            { echo "::error::Missing SotC fsr-vulkan submodule; verify recursive checkout"; exit 1; }
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
           grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
