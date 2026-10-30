@@ -1,7 +1,8 @@
-God of War III mobile correction build with successful preflight
-https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41087041401
-Source: af2d83b1220bdef2868213c850a131f40831f7da
-Includes: GoW III-specific inFAMOUS-style mobile layout, combo-only physical
-button captions, 16:9/fullscreen switching, in-game safe insets, one GSR2
-selector, Mali PanVK notice and Mali-only support gate.
-Build must pass native runtime and packaging before APK is advertised.
+God of War III Android Bionic complete mobile controls and fullscreen build.
+Validated source/launcher: https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41088308703
+Latest source commit: 7d30ae3708b7b3d0e1817e082b352389bf453faf
+Changes: source launcher GSR2 deduplication, fullscreen mode UI + native
+presenter atomic update, safe Android insets, compact GoW3 action pad with
+button-ID-only captions, PanVK Mali notice and availability gating.
+Downloads in build_deps.sh now retry transient curl 35 network failures.
+This is the consolidated APK build for these fixes.
