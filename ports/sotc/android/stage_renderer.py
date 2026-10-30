@@ -66,6 +66,24 @@ endif()
 """
     c.write_text(t)
     shutil.copy2(android_window,out/'shim/window_android.cpp')
+    # Streamline DLSS frame generation (DXGI DLLs) is Windows-only. Keep
+    # the SotC Vulkan shader/texture core, replace only optional frame-gen
+    # adapters with explicit Android implementations (not silent fallbacks).
+    renderer=out/'shadps4/video_core/renderer_vulkan'
+    root=Path(__file__).resolve().parents[3]
+    shutil.copy2(root/'ports/sotc/android/vk_dlssg_android.cpp',
+                 renderer/'vk_dlssg_android.cpp')
+    shutil.copy2(root/'ports/sotc/android/vk_framegen_android.cpp',
+                 renderer/'vk_framegen_android.cpp')
+    c=out/'CMakeLists.txt'
+    cmake=c.read_text()
+    cmake=swap(cmake,'list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")',
+"""list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
+if(ANDROID)
+    list(FILTER VIDEO_CORE EXCLUDE REGEX "/vk_dlssg\\.cpp$|/vk_framegen\\.cpp$")
+endif()""",'exclude desktop-only DXGI source')
+    c.write_text(cmake)
+
     s=out/'shim/bbgpu.cpp'
     text=s.read_text()
     text=swap(text,'#include <SDL3/SDL.h>',
