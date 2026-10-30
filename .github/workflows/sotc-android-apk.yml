@@ -96,7 +96,7 @@ jobs:
           "$llvm/bin/llvm-readelf" -h out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-header.txt
           grep -Fq AArch64 out/sotc-android/cmake/elf-header.txt
           "$llvm/bin/llvm-nm" -D --defined-only out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-exports.txt
-          grep -Eq '[[:space:]]bbgpu_init
+          grep -Fwq bbgpu_init out/sotc-android/cmake/elf-exports.txt
       - uses: actions/cache/save@v4
         if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
         with:
