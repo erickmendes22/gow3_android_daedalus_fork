@@ -66,7 +66,8 @@ case ${1:-game} in
     *) echo "Unknown SotC launcher mode" >&2; exit 2 ;;
 esac
 set -- "$python" "$prepare" --upstream "$upstream" --game-dir "$game" \
-    --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES:-fps60game}"
+    --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-fps60game}" \
+    --cvars "${SOTC_CVARS:-doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0}"
 if [ -n "${SOTC_SYS_MODULES:-}" ]; then
     set -- "$@" --sys-modules "$SOTC_SYS_MODULES"
 fi
