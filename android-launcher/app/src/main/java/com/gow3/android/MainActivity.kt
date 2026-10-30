@@ -112,8 +112,10 @@ class MainActivity : ComponentActivity() {
 
     private fun showFirstRunGameSource() {
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.setup_title))
-            .setMessage(getString(R.string.setup_message))
+            .setTitle(if (packageName == "com.sotc.android.daedalus") "Configurar Shadow of the Colossus" else getString(R.string.setup_title))
+            .setMessage(if (packageName == "com.sotc.android.daedalus")
+                "Selecione uma pasta do Shadow of the Colossus (CUSA08809 ou CUSA08034) ou instale seu PKG."
+                else getString(R.string.setup_message))
             .setPositiveButton(getString(R.string.pkg_install)) { _, _ -> pkgInstallManager.pickBasePkg() }
             .setNegativeButton(getString(R.string.setup_folder)) { _, _ -> gameFolderManager.chooseGameFolder() }
             .setCancelable(false)
