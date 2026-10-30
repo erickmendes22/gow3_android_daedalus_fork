@@ -921,7 +921,7 @@ public final class GameActivity extends Activity {
                             "eboot SHA256: 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c\n"+
                             "eboot markers: VelocityPass.fx@0x359ed6, PS3_VelocityConstant@0x36125f, PS3_bIsAntiAliased@0x361158\n"+
                             "Names: fNNN_input_WxH_*.raw (ACTUAL GSR2 color selected: after scene copy, or full VideoOut fallback),\n"+
-                            "fNNN_post_scene_WxH_*.raw (after first VideoOut scene-copy draw, before later HUD draws),\n"+
+                            "fNNN_post_scene_WxH_*.raw (finished 3D scene before first depthless UI pass, or early copy fallback),\n"+
                             "fNNN_early_prehud_WxH_*.raw (former incomplete early scene for comparison),\n"+
                             "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\n"+
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
@@ -935,7 +935,7 @@ public final class GameActivity extends Activity {
                             "The game log contains frame/flip/camera provenance, full_color and reset status.\n"+
                             "This capture selects ONLY successful temporal history frames (reset=0).\n"+
                             "The old early preHUD color lacked Kratos, enemies and effects while depth included them.\n"+
-                            "Post-scene selection is experimental until the mid-stage image is validated.\n"+
+                            "GSR2_CAPTURE_FRAME finished_3d=1 and after_draw=N proves the actual selected input came from 3D-to-depthless boundary.\n"+
                             "If the post-scene snapshot is unavailable, GSR2 falls back to complete VideoOut, which contains HUD.\n";
                         zip.putNextEntry(new ZipEntry("README.txt"));
                         zip.write(readme.getBytes(java.nio.charset.StandardCharsets.UTF_8));
