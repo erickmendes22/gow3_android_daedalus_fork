@@ -114,13 +114,8 @@ internal fun HomeScreen(
                 popup = HomePopupKind.VIDEO
             }
             if (isBionic) {
-                val gsr2Preset = if (iniValues["upscaler"] == "gsr2") when (iniValues["preset"]) {
-                    "1" -> R.string.popup_gsr2_quality
-                    "2" -> R.string.popup_gsr2_balanced
-                    "3" -> R.string.popup_gsr2_performance
-                    "4" -> R.string.popup_gsr2_ultra_performance
-                    else -> R.string.popup_gsr2_native_aa
-                } else R.string.popup_gsr2_summary_off
+                val gsr2Preset = if (iniValues["upscaler"] == "gsr2")
+                    R.string.popup_gsr2_on else R.string.popup_gsr2_summary_off
                 HomeAction(stringResource(R.string.home_gsr2_summary_fmt, stringResource(gsr2Preset))) {
                     popup = HomePopupKind.VIDEO
                 }
