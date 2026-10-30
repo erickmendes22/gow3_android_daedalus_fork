@@ -34,6 +34,8 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror ports/sotc/android/lowmem.c tests/test_sotc_lowmem.c -o /tmp/sotc-lowmem-test
           /tmp/sotc-lowmem-test
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Build native ARM64 component
         run: |
           sdkmanager 'ndk;29.0.14206865'
