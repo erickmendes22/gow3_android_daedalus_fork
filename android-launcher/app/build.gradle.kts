@@ -19,6 +19,7 @@ android {
         versionCode = 2010604
         versionName = "2.1.6-daedalus.4"
         manifestPlaceholders["appLabel"] = "@string/app_name"
+        manifestPlaceholders["appIcon"] = "@drawable/icon"
         if (bionicRuntime) {
             applicationId = "com.gow3.android.bionic"
             minSdk = 30
@@ -26,8 +27,9 @@ android {
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
             if (sotcAndroid) {
                 applicationId = "com.sotc.android.daedalus"
-                versionCode = 10001
-                versionName = "0.1.0-boot-test"
+                versionCode = 10002
+                versionName = "0.1.1-boot-test"
+                manifestPlaceholders["appIcon"] = "@drawable/sotc_icon"
                 manifestPlaceholders["appLabel"] = "Shadow of the Colossus — Daedalus"
             }
         }
