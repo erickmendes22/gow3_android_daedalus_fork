@@ -24,8 +24,10 @@ class BionicR2Tests(unittest.TestCase):
         self.assertIn("postInvalidateDelayed(200)", code)
         self.assertIn("saveDialogFlag.isFile()", code)
         self.assertIn("if (!modal || editing)", code)
-        self.assertIn('circle(c,"cross"', code)
-        self.assertIn('circle(c,"circle"', code)
+        # GoW3 uses the smaller, caption-only mobile action circles.
+        # Cross and Circle must remain visible while the native save dialog is up.
+        self.assertIn('gowAction(c,"cross","×",39)', code)
+        self.assertIn('gowAction(c,"circle","○",33)', code)
 
     def test_only_first_bloodframe_present_is_diagnosed(self):
         code = read("gpu/shadps4/video_core/renderer_vulkan/gow3_lsfg.cpp")
