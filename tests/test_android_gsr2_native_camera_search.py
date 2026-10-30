@@ -15,6 +15,9 @@ SHADER=(ROOT/"gpu/shadps4/video_core/host_shaders/gsr2_upscale.comp").read_text(
 class NativeCameraSearch(unittest.TestCase):
     def test_real_image_motion_not_skipped(self):
         self.assertIn("if (bestError > 0.00012)",SHADER)
+        self.assertIn("float Gow3NativeCenterLowerBound(",SHADER)
+        self.assertIn("motionPenalty + 0.00004 >= bestError",SHADER)
+        self.assertIn("float cost = Gow3NativePatchError(InputPos, shifts[i]) +",SHADER)
         self.assertNotIn("if (bestError > 0.0006)",SHADER)
         self.assertIn("const ivec2 shifts[30] = ivec2[30]",SHADER)
         self.assertIn("for (int i = 0; i < 30; ++i)",SHADER)
