@@ -118,6 +118,34 @@ endif()
          'SotC page range min')
     buffer.write_text(buffer_text)
 
+    # Cache packing was implemented using Win32 _wfopen and wchar paths.
+    # Android's std::filesystem::path is UTF-8 bytes: use the real POSIX
+    # fopen rather than a nonexistent Windows wide-file API.
+    cache=out/'shadps4/video_core/cache_storage.cpp'
+    cache_code=cache.read_text()
+    cache_code=swap(cache_code,
+        'std::FILE* f = _wfopen(path.c_str(), L"rb");',
+        '''#ifdef _WIN32
+    std::FILE* f = _wfopen(path.c_str(), L"rb");
+#else
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+#endif''','SotC cache pack read')
+    cache_code=swap(cache_code,'tmp += L".tmp";','tmp += ".tmp";',
+                    'SotC cache pack temporary name')
+    cache_code=swap(cache_code,
+        'std::FILE* f = _wfopen(tmp.c_str(), L"wb");',
+        '''#ifdef _WIN32
+    std::FILE* f = _wfopen(tmp.c_str(), L"wb");
+#else
+    std::FILE* f = std::fopen(tmp.c_str(), "wb");
+#endif''','SotC cache pack write')
+    cache.write_text(cache_code)
+    page=out/'shadps4/video_core/page_manager.cpp'
+    page_code=page.read_text()
+    page_code=swap(page_code,'char where[MAX_PATH] = "?";',
+                        'char where[512] = "?";','SotC fault diagnostic path')
+    page.write_text(page_code)
+
     # More upstream performance probes used Intel-only intrinsics. Replace
     # their underlying operations on AArch64 without disabling the waits.
     for relative in (
