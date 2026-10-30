@@ -199,6 +199,8 @@ static ABI __attribute__((noreturn)) void guest_libc_exit(int status) {
 }
 /* Imports are spelled NID#library by link_modules.py, the same for every game. libScePosix
  * exports libkernel's symbols with the same contracts, so both share the libkernel key. */
+/* SotC imports have numeric module scopes; only legacy HLE functions need
+ * their original NID#library keys. SotC-only/GPU exports keep bare NIDs. */
 static const char *canonical_name(const char *name, char out[128]) {
     const char *posix=strstr(name,"#libScePosix");
     if (!posix || posix[12] || posix-name>100) return name;
@@ -276,35 +278,38 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (!strcmp(name, "vNe1w4diLCs#libkernel")) return (uintptr_t)guest_tls_get_addr;
     if (!strcmp(name, "959qrazPIrg#libkernel")) return (uintptr_t)guest_procparam;
     if (!strcmp(name, "p5EcQeEeJAE#libkernel")) return (uintptr_t)guest_set_heap_api;
-    uintptr_t mutex = runtime_mutex_resolve(name);
+    char legacy_buffer[64];
+    const char *legacy = is_sotc ? runtime_sotc_legacy_import(name,legacy_buffer) : name;
+    if (!legacy) return 0;
+    uintptr_t mutex = runtime_mutex_resolve(legacy);
     if (mutex) return mutex;
-    uintptr_t thread = runtime_thread_resolve(name);
+    uintptr_t thread = runtime_thread_resolve(legacy);
     if (thread) return thread;
-    uintptr_t content=runtime_content_resolve(name);
+    uintptr_t content=runtime_content_resolve(legacy);
     if (content) return content;
-    uintptr_t timer = runtime_time_resolve(name);
+    uintptr_t timer = runtime_time_resolve(legacy);
     if (timer) return timer;
-    uintptr_t sema = runtime_sema_resolve(name);
+    uintptr_t sema = runtime_sema_resolve(legacy);
     if (sema) return sema;
-    uintptr_t rwlock = runtime_rwlock_resolve(name);
+    uintptr_t rwlock = runtime_rwlock_resolve(legacy);
     if (rwlock) return rwlock;
-    uintptr_t memory = runtime_memory_resolve(name);
+    uintptr_t memory = runtime_memory_resolve(legacy);
     if (memory) return memory;
-    uintptr_t kernel = runtime_kernel_resolve(name);
+    uintptr_t kernel = runtime_kernel_resolve(legacy);
     if (kernel) return kernel;
-    uintptr_t services = runtime_services_resolve(name);
+    uintptr_t services = runtime_services_resolve(legacy);
     if (services) return services;
-    uintptr_t ajm = runtime_ajm_resolve(name);
+    uintptr_t ajm = runtime_ajm_resolve(legacy);
     if (ajm) return ajm;
-    uintptr_t videodec = runtime_videodec_resolve(name);
+    uintptr_t videodec = runtime_videodec_resolve(legacy);
     if (videodec) return videodec;
-    uintptr_t audio = runtime_audio_resolve(name);
+    uintptr_t audio = runtime_audio_resolve(legacy);
     if (audio) return audio;
-    uintptr_t pad = runtime_pad_resolve(name);
+    uintptr_t pad = runtime_pad_resolve(legacy);
     if (pad) return pad;
-    uintptr_t rtc = runtime_rtc_resolve(name);
+    uintptr_t rtc = runtime_rtc_resolve(legacy);
     if (rtc) return rtc;
-    uintptr_t save = runtime_savedata_resolve(name);
+    uintptr_t save = runtime_savedata_resolve(legacy);
     if (save) return save;
     if (getenv("SOTC_PORT")) {
         extern uintptr_t runtime_sotc_resolve(const char *);
@@ -326,6 +331,21 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
 static const struct { const char *nid, *symbol; } import_names[]={
 #include "import_names.inc"
 };
+/* Recover the library name required by legacy HLE resolvers from the
+ * verified PS4 NID table. SotC's #0#F etc. scopes are per-dump indices.
+ * Functions new to SotC and not in the legacy table use #libkernel:
+ * e.g. scePthreadAttrGetdetachstate and scePthreadAttrGetstacksize. */
+const char *runtime_sotc_legacy_import(const char *scoped, char fallback[64]) {
+    if (!scoped || !fallback) return NULL;
+    size_t n=strcspn(scoped,"#");
+    if (n!=11) return NULL;
+    for (size_t i=0;i<sizeof(import_names)/sizeof(*import_names);++i) {
+        if (!memcmp(import_names[i].nid,scoped,n) &&
+            import_names[i].nid[n]=='#') return import_names[i].nid;
+    }
+    snprintf(fallback,64,"%.*s#libkernel",(int)n,scoped);
+    return fallback;
+}
 /* Original SotC port NID -> symbol table, kept separate from GoW3's. */
 static const struct { const char *nid, *symbol; } sotc_import_names[]={
 #include "sotc_import_names.inc"

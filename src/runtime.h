@@ -28,6 +28,8 @@ void runtime_restart(void);
 typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);
 uintptr_t runtime_resolve(const char *name, int is_data);
+/* Convert SotC numeric module scopes to the legacy HLE key; returns NULL for invalid NIDs. */
+const char *runtime_sotc_legacy_import(const char *scoped, char fallback[64]);
 void runtime_report(void);
 void runtime_finalize(void *dso);
 uintptr_t runtime_mutex_resolve(const char *name);
