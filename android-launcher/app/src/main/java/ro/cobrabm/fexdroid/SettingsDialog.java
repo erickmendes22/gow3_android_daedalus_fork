@@ -190,8 +190,7 @@ final class SettingsDialog {
             "1".equals(get("android_fullscreen","0")));
         final TextView fullscreenNote=new TextView(activity);
         fullscreenNote.setText(UiText.get(activity,
-            "OFF keeps a centered 16:9 image and Android system bars (Galaxy A55 fix). " +
-            "ON fills the whole display. Requires restart."));
+            "OFF keeps centered 16:9. ON stretches to fill without cropping. System bars stay hidden in both modes."));
         fullscreenNote.setTextSize(13); fullscreenNote.setAlpha(0.7f); box.addView(fullscreenNote);
         heading(box,"Render resolution");
         final RadioGroup resolutions=choices(box,RESOLUTION_NAMES,

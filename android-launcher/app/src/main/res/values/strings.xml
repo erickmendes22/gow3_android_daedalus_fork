@@ -228,7 +228,7 @@
     <string name="gpu_driver_title">VULKAN DRIVER</string>
     <string name="gpu_driver_auto">Automatic (Turnip on Adreno; PanVK on compatible Mali; system otherwise)</string>
     <string name="gpu_driver_system">System driver</string>
-    <string name="gpu_driver_bundled">Bundled Turnip Gen8 V37 patched</string>
+    <string name="gpu_driver_bundled">Turnip Gen8 V38 Patched (Adreno 8xx)</string>
     <string name="gpu_driver_import">Import driver ZIP</string>
     <string name="gpu_driver_importing">Importing driver…</string>
     <string name="gpu_driver_hint">Import an Android ARM64 AdrenoTools driver ZIP. Imported drivers are selected automatically. Changes apply the next time the game starts.</string>
@@ -253,7 +253,7 @@
     <string name="patch_particles">Disable Soft Particles</string>
     <string name="patch_save_failed">Could not save patch settings.</string>
     <string name="patch_effect_note">Optional effect patches require a supported 01.02 executable.</string>
-    <string name="gpu_driver_adreno7xx">Turnip 26.3 R6 (Adreno 7xx)</string>
+    <string name="gpu_driver_adreno7xx">Turnip v27.0.0-R1 (Adreno 6xx/7xx)</string>
     <string name="param_expand_video_arena">Expand video arena</string>
     <string name="param_desc_expand_video_arena">Increases the game video arena independently of resolution. OFF keeps the original arena and may cause texture errors or crashes, especially at higher resolutions. Requires restart.</string>
     <string name="contact_bionic_label">Android/Bionic runtime</string>
@@ -351,12 +351,16 @@
     <string name="settings_mobile_controller_title">On-screen mobile controller</string>
     <string name="settings_mobile_controller_desc">Optional virtual PlayStation buttons. Physical gamepads still work.</string>
     <string name="settings_controller_labels_title">Button captions</string>
-    <string name="settings_controller_labels_desc">Display names under the four face buttons.</string>
+    <string name="settings_controller_labels_desc">Show the physical button IDs below action icons for combos and QTEs.</string>
     <string name="controller_triangle">TRIANGLE</string>
     <string name="controller_circle">CIRCLE</string>
     <string name="controller_cross">CROSS</string>
     <string name="controller_square">SQUARE</string>
     <string name="settings_fullscreen_title">Fullscreen (fill display)</string>
-    <string name="settings_fullscreen_desc">Off: original centered 16:9 with system bars. On: immersive full display. Applies in-game after Apply and restart, or at the next launch.</string>
-    <string name="gpu_driver_mali_notice">Mali CSF (Android 15+): Automatic uses experimental PanVK 3.2 on supported models. Unsupported Mali uses system Vulkan. PanVK is not for Adreno.</string>
+    <string name="settings_fullscreen_desc">Off: centered 16:9. On: stretch to fill without cropping. Android system bars stay hidden in both modes.</string>
+    <string name="gpu_driver_mali_notice">Compatible Mali CSF (Android 15+): experimental PanVK 3.2 is available. Exynos and unsupported GPUs use system Vulkan. Turnip is only for Adreno.</string>
+    <string name="home_swap_rb">Swap red and blue (R/B)</string>
+    <string name="home_swap_rb_hint">Use if game colors are reversed with your driver. Takes effect on the next game start.</string>
+    <string name="gpu_driver_panvk">PanVK 3.2 (Mali; experimental)</string>
+    <string name="gpu_driver_adreno_auto">Gen8 V38 Patched (Adreno 8xx) / v27 R1 (Adreno 6xx/7xx)</string>
 </resources>

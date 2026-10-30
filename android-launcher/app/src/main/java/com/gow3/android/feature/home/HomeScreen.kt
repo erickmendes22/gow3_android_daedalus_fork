@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -89,7 +90,7 @@ internal fun HomeScreen(
     ScreenColumn {
         Text(stringResource(R.string.title_god_of_war_iii), color = LauncherColors.textPrimary,
             fontFamily = FontFamily.Serif, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("DAEDALUS · 2.1.7 · ANDROID BIONIC", color = LauncherColors.gold,
+        Text("DAEDALUS · 2.1.8 · ANDROID BIONIC", color = LauncherColors.gold,
             fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Text(gameDir ?: stringResource(R.string.game_folder_not_selected),
             color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
@@ -113,6 +114,16 @@ internal fun HomeScreen(
             HomeAction(stringResource(R.string.home_resolution_summary_fmt, iniValues["render_resolution"] ?: "720p")) {
                 popup = HomePopupKind.VIDEO
             }
+        }
+        HomeSection {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.home_swap_rb), color = LauncherColors.textPrimary,
+                    modifier = Modifier.weight(1f))
+                Switch(checked = iniValues["swap_rb"] == "1",
+                    onCheckedChange = { save("swap_rb", if (it) "1" else "0") })
+            }
+            Text(stringResource(R.string.home_swap_rb_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
         }
         HomeSection(stringResource(R.string.home_section_mods)) {
             HomeAction(stringResource(R.string.home_mods_action)) { popup = HomePopupKind.MODS }

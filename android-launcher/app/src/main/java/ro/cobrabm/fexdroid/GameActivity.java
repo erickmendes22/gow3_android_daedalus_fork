@@ -190,27 +190,13 @@ public final class GameActivity extends Activity {
 
     private void buildScreen() {
         screen=new FrameLayout(this); screen.setBackgroundColor(Color.BLACK);
-        // Android 15 may force edge-to-edge even with decorFitsSystemWindows.
-        // Derive safe content insets from actual screen coordinates; do not
-        // double-inset devices that already place decor below the status bar.
+        // The video chooses fit/stretch independently of the immersive touch window.
+        // Transient system bars must not move the controls or resize the video.
         if (Build.VERSION.SDK_INT>=30) {
             screen.setOnApplyWindowInsetsListener((v,insets) -> {
-                int[] origin={0,0};
-                v.getLocationOnScreen(origin);
-                android.graphics.Rect bounds=getWindowManager().getCurrentWindowMetrics().getBounds();
-                android.graphics.Insets bars=insets.getInsets(
-                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                boolean full="1".equals(setting("android_fullscreen"));
-                int left=full ? 0 : Math.max(0,bars.left-origin[0]);
-                int top=full ? 0 : Math.max(0,bars.top-origin[1]);
-                int right=full ? 0 : Math.max(0,origin[0]+v.getWidth()-(bounds.right-bars.right));
-                int bottom=full ? 0 : Math.max(0,origin[1]+v.getHeight()-(bounds.bottom-bars.bottom));
-                if (v.getPaddingLeft()!=left || v.getPaddingTop()!=top ||
-                    v.getPaddingRight()!=right || v.getPaddingBottom()!=bottom) {
-                    v.setPadding(left,top,right,bottom);
-                    v.post(() -> fitSurface(Math.max(1,v.getWidth()-left-right),
-                                            Math.max(1,v.getHeight()-top-bottom)));
-                }
+                if (v.getPaddingLeft()!=0 || v.getPaddingTop()!=0 ||
+                    v.getPaddingRight()!=0 || v.getPaddingBottom()!=0) v.setPadding(0,0,0,0);
+                v.post(() -> fitSurface(v.getWidth(),v.getHeight()));
                 return insets;
             });
         }
@@ -507,25 +493,22 @@ public final class GameActivity extends Activity {
     }
 
     private void immersive() {
-        // Galaxy A55 and other non-16:9 screens: OFF preserves Android bars
-        // and the centred 16:9 picture. ON fills the entire display.
+        // Both video modes use an immersive Android window. The single
+        // fullscreen setting selects centered 16:9 vs stretch; it never changes
+        // the touch coordinate space or reveals system bars.
         boolean fullscreen="1".equals(setting("android_fullscreen"));
         if (bionicRuntime()) Gow3Present.updateFullscreen(fullscreen);
-        int flags=fullscreen ?
+        int flags=
             (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
              View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE) : 0;
+             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         getWindow().getDecorView().setSystemUiVisibility(flags);
         if (Build.VERSION.SDK_INT>=30) {
-            getWindow().setDecorFitsSystemWindows(!fullscreen);
+            getWindow().setDecorFitsSystemWindows(false);
             WindowInsetsController c=getWindow().getInsetsController();
             if (c!=null) {
-                if (fullscreen) {
-                    c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                    c.hide(WindowInsets.Type.systemBars());
-                } else {
-                    c.show(WindowInsets.Type.systemBars());
-                }
+                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                c.hide(WindowInsets.Type.systemBars());
             }
         }
         if (screen!=null) screen.post(() -> {

@@ -54,6 +54,13 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - name: Restore established APK upgrade signing key
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-development.keystore
+          key: bionic-development-signing-v1
+      - name: Require the established signing key (never replace the installed identity)
+        run: test -s .local-deps/android/bionic-development.keystore
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
@@ -98,18 +105,13 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_pkg.sh
-      - name: Preserve experimental signing key across builds
-        uses: actions/cache@v4
-        with:
-          path: .local-deps/android/bionic-development.keystore
-          key: bionic-development-signing-v1
-      - name: Package, sign and validate experimental APK
+      - name: Package, sign and validate GoW3 2.1.8 APK
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
-          name: Daedalus-GOW3-Spatial-PanVK-Mobile-v2.1.7-arm64
+          name: God-of-War-III-Daedalus-2.1.8-arm64
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256

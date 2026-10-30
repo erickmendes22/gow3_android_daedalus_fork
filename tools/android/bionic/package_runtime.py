@@ -76,8 +76,8 @@ def main():
         jni.mkdir(parents=True,exist_ok=True)
         shutil.copy2(runtime/'lib/libgow3present.so',jni/'libgow3present.so')
         manifest={'schema':1,'runtime_backend':'bionic','application_id':'com.gow3.android.bionic',
-                  'java_package':'ro.cobrabm.fexdroid','runtime_name':'daedalus-gow3-bionic-2.1.7',
-                  'version':'2.1.7-bionic','min_api':30,
+                  'java_package':'ro.cobrabm.fexdroid','runtime_name':'daedalus-gow3-bionic-2.1.8',
+                  'version':'2.1.8-bionic','min_api':30,
                   'driver':json.loads((ROOT/'tools/android/bionic/driver.json').read_text()),
                   'adreno7xx_driver':json.loads((ROOT/'tools/android/bionic/driver-adreno7xx.json').read_text())}
         (stage/'runtime-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

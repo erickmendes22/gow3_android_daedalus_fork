@@ -43,7 +43,7 @@ final class FrameGenDialog {
     }
     private TextView note(LinearLayout parent,String text,float alpha) {
         TextView view=new TextView(activity); view.setTextSize(13); view.setAlpha(alpha);
-        view.setText(text); view.setPadding(0,dp(5),0,dp(5)); parent.addView(view);
+        view.setText(UiText.get(activity,text)); view.setPadding(0,dp(5),0,dp(5)); parent.addView(view);
         return view;
     }
     private static int selected(RadioGroup buttons) {
@@ -64,8 +64,8 @@ final class FrameGenDialog {
         try { mult=Integer.parseInt(stats.getProperty("multiplier","0")); }
         catch(Exception ignored) {}
         if(mult>=2 && mult<=4) {
-            return "Engine active: "+mult+"× · "+stats.getProperty("source_fps","0")+
-                   " real FPS / "+stats.getProperty("presented_fps","0")+" displayed FPS";
+            return UiText.get(activity,"Engine active: ")+mult+"× · "+stats.getProperty("source_fps","0")+
+                   UiText.get(activity," real FPS / ")+stats.getProperty("presented_fps","0")+UiText.get(activity," displayed FPS");
         }
         File log=new File(base,"logs/android-game.log");
         if(log.isFile()) {
@@ -112,7 +112,7 @@ final class FrameGenDialog {
         for(int i=0;i<VALUES.length;i++) if(VALUES[i].equals(String.valueOf(requested))) which=i;
         for(int i=0;i<NAMES.length;i++) {
             RadioButton b=new RadioButton(activity); b.setId(View.generateViewId());
-            b.setText(NAMES[i]); b.setTextSize(15); mult.addView(b);
+            b.setText(UiText.get(activity,NAMES[i])); b.setTextSize(15); mult.addView(b);
             if(i==which) mult.check(b.getId());
         }
         box.addView(mult);
@@ -122,19 +122,19 @@ final class FrameGenDialog {
         flow.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s,int progress,boolean user) {
                 flowLabel.setText(String.format(Locale.ROOT,
-                  "Motion flow: %.2f (lower = faster)",0.25f+progress*0.05f));
+                  UiText.get(activity,"Motion flow: %.2f (lower = faster)"),0.25f+progress*0.05f));
             }
             @Override public void onStartTrackingTouch(SeekBar s) {}
             @Override public void onStopTrackingTouch(SeekBar s) {}
         });
-        flowLabel.setText(String.format(Locale.ROOT,"Motion flow: %.2f (lower = faster)",
+        flowLabel.setText(String.format(Locale.ROOT,UiText.get(activity,"Motion flow: %.2f (lower = faster)"),
                             0.25f+flow.getProgress()*0.05f));
         box.addView(flow);
         Switch performance=new Switch(activity);
-        performance.setText("Performance model (recommended)");performance.setChecked(fast);
+        performance.setText(UiText.get(activity,"Performance model (recommended)"));performance.setChecked(fast);
         performance.setPadding(0,dp(5),0,dp(5));box.addView(performance);
         Switch half=new Switch(activity);
-        half.setText("FP16 shaders · Adreno 830 (recommended)");half.setChecked(fp16);
+        half.setText(UiText.get(activity,"FP16 shaders · Adreno 830 (recommended)"));half.setChecked(fp16);
         half.setPadding(0,dp(5),0,dp(5));box.addView(half);
         note(box,"The Bloodborne fix uses the original FP16 / FP32 SPIR-V shaders from Lossless.dll. "
             +"Old DXBC translations may cause ghosting on Adreno 8xx.",0.7f);
@@ -148,9 +148,9 @@ final class FrameGenDialog {
         };
         mult.setOnCheckedChangeListener((g,id)->enabled.run());enabled.run();
         ScrollView scroll=new ScrollView(activity);scroll.addView(box);
-        new AlertDialog.Builder(activity).setTitle("Bloodframe · Native frame generation")
-          .setView(scroll).setNegativeButton("Cancel",null)
-          .setPositiveButton("Apply live",(dialog,ignored)->{
+        new AlertDialog.Builder(activity).setTitle(UiText.get(activity,"Bloodframe · Native frame generation"))
+          .setView(scroll).setNegativeButton(UiText.get(activity,"Cancel"),null)
+          .setPositiveButton(UiText.get(activity,"Apply live"),(dialog,ignored)->{
             int value=Integer.parseInt(VALUES[selected(mult)]);
             String flowString=String.format(Locale.ROOT,"%.2f",0.25f+flow.getProgress()*0.05f);
             boolean okay=saveState(value,flowString,performance.isChecked(),half.isChecked());

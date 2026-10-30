@@ -105,6 +105,11 @@ void TextureCache::RetireReadbacks() {
 bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                                     ReadbackSource source) {
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
+    // PC b776be7: exact-byte image consumers must not wait for another image
+    // sharing only the same tracking page. CPU accesses retain page protection.
+    const bool exact = ExactReadbackWaits() &&
+        (source == ReadbackSource::ImageRefresh || source == ReadbackSource::BufferForImage ||
+         source == ReadbackSource::ImageFree);
     {
         std::scoped_lock lock{readback_mutex};
         // Stale mode, byte rule: God of War III writes every frame to the page that holds a
@@ -114,9 +119,9 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
             readbacks_released += pending_readbacks.ReleaseOutside(address, size, 64_KB,
                 [this](auto& entry) { WatchReadback<false>(entry.address, entry.size); });
         }
-        if (!pending_readbacks.RequiredTick(address, size)) return false;
+        if (!pending_readbacks.RequiredTick(address, size, exact)) return false;
     }
-    const auto resolve = [this, address, size, source] {
+    const auto resolve = [this, address, size, source, exact] {
         const bool diag = Vulkan::WaitDiagnostics::Enabled();
         std::scoped_lock lock{readback_mutex};
         bool waited = false;
@@ -130,7 +135,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
             }
         }
         Gow3Stats::Timer readback_timer{Gow3Stats::t_readback_wait};
-        if (const u64 tick = pending_readbacks.RequiredTick(address, size)) {
+        if (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
             ++readbacks_waited;
             waited = !scheduler.IsFree(tick);
             const auto start = diag ? std::chrono::steady_clock::now()
@@ -149,13 +154,13 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     return true;
 }
 
-void TextureCache::CancelReadbacks(VAddr address, u64 size) {
+void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     if (!deferred_readbacks) return;
     std::scoped_lock lock{readback_mutex};
     pending_readbacks.Cancel(address, size, [this](auto& entry) {
         if (entry.watched) WatchReadback<false>(entry.address, entry.size);
         ++readbacks_canceled;
-    });
+    }, exact);
 }
 
 // gow3 (GOW3_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
@@ -1850,7 +1855,7 @@ void TextureCache::TouchImage(const Image& image) {
 
 void TextureCache::DeleteImage(ImageId image_id) {
     Image& image = slot_images[image_id];
-    CancelReadbacks(image.info.guest_address, image.info.guest_size);
+    CancelReadbacks(image.info.guest_address, image.info.guest_size, true);
     ASSERT_MSG(!image.IsTracked(), "Image was not untracked");
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered), "Image was not unregistered");
 

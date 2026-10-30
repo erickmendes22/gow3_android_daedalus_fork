@@ -71,7 +71,7 @@ public class EGL14 {
  public static boolean eglDestroyContext(EGLDisplay d,EGLContext ctx) { return true; }
  public static boolean eglTerminate(EGLDisplay d) { return true; }
 }''',
-'com/gow3/android/R.java':'package com.gow3.android; public class R { public static class string { public static final int gpu_driver_invalid=1,gpu_driver_wrong_abi=2,gpu_driver_newer_android=3; } }',
+'com/gow3/android/R.java':'package com.gow3.android; public class R { public static class string { public static final int gpu_driver_invalid=1,gpu_driver_wrong_abi=2,gpu_driver_newer_android=3,gpu_driver_panvk=4,gpu_driver_adreno_auto=5,gpu_driver_system=6; } }',
 'org/json/JSONObject.java':'''package org.json; public class JSONObject {
  public JSONObject(String text) {} public int getInt(String name) { throw new UnsupportedOperationException(); }
  public String getString(String name) { throw new UnsupportedOperationException(); }
@@ -84,6 +84,17 @@ public class EGL14 {
 import ro.cobrabm.fexdroid.GpuDriverManager;
 class Harness {
  public static void main(String[] args) throws Exception {
+  var gate=GpuDriverManager.class.getDeclaredMethod("supportedPanvkDevice",int.class,String.class,String.class,boolean.class,boolean.class,String.class);
+  gate.setAccessible(true);
+  assert (Boolean)gate.invoke(null,35,"mt6985","MediaTek",false,true,"Mali-G715 MC11");
+  assert (Boolean)gate.invoke(null,35,"mt6991","MediaTek",false,true,"Immortalis-G720 MC12");
+  assert !(Boolean)gate.invoke(null,34,"mt6985","MediaTek",false,true,"Mali-G715 MC11");
+  assert !(Boolean)gate.invoke(null,35,"exynos2200","Samsung",false,true,"Mali-G715 MC11");
+  assert !(Boolean)gate.invoke(null,35,"s5e8835","Samsung",false,true,"Mali-G68 MP5");
+  assert !(Boolean)gate.invoke(null,35,"qcom","Qualcomm",true,false,"Adreno (TM) 830");
+  assert !(Boolean)gate.invoke(null,35,"mt6985","MediaTek",false,true,"Mali-G78 MC24");
+  assert !(Boolean)gate.invoke(null,35,"mt6985","MediaTek",false,false,"Mali-G715 MC11");
+  assert !(Boolean)gate.invoke(null,35,"mt6985","MediaTek",false,true,"Mali-G7150");
   File files=new File(args[0],"files"); android.content.Context context=new android.content.Context(files);
   Map<String,String> env=new HashMap<>();
   assert GpuDriverManager.selected(context).equals("auto");

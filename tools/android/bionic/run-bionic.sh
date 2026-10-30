@@ -26,7 +26,7 @@ setting() { sed -n "s/^$1=//p" "$GOW3_CONFIG" | tail -n 1; }
 chip=$("$runtime/bin/kgsl-chip-id" 2>/dev/null || true)
 turnip=${GOW3_BIONIC_DRIVER:-auto}
 case "$turnip" in
- auto) case "$chip" in 0x44??????) turnip=gen8 ;; 0x07??????|0x43020[01]00|0x43030b00|0x43050a01|0x43050b00|0x43051401) turnip=adreno7xx ;; *) turnip=system ;; esac ;;
+ auto) case "$chip" in 0x44??????) turnip=gen8 ;; 0x06??????|0x07??????|0x43020[01]00|0x43030b00|0x43050a01|0x43050b00|0x43051401) turnip=adreno7xx ;; *) turnip=system ;; esac ;;
  gen8|adreno7xx|system|custom) ;;
  *) echo "Invalid Bionic driver selection: $turnip" >&2; exit 2 ;;
 esac

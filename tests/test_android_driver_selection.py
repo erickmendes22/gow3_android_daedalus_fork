@@ -33,12 +33,12 @@ class DriverSelectionTests(unittest.TestCase):
                 result=run(selection);self.assertEqual(result.returncode,0,result.stderr);self.assertIn('RESULT='+expected,result.stdout)
             self.assertIn('RESULT=gen8|',run('auto').stdout)
             self.assertIn('RESULT=system|system|',run('auto',chip='0x43000000').stdout)
-            for chip in ['0x07010000','0x07030001','0x43020000','0x43020100','0x43050a01','0x43051401']:
+            for chip in ['0x06060001','0x07010000','0x07030001','0x43020000','0x43020100','0x43050a01','0x43051401']:
                 result=run('auto',chip=chip)
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertIn('RESULT=adreno7xx|'+str(adreno7xx),result.stdout)
                 self.assertIn('RESULT=system|system|',run('system',chip=chip).stdout)
-            for chip in ['0x06060001','0x43050a00','','0x44']:
+            for chip in ['0x43050a00','','0x44']:
                 self.assertIn('RESULT=system|system|',run('auto',chip=chip).stdout)
             self.assertNotEqual(run('bad').returncode,0)
             self.assertNotEqual(run('custom',library=root/'elsewhere/driver.so').returncode,0)

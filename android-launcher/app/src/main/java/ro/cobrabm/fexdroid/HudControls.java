@@ -21,17 +21,17 @@ final class HudControls {
         this.ini = ini;
         float density = activity.getResources().getDisplayMetrics().density;
         TextView heading = new TextView(activity);
-        heading.setText("Performance HUD — FPS / GPU / CPU");
+        heading.setText(UiText.get(activity,"Performance HUD — FPS / GPU / CPU"));
         heading.setTextSize(16f);
         heading.setPadding(0, (int)(12 * density), 0, (int)(6 * density));
         parent.addView(heading);
         enabled = new Switch(activity);
-        enabled.setText("Show performance HUD");
+        enabled.setText(UiText.get(activity,"Show performance HUD"));
         enabled.setChecked(cfg.enabled);
         parent.addView(enabled);
 
         TextView alignText = new TextView(activity);
-        alignText.setText("Horizontal position");
+        alignText.setText(UiText.get(activity,"Horizontal position"));
         parent.addView(alignText);
         alignment = new RadioGroup(activity);
         alignment.setOrientation(RadioGroup.HORIZONTAL);
@@ -41,14 +41,14 @@ final class HudControls {
             RadioButton button = new RadioButton(activity);
             button.setId(View.generateViewId());
             button.setTag(anchors[i]);
-            button.setText(choices[i]);
+            button.setText(UiText.get(activity,choices[i]));
             alignment.addView(button);
             if (cfg.anchor == anchors[i]) alignment.check(button.getId());
         }
         parent.addView(alignment);
 
         TextView positionY = new TextView(activity);
-        positionY.setText("Vertical position");
+        positionY.setText(UiText.get(activity,"Vertical position"));
         parent.addView(positionY);
         vertical = new RadioGroup(activity);
         vertical.setOrientation(RadioGroup.HORIZONTAL);
@@ -57,7 +57,7 @@ final class HudControls {
             RadioButton button = new RadioButton(activity);
             button.setId(View.generateViewId());
             button.setTag(i);
-            button.setText(verticalLabels[i]);
+            button.setText(UiText.get(activity,verticalLabels[i]));
             vertical.addView(button);
             if (cfg.vertical == i) vertical.check(button.getId());
         }
@@ -104,15 +104,15 @@ final class HudControls {
         ScrollView scroll = new ScrollView(activity);
         scroll.addView(content);
         new AlertDialog.Builder(activity)
-            .setTitle("Performance HUD")
+            .setTitle(UiText.get(activity,"Performance HUD"))
             .setView(scroll)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Apply", (dialog, which) -> {
+            .setNegativeButton(UiText.get(activity,"Cancel"), null)
+            .setPositiveButton(UiText.get(activity,"Apply"), (dialog, which) -> {
                 if (HudConfig.update(ini, controls.values())) {
                     if (updated != null) updated.run();
                 } else {
-                    new AlertDialog.Builder(activity).setMessage("Cannot save performance HUD settings.")
-                        .setPositiveButton("OK", null).show();
+                    new AlertDialog.Builder(activity).setMessage(UiText.get(activity,"Cannot save performance HUD settings."))
+                        .setPositiveButton(UiText.get(activity,"OK"), null).show();
                 }
             }).show();
     }

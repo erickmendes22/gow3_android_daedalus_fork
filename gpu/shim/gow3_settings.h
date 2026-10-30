@@ -75,6 +75,7 @@ struct Values {
     std::atomic<int> fps_limit{0};
     std::atomic<bool> async_shaders{true};
     std::atomic<bool> fsr1{false};
+    std::atomic<bool> swap_rb{false};
     std::atomic<bool> rcas{true};
     std::atomic<int> rcas_strength{75};
     /// Set by the presenter: sharpening ran on the last frame (it needs FSR 1 when the game's

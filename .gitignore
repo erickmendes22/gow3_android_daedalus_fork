@@ -30,3 +30,5 @@ patches.json
 local.properties
 .idea
 game
+# User-approved mobile action artwork is part of the launcher.
+!android-launcher/app/src/main/assets/gow3-controls/*.png

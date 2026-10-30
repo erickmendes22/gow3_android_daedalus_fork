@@ -142,6 +142,14 @@ int main() {
     Gow3Settings::Save();
     assert(Read(path).find("patches_CUSA01740_01_00=\nlsfg_enabled=0\n") != std::string::npos);
     assert(Read(path).find(selection) == std::string::npos);
+    // Launcher R/B correction survives the native menu's full settings rewrite.
+    for (bool enabled : {false, true}) {
+        { std::ofstream out(path); out << "swap_rb=" << int(enabled) << "\n"; }
+        Gow3Settings::Load();
+        assert(v.swap_rb == enabled);
+        Gow3Settings::Save();
+        assert(Read(path).find(std::string("swap_rb=") + (enabled ? "1\n" : "0\n")) != std::string::npos);
+    }
     std::remove(path);
     std::puts("PASS: graphics settings");
 }

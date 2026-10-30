@@ -26,8 +26,8 @@ class Gow3MobileFullscreen(unittest.TestCase):
         self.assertIn('Gow3Ini.write(iniFile, mapOf("android_fullscreen" to value))',general)
         self.assertIn('boolean fullscreen="1".equals(setting("android_fullscreen"))',game)
         self.assertIn('Gow3Present.start(holder,BASE+"/present.sock","1".equals(setting("android_fullscreen")))',game)
-        self.assertIn('WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()',game)
-        self.assertIn('getCurrentWindowMetrics().getBounds()',game)
+        self.assertIn('c.hide(WindowInsets.Type.systemBars())',game)
+        self.assertIn('getWindow().setDecorFitsSystemWindows(false)',game)
         self.assertIn('screen.requestApplyInsets()',game)
         self.assertIn('Gow3Present.updateFullscreen(fullscreen)',game)
         bridge=load(JAVA/"Gow3Present.java")
@@ -45,19 +45,20 @@ class Gow3MobileFullscreen(unittest.TestCase):
             'l2':'L2','l1':'L1','r1':'R1','r2':'R2',
             'options':'','touchpad':'',
             'triangle':'△','square':'□','circle':'○','cross':'×',
-            'l3':'L3','r3':'R3'
+            'rage':'L3 + R3','weapons':''
         })
         self.assertNotIn('faceCaption(',overlay)
         self.assertIn('preferences.getBoolean("overlay_button_labels",true)',overlay)
 
     def test_gow3_movement_and_evade_are_separate_touch_zones(self):
         overlay=load(JAVA/"TouchControllerOverlay.java")
-        self.assertIn('if (x<465 && y>480) return "leftstick"',overlay)
-        self.assertIn('if (x>635 && y>470) return "rightstick"',overlay)
+        self.assertIn('return layoutCenter(name)',overlay)
+        self.assertNotIn('moveOrigin=new PointF',overlay)
+        self.assertIn('drawDodge(c)',overlay)
         self.assertIn('dodgeOrigin=new PointF(x,y)',overlay)
-        self.assertIn('moveOrigin=new PointF(x,y)',overlay)
+        self.assertIn('private boolean weaponsOpen',overlay)
         self.assertIn('controls.remove(id)',overlay)
-        self.assertIn('gow3_mobile_v2_',overlay)
+        self.assertIn('gow3_mobile_v218_',overlay)
         self.assertIn('key("size",dragged)',overlay)
 
     def test_mobile_default_buttons_clear_screen_bars_and_preserve_combos(self):
@@ -66,11 +67,11 @@ class Gow3MobileFullscreen(unittest.TestCase):
         self.assertIsNotNone(match)
         points=[(int(a),int(b)) for a,b in re.findall(r'\{(\d+),(\d+)\}',match.group(1))]
         self.assertEqual(len(points),18)
-        self.assertGreaterEqual(min(y for x,y in points),130)
-        self.assertLessEqual(max(y for x,y in points),640)
+        self.assertGreaterEqual(min(y for x,y in points),80)
+        self.assertLessEqual(max(y for x,y in points),520)
         # L3 and R3 are never hidden: both are needed for Rage.
-        self.assertIn('gowAction(c,"l3","L3"',overlay)
-        self.assertIn('gowAction(c,"r3","R3"',overlay)
+        self.assertIn('pressed.add("l3"); pressed.add("r3")',overlay)
+        self.assertIn('gowAction(c,"rage","L3 + R3"',overlay)
 
     def test_panvk_notice_and_mali_driver_gate(self):
         ui=load(COMPOSE/"feature/home/GpuDriverCard.kt")

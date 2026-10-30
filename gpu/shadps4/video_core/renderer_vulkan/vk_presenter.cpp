@@ -468,6 +468,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     view_info.format = GetFrameViewFormat(attribute.attrib.pixel_format);
     // Exclude alpha from output frame to avoid blending with UI.
     view_info.mapping.a = vk::ComponentSwizzle::eOne;
+    // Correct driver-dependent red/blue inversion at final presentation only.
+    // Do not reinterpret guest render targets, depth, or CPU readback memory.
+    if (Gow3Settings::Get().swap_rb.load()) {
+        view_info.mapping.r = vk::ComponentSwizzle::eB;
+        view_info.mapping.b = vk::ComponentSwizzle::eR;
+    }
 
     vk::ImageView image_view{};
     vk::Extent2D image_size{};
@@ -477,8 +483,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             .image = display.image,
             .viewType = vk::ImageViewType::e2D,
             .format = view_info.format,
-            .components = {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
-                           vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne},
+            .components = {view_info.mapping.r, view_info.mapping.g,
+                           view_info.mapping.b, view_info.mapping.a},
             .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
         }));
         draw_scheduler.DeferOperation([device, image_view] { device.destroyImageView(image_view); });

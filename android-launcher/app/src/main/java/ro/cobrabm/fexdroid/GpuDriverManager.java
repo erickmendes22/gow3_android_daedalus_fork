@@ -62,24 +62,44 @@ public final class GpuDriverManager {
     static boolean supportedCsfMali(String renderer) {
         if (renderer==null) return false;
         return java.util.regex.Pattern.compile(
-            "(?i).*\\bMali[- ]G(?:610|615|620|710|715|720|725|730)(?:\\b|[^0-9].*)")
+            "(?i).*\\b(?:Mali|Immortalis)[- ]G(?:610|615|620|710|715|720|725|730)(?:\\b|[^0-9].*)")
             .matcher(renderer).matches();
     }
-    public static boolean maliCandidate() {
-        if (Build.VERSION.SDK_INT<35 ||
-            new File("/dev/kgsl-3d0").exists() ||
-            !new File("/dev/mali0").exists()) return false;
+    public static boolean exynosDevice() {
         String hardware=Build.HARDWARE==null ? "" : Build.HARDWARE.toLowerCase(Locale.ROOT);
         String soc=Build.VERSION.SDK_INT>=31 && Build.SOC_MANUFACTURER!=null
             ? Build.SOC_MANUFACTURER.toLowerCase(Locale.ROOT) : "";
-        return !hardware.equals("qcom") && !soc.contains("qualcomm") &&
-               !soc.equals("qti") && supportedCsfMali(maliRenderer());
+        return hardware.contains("exynos") || hardware.startsWith("s5e") || soc.contains("samsung");
+    }
+    public static boolean adrenoCandidate() {
+        if (exynosDevice()) return false;
+        String hardware=Build.HARDWARE==null ? "" : Build.HARDWARE.toLowerCase(Locale.ROOT);
+        String soc=Build.VERSION.SDK_INT>=31 && Build.SOC_MANUFACTURER!=null
+            ? Build.SOC_MANUFACTURER.toLowerCase(Locale.ROOT) : "";
+        return new File("/dev/kgsl-3d0").exists() || hardware.equals("qcom") ||
+               soc.contains("qualcomm") || soc.equals("qti");
+    }
+    static boolean supportedPanvkDevice(int api,String hardware,String soc,
+                                        boolean kgsl,boolean mali,String renderer) {
+        hardware=hardware==null ? "" : hardware.toLowerCase(Locale.ROOT);
+        soc=soc==null ? "" : soc.toLowerCase(Locale.ROOT);
+        return api>=35 && mali && !kgsl && !hardware.contains("exynos") &&
+            !hardware.startsWith("s5e") && !soc.contains("samsung") &&
+            !hardware.equals("qcom") && !soc.contains("qualcomm") && !soc.equals("qti") &&
+            supportedCsfMali(renderer);
+    }
+    public static boolean maliCandidate() {
+        boolean kgsl=new File("/dev/kgsl-3d0").exists();
+        boolean mali=new File("/dev/mali0").exists();
+        if (exynosDevice() || Build.VERSION.SDK_INT<35 || kgsl || !mali) return false;
+        return supportedPanvkDevice(Build.VERSION.SDK_INT,Build.HARDWARE,
+            Build.VERSION.SDK_INT>=31 ? Build.SOC_MANUFACTURER : "",kgsl,mali,maliRenderer());
     }
 
     public static String automaticDescription(Context context) {
-        if (!maliCandidate()) return "Turnip (Adreno) / system";
-        return Build.VERSION.SDK_INT>=35 ? "PanVK 3.2 (Mali; experimental)"
-                                       : "System Vulkan (PanVK needs Android 15+)";
+        if (maliCandidate()) return context.getString(R.string.gpu_driver_panvk);
+        if (adrenoCandidate()) return context.getString(R.string.gpu_driver_adreno_auto);
+        return context.getString(R.string.gpu_driver_system);
     }
 
     private static DriverArchive.Installed bundledPanvk(Context context) throws Exception {
@@ -157,7 +177,7 @@ public final class GpuDriverManager {
     }
     /** Explicit choices never fall back to a different driver after a load failure. */
     public static void configureEnvironment(Context context,Map<String,String> environment) throws IOException {
-        String selection=selected(context);
+        String selection=exynosDevice() ? "system" : selected(context);
         environment.remove("GOW3_CUSTOM_VULKAN_DRIVER"); environment.remove("GOW3_VULKAN_DRIVER");
         // Automatic Mali selects PanVK only when Android 15+ is available.
         // Manual selections never get silently replaced with a different driver.
@@ -188,6 +208,10 @@ public final class GpuDriverManager {
             environment.put("GOW3_CUSTOM_VULKAN_DRIVER",driver.library.getAbsolutePath());
         } else {
             if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(selection)) throw new IOException("Invalid driver selection");
+            // Old preferences must never force an Adreno HAL onto Exynos/Mali.
+            if (("auto".equals(selection) && !adrenoCandidate()) ||
+                (("gen8".equals(selection) || "adreno7xx".equals(selection)) && !adrenoCandidate()))
+                selection="system";
             environment.put("GOW3_BIONIC_DRIVER",selection);
         }
     }
