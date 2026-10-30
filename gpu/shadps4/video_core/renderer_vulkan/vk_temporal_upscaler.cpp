@@ -951,6 +951,7 @@ bool TemporalUpscaler::OnFrameStart() {
     // Explicit opt-in preserves the old path for a controlled A/B test.
     const bool verified_subpixel_jitter =
         !Gsr2GuestDisplayMode() ||
+        Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||
         !std::getenv("GOW3_ANDROID_PORT") ||
         std::getenv("GOW3_GSR2_FORCE_UNVERIFIED_JITTER");
     const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
