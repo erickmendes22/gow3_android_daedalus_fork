@@ -978,23 +978,41 @@ int main(int argc, char **argv) {
         }
         memcpy(image + relocs[i].target, &value, 8);
     }
-    if (check_imports) {
-        /* Lists every import the game would stop at, without running it (needs the GPU
-         * library: without --cpu-only its symbols are registered above). */
+    /* The image has already supplied every imported NID and relocation.
+     * Validate ALL of them once, before guest entry, so a single boot log
+     * identifies later unsupported APIs instead of discovering one per APK.
+     * These may be unused imports: never pretend they are runtime failures.
+     * --check-imports retains its existing audit-only exit behaviour. */
+    const char *audit_setting=getenv("SOTC_IMPORT_AUDIT");
+    const int sotc_audit = sotc_android_image && (!audit_setting || audit_setting[0]!='0');
+    if (check_imports || sotc_audit) {
         unsigned char *checked=calloc(import_count ? import_count : 1,1);
         if (!checked) fail("allocation failed");
-        uint64_t missing=0;
+        uint64_t missing=0, hle=0, native=0, tested=0;
         for (uint64_t i=0;i<nr;++i) {
             uint64_t index=relocs[i].value;
             if (!relocs[i].kind || checked[index]) continue;
             checked[index]=1;
-            if (runtime_resolve(names[index],relocs[i].kind==2) || (native_libc && bindings[index])) continue;
-            printf("MISSING: %s (%s)\n",names[index],runtime_import_name(names[index]));
+            ++tested;
+            if (runtime_resolve(names[index],relocs[i].kind==2)) {
+                ++hle;
+                continue;
+            }
+            if (native_libc && bindings[index]) {
+                ++native;
+                continue;
+            }
+            printf("%s: %s (%s)\n",check_imports ? "MISSING" : "SOTC_PENDING_IMPORT",
+                   names[index],runtime_import_name(names[index]));
             ++missing;
         }
-        printf("Imports: %" PRIu64 " missing\n",missing);
+        free(checked);
+        printf("%s: %" PRIu64 " checked, %" PRIu64 " HLE, %" PRIu64
+               " native, %" PRIu64 " unresolved\n",
+               check_imports ? "Imports" : "SotC import preflight",
+               tested,hle,native,missing);
         fflush(NULL);
-        _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
+        if (check_imports) _exit(missing ? 1 : 0);
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
 #ifdef __ANDROID__
