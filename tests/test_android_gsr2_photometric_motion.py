@@ -14,7 +14,7 @@ def select_offset(patch_errors):
     camera = patch_errors.get((2, 1), 1.e10)
     if camera + 0.00012 < stationary * .82:
         best, cost = (2, 1), camera
-    if cost > 0.0006:
+    if cost > 0.00012:
         for offset, error in patch_errors.items():
             if offset in ((0, 0), (2, 1)):
                 continue
@@ -49,7 +49,7 @@ class Gsr2PhotometricHistory(unittest.TestCase):
         self.assertIn("float Gow3NativePatchError(", SHADER)
         self.assertIn("PreviousNativeYCoCg, previous + taps[i], 0).x", SHADER)
         self.assertIn("const ivec2 taps[5]", SHADER)
-        self.assertIn("const ivec2 shifts[16]", SHADER)
+        self.assertIn("const ivec2 shifts[30]", SHADER)
         self.assertIn("modelError + 0.00012 < bestError * 0.82", SHADER)
         self.assertIn("bestError < 0.002", SHADER)
         self.assertIn("Motion = (Hruv - PrevUV) * 2.0;", SHADER)
