@@ -939,8 +939,30 @@ bool TemporalUpscaler::OnFrameStart() {
     const bool prehud_temporal = PreHudEnabled() && pre_hud_consecutive_matches >= 3 &&
         (camera_motion.CompletedHistoryValidity() == CameraMotion::Gsr2HistoryStatus::Valid ||
          recent_verified_scene);
+    // ZIP (6), camera-valid continuous gameplay: the original 640x360
+    // framebuffer moves only ~0.02 native pixels in stable geometry while
+    // camera-derived motion says 4-7 px. Its raster also shows no corresponding
+    // subpixel displacement for the alternating Halton samples. Feeding a
+    // changing nonzero jitter to Qualcomm would MOVE the reconstruction
+    // kernel over an essentially unchanged image, creating exactly the
+    // perceived vibration even when photometric reprojection rejects motion.
+    // Until native scene passes demonstrably apply the SAME jitter, keep
+    // the rasterizer AND SGSR jitter consistently zero on this guest path.
+    // Explicit opt-in preserves the old path for a controlled A/B test.
+    const bool verified_subpixel_jitter =
+        !Gsr2GuestDisplayMode() ||
+        !std::getenv("GOW3_ANDROID_PORT") ||
+        std::getenv("GOW3_GSR2_FORCE_UNVERIFIED_JITTER");
     const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
+                           verified_subpixel_jitter &&
                            settings.jitter && !Gow3Toggle::Disabled(1u << 25);
+    if (active && prehud_temporal && !verified_subpixel_jitter) {
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            std::printf("GSR2_RASTER_JITTER_GUARD: unverified subpixel raster; using zero jitter for scene and Qualcomm dispatch\\n");
+        }
+    }
     const int upscaler = settings.upscaler.load();
     // Android has one immutable output target (720p). Use a local effective
     // value, not a write through the const settings reference. This also
