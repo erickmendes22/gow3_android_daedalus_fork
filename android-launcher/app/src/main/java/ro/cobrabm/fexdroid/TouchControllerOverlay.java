@@ -235,6 +235,16 @@ final class TouchControllerOverlay extends View {
         paint.setTextSize(19); paint.setTextAlign(Paint.Align.CENTER);
         c.drawText(label,p.x,p.y-(paint.ascent()+paint.descent())/2,paint);
     }
+    private void faceCaption(Canvas c,String name,int label) {
+        if (!preferences.getBoolean("overlay_button_labels",true)) return;
+        PointF p=center(name);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(0xffe8dfc9);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(10);
+        c.drawText(getResources().getString(label),p.x,p.y+27,paint);
+    }
     private void drawStick(Canvas c,String name) {
         PointF center=center(name);
         paint.setStyle(Paint.Style.FILL); paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : 0x4230394c);
@@ -269,11 +279,17 @@ final class TouchControllerOverlay extends View {
         }
         circle(c,"up",39,"▲",0xffc6ad76); circle(c,"left",39,"◀",0xffc6ad76);
         circle(c,"right",39,"▶",0xffc6ad76); circle(c,"down",39,"▼",0xffc6ad76);
-        if (!modal || editing) circle(c,"triangle",39,"△",0xff83cdaa);
+        if (!modal || editing) {
+            circle(c,"triangle",39,"△",0xff83cdaa);
+            faceCaption(c,"triangle",com.gow3.android.R.string.controller_triangle);
+        }
         circle(c,"circle",39,"○",0xffe38288);
+        faceCaption(c,"circle",com.gow3.android.R.string.controller_circle);
         circle(c,"cross",39,"×",0xff88aaff);
+        faceCaption(c,"cross",com.gow3.android.R.string.controller_cross);
         if (!modal || editing) {
             circle(c,"square",39,"□",0xffd6a0ce);
+            faceCaption(c,"square",com.gow3.android.R.string.controller_square);
             drawStick(c,"leftstick"); drawStick(c,"rightstick");
             circle(c,"l3",29,"L3",0xffa0aec0); circle(c,"r3",29,"R3",0xffa0aec0);
         }

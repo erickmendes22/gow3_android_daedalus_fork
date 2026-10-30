@@ -60,9 +60,9 @@ final class SettingsDialog {
     // One selector for all original and newly verified in-game resolutions.
     // The PS4 original uses the "native" storage key but appears as 1080p.
     private static final String[] RESOLUTION_VALUES={"240p","360p","424p","480p",
-        "540p","720p","900p","native","1440p","1800p","4K"};
+        "540p","720p","900p","native","1440p","1800p","4K","8K"};
     private static final String[] RESOLUTION_NAMES={"240p","360p","424p","480p",
-        "540p","720p","900p","1080p","1440p","1800p","4K"};
+        "540p","720p","900p","1080p","1440p","1800p","4K","8K"};
     // FPS 上限只给运行时 FPS_LIMITS 的取值（gow3_graphics.h 的 FpsLimits：30/60/120/240/0）。
     // 原来还提供 40/45，但 ParseFpsLimit 把不在表里的值一律映射成 0（不限制），等于"看着限帧、
     // 实际无限"，因此删除；取值域与 my-docs/gow3/LAUNCHER.md §3.2 及 Home 页 LaunchParams.kt 对齐。
@@ -187,7 +187,7 @@ final class SettingsDialog {
 
         heading(box,"Display");
         final Switch fullscreen=toggle(box,"Fullscreen — fill entire display",
-            !"0".equals(get("android_fullscreen","1")));
+            "1".equals(get("android_fullscreen","0")));
         final TextView fullscreenNote=new TextView(activity);
         fullscreenNote.setText(UiText.get(activity,
             "OFF keeps a centered 16:9 image and Android system bars (Galaxy A55 fix). " +

@@ -85,6 +85,18 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        // User opt-in: skip the launcher only when a previously selected game
+        // and storage permission are valid. Never loop on returning from the game.
+        if (savedInstanceState == null &&
+            getSharedPreferences("gow3", MODE_PRIVATE).getBoolean("launch_direct_game", false)) {
+            window.decorView.post {
+                if (!isFinishing && !isDestroyed && hasStoragePermission() &&
+                    gameFolderManager.hasGameFolder() && !pkgBusy.value) {
+                    startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
+                }
+            }
+        }
+
         // The original targetSdk 28 storage permission must come FIRST, before
         // offering PKG installation or folder selection. A settings all-files
         // grant must not replace this runtime permission flow.

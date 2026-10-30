@@ -344,4 +344,16 @@
     <string name="popup_gsr2_720p_notice">Spatial 1:1 filter, no temporal reconstruction or history. Uses selected game resolution including 8K, subject to GPU memory. Restart to apply.</string>
     <string name="popup_gsr2_summary_off">Off</string>
     <string name="popup_gsr2_spatial_notice">GSR2 is a spatial-only filter, NOT temporal upscaling. It preserves the game's resolution without frame accumulation. Restart to apply.</string>
+    <!-- Optional direct launch and mobile controls -->
+    <string name="settings_gameplay_section">GAMEPLAY</string>
+    <string name="settings_direct_game_title">Launch directly into the game</string>
+    <string name="settings_direct_game_desc">Skip the launcher on startup when the game folder is ready.</string>
+    <string name="settings_mobile_controller_title">On-screen mobile controller</string>
+    <string name="settings_mobile_controller_desc">Optional virtual PlayStation buttons. Physical gamepads still work.</string>
+    <string name="settings_controller_labels_title">Button captions</string>
+    <string name="settings_controller_labels_desc">Display names under the four face buttons.</string>
+    <string name="controller_triangle">TRIANGLE</string>
+    <string name="controller_circle">CIRCLE</string>
+    <string name="controller_cross">CROSS</string>
+    <string name="controller_square">SQUARE</string>
 </resources>

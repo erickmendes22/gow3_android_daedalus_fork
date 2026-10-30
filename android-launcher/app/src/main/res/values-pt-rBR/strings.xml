@@ -307,4 +307,16 @@
     <string name="popup_gsr2_720p_notice">Filtro espacial 1:1, sem reconstrução temporal ou histórico. Funciona na resolução selecionada do jogo, inclusive 8K, sujeito a memória GPU. Reinicie o jogo.</string>
     <string name="popup_gsr2_summary_off">Desativado</string>
     <string name="popup_gsr2_spatial_notice">GSR2 é apenas um filtro espacial, NÃO um upscale temporal. Preserva a resolução do jogo e não acumula quadros. Reinicie para aplicar.</string>
+    <!-- Optional direct launch and mobile controls -->
+    <string name="settings_gameplay_section">JOGABILIDADE</string>
+    <string name="settings_direct_game_title">Entrar direto no jogo</string>
+    <string name="settings_direct_game_desc">Pular o launcher ao abrir o aplicativo, quando o jogo estiver configurado.</string>
+    <string name="settings_mobile_controller_title">Controle móvel na tela</string>
+    <string name="settings_mobile_controller_desc">Botões virtuais opcionais. Controles físicos continuam funcionando.</string>
+    <string name="settings_controller_labels_title">Legendas dos botões</string>
+    <string name="settings_controller_labels_desc">Exibir os nomes abaixo dos quatro botões de ação.</string>
+    <string name="controller_triangle">TRIÂNGULO</string>
+    <string name="controller_circle">CÍRCULO</string>
+    <string name="controller_cross">X</string>
+    <string name="controller_square">QUADRADO</string>
 </resources>
