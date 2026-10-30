@@ -307,7 +307,7 @@ public final class GameActivity extends Activity {
             menuItem("ic_frames","Capture GSR2 temporal scaling",
                 "6 temporal frames (reset=0) · all raw buffers",this::startGsr2Capture);
             menuItem("ic_frames","Capture GSR2 render stages",
-                "One flip: guest framebuffer after draws 1, 2, 4 ... 2048",
+                "One flip: every draw from 16 to 48, then sparse captures",
                 this::startGsr2RenderStages);
             menuItem("ic_restore","Export GSR2 capture ZIP",
                 "Save raw frames and the game log for analysis",this::exportGsr2Capture);
@@ -857,10 +857,11 @@ public final class GameActivity extends Activity {
         }
         new AlertDialog.Builder(this)
             .setTitle("Capture GSR2 render stages")
-            .setMessage("Capture the actual VideoOut framebuffer after 1, 2, 4, 8, " +
-                "16, 32, 64, 128, 256, 512, 1024 and 2048 guest draws, on the real " +
-                "presented flip. This does not change GSR2 rendering. GPU readbacks " +
-                "may briefly pause gameplay. Export the ZIP afterward.")
+            .setMessage("Capture the actual VideoOut framebuffer after draws 1, 16, " +
+                "every draw 17-48, and sparse later draws (up to 256), from the " +
+                "same presented flip. VS/PS shaders and depth state are logged. " +
+                "This does not modify the GSR2 algorithm. Capturing may briefly " +
+                "pause gameplay. Export the ZIP afterward.")
             .setNegativeButton("Cancel",null)
             .setPositiveButton("Start",(d,w) -> {
                 closeDrawer();
