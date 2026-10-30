@@ -30,6 +30,12 @@ jobs:
         run: |
           python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
+          # Native staging is cheap; run it before rebuilding FEX to catch
+          # source-transformation errors without a long failed job.
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'SotcUnusedDesktopVkFunction' out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
