@@ -99,6 +99,25 @@ endif()
 #endif""",'SotC texture-cache spin instruction')
     tex.write_text(tex_text)
 
+    # Android AArch64 defines uint64_t as unsigned long, while desktop
+    # x86-64's 64-bit literals can be unsigned long long. Make expressions
+    # explicitly match the existing u64/VAddr contracts without narrowing.
+    buffer=out/'shadps4/video_core/buffer_cache/buffer_cache.cpp'
+    buffer_text=buffer.read_text()
+    buffer_text=swap(buffer_text,
+         'return std::bit_floor(kib == 1 ? u64{64} : std::clamp<u64>(kib, 4, 512)) * 1_KB;',
+         'return static_cast<u64>(std::bit_floor(kib == 1 ? u64{64} : std::clamp<u64>(kib, 4, 512)) * 1_KB);',
+         'SotC narrow readback lambda')
+    buffer_text=swap(buffer_text,
+         'return (v ? std::strtoull(v, nullptr, 10) : 4096ULL) * 1_KB;',
+         'return static_cast<u64>((v ? std::strtoull(v, nullptr, 10) : 4096ULL) * 1_KB);',
+         'SotC streaming readback lambda')
+    buffer_text=swap(buffer_text,
+         'std::min(Common::AlignDown(page, 4_KB) + 4_KB, range_end)',
+         'std::min<VAddr>(Common::AlignDown(page, 4_KB) + 4_KB, range_end)',
+         'SotC page range min')
+    buffer.write_text(buffer_text)
+
     # The original in-game menu expects desktop SDL events. On Android the
     # overlay remains available as an ImGui Vulkan compositor; input will be
     # forwarded by the Android controller/IME bridge, not SDL.
