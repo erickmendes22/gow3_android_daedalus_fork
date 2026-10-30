@@ -35,6 +35,21 @@ jobs:
             cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
               -I. -Isrc -c "src/${name}.c" -o "/tmp/sotc-hle-audit/${name}.o"
           done
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Cross-compile modified HLE modules with the exact APK Android NDK
+        run: |
+          set -euo pipefail
+          sdkmanager 'ndk;29.0.14206865'
+          tc="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          for name in runtime_memory runtime_savedata runtime_services probe; do
+            "$tc/bin/aarch64-linux-android30-clang" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread \
+              -I. -Isrc -fPIE -c "src/${name}.c" \
+              -o "/tmp/sotc-hle-audit/${name}-arm64.o"
+            "$tc/bin/llvm-readelf" -h "/tmp/sotc-hle-audit/${name}-arm64.o" > "/tmp/sotc-hle-audit/${name}-arm64-elf.txt"
+            grep -Fq AArch64 "/tmp/sotc-hle-audit/${name}-arm64-elf.txt"
+          done
       - name: Exercise real direct and flexible memory availability with fragmentation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
