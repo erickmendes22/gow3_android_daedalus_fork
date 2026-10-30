@@ -113,7 +113,12 @@ private fun SotcPanel(content: @Composable ColumnScope.()->Unit) {
 }
 
 @Composable
-private fun SotcAction(text:String,onClick:()->Unit,modifier:Modifier=Modifier) {
+private fun SotcAction(text:String,onClick:()->Unit) {
+    SotcAction(text,onClick,Modifier)
+}
+
+@Composable
+private fun SotcAction(text:String,onClick:()->Unit,modifier:Modifier) {
     Text(text,color=SotcPalette.text,fontWeight=FontWeight.SemiBold,fontSize=13.sp,
         modifier=modifier.clip(RoundedCornerShape(9.dp))
             .background(SotcPalette.teal)
