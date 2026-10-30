@@ -68,6 +68,10 @@ final class UiText {
         PT.put("Edit controller layout", "Editar layout dos controles");
         PT.put("Drag and resize the buttons", "Arraste e redimensione os botões");
         PT.put("Reset controller layout", "Restaurar layout dos controles");
+        PT.put("Exit", "Saída");
+        PT.put("Return to launcher", "Voltar ao menu inicial");
+        PT.put("Return to launcher?", "Voltar ao menu inicial?");
+        PT.put("Return", "Voltar");
         PT.put("Quit game", "Sair do jogo");
         PT.put("Quit God of War III?", "Sair de God of War III?");
         PT.put("Quit", "Sair");

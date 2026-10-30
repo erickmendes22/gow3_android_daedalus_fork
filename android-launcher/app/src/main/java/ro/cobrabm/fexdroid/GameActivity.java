@@ -356,9 +356,9 @@ public final class GameActivity extends Activity {
             closeDrawer();
         });
 
-        menuItem("ic_exit","Quit game",null,() -> new AlertDialog.Builder(this)
-            .setTitle(UiText.get(this, "Quit God of War III?")).setMessage(UiText.get(this, "Any unsaved progress will be lost."))
-            .setNegativeButton(UiText.get(this, "Cancel"),null).setPositiveButton(UiText.get(this, "Quit"),(dialog,which) -> finish()).show());
+        section("Exit");
+        menuItem("ic_home","Return to launcher",null,() -> confirmExit(true));
+        menuItem("ic_exit","Quit game",null,() -> confirmExit(false));
 
         // The version, pinned under the scrolling menu.
         String version="";
@@ -369,6 +369,25 @@ public final class GameActivity extends Activity {
         drawer.addView(about,new LinearLayout.LayoutParams(-1,-2));
         screen.addView(drawer,frame(dp(320),-1,Gravity.LEFT));
         setContentView(screen);
+    }
+
+    private void confirmExit(boolean toLauncher) {
+        new AlertDialog.Builder(this)
+            .setTitle(UiText.get(this,toLauncher ? "Return to launcher?" : "Quit God of War III?"))
+            .setMessage(UiText.get(this,"Any unsaved progress will be lost."))
+            .setNegativeButton(UiText.get(this,"Cancel"),null)
+            .setPositiveButton(UiText.get(this,toLauncher ? "Return" : "Quit"),(dialog,which) -> {
+                if(toLauncher) {
+                    Intent home=new Intent(this,com.gow3.android.MainActivity.class);
+                    home.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    home.putExtra(com.gow3.android.MainActivity.EXTRA_SHOW_LAUNCHER,true);
+                    startActivity(home);
+                    finish();
+                } else {
+                    // Close both activities. onDestroy stops the core, audio and presenter.
+                    finishAffinity();
+                }
+            }).show();
     }
 
     private void restartGame() {

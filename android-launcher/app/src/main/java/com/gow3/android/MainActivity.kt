@@ -23,6 +23,7 @@ import com.gow3.android.ui.theme.Gow3LauncherTheme
 
 class MainActivity : ComponentActivity() {
     companion object {
+        const val EXTRA_SHOW_LAUNCHER = "com.gow3.android.SHOW_LAUNCHER"
         private const val REQUEST_INITIAL_STORAGE = 1015
     }
     private lateinit var gameFolderManager: GameFolderManager
@@ -87,7 +88,7 @@ class MainActivity : ComponentActivity() {
         }
         // User opt-in: skip the launcher only when a previously selected game
         // and storage permission are valid. Never loop on returning from the game.
-        if (savedInstanceState == null &&
+        if (savedInstanceState == null && !intent.getBooleanExtra(EXTRA_SHOW_LAUNCHER, false) &&
             getSharedPreferences("gow3", MODE_PRIVATE).getBoolean("launch_direct_game", false)) {
             window.decorView.post {
                 if (!isFinishing && !isDestroyed && hasStoragePermission() &&
@@ -107,6 +108,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Keep the explicit launcher return across language/activity recreation.
+        setIntent(intent)
     }
 
     private fun hasStoragePermission(): Boolean =
