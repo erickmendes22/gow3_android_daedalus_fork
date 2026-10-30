@@ -28,8 +28,13 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
+          # Compile and execute the portable SRT ABI and guest-memory tests
+          # before the expensive FEX and Vulkan build.
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_sotc_arm64_srt.cpp -o "$RUNNER_TEMP/sotc-srt-portable"
+          "$RUNNER_TEMP/sotc-srt-portable"
           # Fast native ABI test: numeric SotC NIDs must route to real HLE
           # functions, not an unsupported-import sentinel.
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -48,6 +53,12 @@ jobs:
           python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
           grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq 'SotcUnusedDesktopVkFunction' out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
+          srt=out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes
+          grep -Fq 'SotcArm64Srt::Run' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'OpCopyWindow' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'CopyFlatbufPlacement' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'SrtWalkerCode(walker_func)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+          ! grep -Fq 'FlattenExtendedUserdataPass unimplemented for target architecture.' "$srt/flatten_extended_userdata_pass.cpp"
           python3 ports/sotc/android/check_imgui_loader.py out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
       - uses: actions/setup-java@v4
         with:
@@ -156,10 +167,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.3-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.4-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.3-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.3-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.4-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.4-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
