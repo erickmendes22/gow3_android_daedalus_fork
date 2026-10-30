@@ -63,6 +63,10 @@ target_link_libraries(bbgpu PUBLIC Vulkan::Headers ${SOTC_FMT_TARGET} Boost::hea
     t+="""
 if(ANDROID)
     target_compile_definitions(bbgpu PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
+    # The GPU DSO intentionally imports runtime_* APIs from the FEX main
+    # executable. Keep those strong dynamic imports and verify them at APK
+    # assembly; Android NDK defaults to --no-undefined when linking a DSO.
+    target_link_options(bbgpu PRIVATE "-Wl,--unresolved-symbols=ignore-all")
     target_link_libraries(bbgpu PRIVATE nativewindow android log dl)
     # FFmpeg's Android NEON assembly uses direct ADRP references to global
     # fft tables. Hide symbols from the statically linked FFmpeg archives in
