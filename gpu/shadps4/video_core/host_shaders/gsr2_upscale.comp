@@ -235,7 +235,35 @@ void main()
         // Rejection is local: missing pixels, HUD transitions and particles
         // use the present spatial sample, not an unrelated temporal pixel.
         if (bestError < 0.002) {
-            PrevUV = Hruv + vec2(bestOffset) * params.renderSizeRcp;
+            vec2 nativeOffset = vec2(bestOffset);
+            // A real continuous camera pan in ZIP (9) moves roughly 2.7
+            // to 3.6 native pixels per frame, not just integers. Merely
+            // choosing (3,1) still rounds off up to half a render pixel.
+            // Fit a local parabola around the VERIFIED native-pixel match,
+            // bounded to +/-0.5 native pixel. Flat/ambiguous neighborhoods
+            // and static pixels remain on the exact integer coordinate.
+            //
+            // Unlike jitter, this does not shift current raster samples:
+            // it changes only where the previous reconstructed HISTORY is
+            // fetched after validating correspondence to previous NATIVE.
+            if (any(notEqual(bestOffset, ivec2(0))) && bestError < 0.0015) {
+                float centerCost = Gow3NativePatchError(InputPos, bestOffset);
+                float leftCost = Gow3NativePatchError(InputPos, bestOffset + ivec2(-1, 0));
+                float rightCost = Gow3NativePatchError(InputPos, bestOffset + ivec2(1, 0));
+                float upCost = Gow3NativePatchError(InputPos, bestOffset + ivec2(0, -1));
+                float downCost = Gow3NativePatchError(InputPos, bestOffset + ivec2(0, 1));
+                float xCurve = leftCost + rightCost - 2.0 * centerCost;
+                float yCurve = upCost + downCost - 2.0 * centerCost;
+                if (xCurve > 0.00012 && max(leftCost,rightCost) < 1.0) {
+                    nativeOffset.x += clamp(0.5 * (leftCost-rightCost)/xCurve,
+                                            -0.5, 0.5);
+                }
+                if (yCurve > 0.00012 && max(upCost,downCost) < 1.0) {
+                    nativeOffset.y += clamp(0.5 * (upCost-downCost)/yCurve,
+                                            -0.5, 0.5);
+                }
+            }
+            PrevUV = Hruv + nativeOffset * params.renderSizeRcp;
             if (all(greaterThanEqual(PrevUV, vec2(0.0))) &&
                 all(lessThan(PrevUV, vec2(1.0)))) {
                 vec4 selected = textureLod(PrevHistoryOutput, PrevUV, 0.0);
