@@ -318,6 +318,8 @@ private:
     // Actual VideoOut draw sequence: scene-copy first, then HUD/post passes.
     VAddr gsr2_stage_display_guest = 0;
     u32 gsr2_stage_display_draws = 0;
+    bool gsr2_stage_last_depth_enabled = false;
+    bool gsr2_stage_full_scene_captured = false;
     /// GOW3_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
     void MarkPass(const GraphicsPipeline* pipeline, const RenderState& state);
     void BindVertexBuffers(const GraphicsPipeline* pipeline,
