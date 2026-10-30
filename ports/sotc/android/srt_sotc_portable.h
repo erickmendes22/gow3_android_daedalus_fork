@@ -90,7 +90,9 @@ using Copy = void (*)(std::uint32_t*, std::uint64_t, std::uint64_t);
 // dereferencing arbitrary guest pointers from the host Vulkan thread.
 inline bool Run(std::span<const std::uint32_t> words,
                 const std::uint32_t* user_data, std::uint32_t* flat, Copy copy) {
-    if (!copy || !user_data || !flat || !Validate(words)) return false;
+    // All bytecode is validated exactly once by RegisterWalkerCode before
+    // cache insertion. Do not re-parse it on every Vulkan draw call.
+    if (!copy || !user_data || !flat || words.size()<3 || words[0]!=Magic) return false;
     std::array<std::uint64_t, MaxDepth> stack{};
     std::array<std::uint32_t, MaxValues> values{};
     std::uint64_t pointer=reinterpret_cast<std::uintptr_t>(user_data);
@@ -104,7 +106,13 @@ inline bool Run(std::span<const std::uint32_t> words,
         case PushImm: case PushDyn: {
             const std::uint32_t dw=op==PushImm ? words[pc++] : values[--count];
             std::uint32_t data[2]{};
-            copy(data,pointer+(std::uint64_t(dw)<<2),sizeof(data));
+            if (pointer==reinterpret_cast<std::uintptr_t>(user_data)) {
+                // First SRT root is the host-owned 16-dword user-data array,
+                // not a guest allocation tracked by Core::Memory.
+                if (dw+1<16) std::memcpy(data,user_data+dw,sizeof(data));
+            } else {
+                copy(data,pointer+(std::uint64_t(dw)<<2),sizeof(data));
+            }
             stack[depth++]=pointer;
             pointer=(std::uint64_t(data[0]) | (std::uint64_t(data[1])<<32)) &
                      UINT64_C(0xFFFFFFFFFFFF);
@@ -114,7 +122,12 @@ inline bool Run(std::span<const std::uint32_t> words,
         case CopyImm: case CopyDyn: {
             const std::uint32_t dw=op==CopyImm ? words[pc++] : values[--count];
             const std::uint32_t dst=words[pc++];
-            copy(&flat[dst],pointer+(std::uint64_t(dw)<<2),sizeof(std::uint32_t));
+            if (pointer==reinterpret_cast<std::uintptr_t>(user_data)) {
+                if (dw<16) flat[dst]=user_data[dw];
+                else flat[dst]=0;
+            } else {
+                copy(&flat[dst],pointer+(std::uint64_t(dw)<<2),sizeof(std::uint32_t));
+            }
             break;
         }
         case CopyWindow:
@@ -155,4 +168,13 @@ inline bool Run(std::span<const std::uint32_t> words,
         }
     }
 }
+
+// Bytecode emitter names from the existing Daedalus ARM64 SRT generator.
+inline constexpr Op OpEnd=End, OpPushImm=PushImm, OpPushDyn=PushDyn, OpPop=Pop;
+inline constexpr Op OpCopyImm=CopyImm, OpCopyDyn=CopyDyn, OpUserData=UserData;
+inline constexpr Op OpFlat=Flat, OpImm=Imm, OpAdd=Add, OpSub=Sub, OpMul=Mul;
+inline constexpr Op OpShl=Shl, OpShr=Shr, OpAnd=And, OpOr=Or, OpXor=Xor;
+inline constexpr Op OpNot=Not, OpUMin=UMin, OpUMax=UMax;
+inline constexpr Op OpBitFieldUExtract=BitExtract, OpCopyWindow=CopyWindow;
+inline constexpr std::uint32_t SrtMagic=Magic;
 } // namespace Shader::SotcArm64Srt

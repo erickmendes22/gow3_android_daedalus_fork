@@ -50,6 +50,10 @@ def patch_sotc_arm64(root: Path, staged_gpu: Path) -> None:
     end = source.index(end_marker, start)
     portable = r'''#else
 
+namespace {
+using namespace Shader::SotcArm64Srt;
+}
+
 namespace Shader {
 
 struct SrtProgram {

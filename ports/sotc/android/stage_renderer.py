@@ -484,6 +484,11 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
         'SotC Vulkan Android ImGui required-function guard and device proc loader')
     overlay.write_text(pane)
 
+    # SotC's original SRT walker only implements x86 Xbyak. Android needs
+    # the validated portable ARM64 pass plus its cache/ABI adaptations.
+    from stage_srt_arm64 import patch_sotc_arm64
+    patch_sotc_arm64(root, out)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--upstream',required=True,type=Path)
