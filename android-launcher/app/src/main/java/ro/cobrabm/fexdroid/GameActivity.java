@@ -875,7 +875,8 @@ public final class GameActivity extends Activity {
                         String readme="GoW III CUSA01623 01.02 | GSR2 canonical same-flip capture\n"+
                             "eboot SHA256: 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c\n"+
                             "eboot markers: VelocityPass.fx@0x359ed6, PS3_VelocityConstant@0x36125f, PS3_bIsAntiAliased@0x361158\n"+
-                            "Names: fNNN_input_WxH_*.raw (ACTUAL selected GSR2 color; now complete VideoOut),\n"+
+                            "Names: fNNN_input_WxH_*.raw (ACTUAL GSR2 color selected: after scene copy, or full VideoOut fallback),\n"+
+                            "fNNN_post_scene_WxH_*.raw (after first VideoOut scene-copy draw, before later HUD draws),\n"+
                             "fNNN_early_prehud_WxH_*.raw (former incomplete early scene for comparison),\n"+
                             "fNNN_motion_WxH_rg16f.raw (two float16 values, previous-current in render pixels),\n"+
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
@@ -887,7 +888,8 @@ public final class GameActivity extends Activity {
                             "The game log contains frame/flip/camera provenance, full_color and reset status.\n"+
                             "This capture selects ONLY successful temporal history frames (reset=0).\n"+
                             "The old early preHUD color lacked Kratos, enemies and effects while depth included them.\n"+
-                            "Full VideoOut source is an experimental correctness test; the HUD is not isolated from its temporal history yet.\n";
+                            "Post-scene selection is experimental until the mid-stage image is validated.\n"+
+                            "If the post-scene snapshot is unavailable, GSR2 falls back to complete VideoOut, which contains HUD.\n";
                         zip.putNextEntry(new ZipEntry("README.txt"));
                         zip.write(readme.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         zip.closeEntry();
