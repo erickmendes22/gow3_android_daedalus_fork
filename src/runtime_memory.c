@@ -831,3 +831,52 @@ void runtime_memory_report(void) {
            flexible_maps, flexible_bytes, protects, queries, vma_count);
 }
 
+
+
+/* SotC Vulkan guest-memory ABI. Keep the GoW3 VM table and backing alias:
+ * these routines must not read guest virtual memory while page tracking
+ * holds a GPU read/write-protected page.
+ */
+uint64_t runtime_memory_generation(void) {
+    return __atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
+}
+const unsigned char *runtime_memory_backing_view(uint64_t *size) {
+    if (size) *size=backing_base ? POOL_SIZE+FLEX_SPAN : 0;
+    return backing_base;
+}
+const unsigned char *runtime_memory_backing_pointer(uintptr_t address) {
+    if (!backing_base) return NULL;
+    const unsigned char *pointer=NULL;
+    read_lock();
+    size_t i=vma_index(address);
+    if (i<vma_count && vmas[i].start<=address && vmas[i].kind!=KIND_RESERVED)
+        pointer=backing_base+vmas[i].phys+(address-vmas[i].start);
+    read_unlock();
+    return pointer;
+}
+/* The original SotC renderer uses this for large readbacks/uploads.
+ * Unmapped and reserved pages become zero; otherwise copy from the alias
+ * that bypasses guest page protections, under a single VMA read lock.
+ */
+int runtime_memory_copy_out(uintptr_t source, unsigned char *dest, uint64_t size) {
+    if (!backing_base || (!dest && size) || size>UINTPTR_MAX-source) return 0;
+    const uintptr_t end=source+size;
+    read_lock();
+    for (uintptr_t at=source;at<end;) {
+        size_t i=vma_index(at);
+        uintptr_t stop;
+        if (i<vma_count && vmas[i].start<=at) {
+            stop=vmas[i].end<end ? vmas[i].end : end;
+            if (vmas[i].kind==KIND_RESERVED)
+                memset(dest+(at-source),0,stop-at);
+            else
+                memcpy(dest+(at-source),backing_base+vmas[i].phys+(at-vmas[i].start),stop-at);
+        } else {
+            stop=i<vma_count && vmas[i].start<end ? vmas[i].start : end;
+            memset(dest+(at-source),0,stop-at);
+        }
+        at=stop;
+    }
+    read_unlock();
+    return 1;
+}
