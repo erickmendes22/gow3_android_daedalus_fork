@@ -1,0 +1,61 @@
+name: SotC HLE audit - host ABI only (NO APK)
+on:
+  push:
+    branches: ['audit/sotc-hle-before-next-apk-20261030']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sotc-hle-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    name: Compile and exercise HLE memory, saves, and scoped NID imports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Audit all upstream SotC HLE API exports
+        run: |
+          python3 ports/sotc/android/audit_hle_exports.py --upstream upstream-sotc
+          python3 -m unittest discover -s tests -p 'test_sotc_imports.py' -v
+      - name: Compile every modified HLE module and guest import scanner
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sotc-hle-audit
+          for name in runtime_memory runtime_savedata runtime_services probe; do
+            cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+              -I. -Isrc -c "src/${name}.c" -o "/tmp/sotc-hle-audit/${name}.o"
+          done
+      - name: Exercise real direct and flexible memory availability with fragmentation
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            -Isrc -Wl,--gc-sections \
+            tests/test_sotc_memory_available.c src/runtime_memory.c \
+            -o /tmp/sotc-hle-audit/test-memory
+          /tmp/sotc-hle-audit/test-memory
+      - name: Exercise original SotC save backup and restore on temporary filesystem
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            -Isrc -Wl,--gc-sections \
+            tests/test_sotc_save_backup.c src/runtime_savedata.c \
+            -o /tmp/sotc-hle-audit/test-saves
+          /tmp/sotc-hle-audit/test-saves
+      - name: Exercise numeric imports against real HLE pthread functions
+        run: |
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            -I. -Isrc -c src/runtime.c -o /tmp/sotc-hle-audit/runtime.o
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            -I. -Isrc -c src/runtime_mutex.c -o /tmp/sotc-hle-audit/mutex.o
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,--gc-sections -pthread \
+            tests/test_sotc_scoped_mutex.c /tmp/sotc-hle-audit/runtime.o \
+            /tmp/sotc-hle-audit/mutex.o -o /tmp/sotc-hle-audit/test-imports
+          /tmp/sotc-hle-audit/test-imports
