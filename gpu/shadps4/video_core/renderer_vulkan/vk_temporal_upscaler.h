@@ -105,7 +105,8 @@ public:
     void CaptureGsr2AfterVideoOutCopy(VAddr guest_address, VideoCore::ImageId target);
     // Opt-in single-flip stage scan: real framebuffer readback at later draw boundaries.
     void ProbeGsr2VideoOutStage(VAddr guest_address, VideoCore::ImageId target,
-                                u32 completed_draw, u64 next_shader);
+                                u32 completed_draw, u64 next_vs, u64 next_ps,
+                                bool next_depth_enabled, u32 next_mrt_mask);
     void FinishGsr2VideoOutStageScan(VAddr presented_guest);
     void SelectGsr2PreHudScene(VAddr guest_address);
     /// Final image boundary of CUSA01715's one/two MRT forward renderer.
