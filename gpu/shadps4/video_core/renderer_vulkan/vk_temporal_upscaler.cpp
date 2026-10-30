@@ -771,14 +771,18 @@ void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
 void TemporalUpscaler::ProbeGsr2VideoOutStage(VAddr guest,
                                              VideoCore::ImageId target,
                                              u32 completed_draw,
-                                             u64 next_shader) {
+                                             u64 next_vs, u64 next_ps,
+                                             bool next_depth_enabled,
+                                             u32 next_mrt_mask) {
     if (!gsr2_stage_scan_armed || !guest || !target) return;
-    // Bound the number of readbacks to nine per guest buffer. A completed
-    // draw is one actual guest draw, not a host submission or camera tick.
-    static constexpr std::array<u32, 12> stage_draws{
-        1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
-    if (std::find(stage_draws.begin(),stage_draws.end(),completed_draw) ==
-        stage_draws.end()) return;
+    // ZIP (7) proves draw 1..16 are bit-identical, whereas 16..32
+    // introduces effects. Trace this exact transition at draw granularity,
+    // then sparsely through the tail. Bound GPU readbacks to 55 per flip.
+    const bool sample = completed_draw == 1 || completed_draw == 16 ||
+        (completed_draw >= 17 && completed_draw <= 48) ||
+        (completed_draw > 48 && completed_draw <= 80 && completed_draw % 4 == 0) ||
+        (completed_draw > 80 && completed_draw <= 256 && completed_draw % 16 == 0);
+    if (!sample || gsr2_stage_scan_samples >= 55) return;
     auto& color = texture_cache.GetImage(target);
     if (color.info.guest_address != guest ||
         !FrameCapture::IsDisplayBuffer(guest) ||
@@ -805,9 +809,10 @@ void TemporalUpscaler::ProbeGsr2VideoOutStage(VAddr guest,
     if (!tracked && gsr2_stage_scan_guest_count < gsr2_stage_scan_guests.size())
         gsr2_stage_scan_guests[gsr2_stage_scan_guest_count++] = guest;
     ++gsr2_stage_scan_samples;
-    std::printf("GSR2_STAGE_SCAN_SAMPLE guest=%#llx after_draw=%u next_vs=%016llx image=%u size=%ux%u\n",
+    std::printf("GSR2_STAGE_SCAN_SAMPLE guest=%#llx after_draw=%u next_vs=%016llx next_ps=%016llx next_depth=%d next_mrt=%x image=%u size=%ux%u\n",
                 (unsigned long long)guest, completed_draw,
-                (unsigned long long)next_shader,target.index,w,h);
+                (unsigned long long)next_vs,(unsigned long long)next_ps,
+                int(next_depth_enabled),next_mrt_mask,target.index,w,h);
     std::fflush(stdout);
 }
 
