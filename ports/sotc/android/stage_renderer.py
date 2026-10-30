@@ -419,7 +419,7 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
         'SotC Android ImGui platform function include')
     imguivk=swap(imguivk,
         r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
-#define IMGUI_VULKAN_FUNC_LOAD(func) \''',
+#define IMGUI_VULKAN_FUNC_LOAD(func)''',
         r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
 #ifdef __ANDROID__
 // These functions belong only to ImGui_ImplVulkanH_* desktop window helpers.
@@ -436,7 +436,7 @@ static bool SotcUnusedDesktopVkFunction(const char* name) {
 #else
 static bool SotcUnusedDesktopVkFunction(const char*) { return false; }
 #endif
-#define IMGUI_VULKAN_FUNC_LOAD(func) \''',
+#define IMGUI_VULKAN_FUNC_LOAD(func)''',
         'headless-only optional ImGui desktop Vulkan functions')
     imguivk=swap(imguivk,
         r'''    if (func == nullptr)   \
