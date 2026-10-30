@@ -65,8 +65,9 @@ def derive(game, config, state_path, env):
     # The GPU dispatch path determines whether the scene requires enlargement.
     # GSR2 is kept in the runtime for future work, but 8K is not a GSR2
     # target. The 8K eboot patch must never silently become its 720p fallback.
-    gsr2_requested = (android_port and ini.get('upscaler') == 'gsr2' and
-                      graphics.get('render_resolution') != '8K')
+    # Spatial-only filter is independent of game resolution. Keep the user's
+    # original 240p...8K patch selection; never force the old 720p output.
+    gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'
     if android_port and ini.get('upscaler') not in ('off', 'gsr2'):
         graphics_options.write_keys(config, {'upscaler': 'off', 'preset': '0',
                                              'fsr1': '0', 'rcas': '0'})
@@ -76,9 +77,12 @@ def derive(game, config, state_path, env):
         updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'
         updates['GOW3_FSR1'] = '0'
         updates['GOW3_RCAS'] = '0'
-        updates['GOW3_UPSCALER_SOURCE'] = ('gsr2-native-aa-1to1' if gsr2_requested and
-            ini.get('preset', '0').strip() == '0' else
-            'gsr2-opt-in' if gsr2_requested else 'disabled-android')
+        updates['GOW3_UPSCALER_SOURCE'] = ('gsr2-spatial-1to1' if gsr2_requested
+            else 'disabled-android')
+        if gsr2_requested:
+            updates['GOW3_GSR2_SPATIAL_ONLY'] = '1'
+            updates['GOW3_GSR2_DIRECT_VIDEOOUT'] = '1'
+            updates['GOW3_GSR2_PREHUD_COMPOSITE'] = '0'
         updates['GOW3_RESOLUTION_STATUS'] = 'native-game-patch'
     elif 'GOW3_UPSCALER' not in env:
         updates['GOW3_UPSCALER'] = 'none'
@@ -89,33 +93,9 @@ def derive(game, config, state_path, env):
         'override' if 'GOW3_READBACK_LINEAR' in env else 'android-safe-default')
     identity_check = patch_profile_status(game)
     from patches import CUSA01715_0102_ANDROID_SHA
-    # The repaired Native AA samples the real, completed VideoOut frame.
-    # For enlarged presets the only equally trustworthy *reduced* source is
-    # the verified guest image itself after patching the 01.02 eboot geometry
-    # and post-process allocation. A post-hoc 720p downsample offers no GPU gain.
-    verified_gsr2_eboot = (gsr2_requested and
-        identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
-        identity_check['app_version'] == '01.02' and
-        identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
-        identity_check['reason'] == 'validated')
-    gsr2_preset = ini.get('preset', '0').strip()
-    gsr2_native_input_by_preset = {
-        '0': ('720p', '1280x720'),
-        '1': ('540p', '960x540'),
-        '2': ('424p', '752x424'),
-        '3': ('360p', '640x360'),
-        '4': ('240p', '426x240'),
-    }
-    if (verified_gsr2_eboot and gsr2_preset in gsr2_native_input_by_preset and
-            gsr2_preset != '0'):
-        # Launch-only graphics override: no change to the user's stored 720p
-        # output choice or the known-good resolution when GSR2 is switched off.
-        patch_name, pixel_size = gsr2_native_input_by_preset[gsr2_preset]
-        graphics = dict(graphics, render_resolution=patch_name)
-        updates['GOW3_GSR2_DIRECT_VIDEOOUT'] = '1'
-        updates['GOW3_GSR2_INPUT_RES'] = pixel_size
-        updates['GOW3_GSR2_OUTPUT_RES'] = '1280x720'
-        updates['GOW3_UPSCALER_SOURCE'] = 'gsr2-verified-videoout'
+    # No preset-to-resolution remapping. GSR2 spatial samples the real
+    # resolved guest VideoOut one-to-one at the user-selected resolution.
+    # This preserves original game's resolution and the existing 8K validation.
     resolution = graphics['render_resolution']
     if android_port and resolution in graphics_options.DIRECT_RESOLUTIONS:
         if (identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
@@ -150,21 +130,6 @@ def derive(game, config, state_path, env):
         if names:
             # gow3.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
-            # GSR2 must match the real eboot-allocated scene, not the desktop
-            # default 1920x1080. This retail CUSA01623/01715 01.02 SHA is
-            # byte-validated and the actual 720p resolution patch is selected.
-            from patches import CUSA01715_0102_ANDROID_SHA
-            if (verified_gsr2_eboot and 'Resolution Patch - 720p' in names and
-                    gsr2_preset in gsr2_native_input_by_preset):
-                if gsr2_preset == '0':
-                    # Do not change native AA's existing exact-match 720p path.
-                    updates['GOW3_PATCH_INPUT_RES'] = '1280x720'
-                    updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-720p-target'
-                else:
-                    # SHA-verified lower guest raster, separate fixed 720p host.
-                    actual_input = gsr2_native_input_by_preset[gsr2_preset][1]
-                    updates['GOW3_PATCH_INPUT_RES'] = actual_input
-                    updates['GOW3_RESOLUTION_STATUS'] = 'verified-gsr2-videoout-input'
             # This exact-address patch belongs only to the supplied and
             # verified eboot revision. Other builds retain their shadows.
             shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
