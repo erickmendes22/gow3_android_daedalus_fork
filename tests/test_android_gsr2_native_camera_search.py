@@ -43,6 +43,27 @@ class NativeCameraSearch(unittest.TestCase):
         self.assertEqual(err(-3,-1),0)
         self.assertGreater(min(err(dx,dy) for dx,dy in old),0)
 
+    def test_only_verified_native_matches_get_bounded_fractional_reprojection(self):
+        self.assertIn("vec2 nativeOffset = vec2(bestOffset);",SHADER)
+        self.assertIn("any(notEqual(bestOffset, ivec2(0))) && bestError < 0.0015",SHADER)
+        self.assertIn("Gow3NativePatchError(InputPos, bestOffset + ivec2(-1, 0))",SHADER)
+        self.assertIn("Gow3NativePatchError(InputPos, bestOffset + ivec2(1, 0))",SHADER)
+        self.assertIn("Gow3NativePatchError(InputPos, bestOffset + ivec2(0, -1))",SHADER)
+        self.assertIn("Gow3NativePatchError(InputPos, bestOffset + ivec2(0, 1))",SHADER)
+        self.assertIn("if (xCurve > 0.00012",SHADER)
+        self.assertIn("if (yCurve > 0.00012",SHADER)
+        self.assertIn("PrevUV = Hruv + nativeOffset * params.renderSizeRcp;",SHADER)
+        self.assertIn("Motion = (Hruv - PrevUV) * 2.0;",SHADER)
+        # Convex cost around a true 3.25-pixel original-native shift
+        # recovers the known fractional component with a bounded parabola.
+        true_offset = 3.25
+        c0 = (3.0-true_offset)**2
+        left = (2.0-true_offset)**2
+        right = (4.0-true_offset)**2
+        curve = left + right - 2.0*c0
+        fraction = max(-0.5,min(0.5,0.5*(left-right)/curve))
+        self.assertAlmostEqual(fraction,0.25,places=6)
+
     def test_native_photometric_guard_and_zero_jitter_remain(self):
         self.assertIn("Gow3NativePatchError(InputPos, shifts[i])",SHADER)
         self.assertIn("PreviousNativeYCoCg",SHADER)
