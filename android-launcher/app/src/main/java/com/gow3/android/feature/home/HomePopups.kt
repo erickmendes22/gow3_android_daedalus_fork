@@ -161,18 +161,10 @@ internal fun HomePopup(
                         OptionRow(stringResource(R.string.popup_gsr2_off), !gsr2) { gsr2 = false }
                         OptionRow(stringResource(R.string.popup_gsr2_on), gsr2) {
                             gsr2 = true
-                            // Verified GSR2 uses a 720p output; presets change scene raster.
-                            resolution = "720p"
+                            // Spatial GSR2 never changes the game's resolution.
                         }
                         if (gsr2) {
-                            Text(stringResource(R.string.popup_gsr2_preset_title),
-                                color = LauncherColors.gold, fontWeight = FontWeight.Bold)
-                            gsrPresets.forEach { (value, label) ->
-                                OptionRow(stringResource(label), gsrPreset == value) {
-                                    gsrPreset = value
-                                }
-                            }
-                            Text(stringResource(R.string.popup_gsr2_720p_notice),
+                            Text(stringResource(R.string.popup_gsr2_spatial_notice),
                                 color = LauncherColors.textMuted, fontSize = 12.sp)
                         }
                         Spacer(Modifier.height(10.dp))
@@ -185,10 +177,8 @@ internal fun HomePopup(
                             "8K" -> stringResource(R.string.popup_8k_resolution)
                             else -> value
                         }
-                        // Do not offer a conflicting guest resolution with GSR2.
-                        if (!gsr2 || value == "720p") {
-                            OptionRow(label, resolution == value) { resolution = value }
-                        }
+                        // Every resolution remains available with GSR2 spatial.
+                        OptionRow(label, resolution == value) { resolution = value }
                     }
                     Text(stringResource(R.string.popup_8k_warning),
                         color = LauncherColors.textMuted, fontSize = 12.sp)
@@ -215,9 +205,9 @@ internal fun HomePopup(
                     HomePopupKind.FPS -> mapOf("fps_limit" to fps, "engine_fps" to engine,
                         "vsync" to if (vsync) "1" else "0")
                     HomePopupKind.VIDEO -> if (isBionic) mapOf(
-                        "render_resolution" to (if (gsr2) "720p" else resolution),
+                        "render_resolution" to resolution,
                         "upscaler" to (if (gsr2) "gsr2" else "off"),
-                        "preset" to gsrPreset,
+                        "preset" to "0", // Spatial filter has no quality presets
                     ) else mapOf("render_resolution" to resolution)
                     HomePopupKind.CHEATS -> enabled.mapValues { if (it.value) "1" else "0" }
                     HomePopupKind.MODS -> emptyMap()
