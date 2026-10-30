@@ -25,7 +25,7 @@ def stage(upstream,out,android_window):
 """if(ANDROID)
     find_package(VulkanHeaders CONFIG REQUIRED)
     add_library(Vulkan::Vulkan INTERFACE IMPORTED)
-    set_target_properties(Vulkan::Vulkan PROPERTIES INTERFACE_LINK_LIBRARIES Vulkan::Headers)
+    set_target_properties(Vulkan::Vulkan PROPERTIES INTERFACE_LINK_LIBRARIES "Vulkan::Headers;vulkan")
 else()
     find_package(Vulkan REQUIRED)
 endif()""",'Vulkan')
