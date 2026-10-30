@@ -1,4 +1,6 @@
-Consolidated Bionic APK build after Java-only preflight success (run 41078374566).
-Verified fix: DriverArchive.delete checksum-confined cleanup, JSONObject fixture overload.
-GSR2 remains spatial 1:1, no temporal accumulation; PanVK gated to supported Mali.
-Source commit: f5e0bbfd3c0ac85766a13a18b362419f50a69633
+God of War III Bionic full APK build after complete source preflight passed:
+https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41080616735
+Exact source version 653a1a970606323fce387f31d1154f53406d5a8a.
+Preflight success covers test_android_*.py, test_bionic_*.py,
+native preparation, resources AAPT2 and Java/Kotlin launcher compilation.
+Preserve GSR2 spatial 1:1 only, optional PanVK Mali CSF and native patches.
