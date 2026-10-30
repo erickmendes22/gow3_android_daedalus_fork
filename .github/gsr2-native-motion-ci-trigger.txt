@@ -14,3 +14,5 @@ Validate post-scene snapshot source, actor/depth preservation, and new same-flip
 Rerun stage tests after updating outdated HUD source assertion for new post-scene capture README.
 
 2026-10-30: validate one-flip per-guest VideoOut render-stage timeline and new Android menu capture. No unverified automatic GSR2 source switch.
+
+ZIP (7): exact source 1..16 unchanged, first actual changes 16..32, after32 final tone curve+HUD; review 17..48 frames and unverified native-raster jitter guard from ZIP (6).
