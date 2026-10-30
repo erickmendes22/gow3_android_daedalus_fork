@@ -118,6 +118,48 @@ endif()
          'SotC page range min')
     buffer.write_text(buffer_text)
 
+    # More upstream performance probes used Intel-only intrinsics. Replace
+    # their underlying operations on AArch64 without disabling the waits.
+    for relative in (
+        'shadps4/video_core/renderer_vulkan/vk_scheduler.cpp',
+        'shadps4/video_core/renderer_vulkan/vk_semaphore.cpp',
+    ):
+        target=out/relative
+        original=target.read_text()
+        original=swap(original,'#include <immintrin.h>',
+"""#if defined(__aarch64__)
+#define SOTC_CPU_RELAX() __asm__ volatile("yield" ::: "memory")
+#else
+#include <immintrin.h>
+#define SOTC_CPU_RELAX() _mm_pause()
+#endif""",'native spin macro '+relative)
+        if '_mm_pause();' not in original:
+            raise ValueError('Expected Intel spin instruction in '+relative)
+        original=original.replace('            _mm_pause();','            SOTC_CPU_RELAX();')
+        target.write_text(original)
+    write_log=out/'shim/bbport_write_log.cpp'
+    log_source=write_log.read_text()
+    log_source=swap(log_source,'#include <x86intrin.h>',
+"""#if defined(__aarch64__)
+#include <chrono>
+static std::uint64_t SotcHostCycles() {
+    // Existing log prints time differences at 3GHz. A 3x monotonic-ns clock
+    // retains its 10-second rollup and diagnostic seconds on Android.
+    const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return static_cast<std::uint64_t>(ns) * 3;
+}
+#else
+#include <x86intrin.h>
+static std::uint64_t SotcHostCycles() { return __rdtsc(); }
+#endif""",'SotC write log host counter')
+    log_source=log_source.replace('__rdtsc();','SotcHostCycles();')
+    # Restore the x86 fallback inside the new helper (avoid recursion).
+    log_source=swap(log_source,'static std::uint64_t SotcHostCycles() { return SotcHostCycles(); }',
+                    'static std::uint64_t SotcHostCycles() { return __rdtsc(); }',
+                    'write log fallback')
+    write_log.write_text(log_source)
+
     # The original in-game menu expects desktop SDL events. On Android the
     # overlay remains available as an ImGui Vulkan compositor; input will be
     # forwarded by the Android controller/IME bridge, not SDL.
