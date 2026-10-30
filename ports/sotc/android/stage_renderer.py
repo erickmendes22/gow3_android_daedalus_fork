@@ -135,7 +135,7 @@ endif()
 #endif""",'native spin macro '+relative)
         if '_mm_pause();' not in original:
             raise ValueError('Expected Intel spin instruction in '+relative)
-        original=original.replace('            _mm_pause();','            SOTC_CPU_RELAX();')
+        original=original.replace('_mm_pause();','SOTC_CPU_RELAX();')
         target.write_text(original)
     write_log=out/'shim/bbport_write_log.cpp'
     log_source=write_log.read_text()
