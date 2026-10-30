@@ -4,6 +4,13 @@ on:
     branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
     paths:
       - 'tests/test_bionic_*.py'
+      - 'tests/test_android_gow3_mobile_fullscreen.py'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/TouchControllerOverlay.java'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/home/**'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/settings/**'
+      - 'android-launcher/app/src/main/res/values/**'
+      - 'android-launcher/app/src/main/res/values-pt-rBR/**'
       - '.github/workflows/gow3-bionic-source-preflight.yml'
   workflow_dispatch:
 permissions:
