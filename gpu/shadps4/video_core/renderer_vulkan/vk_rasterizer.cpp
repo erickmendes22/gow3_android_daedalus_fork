@@ -1078,6 +1078,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
+    if (defer_gsr2_boundary_to_flip && is_display_draw && scene_started &&
+        cb_descs[0].first) {
+        // Snapshot AFTER the first display-copy draw, BEFORE the next
+        // VideoOut pass: early LDR misses actors; final VideoOut has HUD.
+        const VAddr address = regs.color_buffers[0].Address();
+        if (gsr2_stage_display_guest != address) {
+            gsr2_stage_display_guest = address;
+            gsr2_stage_display_draws = 0;
+        }
+        if (++gsr2_stage_display_draws == 2) {
+            upscaler->CaptureGsr2AfterVideoOutCopy(address, cb_descs[0].first);
+        }
+    }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
@@ -3842,6 +3855,8 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     DrainDrawPipe();
     static u64 videoout_frames = 0;
     ++videoout_frames;
+    gsr2_stage_display_guest = 0;
+    gsr2_stage_display_draws = 0;
     const bool had_scene = scene_started;
     const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
     // The canonical scene-to-VideoOut boundary is one per REAL requested
