@@ -55,8 +55,8 @@ def main():
         manifest_path=stage/'runtime-manifest.json'
         identity=json.loads(manifest_path.read_text())
         identity.update(application_id='com.sotc.android.daedalus',
-                        runtime_name='sotc-daedalus-bionic-0.1.0',
-                        version='0.1.0-boot-test',
+                        runtime_name='sotc-daedalus-bionic-0.1.1',
+                        version='0.1.1-boot-test',
                         game='Shadow of the Colossus')
         manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
         output=ROOT/'out/release/sotc-runtime.tar.gz'
