@@ -135,6 +135,13 @@ endif()""",'exclude desktop-only DXGI source')
          'std::min<VAddr>(Common::AlignDown(page, 4_KB) + 4_KB, range_end)',
          'SotC page range min')
     buffer.write_text(buffer_text)
+    raster=out/'shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+    raster_text=raster.read_text()
+    raster_text=swap(raster_text,
+        'return std::strtoull(v, nullptr, 10);',
+        'return static_cast<u64>(std::strtoull(v, nullptr, 10));',
+        'SotC FLUSH_US ARM64 lambda return type')
+    raster.write_text(raster_text)
 
     # Cache packing was implemented using Win32 _wfopen and wchar paths.
     # Android's std::filesystem::path is UTF-8 bytes: use the real POSIX
