@@ -3,7 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val bionicRuntime = providers.gradleProperty("gow3Bionic").orNull == "true"
+val sotcAndroid = providers.gradleProperty("sotcAndroid").orNull == "true"
+val bionicRuntime = providers.gradleProperty("gow3Bionic").orNull == "true" || sotcAndroid
 
 android {
     namespace = "com.gow3.android"
@@ -23,6 +24,12 @@ android {
             minSdk = 30
             versionName = "2.1.6-daedalus.4-bionic"
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
+            if (sotcAndroid) {
+                applicationId = "com.sotc.android.daedalus"
+                versionCode = 10001
+                versionName = "0.1.0-boot-test"
+                manifestPlaceholders["appLabel"] = "Shadow of the Colossus — Daedalus"
+            }
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -92,7 +92,8 @@ public final class GameActivity extends Activity {
         immersive();
     }
 
-    private boolean bionicRuntime() { return "com.gow3.android.bionic".equals(getPackageName()); }
+    private boolean sotcRuntime() { return "com.sotc.android.daedalus".equals(getPackageName()); }
+    private boolean bionicRuntime() { return sotcRuntime() || "com.gow3.android.bionic".equals(getPackageName()); }
 
     private boolean runtimeReady;
 
@@ -509,6 +510,11 @@ public final class GameActivity extends Activity {
             env.put("PATH","/system/bin"); env.put("TMPDIR",BASE+"/tmp"); env.put("XDG_RUNTIME_DIR",BASE+"/tmp");
             env.put("LD_LIBRARY_PATH",BASE+"/arm64/lib:"+BASE+"/arm64/python/lib");
             env.put("GOW3_PRESENT_SOCKET",BASE+"/present.sock");
+            if (sotcRuntime()) {
+                env.put("SOTC_PRESENT_SOCKET",BASE+"/present.sock");
+                env.put("SOTC_SCREEN_W","1280"); env.put("SOTC_SCREEN_H","720");
+                if (gameDir!=null) env.put("SOTC_GAME_DIR",gameDir);
+            }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();
         }
@@ -735,7 +741,8 @@ public final class GameActivity extends Activity {
         hadError=false;
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
         try {
-            Process launched=bionicRuntime() ? process("/system/bin/sh",BASE+"/run-bionic.sh","game")
+            Process launched=bionicRuntime() ? process("/system/bin/sh",
+                    BASE+(sotcRuntime() ? "/run-sotc-bionic.sh" : "/run-bionic.sh"),"game")
                 : process(ROOT+"/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
                     ROOT+"/bin/sh",BASE+"/run-gow3.sh","game"); game=launched;
             Thread log=new Thread(() -> {

@@ -64,6 +64,14 @@ public final class RuntimeInstaller {
 
     private static void validateRuntime(File root) throws Exception {
         if (path(root,"gow3port/run-bionic.sh").isFile()) {
+            boolean sotc = path(root,"gow3port/run-sotc-bionic.sh").isFile();
+            if (sotc) {
+                requireExecutable(root,"gow3port/run-sotc-bionic.sh");
+                if (!path(root,"gow3port/arm64/lib/libbbgpu.so").isFile() ||
+                        !path(root,"gow3port/scripts/sotc_prepare_game.py").isFile() ||
+                        !path(root,"gow3port/scripts/sotc-upstream/scripts/prepare.py").isFile())
+                    throw new IllegalStateException("Incomplete SotC Bionic runtime");
+            }
             for (String relative : new String[]{"gow3port/run-bionic.sh", "gow3port/arm64/bin/gow3-probe",
                     "gow3port/arm64/bin/gow3-prepare", "gow3port/arm64/bin/kgsl-chip-id",
                     "gow3port/arm64/bin/orbis-pkg-util", "gow3port/arm64/python/bin/python3.13"}) requireExecutable(root,relative);
@@ -75,7 +83,8 @@ public final class RuntimeInstaller {
             String identity = new String(Files.readAllBytes(path(root,"runtime-manifest.json").toPath()),
                     StandardCharsets.UTF_8);
             if (!identity.contains("\"schema\": 1") || !identity.contains("\"runtime_backend\": \"bionic\"") ||
-                    !identity.contains("\"application_id\": \"com.gow3.android.bionic\"") ||
+                    !identity.contains("\"application_id\": \"" +
+                            (sotc ? "com.sotc.android.daedalus" : "com.gow3.android.bionic") + "\"") ||
                     !identity.contains("\"java_package\": \"ro.cobrabm.fexdroid\""))
                 throw new IllegalStateException("Incompatible Bionic runtime identity");
             requireDirectory(root,"home/gow3port"); return;
@@ -239,7 +248,7 @@ public final class RuntimeInstaller {
             catch (Exception ignored) { /* stale marker: reinstall from the signed asset */ }
         }
 
-        status.accept("Installing God of War III runtime…");
+        status.accept("Installing Android Bionic runtime…");
         File archive = new File(files, "runtime.tar.gz.part");
         File stage = new File(files, ".runtime-staging-" + expected);
         deleteTree(stage);
