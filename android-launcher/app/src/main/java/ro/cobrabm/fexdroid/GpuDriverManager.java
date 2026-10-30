@@ -17,12 +17,63 @@ public final class GpuDriverManager {
     private static final String PANVK_ZIP="PanVK-android-v3.2-universal-2a9358a.zip";
     private static final String PANVK_SHA256="68d4eccc1442cb0bef08228c90127388e68bf6087898abc492c717b9a06ca61f";
 
+    // PanVK CSF is NOT compatible with every Mali. Reject older
+    // Job-Manager Mali (G52/G57/G76/G77/G78) and unknown GPU variants.
+    // Query the actual GLES renderer via a temporary pbuffer so the Android
+    // launcher never guesses GPU generation from the phone manufacturer.
+    private static String maliRenderer() {
+        android.opengl.EGLDisplay d=android.opengl.EGL14.eglGetDisplay(android.opengl.EGL14.EGL_DEFAULT_DISPLAY);
+        if (d==android.opengl.EGL14.EGL_NO_DISPLAY) return "";
+        int[] version=new int[2];
+        if (!android.opengl.EGL14.eglInitialize(d,version,0,version,1)) return "";
+        android.opengl.EGLContext ctx=android.opengl.EGL14.EGL_NO_CONTEXT;
+        android.opengl.EGLSurface surface=android.opengl.EGL14.EGL_NO_SURFACE;
+        try {
+            int[] configAttrs={android.opengl.EGL14.EGL_RENDERABLE_TYPE,
+                android.opengl.EGL14.EGL_OPENGL_ES2_BIT,
+                android.opengl.EGL14.EGL_SURFACE_TYPE,android.opengl.EGL14.EGL_PBUFFER_BIT,
+                android.opengl.EGL14.EGL_NONE};
+            android.opengl.EGLConfig[] configs=new android.opengl.EGLConfig[1];
+            int[] count=new int[1];
+            if (!android.opengl.EGL14.eglChooseConfig(d,configAttrs,0,configs,0,1,count,0) ||
+                count[0]<1 || configs[0]==null) return "";
+            int[] ctxAttrs={android.opengl.EGL14.EGL_CONTEXT_CLIENT_VERSION,2,
+                            android.opengl.EGL14.EGL_NONE};
+            ctx=android.opengl.EGL14.eglCreateContext(d,configs[0],
+                android.opengl.EGL14.EGL_NO_CONTEXT,ctxAttrs,0);
+            int[] surfaceAttrs={android.opengl.EGL14.EGL_WIDTH,1,
+                                android.opengl.EGL14.EGL_HEIGHT,1,android.opengl.EGL14.EGL_NONE};
+            surface=android.opengl.EGL14.eglCreatePbufferSurface(d,configs[0],surfaceAttrs,0);
+            if (ctx==android.opengl.EGL14.EGL_NO_CONTEXT ||
+                surface==android.opengl.EGL14.EGL_NO_SURFACE ||
+                !android.opengl.EGL14.eglMakeCurrent(d,surface,surface,ctx)) return "";
+            String name=android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER);
+            return name==null ? "" : name;
+        } catch (RuntimeException ex) {
+            return "";
+        } finally {
+            android.opengl.EGL14.eglMakeCurrent(d,android.opengl.EGL14.EGL_NO_SURFACE,
+                android.opengl.EGL14.EGL_NO_SURFACE,android.opengl.EGL14.EGL_NO_CONTEXT);
+            if (surface!=android.opengl.EGL14.EGL_NO_SURFACE) android.opengl.EGL14.eglDestroySurface(d,surface);
+            if (ctx!=android.opengl.EGL14.EGL_NO_CONTEXT) android.opengl.EGL14.eglDestroyContext(d,ctx);
+            android.opengl.EGL14.eglTerminate(d);
+        }
+    }
+    static boolean supportedCsfMali(String renderer) {
+        if (renderer==null) return false;
+        return java.util.regex.Pattern.compile(
+            "(?i).*\\bMali[- ]G(?:610|615|620|710|715|720|725|730)(?:\\b|[^0-9].*)")
+            .matcher(renderer).matches();
+    }
     public static boolean maliCandidate() {
-        if (new File("/dev/kgsl-3d0").exists() || !new File("/dev/mali0").exists()) return false;
+        if (Build.VERSION.SDK_INT<35 ||
+            new File("/dev/kgsl-3d0").exists() ||
+            !new File("/dev/mali0").exists()) return false;
         String hardware=Build.HARDWARE==null ? "" : Build.HARDWARE.toLowerCase(Locale.ROOT);
         String soc=Build.VERSION.SDK_INT>=31 && Build.SOC_MANUFACTURER!=null
             ? Build.SOC_MANUFACTURER.toLowerCase(Locale.ROOT) : "";
-        return !hardware.equals("qcom") && !soc.contains("qualcomm") && !soc.equals("qti");
+        return !hardware.equals("qcom") && !soc.contains("qualcomm") &&
+               !soc.equals("qti") && supportedCsfMali(maliRenderer());
     }
 
     public static String automaticDescription(Context context) {
