@@ -55,9 +55,9 @@ target_link_libraries(bbgpu PUBLIC Vulkan::Headers ${SOTC_FMT_TARGET} Boost::hea
     # absent in this separate Android renderer staging directory.
     # Keep bbgpu and shader generation enabled; only host test targets skip.
     t=swap(t,'# Explicit test targets; neither launches the game nor needs a Vulkan device.',
-           '# Explicit test targets; neither launches the game nor needs a Vulkan device.\\nif(NOT ANDROID)',
+           '# Explicit test targets; neither launches the game nor needs a Vulkan device.\nif(NOT ANDROID)',
            'host test targets')
-    t+='\\nendif() # NOT ANDROID (desktop GPU tests)\\n'
+    t+='\nendif() # NOT ANDROID (desktop GPU tests)\n'
     t+="""
 if(ANDROID)
     target_compile_definitions(bbgpu PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
