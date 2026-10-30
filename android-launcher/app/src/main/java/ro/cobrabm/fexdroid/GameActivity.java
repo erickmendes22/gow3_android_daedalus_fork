@@ -153,7 +153,7 @@ public final class GameActivity extends Activity {
         if (destroyed || !holder.getSurface().isValid()) return;
         try {
             if (Build.VERSION.SDK_INT < 30) throw new java.io.IOException("Bionic runtime requires Android 11 or newer");
-            String result=Gow3Present.start(holder,BASE+"/present.sock","1".equals(setting("android_fullscreen")));
+            String result=Gow3Present.start(holder,BASE+"/present.sock",!"0".equals(setting("android_fullscreen")));
             if (!result.startsWith("bridge running:")) throw new java.io.IOException(result);
             if (!displayOnly && game==null && !startingX) {
                 startingX=true;
@@ -178,7 +178,7 @@ public final class GameActivity extends Activity {
     private void fitSurface(int width,int height) {
         if (width<=0 || height<=0) return;
         int w=width, h=height;
-        if (!"1".equals(setting("android_fullscreen"))) {
+        if (!!"0".equals(setting("android_fullscreen"))) {
             if ((long)w*9>(long)h*16) w=h*16/9; else h=w*9/16;
         }
         FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)surface.getLayoutParams();
@@ -475,18 +475,27 @@ public final class GameActivity extends Activity {
     }
 
     private void immersive() {
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN |
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        // Galaxy A55 and other non-16:9 screens: OFF preserves Android bars
+        // and the centred 16:9 picture. ON fills the entire display.
+        boolean fullscreen=!"0".equals(setting("android_fullscreen"));
+        int flags=fullscreen ?
+            (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE) : 0;
+        getWindow().getDecorView().setSystemUiVisibility(flags);
         if (Build.VERSION.SDK_INT>=30) {
-            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setDecorFitsSystemWindows(!fullscreen);
             WindowInsetsController c=getWindow().getInsetsController();
             if (c!=null) {
-                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                c.hide(WindowInsets.Type.systemBars());
+                if (fullscreen) {
+                    c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    c.hide(WindowInsets.Type.systemBars());
+                } else {
+                    c.show(WindowInsets.Type.systemBars());
+                }
             }
         }
+        if (screen!=null) screen.post(() -> fitSurface(screen.getWidth(),screen.getHeight()));
     }
     @Override public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
