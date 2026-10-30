@@ -151,7 +151,7 @@ public final class RuntimeInstaller {
         // Runtime upgrades replace gow3port, so carry user-owned data into the
         // validated stage before promotion; the old copy remains for rollback.
         boolean sotc = path(stage,"sotcport/run-sotc-bionic.sh").isFile();
-        String[] paths = sotc ? new String[]{"sotcport/sotc.ini","sotcport/user","gow3port/user"}
+        String[] paths = sotc ? new String[]{"gow3port/user","sotcport/user","sotcport/sotc.ini"}
                 : new String[]{"gow3port/gow3.ini","gow3port/user","gow3port/Lossless.dll"};
         for (String relative : paths) {
             java.nio.file.Path source = new File(files, relative).toPath();

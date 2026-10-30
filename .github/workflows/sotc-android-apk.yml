@@ -26,6 +26,10 @@ jobs:
           ref: 27f376d602cefad357299295fa51edad587272d5
           path: upstream-sotc
           submodules: recursive
+      - name: Validate SotC-specific packaging scripts before native compilation
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -116,6 +120,16 @@ jobs:
           python3 ports/sotc/android/package_sotc_runtime.py \
             --ndk "$GOW3_NDK" --upstream upstream-sotc \
             --renderer out/sotc-android/cmake/libbbgpu.so
+          tar -tzf out/release/sotc-runtime.tar.gz > "$RUNNER_TEMP/sotc-payload-files.txt"
+          grep -Fq 'sotcport/run-sotc-bionic.sh' "$RUNNER_TEMP/sotc-payload-files.txt"
+          grep -Fq 'sotcport/sotc.default.ini' "$RUNNER_TEMP/sotc-payload-files.txt"
+          grep -Fq 'sotcport/arm64/bin/sotc-probe' "$RUNNER_TEMP/sotc-payload-files.txt"
+          if grep -Fq 'God_of_War_III_Remastered.xml' "$RUNNER_TEMP/sotc-payload-files.txt"; then
+            echo "::error::SotC package includes GoW3 game patches"; exit 1
+          fi
+          if grep -q '^gow3port/' "$RUNNER_TEMP/sotc-payload-files.txt"; then
+            echo "::error::SotC package still uses the GoW3 game data directory"; exit 1
+          fi
           chmod +x android-launcher/gradlew
           android-launcher/gradlew -p android-launcher :app:assembleRelease \
             -PsotcAndroid=true --no-daemon --max-workers=2
@@ -123,10 +137,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.1-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.2-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.1-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.1-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.2-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.2-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
