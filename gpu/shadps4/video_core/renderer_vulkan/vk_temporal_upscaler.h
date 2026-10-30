@@ -103,6 +103,10 @@ public:
     void CaptureGsr2PreHudScene(VAddr guest_address);
     // Snapshot the guest framebuffer AFTER its first scene-copy draw, BEFORE later HUD draws.
     void CaptureGsr2AfterVideoOutCopy(VAddr guest_address, VideoCore::ImageId target);
+    // The first scene-to-depthless-pass boundary is after the 3D effects,
+    // unlike the initial display copy. Reuse its per-flip source snapshot.
+    void CaptureGsr2BeforeDepthlessPass(VAddr guest_address, VideoCore::ImageId target,
+                                        u32 completed_draws);
     // Opt-in single-flip stage scan: real framebuffer readback at later draw boundaries.
     void ProbeGsr2VideoOutStage(VAddr guest_address, VideoCore::ImageId target,
                                 u32 completed_draw, u64 next_vs, u64 next_ps,
@@ -306,6 +310,8 @@ private:
         vk::Format post_scene_format = vk::Format::eUndefined;
         u32 post_scene_width = 0, post_scene_height = 0;
         bool post_scene_valid = false;
+        bool post_scene_final_valid = false;
+        u32 post_scene_completed_draws = 0;
         // Depth from the exact same pre-HUD draw as the saved color.
         VideoCore::UniqueImage depth_image;
         vk::UniqueImageView depth_view;
