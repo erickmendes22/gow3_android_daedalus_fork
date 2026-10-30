@@ -1,0 +1,49 @@
+name: SotC Android native preboot checks
+on:
+  push:
+    branches: [sotc-android-port]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preboot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate upstream and local preparation
+        run: |
+          for s in prepare.py link_modules.py content_profile.py sotc_cpu.py sotc_modes.py; do
+            test -s "upstream-sotc/scripts/$s"
+          done
+          python -m py_compile ports/sotc/android/prepare_game.py
+          python -m unittest discover -s tests -p 'test_sotc_*.py' -v
+      - name: Host test low VA
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror ports/sotc/android/lowmem.c tests/test_sotc_lowmem.c -o /tmp/sotc-lowmem-test
+          /tmp/sotc-lowmem-test
+      - uses: android-actions/setup-android@v3
+      - name: Build native ARM64 component
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          ndk="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          mkdir -p out/sotc-android
+          "$ndk/bin/aarch64-linux-android30-clang" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -c ports/sotc/android/lowmem.c -o out/sotc-android/lowmem.o
+          "$ndk/bin/llvm-ar" rcs out/sotc-android/libsotc-lowmem.a out/sotc-android/lowmem.o
+          "$ndk/bin/llvm-readelf" -h out/sotc-android/lowmem.o | grep -q AArch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-bionic-lowmem-preboot-only
+          path: out/sotc-android/libsotc-lowmem.a
+          if-no-files-found: error
