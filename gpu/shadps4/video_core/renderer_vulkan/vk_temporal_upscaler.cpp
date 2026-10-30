@@ -698,8 +698,10 @@ void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
         color.info.num_samples != 1 ||
         !bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc))
         return;
-    if (!slot->post_scene_image) {
+    if (!slot->post_scene_image || slot->post_scene_width != w ||
+        slot->post_scene_height != h || slot->post_scene_format != slot->format) {
         scheduler.Finish();
+        slot->post_scene_view.reset();
         slot->post_scene_image =
             VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
         slot->post_scene_image.Create(vk::ImageCreateInfo{
@@ -715,6 +717,9 @@ void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
             .image = vk::Image(slot->post_scene_image),
             .viewType = vk::ImageViewType::e2D, .format = slot->format,
             .subresourceRange = {vk::ImageAspectFlagBits::eColor,0,1,0,1}}));
+        slot->post_scene_width = w;
+        slot->post_scene_height = h;
+        slot->post_scene_format = slot->format;
     }
     scheduler.EndRendering();
     runtime.Transit(&color, vk::ImageLayout::eTransferSrcOptimal,
