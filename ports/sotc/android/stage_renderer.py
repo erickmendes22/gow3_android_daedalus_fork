@@ -202,7 +202,7 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {
 #else
 extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
         'safe ARM64 host signal diagnostic')
-    log_source+='\\n#endif // __aarch64__ debug dump\\n'
+    log_source+='\n#endif // __aarch64__ debug dump\n'
     write_log.write_text(log_source)
 
     # The original in-game menu expects desktop SDL events. On Android the
