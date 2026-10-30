@@ -246,7 +246,7 @@ public final class GameActivity extends Activity {
         });
          */
         menuItem("ic_refresh","Restart game","Unsaved progress is lost",() -> new AlertDialog.Builder(this)
-            .setTitle(UiText.get(this, "Restart God of War III?")).setMessage(UiText.get(this, "Any unsaved progress will be lost."))
+            .setTitle(sotcRuntime() ? "Restart Shadow of the Colossus?" : UiText.get(this, "Restart God of War III?")).setMessage(UiText.get(this, "Any unsaved progress will be lost."))
             .setNegativeButton(UiText.get(this, "Cancel"),null).setPositiveButton(UiText.get(this, "Restart"),(dialog,which) -> restartGame()).show());
 
         section("Graphics");
@@ -255,10 +255,18 @@ public final class GameActivity extends Activity {
         // （model_lod）在本仓库启动链路没有消费方，已在 SettingsDialog.show() 里注释掉。
         // fps_limit 的摘要取值域与 SettingsDialog.FPS_VALUES 和运行时 FPS_LIMITS
         // （30/60/120/240/0）对齐。
-        graphicsItem=menuItem("ic_tune","Graphics settings","",() -> {
-            closeDrawer();
-            new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).show();
-        });
+        if (!sotcRuntime()) {
+            graphicsItem=menuItem("ic_tune","Graphics settings","",() -> {
+                closeDrawer();
+                new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).show();
+            });
+        } else {
+            graphicsItem=menuItem("ic_tune","Shadow of the Colossus settings","Change settings in the launcher",() -> {
+                closeDrawer();
+                android.widget.Toast.makeText(this,
+                    "Configure resolution, FPS and patches on the launcher Home screen.",android.widget.Toast.LENGTH_LONG).show();
+            });
+        }
 
         section("Controls");
         controllerItem=menuItem("ic_gamepad","On-screen controller","",() -> {
@@ -514,6 +522,24 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_PRESENT_SOCKET",BASE+"/present.sock");
                 env.put("SOTC_SCREEN_W","1280"); env.put("SOTC_SCREEN_H","720");
                 if (gameDir!=null) env.put("SOTC_GAME_DIR",gameDir);
+                String sotcResolution=setting("sotc_resolution");
+                if(sotcResolution==null) sotcResolution="720p";
+                switch(sotcResolution) {
+                    case "360p": env.put("SOTC_RENDER","640x360"); break;
+                    case "540p": env.put("SOTC_RENDER","960x540"); break;
+                    case "900p": env.put("SOTC_RENDER","1600x900"); break;
+                    case "1080p": env.put("SOTC_RENDER","1920x1080"); break;
+                    default: env.put("SOTC_RENDER","1280x720"); break;
+                }
+                String fps=setting("sotc_fps_mode");
+                if(!"30".equals(fps) && !"fps60".equals(fps)) fps="fps60game";
+                String modes="30".equals(fps) ? "" : fps;
+                if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
+                env.put("SOTC_MODES",modes);
+                env.put("SOTC_VSYNC","0".equals(setting("sotc_vsync")) ? "0" : "1");
+                String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
+                if("1".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
+                env.put("SOTC_CVARS",cvars);
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();
