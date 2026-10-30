@@ -226,7 +226,7 @@
     <string name="param_option_8x">8×</string>
     <string name="param_option_16x">16×</string>
     <string name="gpu_driver_title">VULKAN DRIVER</string>
-    <string name="gpu_driver_auto">Automatic (R6 on Adreno 7xx; V37 on 8xx; system otherwise)</string>
+    <string name="gpu_driver_auto">Automatic (Turnip on Adreno; PanVK on compatible Mali; system otherwise)</string>
     <string name="gpu_driver_system">System driver</string>
     <string name="gpu_driver_bundled">Bundled Turnip Gen8 V37 patched</string>
     <string name="gpu_driver_import">Import driver ZIP</string>
@@ -356,4 +356,7 @@
     <string name="controller_circle">CIRCLE</string>
     <string name="controller_cross">CROSS</string>
     <string name="controller_square">SQUARE</string>
+    <string name="settings_fullscreen_title">Fullscreen (fill display)</string>
+    <string name="settings_fullscreen_desc">Off: original centered 16:9 with system bars. On: immersive full display. Applies at next launch.</string>
+    <string name="gpu_driver_mali_notice">Mali CSF (Android 15+): Automatic uses experimental PanVK 3.2 on supported models. Unsupported Mali uses system Vulkan. PanVK is not for Adreno.</string>
 </resources>

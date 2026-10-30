@@ -119,6 +119,7 @@ internal fun HomePopup(
     var engine by remember(kind) { mutableStateOf(ini["engine_fps"] ?: "60") }
     var vsync by remember(kind) { mutableStateOf(ini["vsync"] != "0") }
     var resolution by remember(kind) { mutableStateOf(ini["render_resolution"] ?: "720p") }
+    var fullscreen by remember(kind) { mutableStateOf(ini["android_fullscreen"] == "1") }
     val isBionic = LocalContext.current.packageName == "com.gow3.android.bionic"
     var gsr2 by remember(kind) { mutableStateOf(ini["upscaler"] == "gsr2") }
     var gsrPreset by remember(kind) {
@@ -169,6 +170,16 @@ internal fun HomePopup(
                         }
                         Spacer(Modifier.height(10.dp))
                     }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.settings_fullscreen_title),
+                                color = LauncherColors.textPrimary, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.settings_fullscreen_desc),
+                                color = LauncherColors.textMuted, fontSize = 12.sp)
+                        }
+                        Switch(checked = fullscreen, onCheckedChange = { fullscreen = it })
+                    }
                     Text(stringResource(R.string.popup_internal_resolution), color = LauncherColors.gold,
                         fontWeight = FontWeight.Bold)
                     resolutions.forEach { value ->
@@ -206,9 +217,11 @@ internal fun HomePopup(
                         "vsync" to if (vsync) "1" else "0")
                     HomePopupKind.VIDEO -> if (isBionic) mapOf(
                         "render_resolution" to resolution,
+                        "android_fullscreen" to (if (fullscreen) "1" else "0"),
                         "upscaler" to (if (gsr2) "gsr2" else "off"),
                         "preset" to "0", // Spatial filter has no quality presets
-                    ) else mapOf("render_resolution" to resolution)
+                    ) else mapOf("render_resolution" to resolution,
+                        "android_fullscreen" to (if (fullscreen) "1" else "0"))
                     HomePopupKind.CHEATS -> enabled.mapValues { if (it.value) "1" else "0" }
                     HomePopupKind.MODS -> emptyMap()
                 }

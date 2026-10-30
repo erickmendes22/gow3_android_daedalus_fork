@@ -190,11 +190,40 @@ public final class GameActivity extends Activity {
 
     private void buildScreen() {
         screen=new FrameLayout(this); screen.setBackgroundColor(Color.BLACK);
+        // Android 15 may force edge-to-edge even with decorFitsSystemWindows.
+        // Derive safe content insets from actual screen coordinates; do not
+        // double-inset devices that already place decor below the status bar.
+        if (Build.VERSION.SDK_INT>=30) {
+            screen.setOnApplyWindowInsetsListener((v,insets) -> {
+                int[] origin={0,0};
+                v.getLocationOnScreen(origin);
+                android.graphics.Rect bounds=getWindowManager().getCurrentWindowMetrics().getBounds();
+                android.graphics.Insets bars=insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                boolean full="1".equals(setting("android_fullscreen"));
+                int left=full ? 0 : Math.max(0,bars.left-origin[0]);
+                int top=full ? 0 : Math.max(0,bars.top-origin[1]);
+                int right=full ? 0 : Math.max(0,origin[0]+v.getWidth()-(bounds.right-bars.right));
+                int bottom=full ? 0 : Math.max(0,origin[1]+v.getHeight()-(bounds.bottom-bars.bottom));
+                if (v.getPaddingLeft()!=left || v.getPaddingTop()!=top ||
+                    v.getPaddingRight()!=right || v.getPaddingBottom()!=bottom) {
+                    v.setPadding(left,top,right,bottom);
+                    v.post(() -> fitSurface(Math.max(1,v.getWidth()-left-right),
+                                            Math.max(1,v.getHeight()-top-bottom)));
+                }
+                return insets;
+            });
+        }
         surface=new SurfaceView(this);
         screen.addView(surface,frame(-1,-1,Gravity.CENTER));
         // The game is 16:9: the largest 16:9 area of the screen, black bars around it (a foldable's
         // near-square inner screen, a tall cover screen). Refitted when folding or rotating.
-        screen.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> fitSurface(r-l,b-t));
+        screen.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
+            fitSurface(Math.max(1,r-l-v.getPaddingLeft()-v.getPaddingRight()),
+                       Math.max(1,b-t-v.getPaddingTop()-v.getPaddingBottom()));
+            if (Build.VERSION.SDK_INT>=30 && (r-l!=or-ol || b-t!=ob-ot))
+                v.requestApplyInsets();
+        });
         surface.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override public void surfaceCreated(SurfaceHolder h) {
                 if (!hasGame()) {
@@ -285,7 +314,10 @@ public final class GameActivity extends Activity {
         // （30/60/120/240/0）对齐。
         graphicsItem=menuItem("ic_tune","Graphics settings","",() -> {
             closeDrawer();
-            new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).show();
+            new SettingsDialog(this,new File(BASE,"gow3.ini"),() -> {
+                immersive();
+                restartGame();
+            }).show();
         });
 
         if (bionicRuntime()) {
@@ -495,7 +527,11 @@ public final class GameActivity extends Activity {
                 }
             }
         }
-        if (screen!=null) screen.post(() -> fitSurface(screen.getWidth(),screen.getHeight()));
+        if (screen!=null) screen.post(() -> {
+            if (Build.VERSION.SDK_INT>=30) screen.requestApplyInsets();
+            fitSurface(Math.max(1,screen.getWidth()-screen.getPaddingLeft()-screen.getPaddingRight()),
+                       Math.max(1,screen.getHeight()-screen.getPaddingTop()-screen.getPaddingBottom()));
+        });
     }
     @Override public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);

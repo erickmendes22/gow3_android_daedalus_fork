@@ -113,13 +113,6 @@ internal fun HomeScreen(
             HomeAction(stringResource(R.string.home_resolution_summary_fmt, iniValues["render_resolution"] ?: "720p")) {
                 popup = HomePopupKind.VIDEO
             }
-            if (isBionic) {
-                val gsr2Preset = if (iniValues["upscaler"] == "gsr2")
-                    R.string.popup_gsr2_on else R.string.popup_gsr2_summary_off
-                HomeAction(stringResource(R.string.home_gsr2_summary_fmt, stringResource(gsr2Preset))) {
-                    popup = HomePopupKind.VIDEO
-                }
-            }
         }
         HomeSection(stringResource(R.string.home_section_mods)) {
             HomeAction(stringResource(R.string.home_mods_action)) { popup = HomePopupKind.MODS }

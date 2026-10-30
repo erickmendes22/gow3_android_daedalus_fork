@@ -49,6 +49,8 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
     onChangeLanguage: (String) -> Unit) {
     val context = LocalContext.current
     val bionic = context.packageName == "com.gow3.android.bionic"
+    val iniFile = remember(context) { java.io.File(context.filesDir, "gow3port/gow3.ini") }
+    var ini by remember { mutableStateOf(Gow3Ini.read(iniFile)) }
     val gameplayPrefs = remember(context) {
         context.getSharedPreferences("gow3", android.content.Context.MODE_PRIVATE)
     }
@@ -70,7 +72,10 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refresh()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refresh()
+                ini = Gow3Ini.read(iniFile)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -97,6 +102,16 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
         Text(stringResource(R.string.settings_gameplay_section), color = LauncherColors.gold,
             fontSize = 15.sp, fontWeight = FontWeight.Bold)
         GameplayPreferenceSwitch(
+            stringResource(R.string.settings_fullscreen_title),
+            stringResource(R.string.settings_fullscreen_desc),
+            ini["android_fullscreen"] == "1"
+        ) { checked ->
+            val value = if (checked) "1" else "0"
+            if (Gow3Ini.write(iniFile, mapOf("android_fullscreen" to value)))
+                ini = ini + ("android_fullscreen" to value)
+            else showResult(context.getString(R.string.settings_save_failed))
+        }
+        GameplayPreferenceSwitch(
             stringResource(R.string.settings_direct_game_title),
             stringResource(R.string.settings_direct_game_desc), directGame
         ) { checked ->
@@ -122,8 +137,6 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
             else showResult(context.getString(R.string.settings_save_failed))
         }
         Text(stringResource(R.string.settings_hud_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        val iniFile = remember(context) { java.io.File(context.filesDir, "gow3port/gow3.ini") }
-        var ini by remember { mutableStateOf(Gow3Ini.read(iniFile)) }
         androidx.compose.foundation.layout.Row(
             Modifier.fillMaxWidth().background(LauncherColors.surface, RoundedCornerShape(12.dp))
                 .border(BorderStroke(1.dp, LauncherColors.gold.copy(alpha = .5f)),

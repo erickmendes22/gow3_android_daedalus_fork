@@ -95,6 +95,8 @@ internal fun GpuDriverCard() {
             }
         }
         Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
+        Text(stringResource(R.string.gpu_driver_mali_notice),
+            color = LauncherColors.gold, fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy, onClick = {
                 try { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
