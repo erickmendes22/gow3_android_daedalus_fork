@@ -407,7 +407,81 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
         pane=swap(pane,call,
                   'ImGui::TextColored(grey, "%s", SotcUi::T("'+portuguese+'", "'+english+'"))',
                   'safe translated UI text '+english)
-    overlay.write_text(pane)
+    # SotC Android renders directly to the AHB presenter; the desktop
+    # Dear ImGui helper window and swapchain are never created. ImGui's
+    # dynamic-loader table nevertheless requires desktop surface functions.
+    # Mark only those unused entries optional. All actually used functions
+    # remain mandatory and are checked before ImGui_ImplVulkan_Init.
+    imgui_backend=out/'third_party/imgui/backends/imgui_impl_vulkan.cpp'
+    imguivk=imgui_backend.read_text()
+    imguivk=swap(imguivk, '#include <stdio.h>',
+        '#include <stdio.h>\n#ifdef __ANDROID__\n#include <cstring>\n#endif',
+        'SotC Android ImGui platform function include')
+    imguivk=swap(imguivk,
+        r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
+#define IMGUI_VULKAN_FUNC_LOAD(func) \''',
+        r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
+#ifdef __ANDROID__
+// These functions belong only to ImGui_ImplVulkanH_* desktop window helpers.
+// The SotC Android renderer uses native AHardwareBuffer images instead.
+static bool SotcUnusedDesktopVkFunction(const char* name) {
+    return std::strcmp(name, "vkCreateSwapchainKHR") == 0 ||
+           std::strcmp(name, "vkDestroySurfaceKHR") == 0 ||
+           std::strcmp(name, "vkDestroySwapchainKHR") == 0 ||
+           std::strcmp(name, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") == 0 ||
+           std::strcmp(name, "vkGetPhysicalDeviceSurfaceFormatsKHR") == 0 ||
+           std::strcmp(name, "vkGetPhysicalDeviceSurfacePresentModesKHR") == 0 ||
+           std::strcmp(name, "vkGetSwapchainImagesKHR") == 0;
+}
+#else
+static bool SotcUnusedDesktopVkFunction(const char*) { return false; }
+#endif
+#define IMGUI_VULKAN_FUNC_LOAD(func) \''',
+        'headless-only optional ImGui desktop Vulkan functions')
+    imguivk=swap(imguivk,
+        r'''    if (func == nullptr)   \
+        return false;''',
+        r'''    if (func == nullptr && !SotcUnusedDesktopVkFunction(#func)) { \
+        std::fprintf(stderr, "SotC ImGui: required Vulkan entry %s is unavailable\n", #func); \
+        return false; \
+    }''',
+        'fail safely when ImGui Vulkan loader misses required functions')
+    imgui_backend.write_text(imguivk)
+
+    pane=swap(pane,
+        '''    ImGui_ImplVulkan_LoadFunctions(
+        instance.ApiVersion(),
+        [](const char* name, void* user) {
+            return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(
+                *static_cast<const vk::Instance*>(user), name);
+        },
+        const_cast<vk::Instance*>(&vk_instance));''',
+        '''    // Resolve device commands through vkGetDeviceProcAddr first. The
+    // direct Turnip HAL path does not guarantee device commands through
+    // vkGetInstanceProcAddr, and the fallback must not call NULL PFNs.
+    struct SotcVulkanHandles { vk::Instance instance; vk::Device device; };
+    SotcVulkanHandles handles{vk_instance, instance.GetDevice()};
+    const bool functions_loaded=ImGui_ImplVulkan_LoadFunctions(
+        instance.ApiVersion(),
+        [](const char* name, void* user) -> PFN_vkVoidFunction {
+            const auto& h=*static_cast<SotcVulkanHandles*>(user);
+            PFN_vkVoidFunction fn=nullptr;
+            if (VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr)
+                fn=VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr(h.device,name);
+            if (!fn && VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr)
+                fn=VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(h.instance,name);
+            return fn;
+        },
+        &handles);
+    if (!functions_loaded) {
+        std::fprintf(stderr,
+            "SotC Android: disabled Vulkan ImGui overlay (missing required entry); game renderer remains active\\n");
+        ImGui::DestroyContext();
+        s_instance=nullptr;
+        return;
+    }''',
+        'SotC Vulkan Android ImGui required-function guard and device proc loader')
+    pane.write_text(pane)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
