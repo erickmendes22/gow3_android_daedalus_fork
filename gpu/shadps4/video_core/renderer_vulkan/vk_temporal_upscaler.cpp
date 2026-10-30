@@ -425,6 +425,9 @@ void TemporalUpscaler::ProbeGsr2PreHudSource(VAddr guest_address) {
 }
 
 bool TemporalUpscaler::PreHudEnabled() const {
+    // Spatial GSR2 filters the completed VideoOut, including UI. There is no
+    // temporal history to isolate, so do not capture/recombine the 3D stage.
+    if (std::getenv("GOW3_ANDROID_PORT") && UseGsr2()) return false;
     const char* mode = std::getenv("GOW3_GSR2_PREHUD_COMPOSITE");
     return mode && mode[0] == '1' && Gsr2GuestDisplayMode() &&
            Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
@@ -1024,7 +1027,11 @@ bool TemporalUpscaler::OnFrameStart() {
         Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||
         !std::getenv("GOW3_ANDROID_PORT") ||
         std::getenv("GOW3_GSR2_FORCE_UNVERIFIED_JITTER");
-    const bool jitter_on = active && (!Gsr2GuestDisplayMode() || prehud_temporal) &&
+    // Spatial-only output has exactly one current-frame sample: any Halton
+    // displacement without matching temporal accumulation causes shimmer.
+    const bool spatial_only_android = std::getenv("GOW3_ANDROID_PORT") && UseGsr2();
+    const bool jitter_on = active && !spatial_only_android &&
+                           (!Gsr2GuestDisplayMode() || prehud_temporal) &&
                            verified_subpixel_jitter &&
                            settings.jitter && !Gow3Toggle::Disabled(1u << 25);
     if (active && prehud_temporal && !verified_subpixel_jitter) {
@@ -3183,8 +3190,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     auto& source = texture_cache.GetImage(guest);
     const u32 w = source.info.size.width;
     const u32 h = source.info.size.height;
-    // A *real* source must equal the exact raster installed by the eboot
-    // patch. Reject 720p guest fallback pretending to be 360p rendering.
+    // Spatial-only is a one-to-one post-filter on the ACTUAL guest VideoOut.
+    // It must never invent a 720p output or reject 480p/900p/1080p/8K
+    // because of old upscaler preset dimensions.
+    const bool spatial_only = std::getenv("GOW3_ANDROID_PORT") && UseGsr2();
     u32 expected_w = target_width;
     u32 expected_h = target_height;
     if (const char* input = std::getenv("GOW3_GSR2_INPUT_RES"); input) {
@@ -3194,8 +3203,10 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             expected_h = eh;
         }
     }
-    if (w != expected_w || h != expected_h || !w || !h ||
-        w > target_width || h > target_height ||
+    const u32 maximum_2d = instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+    if ((!spatial_only && (w != expected_w || h != expected_h ||
+                            w > target_width || h > target_height)) ||
+        !w || !h || w > maximum_2d || h > maximum_2d ||
         FrameCapture::IsDisplayBuffer(source.info.guest_address) == false ||
         (source.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
          source.info.pixel_format != vk::Format::eR8G8B8A8Srgb &&
@@ -3208,7 +3219,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                         vk::to_string(source.info.pixel_format).c_str());
         return false; // The ordinary guest image remains intact.
     }
-    const u32 ow = target_width, oh = target_height;
+    const u32 ow = spatial_only ? w : target_width;
+    const u32 oh = spatial_only ? h : target_height;
     // Only the scene copied BEFORE guest VideoOut UI is eligible for GSR2
     // temporal history. The fallback remains byte-for-byte the old path.
     const bool prehud = PreHudEnabled() && pre_hud_completed_slot >= 0 &&
@@ -3265,7 +3277,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     // Native AA was already stable: never change its depth/motion behavior.
     // Enable the experimental temporal scene feed only for verified lower
     // input-raster presets (Quality/Balanced/Performance/Ultra Performance).
-    bool use_scene_motion = Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
+    bool use_scene_motion = !spatial_only &&
+                            Gow3Settings::RenderPreset() != Gow3Settings::NativeAA &&
                             std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
                             (!PreHudEnabled() || prehud) &&
                             source_matches_flip &&
@@ -3423,7 +3436,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     const bool proven_camera_chain =
         camera_motion.CompletedPreviousMatchesTemporalScene();
     const bool previous_scene_history_eligible = guest_display_history_contiguous;
-    const bool reuse_history = use_scene_motion && previous_scene_history_eligible &&
+    const bool reuse_history = !spatial_only && use_scene_motion &&
+                               previous_scene_history_eligible &&
                                temporal_gap >= 1 && temporal_gap <= MaxTemporalSceneFlipGap &&
                                proven_camera_chain;
     // At dispatch, the flag means THIS candidate may read the existing scene
@@ -3804,9 +3818,10 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
 }
 
 bool TemporalUpscaler::Gsr2GuestDisplayMode() const {
-    return std::getenv("GOW3_ANDROID_PORT") && UseGsr2() &&
-           (Gow3Settings::RenderPreset() == Gow3Settings::NativeAA ||
-            std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT"));
+    // Android spatial-only must operate on the actual presented guest frame
+    // for EVERY render resolution, including Native AA, 900p and 8K.
+    // Do not let a preset or the old forced-720p flag hide the filter.
+    return std::getenv("GOW3_ANDROID_PORT") && UseGsr2();
 }
 
 bool TemporalUpscaler::UseGsr2() const {
@@ -3822,8 +3837,12 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
     // 240 Hz PS4 VideoOut flips are not 240 unique game scene frames. GSR2
     // keeps temporal history in its own provider, while filler flips use a
     // separate spatial provider whose resets cannot erase that history.
-    const bool spatial_videoout = guest_display_mode_recording &&
-                                  PreHudEnabled() && !guest_display_motion_ready;
+    // Android: temporal reprojection is DISABLED, not merely masked by UI.
+    // All frames use the same current-frame spatial provider and reset=1.
+    // The experimental temporal provider remains in source control for later.
+    const bool spatial_only = std::getenv("GOW3_ANDROID_PORT") && UseGsr2();
+    const bool spatial_videoout = spatial_only ||
+        (guest_display_mode_recording && PreHudEnabled() && !guest_display_motion_ready);
     auto& provider = spatial_videoout ? gsr2_spatial : gsr2;
     if (!provider) {
         provider = std::make_unique<GsrUpscaler>(instance, scheduler);
@@ -3862,7 +3881,7 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
             std::printf("GSR2: camera/motion unavailable; running current-frame spatial reconstruction (history reset each frame)\n");
         }
     }
-    const bool dispatch_reset =
+    const bool dispatch_reset = spatial_only ||
         (guest_display_mode_recording ? !guest_display_history_contiguous : reset) ||
         !temporal_ready;
     const std::array<float,2> matched_jitter = guest_display_mode_recording
@@ -3889,17 +3908,19 @@ bool TemporalUpscaler::RecordGsr2(vk::CommandBuffer cmdbuf, vk::ImageView color,
         // the camera pair is invalid (and GSR2 resets history). Passing zero
         // here described a different sample position than the one rendered,
         // introducing edge shimmer in every spatial-reset frame.
-        .jitter = {sign * matched_jitter[0], sign * matched_jitter[1]},
+        .jitter = spatial_only ? std::array<float,2>{0.0f,0.0f} :
+                                   std::array<float,2>{sign * matched_jitter[0],
+                                                       sign * matched_jitter[1]},
         // Unverified CUSA01623 camera has proj.y == 0. VerticalFov() would
         // return PI and make tan(FOV/2) singular in the GSR2 depth shader.
         // Use a finite 60-degree fallback only for current-frame spatial mode.
-        .vertical_fov = temporal_ready
+        .vertical_fov = temporal_ready && !spatial_only
             ? (guest_display_mode_recording ? camera_motion.CompletedVerticalFov()
                                             : camera_motion.VerticalFov())
             : 1.04719755f,
-        .camera_still = temporal_ready
-            ? (guest_display_mode_recording ? camera_motion.CompletedCameraStill()
-                                            : camera_motion.CameraStill()) : true,
+        .camera_still = spatial_only || !temporal_ready ||
+            (guest_display_mode_recording ? camera_motion.CompletedCameraStill()
+                                           : camera_motion.CameraStill()),
         .reset = dispatch_reset,
     });
     if (!ok) {
