@@ -186,6 +186,23 @@ static std::uint64_t SotcHostCycles() { return __rdtsc(); }
     log_source=swap(log_source,'static std::uint64_t SotcHostCycles() { return SotcHostCycles(); }',
                     'static std::uint64_t SotcHostCycles() { return __rdtsc(); }',
                     'write log fallback')
+    # A Linux ARM64 signal frame stores host x0..x30, not the guest's
+    # x86 RAX/RBX. The desktop debug routine would interpret those as guest
+    # pointers and dereference arbitrary memory in a signal handler. Keep
+    # the write ring active but safely report that guest register dumps need
+    # the separate FEX guest-context reader.
+    log_source=swap(log_source,
+        'extern "C" void bbgpu_dump_guest_writes(void* ucontext) {',
+        '''#if defined(__aarch64__)
+extern "C" void bbgpu_dump_guest_writes(void* ucontext) {
+    (void)ucontext;
+    if (BbWriteLog::Mode())
+        std::fprintf(stderr, "SotC: ARM64 signal registers are host-side; guest register dump unavailable\\n");
+}
+#else
+extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
+        'safe ARM64 host signal diagnostic')
+    log_source+='\\n#endif // __aarch64__ debug dump\\n'
     write_log.write_text(log_source)
 
     # The original in-game menu expects desktop SDL events. On Android the
