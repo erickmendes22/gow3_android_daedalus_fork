@@ -5,3 +5,5 @@ No APK is packaged or advertised as visually corrected.
 Re-run after correcting the workflow YAML syntax; compile only.
 
 Run C++ ARM64 after DrawIndirectRecord regs fix dfc1de008ed36468ca08bb9bc52d445e726cd9ac.
+
+Trigger full signed experimental Bionic APK packaging and artifact upload after native runtime build succeeded in GitHub Actions run 40977302209.
