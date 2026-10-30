@@ -765,12 +765,14 @@ int main(int argc, char **argv) {
     sotc_android_image = !memcmp(magic,"BBPROBE5",8);
 #if defined(__ANDROID__) || (!defined(_WIN32) && !defined(__MINGW32__))
     if (sotc_android_image) setenv("SOTC_PORT","1",1);
+#ifdef __ANDROID__
     if (sotc_android_image) {
         if (sotc_gpu_load(!cpu_only)) fail("SotC Vulkan renderer unavailable or incompatible");
         if (sotc_gpu_available()) sotc_gpu_register_kernel();
     } else {
         gow3gpu_register_kernel();
     }
+#endif
 #endif
 #ifndef __ANDROID__
     gow3gpu_register_kernel();
