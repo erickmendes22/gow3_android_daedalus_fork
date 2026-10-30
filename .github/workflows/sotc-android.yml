@@ -3,6 +3,9 @@ on:
   push:
     branches: [sotc-android-port]
   workflow_dispatch:
+concurrency:
+  group: sotc-android-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -83,6 +86,7 @@ jobs:
           if-no-files-found: error
 
   fex-jit:
+    if: github.event_name == 'workflow_dispatch'
     name: Build SotC FEX ARM64 guest-context backend
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -162,11 +166,25 @@ jobs:
           environment-file: ci/environment.yml
           cache-environment: true
           init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: sotc-deps-cache
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - name: Build Android native third-party dependencies
         shell: bash -el {0}
         run: |
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           bash tools/android/bionic/build_deps.sh
+      - uses: actions/cache/save@v4
+        if: steps.sotc-deps-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - name: Configure game-specific SotC GPU (not GoW3 GPU)
         shell: bash -el {0}
         run: |
@@ -195,6 +213,13 @@ jobs:
           lib=out/sotc-android/cmake/libbbgpu.so
           test -s "$lib"
           "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$lib" | grep -q AArch64
+          "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D "$lib" | grep -q bbgpu_init
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-original-renderer-arm64
+          path: out/sotc-android/cmake/libbbgpu.so
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
