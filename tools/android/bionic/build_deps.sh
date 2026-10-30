@@ -16,12 +16,33 @@ mkdir -p "$prefix" "$src" "$bld"
 J=${GOW3_JOBS:-2}
 run() { "$@"; }
 
-fetch() { # name url archive-extension
-    local dir=$src/$1
-    [[ -d $dir ]] && return
-    rm -rf -- "$dir.tmp"
-    curl -fsSL "$2" -o "$src/$1.tar" && mkdir -p "$dir.tmp" && tar --no-same-owner -xf "$src/$1.tar" -C "$dir.tmp" --strip-components=1 \
-        && mv "$dir.tmp" "$dir" && rm "$src/$1.tar"
+fetch() { # name url
+    local dir=$src/$1 archive=$src/$1.tar attempt
+    [[ -d $dir ]] && return 0
+    # Network resets on GitHub mirrors can terminate entire APK builds.
+    # Retry transport failures including curl 35, then retry corrupt/short
+    # tarballs without ever promoting a partial unpacked dependency.
+    for attempt in 1 2 3; do
+        rm -rf -- "$dir.tmp"
+        rm -f -- "$archive"
+        echo "Downloading $1 (attempt $attempt/3)"
+        if curl -fLSs --retry 4 --retry-all-errors --retry-delay 3 \
+                --connect-timeout 25 --max-time 240 --speed-limit 1024 \
+                --speed-time 45 "$2" -o "$archive"; then
+            mkdir -p "$dir.tmp"
+            if tar --no-same-owner -xf "$archive" -C "$dir.tmp" --strip-components=1; then
+                mv "$dir.tmp" "$dir"
+                rm -f "$archive"
+                return 0
+            fi
+        fi
+        rm -rf -- "$dir.tmp"
+        rm -f -- "$archive"
+        echo "Dependency $1 download/extraction failed (attempt $attempt)" >&2
+        sleep "$attempt"
+    done
+    echo "Dependency $1 could not be downloaded intact from $2" >&2
+    return 1
 }
 cm() { # name source-dir extra cmake args...
     local name=$1 sdir=$2; shift 2
