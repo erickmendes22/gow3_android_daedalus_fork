@@ -77,8 +77,8 @@ endif()
                  renderer/'vk_framegen_android.cpp')
     c=out/'CMakeLists.txt'
     cmake=c.read_text()
-    cmake=swap(cmake,'list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")',
-"""list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
+    cmake=swap(cmake,r'list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")',
+r"""list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
 if(ANDROID)
     list(FILTER VIDEO_CORE EXCLUDE REGEX "/vk_dlssg\\.cpp$|/vk_framegen\\.cpp$")
 endif()""",'exclude desktop-only DXGI source')
