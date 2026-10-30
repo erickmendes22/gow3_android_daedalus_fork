@@ -60,13 +60,17 @@ cm zydis "$src/zydis-4.1.1" -DBUILD_SHARED_LIBS=OFF -DZYDIS_BUILD_EXAMPLES=OFF -
 cm xxhash "$src/xxhash-0.8.3/cmake_unofficial" -DBUILD_SHARED_LIBS=OFF -DXXHASH_BUILD_XXHSUM=OFF
 cm miniz "$src/miniz-3.1.2" -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DINSTALL_PROJECT=ON
 # FFmpeg (avplayer/videodec): static, PIC, no programs, only built-in codecs/demuxers.
-if [[ ! -f $prefix/.done-ffmpeg ]]; then
+# The NEON FFT assembly accesses ff_tx_tab_* symbols directly via ADRP.
+# Hide static FFmpeg globals so the references are non-preemptible in libbbgpu.so.
+# Versioned marker forces rebuilding old FFmpeg archives lacking hidden visibility.
+if [[ ! -f $prefix/.done-ffmpeg-hidden-v1 ]]; then
     tc=$ndk/toolchains/llvm/prebuilt/linux-x86_64
+    rm -rf "$bld/ffmpeg"
     mkdir -p "$bld/ffmpeg" && pushd "$bld/ffmpeg" >/dev/null
     "$src/ffmpeg-7.1.5/configure" --prefix="$prefix" --enable-cross-compile --target-os=android --arch=aarch64 \
         --cc="$tc/bin/aarch64-linux-android$api-clang" --cxx="$tc/bin/aarch64-linux-android$api-clang++" \
         --ar="$tc/bin/llvm-ar" --ranlib="$tc/bin/llvm-ranlib" --strip="$tc/bin/llvm-strip" --nm="$tc/bin/llvm-nm" \
-        --enable-static --disable-shared --enable-pic --disable-programs --disable-doc --disable-debug \
+        --enable-static --disable-shared --enable-pic --extra-cflags=-fvisibility=hidden --disable-programs --disable-doc --disable-debug \
         --disable-avdevice --disable-avfilter --disable-network --disable-autodetect --disable-mediacodec --disable-jni >"$bld/ffmpeg-configure.log" 2>&1 \
         || { tail -30 "$bld/ffmpeg-configure.log" >&2; exit 1; }
     run make -j"$J" >"$bld/ffmpeg.log" 2>&1 || { tail -30 "$bld/ffmpeg.log" >&2; exit 1; }
@@ -74,6 +78,6 @@ if [[ ! -f $prefix/.done-ffmpeg ]]; then
     # configure's Android target links libandroid/libmediandk for MediaCodec/JNI, both disabled here.
     sed -i 's/ -landroid -lmediandk//' "$prefix"/lib/pkgconfig/libavutil.pc
     popd >/dev/null
-    touch "$prefix/.done-ffmpeg"
+    touch "$prefix/.done-ffmpeg-hidden-v1"
 fi
 echo "Bionic deps in $prefix"
