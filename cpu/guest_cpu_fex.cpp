@@ -312,7 +312,13 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     std::atexit(FEXCore::Allocator::ClearHooks);
     LogMan::Throw::InstallHandler(LogAssert);
     LogMan::Msg::InstallHandler(LogMessage);
-    FEX::Config::LoadConfig("bb-probe", environ);
+    // SotC's ARM64 application is not a GoW3 guest: load its own per-app
+    // FEX configuration before the JIT context and translated threads exist.
+    const bool sotc_guest = [] {
+        const char* value=std::getenv("SOTC_PORT");
+        return value && value[0]=='1';
+    }();
+    FEX::Config::LoadConfig(sotc_guest ? "sotc-probe" : "bb-probe", environ);
     FEXCore::Config::ReloadMetaLayer();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_IS64BIT_MODE, "1");
     // The launcher ships gow3-fex-compatible.json, but this embedded
@@ -322,14 +328,15 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     // can cause JIT cache resizing stutters. This device-oriented profile
     // keeps a fixed L1 unless GOW3_FEX_DYNAMIC_L1=1 is explicitly selected.
     // Preserve FEX's default TSO barriers for guest threading correctness.
-    const bool dynamic_l1 = [] {
-        const char* value = std::getenv("GOW3_FEX_DYNAMIC_L1");
+    const bool dynamic_l1 = [sotc_guest] {
+        const char* value = sotc_guest ? std::getenv("SOTC_FEX_DYNAMIC_L1") : nullptr;
+        if (!value) value=std::getenv("GOW3_FEX_DYNAMIC_L1");
         return value && value[0] == '1';
     }();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_DYNAMICL1CACHE,
                          dynamic_l1 ? "1" : "0");
-    std::printf("GOW3_FEX_CACHE dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
-                int(dynamic_l1));
+    std::printf("%s dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
+                sotc_guest ? "SOTC_FEX_CACHE" : "GOW3_FEX_CACHE", int(dynamic_l1));
     const auto features = FEX::FetchHostFeatures();
     wide_xmm = features.SupportsAVX && features.SupportsSVE256;
     ctx = FEXCore::Context::Context::CreateNewContext(features).release();
