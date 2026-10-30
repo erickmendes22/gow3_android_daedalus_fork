@@ -180,6 +180,35 @@ endif()""",'exclude desktop-only DXGI source')
 #endif''',
          'SotC driver cache store')
     pipeline.write_text(pipeline_text)
+
+    # The Windows high-resolution waitable timer in the optional FSR3
+    # frame generator is not available on Bionic. Preserve the rest of the
+    # real SotC FSR3 GPU path and use a monotonic host clock for pacing.
+    fsr_fg=out/'shadps4/video_core/renderer_vulkan/vk_fsrfg.cpp'
+    fg_text=fsr_fg.read_text()
+    fg_text=swap(fg_text,'#include <windows.h>',
+        '#ifdef _WIN32\n#include <windows.h>\n#else\n#include <thread>\n#endif',
+        'FSR3 Windows platform header')
+    fg_text=swap(fg_text,'void SleepUntil(Clock::time_point due) {\n    static HANDLE timer =',
+        '''void SleepUntil(Clock::time_point due) {
+#ifndef _WIN32
+    using namespace std::chrono_literals;
+    for (;;) {
+        const auto remaining=due-Clock::now();
+        if (remaining<=0ns) return;
+        if (remaining>1500us)
+            std::this_thread::sleep_for(remaining-1000us);
+        else
+            std::this_thread::yield();
+    }
+#else
+    static HANDLE timer =''',
+        'SotC FSR3 native frame pacing')
+    fg_text=swap(fg_text,
+        '        YieldProcessor();\n    }\n}\n\n} // namespace',
+        '        YieldProcessor();\n    }\n#endif\n}\n\n} // namespace',
+        'SotC FSR3 Win32 timer closure')
+    fsr_fg.write_text(fg_text)
     page=out/'shadps4/video_core/page_manager.cpp'
     page_code=page.read_text()
     page_code=swap(page_code,'char where[MAX_PATH] = "?";',

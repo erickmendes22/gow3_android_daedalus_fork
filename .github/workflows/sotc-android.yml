@@ -179,7 +179,7 @@ jobs:
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           bash tools/android/bionic/build_deps.sh
       - uses: actions/cache/save@v4
-        if: steps.sotc-deps-cache.outputs.cache-hit != 'true'
+        if: always() && steps.sotc-deps-cache.outputs.cache-hit != 'true'
         with:
           path: |
             .local-deps/android/bionic-prefix
