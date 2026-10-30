@@ -28,6 +28,17 @@ static _Thread_local unsigned char *tls_blocks[TLS_MODULES];
 static void *process_param;
 void runtime_set_procparam(void *param) { process_param=param; }
 static ABI void *guest_procparam(void) { return process_param; }
+void *sotc_runtime_procparam(void) { return process_param; }
+
+/* Use the original SotC HLE contract: return the SDK of the linked executable. */
+int32_t sotc_compiled_sdk_version(int32_t *version) {
+    if (!version) return (int32_t)0x80020016;
+    extern void *sotc_runtime_procparam(void);
+    const unsigned char *proc=(const unsigned char *)sotc_runtime_procparam();
+    *version=proc ? *(const int32_t *)(proc+16) : 0;
+    return 0;
+}
+
 static void **application_heap_api;
 static ABI void guest_set_heap_api(void **api) {
     application_heap_api=api;
@@ -194,9 +205,24 @@ static const char *canonical_name(const char *name, char out[128]) {
 uintptr_t runtime_resolve(const char *name, int is_data) {
     if (!(capabilities & 1)) return 0;
     char canonical[128];
-    name=canonical_name(name,canonical);
+    char sotc_nid[16];
+    const int is_sotc = getenv("SOTC_PORT") != NULL;
+    if (is_sotc) {
+        /* The SotC eboot and its linked PRXs use different scoped module
+         * suffixes than GoW3. Resolve HLE by the stable 11-character NID,
+         * not by a GoW3-specific #library suffix. */
+        size_t length=strcspn(name,"#");
+        if (!length || length>=sizeof(sotc_nid)) return 0;
+        memcpy(sotc_nid,name,length);
+        sotc_nid[length]=0;
+        name=sotc_nid;
+    } else {
+        name=canonical_name(name,canonical);
+    }
     if (is_data) {
         static int32_t need_libc_internal = 1; /* SDK marker variable referenced by Fios2 */
+        if (is_sotc && !strcmp(name,"f7uOxY9mM1U")) return (uintptr_t)&stack_canary;
+        if (is_sotc && !strcmp(name,"ZT4ODD2Ts9o")) return (uintptr_t)&need_libc_internal;
         if (!strcmp(name, "f7uOxY9mM1U#libkernel")) return (uintptr_t)&stack_canary;
         if (!strcmp(name, "ZT4ODD2Ts9o#libSceLibcInternal")) return (uintptr_t)&need_libc_internal;
         static const char *progname = "eboot.bin";
@@ -204,6 +230,31 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
         return 0;
     }
     /* Exact imports; the suffix is the exporting library. */
+    if (is_sotc) {
+        if (!strcmp(name,"bzQExy189ZI")) return (uintptr_t)init_env;
+        if (!strcmp(name,"8G2LB+A3rzg")) return (uintptr_t)guest_atexit;
+        if (!strcmp(name,"tsvEmnenz48")) return (uintptr_t)guest_cxa_atexit;
+        if (!strcmp(name,"uMei1W9uyNo")) return (uintptr_t)guest_libc_exit;
+        if (!strcmp(name,"H2e8t5ScQGc")) return (uintptr_t)guest_finalize;
+        if (!strcmp(name,"3GPpjQdAMTw")) return (uintptr_t)guard_acquire;
+        if (!strcmp(name,"9rAeANT2tyE")) return (uintptr_t)guard_release;
+        if (!strcmp(name,"2emaaluWzUw")) return (uintptr_t)guard_abort;
+        if (!strcmp(name,"Ou3iL1abvng")) return (uintptr_t)stack_fail;
+        if (!strcmp(name,"8zTFvBIAIN8")) return (uintptr_t)guest_memset;
+        if (!strcmp(name,"Q3VBxCXhUHs")) return (uintptr_t)guest_memcpy;
+        if (!strcmp(name,"+P6FRGH4LfA")) return (uintptr_t)guest_memmove;
+        if (!strcmp(name,"DfivPArhucg")) return (uintptr_t)guest_memcmp;
+        if (!strcmp(name,"j4ViWNHEgww")) return (uintptr_t)guest_strlen;
+        if (!strcmp(name,"vNe1w4diLCs")) return (uintptr_t)guest_tls_get_addr;
+        if (!strcmp(name,"959qrazPIrg")) return (uintptr_t)guest_procparam;
+        if (!strcmp(name,"p5EcQeEeJAE")) return (uintptr_t)guest_set_heap_api;
+        if (!strcmp(name,"WB66evu8bsU")) {
+            /* PS4 SDK version query for the user's NGS2/Ult PRXs. */
+            extern int32_t sotc_compiled_sdk_version(int32_t *);
+            return (uintptr_t)sotc_compiled_sdk_version;
+        }
+    }
+
     if (!strcmp(name, "bzQExy189ZI#libc")) return (uintptr_t)init_env;
     if (!strcmp(name, "8G2LB+A3rzg#libc")) return (uintptr_t)guest_atexit;
     if (!strcmp(name, "tsvEmnenz48#libc")) return (uintptr_t)guest_cxa_atexit;
@@ -269,8 +320,20 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
 static const struct { const char *nid, *symbol; } import_names[]={
 #include "import_names.inc"
 };
+/* Original SotC port NID -> symbol table, kept separate from GoW3's. */
+static const struct { const char *nid, *symbol; } sotc_import_names[]={
+#include "sotc_import_names.inc"
+};
 /* Symbol name for a scoped NID, or NULL when this eboot/libc never imports it. */
 const char *runtime_symbol(const char *nid) {
+    if (getenv("SOTC_PORT")) {
+        const size_t n=strcspn(nid,"#");
+        for (size_t i=0;i<sizeof(sotc_import_names)/sizeof(*sotc_import_names);++i)
+            if (strlen(sotc_import_names[i].nid)==n &&
+                !memcmp(nid,sotc_import_names[i].nid,n))
+                return sotc_import_names[i].symbol;
+        return NULL;
+    }
     for (size_t i=0;i<sizeof(import_names)/sizeof(*import_names);++i)
         if (!strcmp(nid,import_names[i].nid)) return import_names[i].symbol;
     return NULL;
