@@ -17,6 +17,15 @@ private val DarkColorScheme = darkColorScheme(
     tertiary = Pink80
 )
 
+private val SotcColorScheme = darkColorScheme(
+    primary = androidx.compose.ui.graphics.Color(0xFF87B0A7),
+    onPrimary = androidx.compose.ui.graphics.Color(0xFF071A1B),
+    secondary = androidx.compose.ui.graphics.Color(0xFFB9C8BF),
+    background = androidx.compose.ui.graphics.Color(0xFF0A1416),
+    surface = androidx.compose.ui.graphics.Color(0xFF102224),
+    onSurface = androidx.compose.ui.graphics.Color(0xFFEEE9DE)
+)
+
 private val LightColorScheme = lightColorScheme(
     primary = Purple40,
     secondary = PurpleGrey40,
@@ -41,6 +50,7 @@ fun Gow3LauncherTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
+        LocalContext.current.packageName == "com.sotc.android.daedalus" -> SotcColorScheme
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
