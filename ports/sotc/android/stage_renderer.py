@@ -332,7 +332,7 @@ static std::uint64_t SotcHostCycles() {
 #include <x86intrin.h>
 static std::uint64_t SotcHostCycles() { return __rdtsc(); }
 #endif""",'SotC write log host counter')
-    log_source=log_source.replace('__rdtsc();','SotcHostCycles();')
+    log_source=log_source.replace('__rdtsc()','SotcHostCycles()')
     # Restore the x86 fallback inside the new helper (avoid recursion).
     log_source=swap(log_source,'static std::uint64_t SotcHostCycles() { return SotcHostCycles(); }',
                     'static std::uint64_t SotcHostCycles() { return __rdtsc(); }',
