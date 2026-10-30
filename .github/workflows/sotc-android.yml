@@ -43,6 +43,11 @@ jobs:
           "$ndk/bin/aarch64-linux-android30-clang" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -I. -Isrc -c src/runtime_fiber.c -o out/sotc-android/runtime_fiber.o
           "$ndk/bin/llvm-readelf" -h out/sotc-android/runtime_sotc.o | grep -q AArch64
           "$ndk/bin/llvm-readelf" -h out/sotc-android/probe.o | grep -q AArch64
+      - name: Stage upstream SotC original renderer for Bionic
+        run: |
+          python ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          test -s out/sotc-android/gpu/shim/window_android.cpp
+          grep -q VK_USE_PLATFORM_ANDROID_KHR out/sotc-android/gpu/CMakeLists.txt
       - name: Compile SotC headless renderer window for ARM64
         run: |
           ndk="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
