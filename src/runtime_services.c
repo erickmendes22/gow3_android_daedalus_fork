@@ -187,7 +187,7 @@ static ABI int32_t voice_info(uint32_t port,uint32_t *info) {
 /* ---- Common dialogs: nothing is displayed; an opened dialog finishes. ---- */
 typedef struct { const char *name; int initialized, status; uint32_t button; } Dialog;
 static Dialog dialogs[]={{"CommonDialog",0,0,0},{"MsgDialog",0,0,0},{"SaveDataDialog",0,0,0},
-                         {"NpProfileDialog",0,0,0},{"NpCommerceDialog",0,0,0},{"ImeDialog",0,0,0}};
+                         {"NpProfileDialog",0,0,0},{"NpCommerceDialog",0,0,0},{"ImeDialog",0,0,0},{"ErrorDialog",0,0,0}};
 #define DIALOG_RUNNING 2
 #define DIALOG_FINISHED 3
 #define DIALOG_NOT_FINISHED ((int32_t)0x80B80005)
@@ -252,6 +252,30 @@ static ABI int32_t msg_term(void) { return dialog_term(1); }
 static ABI int32_t msg_close(void) { return dialog_close(1); }
 static ABI int32_t msg_progress(uint32_t target, uint32_t value) { (void)value; return dialog_progress(1,target); }
 static ABI int32_t msg_result(unsigned char *out) { return dialog_result(1,out,0); }
+/* Error dialog state, preserved separately from MsgDialog. The Android
+ * headless backend records the request and completes it without displaying
+ * a fake GoW3 dialog. */
+static ABI int32_t error_init(void) { return dialog_init(6); }
+static ABI int32_t error_open(const int32_t *param) {
+    if (!dialogs[6].initialized) return DIALOG_NOT_INITIALIZED;
+    if (!param) return DIALOG_ARG_NULL;
+    printf("Runtime: ErrorDialog requested error=0x%x user=%d (headless)\n",
+           (unsigned)param[1],param[2]);
+    dialogs[6].status=DIALOG_FINISHED;
+    dialogs[6].button=0;
+    return 0;
+}
+static ABI int32_t error_status(void) { return dialog_status(6); }
+static ABI int32_t error_term(void) { return dialog_term(6); }
+static ABI int32_t error_close(void) {
+    if (dialogs[6].status==DIALOG_FINISHED) return 0;
+    return dialog_close(6);
+}
+static ABI int32_t common_is_used(void) {
+    for (size_t i=0;i<sizeof(dialogs)/sizeof(*dialogs);++i)
+        if (dialogs[i].initialized && dialogs[i].status==DIALOG_RUNNING) return 1;
+    return 0;
+}
 /* SaveDataDialog. OrbisSaveDataDialogParam: BaseParam (48), size, mode @52, dispType @56,
  * animParam @64, items @72, ..., userData @112. SaveDialogItems: userId @0, titleId @8,
  * dirName @16 (32-byte names), dirNameNum @24, newItem @32 (title @0), focusPos @40.
@@ -712,7 +736,10 @@ static const RuntimeExport exports[]={
     {"sceNpMatching2CreateContext",np_signed_out},
     {"sceNpSignalingInitialize",ok_void}, {"sceNpSignalingTerminate",ok_void},
     {"sceNpSignalingCreateContext",np_signed_out},
-    {"sceCommonDialogInitialize",common_init},
+    {"sceCommonDialogInitialize",common_init}, {"sceCommonDialogIsUsed",common_is_used},
+    {"sceErrorDialogInitialize",error_init}, {"sceErrorDialogOpen",error_open},
+    {"sceErrorDialogUpdateStatus",error_status}, {"sceErrorDialogTerminate",error_term},
+    {"sceErrorDialogClose",error_close},
     {"sceMsgDialogInitialize",msg_init}, {"sceMsgDialogOpen",msg_open},
     {"sceMsgDialogUpdateStatus",msg_status}, {"sceMsgDialogTerminate",msg_term},
     {"sceMsgDialogClose",msg_close}, {"sceMsgDialogProgressBarSetValue",msg_progress},

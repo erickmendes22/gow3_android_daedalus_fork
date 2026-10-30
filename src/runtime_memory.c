@@ -643,8 +643,49 @@ static ABI int32_t batch_map2(BatchEntry *entries, int count, int *processed, in
 static ABI int32_t batch_map(BatchEntry *entries, int count, int *processed) {
     return batch_map2(entries,count,processed,MAP_FIXED_FLAG);
 }
+/* Largest free physical range in [low, high), with the same ABI as
+ * the original SotC runtime. The result reflects all allocated direct blocks,
+ * including those mapped earlier by the guest and GPU. */
+static ABI int32_t direct_available(int64_t low, int64_t high, uint64_t alignment,
+                                    int64_t *physical, uint64_t *size) {
+    if (!alignment) alignment=PAGE;
+    if (!physical || !size || low<0 || high<0 || !valid_alignment(alignment))
+        return INVALID;
+    write_lock();
+    if (pool()) { write_unlock(); return NO_MEMORY; }
+    const uint64_t end=(uint64_t)high < POOL_SIZE ? (uint64_t)high : POOL_SIZE;
+    uint64_t cursor=(uint64_t)low, best=0, best_start=0;
+    while (cursor<end) {
+        uint64_t next=end, resume=end;
+        for (int i=0;i<LIMIT;++i) {
+            const Block b=blocks[i];
+            if (!b.used || b.start+b.size<=cursor) continue;
+            if (b.start<=cursor) { next=cursor; resume=b.start+b.size; break; }
+            if (b.start<next) { next=b.start; resume=b.start+b.size; }
+        }
+        const uint64_t start=align_up(cursor,alignment);
+        if (next>start && next-start>best) { best=next-start; best_start=start; }
+        cursor=resume;
+    }
+    write_unlock();
+    if (!best) return NO_MEMORY;
+    *physical=(int64_t)best_start;
+    *size=best;
+    return 0;
+}
+/* Report the actual flexible allocation budget; keep this query coherent
+ * with map_flexible() / release_flexible() under the region table lock. */
+static ABI int32_t flexible_available(uint64_t *size) {
+    if (!size) return INVALID;
+    read_lock();
+    *size=flexible_bytes<=FLEXIBLE_SIZE ? FLEXIBLE_SIZE-flexible_bytes : 0;
+    read_unlock();
+    return 0;
+}
 static const RuntimeExport exports[]={
     {"mmap",posix_mmap}, {"msync",posix_msync},
+    {"sceKernelAvailableDirectMemorySize",direct_available},
+    {"sceKernelAvailableFlexibleMemorySize",flexible_available},
     {"sceKernelGetDirectMemorySize",direct_size}, {"sceKernelAllocateDirectMemory",direct_allocate},
     {"sceKernelMapDirectMemory",direct_map}, {"sceKernelMapNamedDirectMemory",direct_map_named},
     {"sceKernelReleaseDirectMemory",direct_release}, {"sceKernelMunmap",direct_unmap}, {"munmap",direct_unmap},
