@@ -19,3 +19,5 @@ ZIP8/ZIP9 real measured +3/+1 native flow: signed Android Bionic APK including 3
 ZIP10/ZIP11 2026-10-30: native Android compile and signed experimental APK from dynamic 3D-to-depthless scene snapshot; keep zero jitter and original early-copy fallback.
 
 ZIP11: rerun Android native compile and package signed diagnostic APK after Stage CI 41060408686 passed; dynamic completed-3D capture from depth-enabled to depthless transitions.
+
+2026-10-30 ZIP12/13: after GSR2 Stage Correlation 41065797004 success (real GLSL SPIR-V and tests), build ONE Bionic native APK with camera-Y-guided original-native 5x3 history correction. No framebuffer, color, jitter or HUD changes. Source replay validates false 1px vs real 3-4px vertical motion.
