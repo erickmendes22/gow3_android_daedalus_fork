@@ -69,6 +69,33 @@ endif()
     text=text.replace('SDL_Delay(50);','std::this_thread::sleep_for(std::chrono::milliseconds(50));')
     s.write_text(text)
 
+    # The original in-game menu expects desktop SDL events. On Android the
+    # overlay remains available as an ImGui Vulkan compositor; input will be
+    # forwarded by the Android controller/IME bridge, not SDL.
+    overlay=out/'shim/bbport_overlay.cpp'
+    pane=overlay.read_text()
+    pane=swap(pane,'#include <SDL3/SDL.h>',
+              '#ifndef __ANDROID__\n#include <SDL3/SDL.h>\n#endif','overlay SDL header')
+    pane=swap(pane,'ImGuiKey KeyFromSdl(SDL_Keycode key) {',
+              '#ifndef __ANDROID__\nImGuiKey KeyFromSdl(SDL_Keycode key) {',
+              'overlay SDL key mapping')
+    pane=swap(pane,'// sotc: a short message at the top of the screen',
+              '#endif // !__ANDROID__ (SDL key mapping)\n// sotc: a short message at the top of the screen',
+              'overlay SDL gamepad mapping')
+    pane=swap(pane,'float PixelDensity(SDL_WindowID id) {',
+              '#ifndef __ANDROID__\nfloat PixelDensity(SDL_WindowID id) {',
+              'overlay pixel density')
+    pane=swap(pane,'// Marks the settings dirty when a widget changed them.',
+              '#endif // !__ANDROID__ (SDL display)\n// Marks the settings dirty when a widget changed them.',
+              'overlay display block')
+    pane=swap(pane,'void UpdateTextInput(SDL_Window* window) {',
+              '#ifdef __ANDROID__\nvoid UpdateTextInput(SDL_Window*) {}\nbool HandleEvent(const SDL_Event&) { return false; }\n#else\nvoid UpdateTextInput(SDL_Window* window) {',
+              'overlay event stub')
+    pane=swap(pane,'bool LoadingShown() {',
+              '#endif // !__ANDROID__ (SDL window events)\nbool LoadingShown() {',
+              'overlay event block')
+    overlay.write_text(pane)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--upstream',required=True,type=Path)
