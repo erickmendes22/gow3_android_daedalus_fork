@@ -32,6 +32,14 @@ internal class GameFolderManager(private val activity: Activity) {
             "CUSA01363", "CUSA03179", "CUSA03014", "CUSA03023")
     }
 
+    private val isSotc: Boolean get() = activity.packageName == "com.sotc.android.daedalus"
+    private val validSerials: Array<String>
+        get() = if (isSotc) arrayOf("CUSA08809", "CUSA08034") else SERIALS
+
+    private fun title(value: String): String =
+        if (isSotc) value.replace("God of War III", "Shadow of the Colossus")
+            .replace("CUSA01740", "CUSA08809") else value
+
     private enum class Kind(val prefKey: String) { GAME("game_dir"), UPDATE("update_dir") }
 
     /**
@@ -162,7 +170,7 @@ internal class GameFolderManager(private val activity: Activity) {
         }
         var dir = folderOf(data.data!!)
         if (dir != null && !isGame(dir)) {
-            for (serial in SERIALS) {
+            for (serial in validSerials) {
                 val nested = File(dir, serial)
                 if (isGame(nested)) {
                     dir = nested
@@ -189,7 +197,7 @@ internal class GameFolderManager(private val activity: Activity) {
     private fun validate(kind: Kind, dir: File?): String? {
         val folder = dir ?: return activity.getString(R.string.no_eboot)
         if (!isGame(folder)) {
-            return activity.getString(R.string.no_eboot_path_fmt, folder.path)
+            return if (isSotc) "Selected folder must contain eboot.bin and a supported SotC param.sfo (CUSA08809 / CUSA08034): ${folder.path}" else activity.getString(R.string.no_eboot_path_fmt, folder.path)
         }
         if (kind == Kind.UPDATE) {
             val gamePath = prefs().getString("game_dir", null) ?: ""
@@ -228,10 +236,10 @@ internal class GameFolderManager(private val activity: Activity) {
         }
         val message = TextView(activity).apply {
             text = if (isUpdate)
-                activity.getString(R.string.folder_message_update) +
+                title(activity.getString(R.string.folder_message_update)) +
                     (if (current != null) activity.getString(R.string.folder_current_selection_fmt, current) else "")
             else
-                activity.getString(R.string.folder_message_game) +
+                title(activity.getString(R.string.folder_message_game)) +
                     (if (current != null) activity.getString(R.string.folder_current_selection_fmt, current) else "")
             textSize = 14f
             setTextColor(0xff8e9097.toInt())
@@ -277,7 +285,12 @@ internal class GameFolderManager(private val activity: Activity) {
         dialog.window?.setLayout(dp(350), LinearLayout.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun isGame(dir: File?): Boolean = dir != null && File(dir, "eboot.bin").isFile
+    private fun isGame(dir: File?): Boolean {
+        if (dir == null || !File(dir,"eboot.bin").isFile) return false
+        if (!isSotc) return true
+        val metadata=GameSfo.read(File(dir,"sce_sys/param.sfo")) ?: return false
+        return metadata["TITLE_ID"]?.uppercase(java.util.Locale.ROOT) in validSerials
+    }
 
     private fun folderOf(tree: Uri): File? {
         return try {
