@@ -307,7 +307,7 @@ public final class GameActivity extends Activity {
             menuItem("ic_frames","Capture GSR2 temporal scaling",
                 "6 temporal frames (reset=0) · all raw buffers",this::startGsr2Capture);
             menuItem("ic_frames","Capture GSR2 render stages",
-                "One flip: guest framebuffer after draws 1, 2, 4 ... 256",
+                "One flip: guest framebuffer after draws 1, 2, 4 ... 2048",
                 this::startGsr2RenderStages);
             menuItem("ic_restore","Export GSR2 capture ZIP",
                 "Save raw frames and the game log for analysis",this::exportGsr2Capture);
@@ -858,7 +858,7 @@ public final class GameActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("Capture GSR2 render stages")
             .setMessage("Capture the actual VideoOut framebuffer after 1, 2, 4, 8, " +
-                "16, 32, 64, 128 and 256 guest draws, correlated with the real " +
+                "16, 32, 64, 128, 256, 512, 1024 and 2048 guest draws, on the real " +
                 "presented flip. This does not change GSR2 rendering. GPU readbacks " +
                 "may briefly pause gameplay. Export the ZIP afterward.")
             .setNegativeButton("Cancel",null)
@@ -926,7 +926,8 @@ public final class GameActivity extends Activity {
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
                             "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\n"+
                             "fNNN_composited_WxH_rgba_unorm.raw (RGBA8 with HUD),\n"+
-                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+                            "f000_scan_guest_<hex>_after_draw_<NNN>_WxH_*.raw (exact guest VideoOut at N completed draws).\n"+
+                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+                            "f000_scan_<index>_guest_<hex>_after_draw_<NNNN>_WxH_*.raw (real guest VideoOut after N draws).\n"+
+                            "f000_scan_actual_flip_guest_<hex>_final_WxH_*.raw (same-flip final VideoOut).\n"+
                             "GSR2_STAGE_SCAN_FINISH in log identifies which guest address the flip presented.\n"+
                             "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\n"+
                             "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\n"+
