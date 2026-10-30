@@ -553,7 +553,24 @@ void main()
     if (invalidReprojection) alpha=1.0;
     Upsampledcw.xyz = mix(HistoryColor, Upsampledcw.xyz, alpha);
     
-    imageStore(HistoryOutput, ivec2(gl_GlobalInvocationID.xy), vec4(Upsampledcw.xyz, Wfactor));
+    // Wfactor above describes confidence in the OLD reprojected history.
+    // It must NEVER be copied back as confidence in the newly rendered
+    // CURRENT output. vk_gsr2.cpp clears both history RGBA textures to zero
+    // on reset. Copying the old Wfactor made confidence an absorbing zero:
+    // old_alpha=0 -> Wfactor=0 -> next_alpha=0, forever, regardless of the
+    // current frame's valid reconstruction. This disabled the intended
+    // temporal confidence feedback even on six verified reset=0 frames.
+    //
+    // The current output is a valid next-frame history seed whether it was
+    // reconstructed temporally or from this frame alone (reset, disocclusion,
+    // rejected reprojection). Carry 1 only for finite reconstructed colors.
+    // An invalid color must NOT be allowed to poison the history chain.
+    bool validCurrentColor = !any(isnan(Upsampledcw.xyz)) &&
+                             !any(isinf(Upsampledcw.xyz));
+    if (!validCurrentColor) Upsampledcw.xyz = vec3(0.0);
+    float nextHistoryConfidence = validCurrentColor ? 1.0 : 0.0;
+    imageStore(HistoryOutput, ivec2(gl_GlobalInvocationID.xy),
+               vec4(Upsampledcw.xyz, nextHistoryConfidence));
 
     ////ycocg to rgb
     float x_z = Upsampledcw.x - Upsampledcw.z;
