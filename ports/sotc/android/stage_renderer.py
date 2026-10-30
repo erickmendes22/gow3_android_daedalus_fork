@@ -135,6 +135,81 @@ endif()""",'exclude desktop-only DXGI source')
          'std::min<VAddr>(Common::AlignDown(page, 4_KB) + 4_KB, range_end)',
          'SotC page range min')
     buffer.write_text(buffer_text)
+
+    # The original POSIX signal frame adapter handles x86_64 only.
+    # On Bionic, the signal frame holds ARM64 *host* registers. Guest x86
+    # execution state remains in FEX and must never be fabricated from x0-x30.
+    signal=out/'shadps4/common/signal_context.cpp'
+    signal_text=signal.read_text()
+    signal_text=swap(signal_text,'#include "common/arch.h"',
+        '''#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <cstdlib>
+#include "common/arch.h"''','ARM64 signal helpers')
+    signal_text=swap(signal_text,
+        '    return (void*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];',
+        '''    return (void*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];''',
+        'desktop RIP branch validation')
+    signal_text=swap(signal_text,
+        '''    return (void*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
+#else
+#error "Unsupported architecture"
+#endif''',
+        '''    return (void*)((ucontext_t*)ctx)->uc_mcontext.gregs[REG_RIP];
+#elif defined(ARCH_ARM64) && defined(__linux__)
+    return (void*)((ucontext_t*)ctx)->uc_mcontext.pc;
+#else
+#error "Unsupported architecture"
+#endif''','AArch64 PC in signal context')
+    signal_text=swap(signal_text,
+        '''    gregs[REG_RIP] += length;
+#else
+#error "Unsupported architecture"
+#endif''',
+        '''    gregs[REG_RIP] += length;
+#elif defined(ARCH_ARM64) && defined(__linux__)
+    // Guest register index is x86 encoding. An ARM64 Linux signal frame
+    // contains FEX's translated host registers, not those guest registers.
+    (void)ctx; (void)gpr_index; (void)length;
+    std::abort(); // Fail explicitly rather than silently corrupting the guest.
+#else
+#error "Unsupported architecture"
+#endif''','AArch64 unsupported x86 guest register mutation')
+    signal_text=swap(signal_text,
+        'bool IsWriteError(void* ctx) {',
+        '''#if defined(ARCH_ARM64) && defined(__linux__)
+static std::uint64_t SotcArm64FaultEsr(void* ctx) {
+    struct Record { std::uint32_t magic, size; std::uint64_t esr; };
+    constexpr std::uint32_t EsrMagic=0x45535201;
+    const auto& mc=((ucontext_t*)ctx)->uc_mcontext;
+    const auto* data=reinterpret_cast<const unsigned char*>(mc.__reserved);
+    for(std::size_t off=0;off+sizeof(std::uint32_t)*2<=sizeof(mc.__reserved);) {
+        Record r{};
+        std::memcpy(&r,data+off,
+                    std::min(sizeof(r),sizeof(mc.__reserved)-off));
+        if(!r.magic || r.size<8 || r.size>sizeof(mc.__reserved)-off) break;
+        if(r.magic==EsrMagic && r.size>=sizeof(r)) return r.esr;
+        off+=r.size;
+    }
+    return 0;
+}
+#endif
+
+bool IsWriteError(void* ctx) {''','Linux ARM64 ESR record')
+    signal_text=swap(signal_text,
+        '''    return ((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR] & 0x2;
+#else
+#error "Unsupported architecture"
+#endif''',
+        '''    return ((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR] & 0x2;
+#elif defined(ARCH_ARM64) && defined(__linux__)
+    return (SotcArm64FaultEsr(ctx) & 0x40) != 0;
+#else
+#error "Unsupported architecture"
+#endif''','AArch64 write-fault ESR')
+    signal.write_text(signal_text)
     raster=out/'shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
     raster_text=raster.read_text()
     raster_text=swap(raster_text,
