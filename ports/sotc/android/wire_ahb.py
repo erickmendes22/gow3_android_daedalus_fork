@@ -115,6 +115,37 @@ def wire(root: Path, gpu: Path):
 
     presenter=renderer/'vk_presenter.cpp'
     content=presenter.read_text()
+    # Desktop warm-up paints temporary frames on a second thread while the
+    # presenter is still being constructed. The AHB swapchain cannot safely
+    # submit frames from that thread before Android renderer initialization
+    # completes. On Android, warm up the cache synchronously instead. This
+    # preserves the complete original game-frame presentation path.
+    content=swap(content,
+        '''    std::atomic<bool> warming{true};
+    std::thread painter([this, &warming] {
+        while (warming.load(std::memory_order_relaxed)) {
+            Present(PrepareBlankFrame(true), false, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        }
+    });''',
+        '''#ifndef __ANDROID__
+    std::atomic<bool> warming{true};
+    std::thread painter([this, &warming] {
+        while (warming.load(std::memory_order_relaxed)) {
+            Present(PrepareBlankFrame(true), false, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        }
+    });
+#endif''',
+        'disable premature Android AHB warm-up presenter thread')
+    content=swap(content,
+        '''    warming.store(false, std::memory_order_relaxed);
+    painter.join();''',
+        '''#ifndef __ANDROID__
+    warming.store(false, std::memory_order_relaxed);
+    painter.join();
+#endif''',
+        'finish desktop-only warm-up thread')
     content=swap(content,'const vk::ImageView swapchain_image_view = swapchain.ImageView();',
         '''const vk::ImageView swapchain_image_view = swapchain.ImageView();
     const auto sotc_acquire_queues = swapchain.AcquireQueues();
