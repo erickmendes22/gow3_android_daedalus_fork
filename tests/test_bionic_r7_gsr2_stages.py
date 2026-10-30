@@ -24,7 +24,7 @@ class BionicR7StageTests(unittest.TestCase):
 
     def test_probe_enabled_only_in_isolated_bionic_branch(self):
         script = source("tools/android/bionic/run-bionic.sh")
-        self.assertIn("export GOW3_GSR2_AUTO_PROBE=1", script)
+        self.assertIn("export GOW3_GSR2_AUTO_PROBE=0", script)
         workflow = source(".github/workflows/bionic-apk.yml")
         self.assertIn("r14-build-trigger.txt", workflow)
         self.assertIn("fix/bionic-r14-gsr2-history-camera-guard-20261019", workflow)

@@ -37,8 +37,9 @@ class R5(unittest.TestCase):
 
     def test_real_720p_input_and_forward_scene(self):
         launch=source("scripts/launch_env.py")
-        for token in ("GOW3_PATCH_INPUT_RES", "'1280x720'", "'CUSA01623'",
-                      "CUSA01715_0102_ANDROID_SHA", "Resolution Patch - 720p"):
+        for token in ("GOW3_PATCH_INPUT_RES", "graphics_options.DIRECT_RESOLUTIONS",
+                      "'CUSA01623'", "CUSA01715_0102_ANDROID_SHA",
+                      "GOW3_GSR2_SPATIAL_ONLY", "resolution = graphics['render_resolution']"):
             self.assertIn(token,launch)
         raster=source("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
         for token in ("gsr2_forward", "std::popcount(key.mrt_mask & 0x7f) <= 2",

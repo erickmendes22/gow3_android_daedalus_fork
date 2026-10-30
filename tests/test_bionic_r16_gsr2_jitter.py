@@ -23,7 +23,10 @@ class R16Gsr2JitterConsistency(unittest.TestCase):
         fn=source.split("bool TemporalUpscaler::RecordGsr2(",1)[1].split(
             "bool TemporalUpscaler::UseDlss()",1)[0]
         self.assertIn("camera_motion.CompletedJitter()", fn)
-        self.assertIn(".jitter = {sign * matched_jitter[0], sign * matched_jitter[1]},", fn)
+        # Current-frame spatial mode must use zero jitter, just as the
+        # Android rasterizer does; temporal vectors stay dormant.
+        self.assertIn('.jitter = spatial_only ? std::array<float,2>{0.0f,0.0f}',fn)
+        self.assertIn('const bool dispatch_reset = spatial_only ||',fn)
         self.assertIn("pre_hud_recording ? camera_motion.CompletedJitter()",fn)
         self.assertNotIn(".jitter = temporal_ready ?",fn)
         self.assertIn("const bool dispatch_reset =",fn)

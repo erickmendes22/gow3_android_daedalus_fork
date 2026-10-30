@@ -27,7 +27,8 @@ class R18NativePath(unittest.TestCase):
         plan,persisted=self.plan("0")
         u=plan["updates"]
         self.assertEqual(u["GOW3_UPSCALER"],"gsr2")
-        self.assertEqual(u["GOW3_UPSCALER_SOURCE"],"gsr2-native-aa-1to1")
+        self.assertEqual(u["GOW3_UPSCALER_SOURCE"],"gsr2-spatial-1to1")
+        self.assertEqual(u["GOW3_GSR2_SPATIAL_ONLY"],"1")
         # Selecting the AA provider does not silently change an explicit
         # game render_resolution=native; this preset has no enlargement.
         self.assertNotIn("GOW3_PATCH_INPUT_RES",u)
@@ -39,19 +40,23 @@ class R18NativePath(unittest.TestCase):
         plan,_=self.plan("0","720p")
         self.assertEqual(plan["updates"]["GOW3_UPSCALER"],"gsr2")
         self.assertIn("Resolution Patch - 720p",plan["patch_names"])
-        self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],"1280x720")
+        self.assertNotIn("GOW3_PATCH_INPUT_RES",plan["updates"])
+        self.assertEqual(plan["updates"]["GOW3_GSR2_SPATIAL_ONLY"],"1")
 
-    def test_reduced_gsr2_presets_remain_selected(self):
-        expected={"1":"960x540","2":"752x424","3":"640x360","4":"426x240"}
-        for preset,actual in expected.items():
+
+    def test_legacy_temporal_presets_do_not_change_real_render_size(self):
+        for preset in ("1","2","3","4"):
             with self.subTest(preset=preset):
-                plan,_=self.plan(preset,"720p")
-                self.assertEqual(plan["updates"]["GOW3_UPSCALER"],"gsr2")
-                self.assertEqual(plan["updates"]["GOW3_PATCH_INPUT_RES"],actual)
-                self.assertEqual(plan["updates"]["GOW3_GSR2_DIRECT_VIDEOOUT"],"1")
-                self.assertEqual(plan["updates"]["GOW3_GSR2_OUTPUT_RES"],"1280x720")
+                plan,persisted=self.plan(preset,"720p")
+                up=plan["updates"]
+                self.assertEqual(up["GOW3_UPSCALER"],"gsr2")
+                self.assertEqual(up["GOW3_UPSCALER_SOURCE"],"gsr2-spatial-1to1")
+                self.assertEqual(up["GOW3_GSR2_SPATIAL_ONLY"],"1")
+                self.assertEqual(up["GOW3_GSR2_DIRECT_VIDEOOUT"],"1")
+                self.assertNotIn("GOW3_PATCH_INPUT_RES",up)
+                self.assertNotIn("GOW3_GSR2_OUTPUT_RES",up)
                 self.assertIn("Resolution Patch - 720p",plan["patch_names"])
-
+                self.assertIn("render_resolution=720p",persisted)
     def test_stencil_reallocation_never_uses_old_depth_reference(self):
         cpp=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text(encoding="utf-8")
         fn=cpp.split("ImageView& TextureCache::FindDepthTarget(",1)[1].split(

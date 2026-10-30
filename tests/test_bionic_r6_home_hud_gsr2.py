@@ -29,10 +29,11 @@ class R6(unittest.TestCase):
         self.assertIn("const bool dispatch_reset =",cpp)
         self.assertIn("!temporal_ready;",cpp)
         self.assertIn(".reset = dispatch_reset,",cpp)
-        self.assertIn(".camera_still = temporal_ready",cpp)
+        self.assertIn(".camera_still = spatial_only || !temporal_ready ||",cpp)
+        self.assertIn(".jitter = spatial_only ? std::array<float,2>{0.0f,0.0f}",cpp)
         self.assertIn("camera_motion.CompletedCameraStill()",cpp)
         self.assertIn("running current-frame spatial reconstruction",cpp)
-        self.assertIn(".vertical_fov = temporal_ready",cpp)
+        self.assertIn(".vertical_fov = temporal_ready && !spatial_only",cpp)
         self.assertIn("camera_motion.CompletedVerticalFov()",cpp)
         self.assertIn(": 1.04719755f,",cpp)
         # R19 honors Ultra Performance as actual 3x (not silently 2x);

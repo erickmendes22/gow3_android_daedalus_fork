@@ -16,8 +16,12 @@ LAUNCH = (ROOT / "scripts/launch_env.py").read_text()
 class NativeAaTextureRegression(unittest.TestCase):
     def test_native_aa_uses_provider_without_reduction(self):
         self.assertIn("ini.get('upscaler') == 'gsr2'", LAUNCH)
-        self.assertIn("graphics.get('render_resolution') != '8K'", LAUNCH)
-        self.assertIn("'gsr2-native-aa-1to1'", LAUNCH)
+        # Spatial GSR2 now works at the game's selected resolution; it
+        # must never replace 8K or native with a forced 720p preset.
+        self.assertIn("resolution = graphics['render_resolution']",LAUNCH)
+        self.assertIn("'gsr2-spatial-1to1'",LAUNCH)
+        self.assertIn("GOW3_GSR2_SPATIAL_ONLY",LAUNCH)
+        self.assertNotIn("graphics.get('render_resolution') != '8K'",LAUNCH)
         self.assertIn("scales{1.0, 1.5, 1.7, 2.0, 3.0}", SCENE)
         boundary = UP.split("void TemporalUpscaler::OnDisplayBoundary(", 1)[1].split(
             "void TemporalUpscaler::OnDraw(", 1)[0]

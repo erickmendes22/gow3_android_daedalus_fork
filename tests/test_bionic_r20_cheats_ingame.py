@@ -21,7 +21,8 @@ class FexCheatAndIngameGuiHotfix(unittest.TestCase):
             "    /** Saves the changed keys",1)[0]
         self.assertNotIn("Snapdragon Game Super Resolution",show)
         self.assertNotIn('heading(box,"GSR2 rendering preset")',show)
-        self.assertNotIn('changed.put("upscaler"',show)
+        self.assertIn('changed.put("upscaler",gsr2Spatial.isChecked()',show)
+        self.assertIn('GSR2 spatial filter (no temporal)',show)
         self.assertNotIn('changed.put("preset"',show)
         self.assertIn('changed.put("render_resolution"',show)
         self.assertIn('changed.put("fps_limit"',show)

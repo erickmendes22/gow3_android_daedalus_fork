@@ -1,4 +1,4 @@
-"""Verify GSR2 quality presets select byte-validated REAL guest render sizes."""
+"""Regression guards: spatial GSR2 never silently changes guest render resolution."""
 import sys
 import tempfile
 import unittest
@@ -27,44 +27,54 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         4:('426x240','240p'),
     }
 
-    def test_all_five_profiles_use_verified_eboot_raster_and_720p_host(self):
-        for p,(raster,choice) in self.PRESETS.items():
-            with self.subTest(preset=p),tempfile.TemporaryDirectory() as tmp:
-                folder=Path(tmp)
-                ini=folder/"gow3.ini"
-                ini.write_text(f"upscaler=gsr2\npreset={p}\nrender_resolution=720p\n")
-                with patch.object(patches,"patch_profile_status",return_value=IDENT):
-                    plan=launch_env.derive(folder,ini,folder/"state.json",{"GOW3_ANDROID_PORT":"1"})
-                up=plan['updates']
-                self.assertEqual(up['GOW3_UPSCALER'],'gsr2')
-                self.assertEqual(up['GOW3_PATCH_INPUT_RES'],raster)
-                if p == 0:
-                    # 1:1 native path was already fixed and must not change.
-                    self.assertNotIn('GOW3_GSR2_DIRECT_VIDEOOUT',up)
-                    self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-gsr2-720p-target')
-                    self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-native-aa-1to1')
-                else:
-                    self.assertEqual(up['GOW3_GSR2_DIRECT_VIDEOOUT'],'1')
-                    self.assertEqual(up['GOW3_GSR2_INPUT_RES'],raster)
-                    self.assertEqual(up['GOW3_GSR2_OUTPUT_RES'],'1280x720')
-                    self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-gsr2-videoout-input')
-                    self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-verified-videoout')
-                self.assertIn('Resolution Patch - 720p',plan['patch_names'])
-                self.assertNotIn('render_resolution='+choice,ini.read_text() if choice!='720p' else '')
-                self.assertIn('render_resolution=720p',ini.read_text())
 
-    def test_wrong_eboot_is_not_allowed_to_use_direct_videoout_size(self):
-        for reason,sha in [('validated','0'*64),('unverified-eboot',patches.CUSA01715_0102_ANDROID_SHA)]:
+    def test_legacy_presets_do_not_override_selected_game_resolution(self):
+        # After disabling temporal GSR2, preset=0..4 must not force a
+        # 360p/540p input or a 720p output. Native game patching still
+        # uses verified eboot signatures for its actual render size.
+        for p in self.PRESETS:
+            for choice,raster in [('720p',None),('540p','960x540'),
+                                  ('424p','752x424'),('360p','640x360'),
+                                  ('240p','426x240')]:
+                with self.subTest(preset=p,resolution=choice),tempfile.TemporaryDirectory() as tmp:
+                    folder=Path(tmp)
+                    ini=folder/"gow3.ini"
+                    ini.write_text(f"upscaler=gsr2\\npreset={p}\\nrender_resolution={choice}\\n")
+                    with patch.object(patches,"patch_profile_status",return_value=IDENT):
+                        plan=launch_env.derive(folder,ini,folder/"state.json",{"GOW3_ANDROID_PORT":"1"})
+                    up=plan['updates']
+                    self.assertEqual(up['GOW3_UPSCALER'],'gsr2')
+                    self.assertEqual(up['GOW3_UPSCALER_SOURCE'],'gsr2-spatial-1to1')
+                    self.assertEqual(up['GOW3_GSR2_SPATIAL_ONLY'],'1')
+                    self.assertEqual(up['GOW3_GSR2_DIRECT_VIDEOOUT'],'1')
+                    self.assertEqual(up['GOW3_GSR2_PREHUD_COMPOSITE'],'0')
+                    self.assertNotIn('GOW3_GSR2_INPUT_RES',up)
+                    self.assertNotIn('GOW3_GSR2_OUTPUT_RES',up)
+                    if raster is None:
+                        self.assertNotIn('GOW3_PATCH_INPUT_RES',up)
+                        self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'native-game-patch')
+                    else:
+                        self.assertEqual(up['GOW3_PATCH_INPUT_RES'],raster)
+                        self.assertEqual(up['GOW3_RESOLUTION_STATUS'],'verified-direct-game-patch')
+                    self.assertIn('Resolution Patch - 720p',plan['patch_names'])
+                    self.assertIn('render_resolution='+choice,ini.read_text())
+
+    def test_unknown_eboot_cannot_apply_unverified_reduced_raster(self):
+        # The spatial filter can sample any *actual* VideoOut. Unverified
+        # eboots must never receive byte-specific direct-resolution patches.
+        for reason,sha in [('validated','0'*64),
+                           ('unverified-eboot',patches.CUSA01715_0102_ANDROID_SHA)]:
             with self.subTest(reason=reason),tempfile.TemporaryDirectory() as tmp:
                 folder=Path(tmp); ini=folder/'gow3.ini'
-                ini.write_text('upscaler=gsr2\npreset=3\nrender_resolution=720p\n')
+                ini.write_text('upscaler=gsr2\\npreset=3\\nrender_resolution=240p\\n')
                 ident={**IDENT,'reason':reason,'eboot_sha256':sha}
                 with patch.object(patches,"patch_profile_status",return_value=ident):
                     plan=launch_env.derive(folder,ini,folder/'state.json',{"GOW3_ANDROID_PORT":"1"})
-                self.assertNotIn('GOW3_GSR2_DIRECT_VIDEOOUT',plan['updates'])
-                self.assertNotIn('GOW3_GSR2_INPUT_RES',plan['updates'])
+                self.assertNotIn('GOW3_PATCH_INPUT_RES',plan['updates'])
+                self.assertEqual(plan['updates']['GOW3_RESOLUTION_STATUS'],
+                                 'unsupported-eboot-native-fallback')
+                self.assertEqual(plan['updates']['GOW3_GSR2_SPATIAL_ONLY'],'1')
                 self.assertNotIn('GOW3_GSR2_OUTPUT_RES',plan['updates'])
-
     def test_sharpen_blit_uses_its_local_dimensions(self):
         # Regression: an overly broad w/h -> ow/oh replacement broke ARM64
         # compilation in ExtraSharpen(), which has only w and h parameters.
@@ -76,7 +86,8 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertEqual(sharpen.count('vk::Offset3D{s32(w), s32(h), 1}'),2)
         source=cpp.split('bool TemporalUpscaler::PresentGsr2FromGuestDisplay(',1)[1].split(
             'bool TemporalUpscaler::DisplayOverride(',1)[0]
-        self.assertIn('const u32 ow = target_width, oh = target_height;',source)
+        self.assertIn('const u32 ow = spatial_only ? w : target_width;',source)
+        self.assertIn('const u32 oh = spatial_only ? h : target_height;',source)
         self.assertIn('RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)',source)
 
     def test_direct_videoout_blit_copies_full_gsr2_output_not_quarter_screen(self):
@@ -142,11 +153,12 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
         self.assertNotIn('!guest_display_mode_recording &&',record)
         self.assertIn('!guest_display_history_contiguous',record)
 
-    def test_shell_exports_host_separately_from_guest_raster(self):
-        sh=(ROOT/'tools/android/bionic/run-bionic.sh').read_text()
-        self.assertIn('GOW3_GSR2_DIRECT_VIDEOOUT:-0',sh)
-        self.assertIn('export GOW3_OUTPUT_RES="${GOW3_GSR2_OUTPUT_RES:-1280x720}"',sh)
-        self.assertIn('input=${GOW3_GSR2_INPUT_RES:-guest-native}',sh)
 
+    def test_shell_keeps_actual_guest_dimensions_without_forced_720p(self):
+        sh=(ROOT/'tools/android/bionic/run-bionic.sh').read_text()
+        self.assertIn('export GOW3_GSR2_SPATIAL_ONLY=1',sh)
+        self.assertIn('export GOW3_GSR2_DIRECT_VIDEOOUT=1',sh)
+        self.assertIn('unset GOW3_GSR2_INPUT_RES GOW3_GSR2_OUTPUT_RES GOW3_OUTPUT_RES',sh)
+        self.assertNotIn('export GOW3_OUTPUT_RES="${GOW3_GSR2_OUTPUT_RES:-1280x720}"',sh)
 if __name__=='__main__':
     unittest.main()

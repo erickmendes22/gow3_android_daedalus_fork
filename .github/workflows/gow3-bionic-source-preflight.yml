@@ -1,0 +1,38 @@
+name: GoW3 Bionic full source preflight (no APK)
+on:
+  push:
+    branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
+    paths:
+      - 'tests/test_bionic_*.py'
+      - '.github/workflows/gow3-bionic-source-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-and-launcher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+      - name: Both complete source suites, no exclusions
+        run: |
+          python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_android_*.py' -v
+          bash tools/android/bionic/build_prepare.sh host
+          python -m unittest discover -s tests -p 'test_bionic_*.py' -v
+          python -m compileall -q tools/android/bionic scripts
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
+      - name: Compile Android launcher Java and Kotlin
+        run: bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2

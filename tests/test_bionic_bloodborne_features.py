@@ -20,7 +20,10 @@ class BionicBloodborneFeatureTests(unittest.TestCase):
             "    /** Saves the changed keys",1)[0]
         self.assertNotIn("Snapdragon Game Super Resolution",graphics)
         self.assertNotIn("GSR2 rendering preset",graphics)
-        self.assertNotIn('changed.put("upscaler"',graphics)
+        # The old in-game temporal preset menu stays hidden, but the
+        # explicit 1:1 spatial filter may be toggled like any image option.
+        self.assertIn('toggle(box,"GSR2 spatial filter (no temporal)"',graphics)
+        self.assertIn('changed.put("upscaler",gsr2Spatial.isChecked()',graphics)
         self.assertNotIn('changed.put("preset"',graphics)
         settings=read("gpu/shim/gow3_settings.cpp")
         self.assertIn('if (key == "upscaler")',settings)
