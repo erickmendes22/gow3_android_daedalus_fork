@@ -257,6 +257,11 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
         uintptr_t sotc = runtime_sotc_resolve(name);
         if (sotc) return sotc;
     }
+    if (getenv("SOTC_PORT")) {
+        extern uintptr_t runtime_fiber_resolve(const char *);
+        uintptr_t fiber = runtime_fiber_resolve(name);
+        if (fiber) return fiber;
+    }
     uintptr_t file = runtime_file_resolve(name);
     if (file) return file;
     return gow3gpu_resolve(name);

@@ -24,6 +24,18 @@ enum {
     GUEST_GPRS
 };
 typedef struct { uint64_t gpr[GUEST_GPRS]; uint64_t rip; } GuestRegs;
+/* The suspended guest machine state at a PS4 host-function call.
+ * For FEX fibers, a resume transfers guest execution without unwinding host
+ * stacks. Set returns 1 when the current syscall state has been replaced. */
+typedef struct {
+    uint64_t gpr[GUEST_GPRS];
+    uint64_t rip;
+    uint32_t mxcsr;
+    uint16_t fcw;
+} GuestContext;
+int guest_context_get(GuestContext *out);
+int guest_context_set(const GuestContext *in);
+
 
 /* Once, before any other call. `map` allocates memory the guest may hold pointers to (below
  * 1 TiB: the game packs pointers into 40 bits), as runtime_low_map. */

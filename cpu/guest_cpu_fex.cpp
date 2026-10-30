@@ -109,6 +109,10 @@ struct GuestThread {
     unsigned depth;
 };
 thread_local GuestThread* self;
+/* The host callback currently servicing an x86 FEX syscall (nested-safe). */
+thread_local FEXCore::Core::CpuStateFrame* guest_host_frame;
+thread_local uintptr_t guest_host_return;
+thread_local bool guest_host_replaced;
 std::mutex threads_lock;
 std::vector<GuestThread*> threads;
 
@@ -183,6 +187,7 @@ void CallHost(CPUState& s, void* fn) {
     }
     HostResult result;
     gow3cpu_host_call(fn, &args, &result);
+    if (guest_host_replaced) return; /* guest_context_set replaced the callback's register state */
     s.gregs[REG_RAX] = result.x[0];
     s.gregs[REG_RDX] = result.x[1];
     std::memcpy(Xmm(s, 0), &result.v[0], sizeof(result.v[0]));
@@ -200,7 +205,16 @@ public:
             if (!fn) {
                 Fatal("call of an unregistered host stub", rip);
             }
+            auto* previous_frame = guest_host_frame;
+            const uintptr_t previous_return = guest_host_return;
+            const bool previous_replaced = guest_host_replaced;
+            guest_host_frame = frame;
+            guest_host_return = rip + 2;
+            guest_host_replaced = false;
             CallHost(s, fn);
+            guest_host_frame = previous_frame;
+            guest_host_return = previous_return;
+            guest_host_replaced = previous_replaced;
             s.rip = rip + 2;
             return;
         }
@@ -379,6 +393,8 @@ uint64_t guest_cpu_call(uintptr_t fn, unsigned count, const uint64_t* args) {
     uint64_t saved[16];
     std::memcpy(saved, s.gregs, sizeof(saved));
     const uint64_t saved_rip = s.rip;
+    const uint32_t saved_mxcsr=s.mxcsr;
+    const uint16_t saved_fcw=s.FCW;
     uintptr_t sp;
     if (t->depth) {
         sp = s.gregs[REG_RSP] - 128; // below the red zone of the guest code that called the host
@@ -410,7 +426,41 @@ uint64_t guest_cpu_call(uintptr_t fn, unsigned count, const uint64_t* args) {
     const uint64_t result = s.gregs[REG_RAX];
     std::memcpy(s.gregs, saved, sizeof(saved));
     s.rip = saved_rip;
+    s.mxcsr=saved_mxcsr;
+    s.FCW=saved_fcw;
     return result;
+}
+
+int guest_context_get(GuestContext* out) {
+    if (!out || !guest_host_frame) return 0;
+    const auto& s=guest_host_frame->State;
+    std::memcpy(out->gpr,s.gregs,sizeof(out->gpr));
+    out->rip=guest_host_return; /* the x86 host veneer ret after the syscall */
+    out->mxcsr=s.mxcsr;
+    out->fcw=s.FCW;
+    return 1;
+}
+
+int guest_context_set(const GuestContext* in) {
+    if (!in || !guest_host_frame) return 0;
+    auto& s=guest_host_frame->State;
+    std::memcpy(s.gregs,in->gpr,sizeof(in->gpr));
+    /* The handler always resumes at its current veneer ret. If the saved
+     * state was not at a veneer ret, push its requested RIP as the ret target.
+     * A saved fiber captured at another veneer already has a return address
+     * on its own guest stack; do not push a second one. */
+    const uintptr_t origin=reinterpret_cast<uintptr_t>(stubs);
+    const bool at_veneer_ret=in->rip>=origin &&
+        in->rip-origin<StubBytes && (in->rip-origin)%StubSize==5;
+    if (!at_veneer_ret) {
+        if (s.gregs[GUEST_RSP]<8) Fatal("fiber resume stack underflow");
+        s.gregs[GUEST_RSP]-=8;
+        std::memcpy(reinterpret_cast<void*>(s.gregs[GUEST_RSP]),&in->rip,sizeof(in->rip));
+    }
+    s.mxcsr=in->mxcsr;
+    s.FCW=in->fcw;
+    guest_host_replaced=true;
+    return 1;
 }
 
 void guest_cpu_thread_stack(void* top, size_t size) {
