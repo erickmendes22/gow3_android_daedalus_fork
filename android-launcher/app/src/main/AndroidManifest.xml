@@ -12,7 +12,7 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/icon"
+        android:icon="${appIcon}"
         android:isGame="true"
         android:label="${appLabel}"
         android:requestLegacyExternalStorage="true"
