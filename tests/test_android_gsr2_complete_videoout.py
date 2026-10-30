@@ -10,9 +10,12 @@ APP=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.j
 
 class FullVideoOutRegression(unittest.TestCase):
     def test_full_color_selected_from_actual_videoout_not_old_ldr(self):
-        self.assertIn('const bool complete_videoout = prehud &&',UPS)
-        self.assertIn('!std::getenv("GOW3_GSR2_USE_EARLY_PREHUD")',UPS)
-        self.assertIn('const vk::ImageView source_view = complete_videoout ? guest_view : prehud',UPS)
+        self.assertIn('const bool force_early = prehud && std::getenv("GOW3_GSR2_USE_EARLY_PREHUD")',UPS)
+        self.assertIn('const bool post_scene = prehud && !force_early &&',UPS)
+        self.assertIn('const bool complete_videoout = prehud && !post_scene && !force_early',UPS)
+        self.assertIn('const vk::ImageView source_view = post_scene',UPS)
+        self.assertIn('GOW3_GSR2_FORCE_FULL_VIDEOOUT',UPS)
+        self.assertIn('CaptureGsr2AfterVideoOutCopy(VAddr guest',UPS)
         self.assertIn('RecordGsr2(cmd, source_view, chosen_depth_view, w, h, ow, oh)',UPS)
         self.assertIn('camera_motion.RecordCompletedMotion(cmd, chosen_depth_view, *motion_view, w, h)',UPS)
 
@@ -28,6 +31,8 @@ class FullVideoOutRegression(unittest.TestCase):
     def test_capture_records_both_actual_full_input_and_early_snapshot(self):
         self.assertIn('"early_prehud",fmt',UPS)
         self.assertIn('complete_videoout || !prehud ? source.GetImage()',UPS)
+        self.assertIn('"post_scene",fmt',UPS)
+        self.assertIn('post_scene ? "post_scene_copy_temporal"',UPS)
         self.assertIn('"full_videoout_temporal"',UPS)
         self.assertIn('full_color=%d temporal=%d',UPS)
         self.assertIn('fNNN_early_prehud_WxH_',APP)
