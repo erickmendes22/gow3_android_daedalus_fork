@@ -1,3 +1,4 @@
-God of War III Bionic consolidated build: fix failing preflight (Android resources,
-PanVK fixture stubs, spatial-only regression tests). Do not revive temporal
-GSR2 or widen PanVK beyond detected Mali CSF. Commit after source validation.
+Consolidated Bionic APK build after Java-only preflight success (run 41078374566).
+Verified fix: DriverArchive.delete checksum-confined cleanup, JSONObject fixture overload.
+GSR2 remains spatial 1:1, no temporal accumulation; PanVK gated to supported Mali.
+Source commit: f5e0bbfd3c0ac85766a13a18b362419f50a69633
