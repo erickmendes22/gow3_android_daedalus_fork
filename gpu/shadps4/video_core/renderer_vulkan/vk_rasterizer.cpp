@@ -1086,11 +1086,25 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         if (gsr2_stage_display_guest != address) {
             gsr2_stage_display_guest = address;
             gsr2_stage_display_draws = 0;
+            gsr2_stage_last_depth_enabled = false;
+            gsr2_stage_full_scene_captured = false;
         }
         const u32 completed = ++gsr2_stage_display_draws - 1;
         if (completed == 1) {
             upscaler->CaptureGsr2AfterVideoOutCopy(address, cb_descs[0].first);
         }
+        // ZIP (11): first 28 display draws contain the base 3D scene;
+        // combat particles are added at 29..80. At draw 80 the NEXT
+        // guest draw changes from depth-enabled 3D to depthless 2D.
+        // Copy the fully composed 3D framebuffer BEFORE that next draw,
+        // rather than guessing a fixed draw number for all scenes.
+        const bool next_has_depth = bool(regs.depth_control.depth_enable);
+        if (!gsr2_stage_full_scene_captured && completed >= 32 &&
+            gsr2_stage_last_depth_enabled && !next_has_depth) {
+            upscaler->CaptureGsr2BeforeDepthlessPass(address, cb_descs[0].first, completed);
+            gsr2_stage_full_scene_captured = true;
+        }
+        gsr2_stage_last_depth_enabled = next_has_depth;
         const auto& stage_key = pipeline->GetGraphicsKey();
         upscaler->ProbeGsr2VideoOutStage(
             address, cb_descs[0].first, completed,
@@ -3873,6 +3887,8 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     }
     gsr2_stage_display_guest = 0;
     gsr2_stage_display_draws = 0;
+    gsr2_stage_last_depth_enabled = false;
+    gsr2_stage_full_scene_captured = false;
     const bool had_scene = scene_started;
     const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
     // Resolve on the exact presented guest address, not the most recent
