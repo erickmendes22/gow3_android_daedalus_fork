@@ -709,7 +709,9 @@ int main(int argc, char **argv) {
     uint64_t size = read64(f), entry = read64(f), ns = read64(f), nr = read64(f);
     import_count = read64(f);
     sotc_android_image = !memcmp(magic,"BBPROBE5",8);
+#if defined(__ANDROID__) || (!defined(_WIN32) && !defined(__MINGW32__))
     if (sotc_android_image) setenv("SOTC_PORT","1",1);
+#endif
     uint64_t capabilities = memcmp(magic, "G3PROBE1", 8) ? read64(f) : 0;
     if (capabilities & ~UINT64_C(1)) fail("unknown runtime capabilities");
     runtime_start(strict_imports ? 0 : capabilities);

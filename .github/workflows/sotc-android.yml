@@ -29,6 +29,9 @@ jobs:
           done
           python -m py_compile ports/sotc/android/prepare_game.py
           python -m unittest discover -s tests -p 'test_sotc_*.py' -v
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Validate actual SotC HLE on ARM64
         run: |
           sdkmanager 'ndk;29.0.14206865'
@@ -40,9 +43,6 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror ports/sotc/android/lowmem.c tests/test_sotc_lowmem.c -o /tmp/sotc-lowmem-test
           /tmp/sotc-lowmem-test
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
       - name: Build native ARM64 component
         run: |
           sdkmanager 'ndk;29.0.14206865'
