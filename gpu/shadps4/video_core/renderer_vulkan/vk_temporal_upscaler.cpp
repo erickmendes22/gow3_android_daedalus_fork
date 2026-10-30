@@ -456,6 +456,8 @@ void TemporalUpscaler::CaptureGsr2PreHudScene(VAddr guest) {
     }
     if (slot->captured) return;
     slot->post_scene_valid = false;
+    slot->post_scene_final_valid = false;
+    slot->post_scene_completed_draws = 0;
     slot->depth_valid = false;
     slot->depth_id = {};
     if (!slot->image || slot->width != w || slot->height != h ||
@@ -768,6 +770,74 @@ void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
 // multiple draw boundaries. The screenshot filenames carry guest address and
 // completed draw count, so they can be correlated with the TRUE VideoOut flip.
 // This is not a heuristic source substitution: it NEVER changes GSR2 input.
+// The scene is not finished when the first VideoOut copy completes.
+// ZIP (11) proves additional depth-enabled combat draws occur after
+// the first copy, through at least draw 80. Snapshot at the first
+// DEPTH-ENABLED to DEPTHLESS draw transition, prior to executing the
+// depthless draw; keep the original early snapshot if the transition
+// cannot be verified. Never copy by a hard-coded draw number.
+void TemporalUpscaler::CaptureGsr2BeforeDepthlessPass(
+    VAddr guest, VideoCore::ImageId target, u32 completed_draws) {
+    if (!PreHudEnabled() || !guest || !target || completed_draws < 32) return;
+    PreHudSlot* slot = nullptr;
+    for (auto& s : pre_hud_slots)
+        if (s.guest == guest && s.captured) { slot = &s; break; }
+    if (!slot || !slot->post_scene_valid || !slot->post_scene_image ||
+        !slot->post_scene_view || slot->post_scene_final_valid) return;
+    auto& color = texture_cache.GetImage(target);
+    const u32 w = color.info.size.width, h = color.info.size.height;
+    if (color.info.guest_address != guest ||
+        !FrameCapture::IsDisplayBuffer(guest) ||
+        color.info.pixel_format != slot->post_scene_format ||
+        w != slot->post_scene_width || h != slot->post_scene_height ||
+        color.info.num_samples != 1 ||
+        !bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc))
+        return;
+    scheduler.EndRendering();
+    runtime.Transit(&color, vk::ImageLayout::eTransferSrcOptimal,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferRead);
+    runtime.FlushBarriers();
+    auto cmd = scheduler.CommandBuffer();
+    const vk::ImageSubresourceRange range{
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    const vk::ImageMemoryBarrier2 prepare{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead |
+                         vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .image = vk::Image(slot->post_scene_image),
+        .subresourceRange = range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&prepare});
+    const vk::ImageCopy copy{
+        .srcSubresource = {vk::ImageAspectFlagBits::eColor,0,0,1},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor,0,0,1},
+        .extent = {w,h,1}};
+    cmd.copyImage(color.GetImage(),vk::ImageLayout::eTransferSrcOptimal,
+                  vk::Image(slot->post_scene_image),
+                  vk::ImageLayout::eTransferDstOptimal,copy);
+    const vk::ImageMemoryBarrier2 readable{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .image = vk::Image(slot->post_scene_image),
+        .subresourceRange = range};
+    cmd.pipelineBarrier2({.imageMemoryBarrierCount=1,.pImageMemoryBarriers=&readable});
+    slot->post_scene_final_valid = true;
+    slot->post_scene_completed_draws = completed_draws;
+    static u64 scenes = 0;
+    if (++scenes <= 8 || scenes % 600 == 0)
+        std::printf("GSR2_FINISHED_SCENE_CAPTURE count=%llu guest=%#llx after_draw=%u size=%ux%u\\n",
+                    (unsigned long long)scenes,(unsigned long long)guest,
+                    completed_draws,w,h);
+}
+
 void TemporalUpscaler::ProbeGsr2VideoOutStage(VAddr guest,
                                              VideoCore::ImageId target,
                                              u32 completed_draw,
