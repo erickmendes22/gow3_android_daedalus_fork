@@ -327,6 +327,8 @@ private:
     u32 gsr2_stage_scan_samples = 0;
     std::array<VAddr, 3> gsr2_stage_scan_guests{};
     u32 gsr2_stage_scan_guest_count = 0;
+    // Consume a final snapshot from the same actual Presenter source after flip.
+    VAddr gsr2_stage_scan_final_guest = 0;
     bool PreHudEnabled() const;
     bool guest_display_history_contiguous = false;
     // Every temporal GSR2 input must refer to exactly one fresh, real
