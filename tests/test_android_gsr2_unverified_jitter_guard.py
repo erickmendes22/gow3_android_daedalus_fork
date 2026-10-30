@@ -26,7 +26,8 @@ class Gsr2NativeRasterJitterGuard(unittest.TestCase):
         self.assertIn("draw_jitter = upscaler->Jitter();", RASTER)
         self.assertIn("camera_motion->SetJitter(upscaler->Jitter());", RASTER)
         self.assertIn("pre_hud_recording ? camera_motion.CompletedJitter()", UPSCALE)
-        self.assertIn(".jitter = {sign * matched_jitter[0], sign * matched_jitter[1]},", UPSCALE)
+        self.assertIn(".jitter = spatial_only ? std::array<float,2>{0.0f,0.0f}", UPSCALE)
+        self.assertIn("const bool dispatch_reset = spatial_only ||", UPSCALE)
         self.assertIn("vec2 InputJitter = params.jitterOffset;", GSR)
 
     def test_original_native_history_comparison_still_guards_camera_flow(self):

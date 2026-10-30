@@ -20,22 +20,23 @@ class Gsr2Launcher217(unittest.TestCase):
 
     def test_selection_saved_as_actual_runtime_keys(self):
         self.assertIn('mutableStateOf(ini["upscaler"] == "gsr2")', POPUP)
-        self.assertIn('mutableStateOf((ini["preset"] ?: "0")', POPUP)
         self.assertIn('"upscaler" to (if (gsr2) "gsr2" else "off")', POPUP)
-        self.assertIn('"preset" to gsrPreset', POPUP)
-        self.assertIn('if (gsr2) "720p" else resolution', POPUP)
+        self.assertIn('"preset" to "0"', POPUP)
+        self.assertIn('"render_resolution" to resolution', POPUP)
+        self.assertNotIn('if (gsr2) "720p" else resolution', POPUP)
         self.assertIn('Gow3Ini.write(gow3IniFile(context), values)', HOME)
         self.assertIn('pending.putAll(updates)', INI)
         self.assertIn("ini.get('upscaler') == 'gsr2'", LAUNCH)
         self.assertIn("updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'", LAUNCH)
         self.assertIn('{"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "gsr2"}', GPU)
 
-    def test_five_presets_and_no_8k_conflict(self):
-        for preset in range(5):
-            self.assertIn(f'"{preset}" to R.string.popup_gsr2_', POPUP)
-        self.assertIn('if (!gsr2 || value == "720p")', POPUP)
-        self.assertIn('resolution = "720p"', POPUP)
-        self.assertIn("graphics.get('render_resolution') != '8K'", LAUNCH)
+    def test_spatial_filter_does_not_force_resolution_or_temporal_presets(self):
+        self.assertIn('OptionRow(label, resolution == value) { resolution = value }', POPUP)
+        self.assertIn('Every resolution remains available with GSR2 spatial', POPUP)
+        self.assertIn('"preset" to "0"', POPUP)
+        self.assertIn('GOW3_GSR2_SPATIAL_ONLY', LAUNCH)
+        self.assertNotIn('if (!gsr2 || value == "720p")', POPUP)
+        self.assertNotIn('resolution = "720p"', POPUP)
 
     def test_both_languages_contain_all_gsr2_strings(self):
         keys = (

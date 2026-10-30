@@ -1,0 +1,3 @@
+God of War III Bionic consolidated build: fix failing preflight (Android resources,
+PanVK fixture stubs, spatial-only regression tests). Do not revive temporal
+GSR2 or widen PanVK beyond detected Mali CSF. Commit after source validation.

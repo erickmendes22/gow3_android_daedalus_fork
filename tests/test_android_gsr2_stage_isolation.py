@@ -96,7 +96,8 @@ class Gsr2StageIsolation(unittest.TestCase):
     def test_original_android_gsr2_enabled_and_prefill_untouched(self):
         run = LAUNCH.read_text(encoding="utf-8")
         self.assertIn("export GOW3_GSR2_PREFILL_DISPLAY=1", run)
-        self.assertIn("export GOW3_GSR2_AUTO_PROBE=1", run)
+        self.assertIn("export GOW3_GSR2_AUTO_PROBE=0", run)
+        self.assertIn("export GOW3_GSR2_SPATIAL_ONLY=1", run)
         self.assertIn("GOW3_UPSCALER=none", run)  # resolved by launch_env afterwards
         plan = (ROOT / "scripts/launch_env.py").read_text(encoding="utf-8")
         self.assertIn("updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'", plan)

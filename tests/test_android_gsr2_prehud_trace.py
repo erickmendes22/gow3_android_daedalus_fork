@@ -90,7 +90,9 @@ class TestGsr2PreHudTrace(unittest.TestCase):
         self.assertIn("pre_hud_linear_sampler",cpp)
         self.assertIn("createSamplerUnique",cpp)
         self.assertIn("gsr2_prehud_composite.comp",build)
-        self.assertIn('GOW3_GSR2_PREHUD_COMPOSITE:-1',shell)
+        # Spatial mode has no temporal history and explicitly disables the
+        # pre-HUD temporal composite in its launch path.
+        self.assertIn('export GOW3_GSR2_PREHUD_COMPOSITE=0',shell)
         self.assertIn("} else {\n        // Stable fallback",cpp)
 
     def test_global_grade_is_not_mistaken_for_a_scene_change(self):

@@ -10,6 +10,7 @@ on:
     paths:
       # First consolidated build triggered by this workflow edit, not by every code edit.
       - '.github/workflows/bionic-apk.yml'
+      - '.github/gow3-spatial-build-trigger.txt'
       - '.github/r14-build-trigger.txt'
       - '.github/r15-build-trigger.txt'
       - '.github/r16-build-trigger.txt'

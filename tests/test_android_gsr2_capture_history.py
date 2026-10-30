@@ -47,19 +47,20 @@ class Gsr2CaptureHistory(unittest.TestCase):
         self.assertIn("skipping spatial fallback frames",app)
         self.assertIn("ONLY successful temporal history frames (reset=0)",app)
 
-    def test_in_game_menu_can_capture_and_export_without_root(self):
+    def test_temporal_capture_is_dormant_in_spatial_only_menu(self):
+        # Keep diagnostic implementation for future research, but do not
+        # expose a button that can never capture reset=0 frames.
         app=APP.read_text()
-        self.assertIn("Capture GSR2 temporal scaling",app)
-        self.assertIn("Export GSR2 capture ZIP",app)
         self.assertIn("void startGsr2Capture()",app)
         self.assertIn("void writeGsr2CaptureZip(",app)
-        self.assertIn("Intent.ACTION_CREATE_DOCUMENT",app)
-        self.assertIn('"frames/"+file.getName()',app)
-        self.assertIn("new ZipEntry(\"logs/android-game.log\")",app)
+        self.assertIn("GSR2 is currently a spatial-only filter",app)
+        self.assertNotIn('menuItem("ic_frames","Capture GSR2 temporal scaling"',app)
+        self.assertNotIn('menuItem("ic_frames","Export GSR2 capture ZIP"',app)
         runtime=RUN.read_text()
         self.assertIn('export GOW3_DUMP_DIR="$base/out/gsr2-capture"',runtime)
-        self.assertIn('export GOW3_DUMP_TRIGGER="$base/gsr2-capture.trigger"',runtime)
         self.assertIn('export GOW3_DUMP_FRAMES=6',runtime)
+        self.assertIn('export GOW3_GSR2_SPATIAL_ONLY=1',runtime)
+        self.assertIn('export GOW3_GSR2_PREHUD_COMPOSITE=0',runtime)
 
 if __name__=='__main__':
     unittest.main()

@@ -24,7 +24,11 @@ class SceneCadence(unittest.TestCase):
             "void TemporalUpscaler::OnDispatch(",1)[0]
         self.assertIn("std::unique_ptr<GsrUpscaler> gsr2_spatial;",header)
         self.assertIn("auto& provider = spatial_videoout ? gsr2_spatial : gsr2;",record)
-        self.assertIn("const bool spatial_videoout = guest_display_mode_recording &&",record)
+        # Android always selects the spatial provider, even for scene frames.
+        self.assertIn('const bool spatial_only = std::getenv("GOW3_ANDROID_PORT") && UseGsr2();',record)
+        self.assertIn("const bool spatial_videoout = spatial_only ||",record)
+        self.assertIn("const bool dispatch_reset = spatial_only ||",record)
+        self.assertIn(".jitter = spatial_only ? std::array<float,2>{0.0f,0.0f}",record)
         self.assertIn("const bool provider_changed =", start)
         self.assertIn("recent_verified_scene",start)
         self.assertIn("CompletedVideoOutGeneration()",start)
@@ -35,6 +39,7 @@ class SceneCadence(unittest.TestCase):
         # advance the real scene's Halton phase.
         self.assertIn("return changed;\n    jitter_index = jitter_index % phases + 1;",start)
         self.assertIn('changed && (!PreHudEnabled() || provider_changed)', start)
+        self.assertIn("const bool reuse_history = !spatial_only && use_scene_motion &&",present)
         self.assertIn("constexpr u64 MaxTemporalSceneFlipGap = 4;",present)
         self.assertIn("CompletedPreviousMatchesTemporalScene()",present)
         self.assertIn("previous_scene_history_eligible",present)
