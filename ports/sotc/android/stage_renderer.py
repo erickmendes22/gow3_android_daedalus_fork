@@ -418,12 +418,11 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
         '#include <stdio.h>\n#ifdef __ANDROID__\n#include <cstring>\n#endif',
         'SotC Android ImGui platform function include')
     imguivk=swap(imguivk,
-        r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
-#define IMGUI_VULKAN_FUNC_LOAD(func)''',
-        r'''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
+        'bool    ImGui_ImplVulkan_LoadFunctions(',
+        '''#ifdef IMGUI_IMPL_VULKAN_USE_LOADER
 #ifdef __ANDROID__
-// These functions belong only to ImGui_ImplVulkanH_* desktop window helpers.
-// The SotC Android renderer uses native AHardwareBuffer images instead.
+// ImGui's desktop window helpers are never called on the AHB headless path.
+// Do not require their VkSurfaceKHR/VkSwapchainKHR exports to load the overlay.
 static bool SotcUnusedDesktopVkFunction(const char* name) {
     return std::strcmp(name, "vkCreateSwapchainKHR") == 0 ||
            std::strcmp(name, "vkDestroySurfaceKHR") == 0 ||
@@ -436,8 +435,10 @@ static bool SotcUnusedDesktopVkFunction(const char* name) {
 #else
 static bool SotcUnusedDesktopVkFunction(const char*) { return false; }
 #endif
-#define IMGUI_VULKAN_FUNC_LOAD(func)''',
-        'headless-only optional ImGui desktop Vulkan functions')
+#endif
+
+bool    ImGui_ImplVulkan_LoadFunctions(''',
+        'file-scope SotC Android optional swapchain function guard')
     imguivk=swap(imguivk,
         r'''    if (func == nullptr)   \
         return false;''',
