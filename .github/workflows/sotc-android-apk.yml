@@ -34,7 +34,9 @@ jobs:
           # functions, not an unsupported-import sentinel.
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
             -I. -Isrc -pthread -c src/runtime.c -o "$RUNNER_TEMP/sotc-runtime-imports.o"
-          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+          # runtime_mutex.c already defines _GNU_SOURCE itself; defining it
+          # again on the command line is a warning promoted to error.
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
             -I. -Isrc -pthread -c src/runtime_mutex.c -o "$RUNNER_TEMP/sotc-mutex-imports.o"
           cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,--gc-sections -pthread \
             tests/test_sotc_scoped_mutex.c "$RUNNER_TEMP/sotc-runtime-imports.o" \
