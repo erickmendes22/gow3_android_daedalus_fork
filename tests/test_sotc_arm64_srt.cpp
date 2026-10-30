@@ -24,9 +24,6 @@ void read(std::uint32_t* dst, std::uint64_t src, std::uint64_t bytes) {
 void put32(std::size_t offset,std::uint32_t value) {
     assert(offset+4<=mem.size());std::memcpy(mem.data()+offset,&value,4);
 }
-void put64(std::size_t offset,std::uint64_t value) {
-    assert(offset+8<=mem.size());std::memcpy(mem.data()+offset,&value,8);
-}
 }
 int main() {
     mem.resize(8192);base=UINT64_C(0x30000000);
