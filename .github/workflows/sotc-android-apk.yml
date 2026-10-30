@@ -38,7 +38,7 @@ jobs:
           packages: 'platform-tools'
       - name: Install ARM64 compiler, SDK and build dependencies
         run: |
-          sdkmanager 'ndk;29.0.14206865' 'build-tools;35.0.0' 'platforms;android-37'
+          sdkmanager 'ndk;29.0.14206865' 'build-tools;35.0.0'
           sudo apt-get update -qq
           sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools \
             make curl tar zip unzip ccache
