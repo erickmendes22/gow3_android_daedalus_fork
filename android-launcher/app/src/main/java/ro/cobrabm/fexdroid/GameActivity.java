@@ -306,6 +306,9 @@ public final class GameActivity extends Activity {
         if (bionicRuntime()) {
             menuItem("ic_frames","Capture GSR2 temporal scaling",
                 "6 temporal frames (reset=0) · all raw buffers",this::startGsr2Capture);
+            menuItem("ic_frames","Capture GSR2 render stages",
+                "One flip: guest framebuffer after draws 1, 2, 4 ... 256",
+                this::startGsr2RenderStages);
             menuItem("ic_restore","Export GSR2 capture ZIP",
                 "Save raw frames and the game log for analysis",this::exportGsr2Capture);
         }
@@ -846,6 +849,47 @@ public final class GameActivity extends Activity {
             }).show();
     }
 
+    private void startGsr2RenderStages() {
+        if (game==null) {
+            new AlertDialog.Builder(this).setMessage("Start the game before scanning GPU stages.")
+                .setPositiveButton("OK",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Capture GSR2 render stages")
+            .setMessage("Capture the actual VideoOut framebuffer after 1, 2, 4, 8, " +
+                "16, 32, 64, 128 and 256 guest draws, correlated with the real " +
+                "presented flip. This does not change GSR2 rendering. GPU readbacks " +
+                "may briefly pause gameplay. Export the ZIP afterward.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Start",(d,w) -> {
+                closeDrawer();
+                main.postDelayed(() -> worker.execute(() -> {
+                    try {
+                        File dir=gsr2CaptureDir();
+                        if (!dir.isDirectory() && !dir.mkdirs())
+                            throw new IOException("Cannot create capture directory");
+                        File[] previous=dir.listFiles();
+                        if (previous!=null) for (File file:previous)
+                            if (file.isFile() && !file.delete())
+                                throw new IOException("Cannot clear old stage capture: "+file.getName());
+                        new File(BASE,"gsr2-capture.trigger").delete();
+                        File trigger=new File(BASE,"gsr2-stages.trigger");
+                        try (FileOutputStream out=new FileOutputStream(trigger)) {
+                            out.write("stage-scan\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "GSR2 stage scan armed. Export the ZIP after the next gameplay frame.",
+                            android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception ex) {
+                        runOnUiThread(() -> new AlertDialog.Builder(this)
+                            .setMessage("GSR2 stage scan failed: "+ex.getMessage())
+                            .setPositiveButton("OK",null).show());
+                    }
+                }),3000);
+            }).show();
+    }
+
     private void exportGsr2Capture() {
         File dir=gsr2CaptureDir();
         File[] saved=dir.listFiles((d,name) -> name.endsWith(".raw"));
@@ -882,7 +926,8 @@ public final class GameActivity extends Activity {
                             "fNNN_depth_WxH_r32f.raw (little-endian float32; MSAA sample zero),\n"+
                             "fNNN_output_WxH_rgba16f.raw (4 float16 channels, linear),\n"+
                             "fNNN_composited_WxH_rgba_unorm.raw (RGBA8 with HUD),\n"+
-                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+
+                            "fNNN_videoout_WxH_*.raw (original PS4 display, before host output).\n"+                            "f000_scan_guest_<hex>_after_draw_<NNN>_WxH_*.raw (exact guest VideoOut at N completed draws).\n"+
+                            "GSR2_STAGE_SCAN_FINISH in log identifies which guest address the flip presented.\n"+
                             "If a frame lacks depth, see GSR2_CAPTURE_FRAME depth_r32=0 in log.\n"+
                             "Capture starts at the canonical VideoOut GSR2 dispatch, NOT a menu/UI-only frame.\n"+
                             "The game log contains frame/flip/camera provenance, full_color and reset status.\n"+
