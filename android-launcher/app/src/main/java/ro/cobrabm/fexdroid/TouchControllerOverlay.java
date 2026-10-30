@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.RectF;
+import android.graphics.Rect;
 import java.io.InputStream;
 import android.graphics.Paint;
 import android.graphics.PointF;
@@ -34,10 +35,10 @@ final class TouchControllerOverlay extends View {
     // Approved XML/preview coordinates, 1280x576. Positions span the immersive
     // window; each individual control retains a uniform scale and stays round.
     private static final float[][] DEFAULT={
-        {288,106},{134,106},{548,83},{640,83},{1008,106},{1164,106},
+        {288,106},{134,106},{548,83},{640,83},{1008,150},{1164,150},
         {364,211},{308,267},{420,267},{364,323},
         {1198,350},{1057,492},{1198,492},{1071,316},
-        {179,449},{640,488},{364,267},{861,408}
+        {179,449},{640,488},{364,267},{1008,408}
     };
     private final PadBridge pad;
     private final File saveDialogFlag;
@@ -66,6 +67,20 @@ final class TouchControllerOverlay extends View {
     private final Map<String,Float> sizes=new LinkedHashMap<>();
     private PointF dodgeOrigin;
     private boolean weaponsOpen;
+    private final float[] hudBounds=new float[4];
+    void reserveHud(float left,float top,float right,float bottom) {
+        if(hudBounds[0]==left && hudBounds[1]==top && hudBounds[2]==right && hudBounds[3]==bottom) return;
+        hudBounds[0]=left;hudBounds[1]=top;hudBounds[2]=right;hudBounds[3]=bottom;invalidate();
+    }
+    private float shoulderShift() {
+        float[][] buttons=new float[2][];int i=0;
+        for(String name:new String[]{"r1","r2"}) {
+            PointF p=centers.get(name);float x=p.x*getWidth()/1280f,y=p.y*getHeight()/576f;
+            float radius=44*size(name)*scale();
+            buttons[i++]=new float[]{x-radius,y-radius,x+radius,y+radius};
+        }
+        return ControlLayout.shoulderShift(hudBounds,buttons,12*scale());
+    }
     private Runnable geometryListener;
     void onGeometryChanged(Runnable listener) { geometryListener=listener; }
     private void geometryChanged() { if(geometryListener!=null) geometryListener.run(); }
@@ -99,7 +114,7 @@ final class TouchControllerOverlay extends View {
             sizes.put(name,Math.max(.6f,Math.min(1.6f,
                 preferences.getFloat(key("size",name),1f))));
         }
-        for (String name:new String[]{"l1","l2","r1","r2","square","triangle","circle","cross","rage"}) {
+        for (String name:new String[]{"l1","l2","r1","r2","square","triangle","circle","cross","rage","dodge"}) {
             try (InputStream in=context.getAssets().open("gow3-controls/"+name+".png")) {
                 Bitmap icon=BitmapFactory.decodeStream(in);
                 if (icon==null) throw new java.io.IOException("Invalid action icon: "+name);
@@ -110,7 +125,9 @@ final class TouchControllerOverlay extends View {
     }
     private PointF layoutCenter(String name) {
         PointF p=centers.get(name);
-        return new PointF(p.x*getWidth()/(1280f*scale()),p.y*getHeight()/(576f*scale()));
+        float y=p.y*getHeight()/(576f*scale());
+        if(name.equals("r1") || name.equals("r2")) y+=shoulderShift()/scale();
+        return new PointF(p.x*getWidth()/(1280f*scale()),y);
     }
     private PointF center(String name) {
         if (!editing && "rightstick".equals(name) && dodgeOrigin!=null) return dodgeOrigin;
@@ -152,7 +169,9 @@ final class TouchControllerOverlay extends View {
             PointF p=layoutCenter(name);
             float dx=Math.abs(x-p.x),dy=Math.abs(y-p.y);
             float scale=size(name);
-            boolean inside=distance(x,y,p)<(stick(name) ? 72 : 44)*scale;
+            boolean inside=name.equals("rightstick")
+                ? dx*dx/(60*60*scale*scale)+dy*dy/(44*44*scale*scale)<1
+                : distance(x,y,p)<(name.equals("leftstick") ? 72 : 44)*scale;
             if (inside && distance(x,y,p)<best) { best=distance(x,y,p); winner=name; }
         }
         if (winner!=null || editing || save) return winner;
@@ -180,8 +199,8 @@ final class TouchControllerOverlay extends View {
                 ly=axis(Math.max(-1f,Math.min(1f,(p.y-c.y)/(56f*size(control)))));
             } else if (control.equals("rightstick")) {
                 right=true; PointF c=center(control);
-                rx=axis(Math.max(-1f,Math.min(1f,(p.x-c.x)/(56f*size(control)))));
-                ry=axis(Math.max(-1f,Math.min(1f,(p.y-c.y)/(56f*size(control)))));
+                float[] movement=DodgeMotion.vector(p.x-c.x,p.y-c.y,56f*size(control));
+                rx=axis(movement[0]);ry=axis(movement[1]);
             } else if (control.equals("l2")) { l2=255; pressed.add(control); }
             else if (control.equals("r2")) { r2=255; pressed.add(control); }
             else if (control.equals("touchpad")) pressed.add("touchpad_right"); /* 右侧点击:打开游戏暂停菜单,进而可进存档列表 */
@@ -373,16 +392,38 @@ final class TouchControllerOverlay extends View {
         c.restore();
     }
     private void drawDodge(Canvas c) {
-        // Same circular ring, dark fill and moving red thumb as the left stick.
-        // The arrows describe direction without a text panel over gameplay.
-        drawStick(c,"rightstick");
         PointF p=layoutCenter("rightstick");float s=size("rightstick");
-        c.save();c.scale(s,s,p.x,p.y);c.translate(p.x,p.y);
-        paint.setStyle(Paint.Style.STROKE);paint.setColor(0xccdbac7c);paint.setStrokeWidth(2.2f);
-        for(int i=0;i<4;i++) {
-            c.save();c.rotate(i*90f);
-            c.drawLine(-5,-45,0,-51,paint);c.drawLine(0,-51,5,-45,paint);
-            c.restore();
+        float nx=0,ny=0;boolean active=false;
+        for(int i=0;i<controls.size();i++) if("rightstick".equals(controls.valueAt(i))) {
+            PointF q=positions.get(controls.keyAt(i));
+            if(q!=null && dodgeOrigin!=null) {
+                float[] motion=DodgeMotion.vector(q.x-dodgeOrigin.x,q.y-dodgeOrigin.y,56*s);
+                nx=motion[0];ny=motion[1];active=true;
+            }
+            break;
+        }
+        float[] indicator=DodgeMotion.indicator(nx,ny,32,19);
+        c.save();c.translate(p.x,p.y);c.scale(s,s);
+        RectF rim=new RectF(-54,-38,54,38);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor("rightstick".equals(dragged) ? 0xaae2a46d : 0x70140912);c.drawOval(rim,paint);
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.8f);paint.setColor(0xccdbac7c);
+        c.drawOval(rim,paint);
+        paint.setColor(0xffe8d2bb);paint.setStrokeWidth(2);
+        c.drawLine(-49,0,-45,0,paint);c.drawLine(45,0,49,0,paint);
+        c.drawLine(0,-33,0,-29,paint);c.drawLine(0,29,0,33,paint);
+        if(active && Math.hypot(nx,ny)>.05) {
+            paint.setColor(0xffefbd67);paint.setStrokeWidth(2.3f);
+            c.drawLine(0,0,indicator[0],indicator[1],paint);
+            c.drawArc(rim,(float)Math.toDegrees(Math.atan2(ny,nx))-22,44,false,paint);
+            paint.setStyle(Paint.Style.FILL);paint.setColor(0x99efbd67);c.drawCircle(0,0,2.5f,paint);
+        }
+        Bitmap icon=actionIcons.get("dodge");
+        if(icon!=null) {
+            paint.setStyle(Paint.Style.FILL);paint.setColor(0xffffffff);paint.setFilterBitmap(true);
+            // The approved transparent sprite has padding; sample only its silhouette.
+            c.drawBitmap(icon,new Rect(284,369,975,972),
+                new RectF(indicator[0]-20,indicator[1]-17.5f,indicator[0]+20,indicator[1]+17.5f),paint);
         }
         c.restore();
     }

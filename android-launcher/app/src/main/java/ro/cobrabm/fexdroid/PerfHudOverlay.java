@@ -116,6 +116,7 @@ final class PerfHudOverlay extends View {
     void setActive(boolean on) {
         setVisibility(on ? VISIBLE : GONE);
         if (!on) {
+            if(touchControls!=null) touchControls.reserveHud(0,0,0,0);
             // Disabling must stop the worker: otherwise the next toggle-on has
             // a non-null sampler with no tick scheduled and the HUD freezes.
             release();
@@ -334,9 +335,8 @@ final class PerfHudOverlay extends View {
         hudX = Math.max(marginPx, Math.min(x, maxX));
         hudY = Math.max(marginPx, Math.min(y, maxY));
         if(touchControls!=null) {
-            float[] safe=HudPlacement.place(getWidth(),getHeight(),w,h,hudX,hudY,
-                marginPx,touchControls.hudExclusions());
-            hudX=safe[0];hudY=safe[1];
+            // The selected HUD anchor is fixed. Shoulder buttons make room for it.
+            touchControls.reserveHud(hudX,hudY,hudX+w,hudY+h);
         }
     }
 

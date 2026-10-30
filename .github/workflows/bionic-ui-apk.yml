@@ -1,4 +1,5 @@
 name: Daedalus 2.1.8 UI APK
+# Approved swipe layout: fixed HUD and lowered shoulder controls.
 
 on:
   push:
