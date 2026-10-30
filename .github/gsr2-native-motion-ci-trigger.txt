@@ -18,3 +18,5 @@ Rerun stage tests after updating outdated HUD source assertion for new post-scen
 ZIP (7): exact source 1..16 unchanged, first actual changes 16..32, after32 final tone curve+HUD; review 17..48 frames and unverified native-raster jitter guard from ZIP (6).
 
 ZIP8/ZIP9 2026-10-30: measured +3/+1 native scene flow, fix missing SGSR native-flow integer candidate offsets and prune with center-tap error lower bound, preserve zero jitter, run real Vulkan SPIRV and source tests.
+
+ZIP9: +3/+1 640x360 native motion absent from sparse search; expand motion candidates, center-tap prune, bounded subpixel quadratic fit for history. Preserve zero Halton jitter and UI composition; validate GLSL and tests.
