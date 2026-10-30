@@ -141,8 +141,15 @@ void main() {
     // Reconstruct in the original display color space. Retain localized
     // nonlinear color corrections as a same-frame residual AFTER GSR2,
     // never in the temporal scene history.
-    vec3 restored=clamp(applyGrade(gsrScene)+
-                        (guest-applyGrade(before)),0.0,1.0);
+    // ZIP (12): the 16-checkpoint fitted grade oscillated violently as
+    // combat effects crossed its sparse sample sites (red gain 1.34 -> 0.55
+    // in successive camera-valid, jitter=0 temporal frames). Algebraically,
+    // the previous expression was guest + gradeGain*(gsrScene-before), so
+    // moving effects modulated the ENTIRE temporal reconstruction each
+    // frame. Keep the fitted grade ONLY to distinguish postprocessing from
+    // genuine HUD edges; never apply that unstable global gain to temporal
+    // scene detail. All three samplers are in linear light.
+    vec3 restored=clamp(guest+(gsrScene-before),0.0,1.0);
     float overlayWeight=max(smoothstep(0.06,0.16,residualEdge),
                             smoothstep(0.28,0.65,opaqueDifference));
     float guestWeight=max(overlayWeight,guestFallbackWeight);
