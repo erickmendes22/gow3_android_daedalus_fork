@@ -75,6 +75,9 @@ static uint64_t module_count;
 static int entered_game;
 static int gpu_enabled;
 static int sotc_android_image; /* BBPROBE5 detected: use verified low 31-bit mapping */
+#ifdef __ANDROID__
+static int sotc_renderer_ready; /* The SotC GPU is unsafe to interrogate during construction. */
+#endif
 int vulkan_smoke(void);
 
 static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
@@ -270,14 +273,25 @@ static void fault(int sig, siginfo_t *info, void *context) {
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
-    if (gpu_enabled) {
-#ifdef __ANDROID__
-        if (sotc_android_image) sotc_gpu_dump_guest_writes(context);
-        else gow3gpu_dump_guest_writes(context);
-#else
-        gow3gpu_dump_guest_writes(context);
+#if defined(__ANDROID__) && defined(__aarch64__)
+    /* A NULL indirect call reports PC=0, which cannot be symbolized.
+     * LR is the caller after BLR: report it before interacting with GPU
+     * state, even when the crash occurs halfway through presenter setup. */
+    const ucontext_t *arm_context = (const ucontext_t *)context;
+    const uintptr_t caller = (uintptr_t)arm_context->uc_mcontext.regs[30];
+    const uintptr_t fp = (uintptr_t)arm_context->uc_mcontext.regs[29];
+    if (dladdr((void *)caller, &where) && where.dli_fname)
+        snprintf(line, sizeof(line),
+                 "SotC crash caller: %s+0x%lx (%s), FP=%p, renderer_ready=%d\\n",
+                 where.dli_fname,
+                 (unsigned long)(caller - (uintptr_t)where.dli_fbase),
+                 where.dli_sname ? where.dli_sname : "?",
+                 (void *)fp, sotc_renderer_ready);
+    else
+        snprintf(line, sizeof(line), "SotC crash caller LR=%p FP=%p renderer_ready=%d\\n",
+                 (void *)caller, (void *)fp, sotc_renderer_ready);
+    { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
 #endif
-    }
     /* Host call chain (frames with unwind info; guest frames end it). */
     void *frames[32];
     int depth = backtrace(frames, 32);
@@ -288,6 +302,17 @@ static void fault(int sig, siginfo_t *info, void *context) {
         else
             snprintf(line, sizeof(line), "  #%d %p\n", i, frames[i]);
         ssize_t written_=write(2, line, strlen(line)); (void)written_;
+    }
+    /* Dump graphics pages last: before bbgpu_init returns, GPU write tracking
+     * is only partially constructed and can itself crash the signal handler. */
+    if (gpu_enabled) {
+#ifdef __ANDROID__
+        if (sotc_android_image) {
+            if (sotc_renderer_ready) sotc_gpu_dump_guest_writes(context);
+        } else gow3gpu_dump_guest_writes(context);
+#else
+        gow3gpu_dump_guest_writes(context);
+#endif
     }
     _exit(128 + sig);
 }
@@ -895,6 +920,7 @@ int main(int argc, char **argv) {
         #ifdef __ANDROID__
         if (sotc_android_image ? sotc_gpu_init(&gpu) : gow3gpu_init(&gpu))
             fail("GPU initialization failed");
+        if (sotc_android_image) sotc_renderer_ready=1;
 #else
         if (gow3gpu_init(&gpu)) fail("GPU initialization failed");
 #endif
