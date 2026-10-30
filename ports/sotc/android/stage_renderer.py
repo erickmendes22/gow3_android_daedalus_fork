@@ -482,7 +482,7 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
         return;
     }''',
         'SotC Vulkan Android ImGui required-function guard and device proc loader')
-    pane.write_text(pane)
+    overlay.write_text(pane)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
