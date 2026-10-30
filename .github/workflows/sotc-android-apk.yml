@@ -1,0 +1,124 @@
+name: SotC Android ARM64 Bionic boot-test APK
+on:
+  push:
+    branches: [sotc-apk-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-apk-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Build SotC FEX Bionic, verify original Vulkan ABI, package independent APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install ARM64 compiler, SDK and build dependencies
+        run: |
+          sdkmanager 'ndk;29.0.14206865' 'build-tools;35.0.0' 'platforms;android-37'
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools \
+            make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Get verified original SotC Vulkan AHB ARM64 output
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-vulkan-ahb-arm64-native
+          path: out/sotc-android/cmake
+          repository: erickmendes22/gow3_android_daedalus_fork
+          run-id: 41061445273
+          github-token: ${{ github.token }}
+      - name: Verify imported renderer is real ARM64 SotC bbgpu
+        run: |
+          lib=out/sotc-android/cmake/libbbgpu.so
+          test -s "$lib"
+          tc="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          "$tc/bin/llvm-readelf" -h "$lib" > "$RUNNER_TEMP/sotc-header.txt"
+          grep -Fq AArch64 "$RUNNER_TEMP/sotc-header.txt"
+          "$tc/bin/llvm-nm" -D "$lib" > "$RUNNER_TEMP/sotc-symbols.txt"
+          grep -Fq bbgpu_init "$RUNNER_TEMP/sotc-symbols.txt"
+      - uses: actions/cache/restore@v4
+        id: sotc-apk-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Build FEX guest CPU and GoW3-compatible Android platform bridge
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_runtime.sh
+          bash tools/android/bionic/build_python.sh
+          bash tools/android/bionic/build_pkg.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Check all SotC HLE imports resolve from the FEX main executable
+        run: |
+          python3 ports/sotc/android/verify_sotc_link.py \
+            --ndk "$GOW3_NDK" \
+            --renderer out/sotc-android/cmake/libbbgpu.so \
+            --probe out/bionic/bin/gow3-probe
+          python3 tools/android/bionic/verify_bionic.py \
+            --ndk "$GOW3_NDK" --root out/bionic --complete
+      - name: Create independent SotC Android game runtime and APK
+        run: |
+          python3 ports/sotc/android/package_sotc_runtime.py \
+            --ndk "$GOW3_NDK" --upstream upstream-sotc \
+            --renderer out/sotc-android/cmake/libbbgpu.so
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.0-boot-test
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.0-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.0-boot-test-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sotc-android-apk-build-diagnostics
+          path: |
+            out/bionic/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/logs
+            .local-deps/android/bionic-build/*.log
+            out/release/sotc-badging.txt
+          if-no-files-found: ignore
