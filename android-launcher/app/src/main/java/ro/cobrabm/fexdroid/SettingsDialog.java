@@ -201,8 +201,17 @@ final class SettingsDialog {
         final RadioGroup anisotropy=choices(box,new String[]{"Game default","2×","4×","8×","16×"},
             indexOf(anisotropyValues,get("anisotropy","0"),0));
         heading(box,"Image");
-        // GSR2 implementation and gow3.ini keys remain installed for future
-        // development; this in-game dialog must not expose or rewrite them.
+        // Temporary spatial-only mode: explicitly available independent of
+        // the selected game resolution, including native and 8K. No temporal
+        // reconstruction, history, jitter or automatic 720p resolution patch.
+        final Switch gsr2Spatial=toggle(box,"GSR2 spatial filter (no temporal)",
+            "gsr2".equals(get("upscaler","off")));
+        final TextView gsr2Note=new TextView(activity);
+        gsr2Note.setText(UiText.get(activity,
+            "Current-frame Qualcomm filter only. No temporal accumulation. " +
+            "Uses the game resolution selected above; requires restart. " +
+            "Very high resolutions can use significantly more GPU memory."));
+        gsr2Note.setTextSize(13); gsr2Note.setAlpha(0.7f); box.addView(gsr2Note);
         final Switch sharpen=toggle(box,"Sharpening","1".equals(get("sharpen","0")));
         final TextView sharpLabel=new TextView(activity); sharpLabel.setTextSize(14); box.addView(sharpLabel);
         final SeekBar sharpness=new SeekBar(activity); sharpness.setMax(100);
@@ -282,6 +291,7 @@ final class SettingsDialog {
                 changed.put("render_resolution",RESOLUTION_VALUES[Math.max(0,checkedIndex(resolutions))]);
                 changed.put("disable_dynamic_shadows",disableShadows.isChecked() ? "1" : "0");
                 changed.put("effect_dynamic_shadows",disableShadows.isChecked() ? "0" : "1");
+                changed.put("upscaler",gsr2Spatial.isChecked() ? "gsr2" : "off");
                 changed.put("sharpen",sharpen.isChecked() ? "1" : "0");
                 changed.put("sharpness",String.format(Locale.ROOT,"%.2f",sharpness.getProgress()/100f));
                 changed.putAll(hud.values());
