@@ -381,6 +381,18 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {''',
     pane=swap(pane,'bool LoadingShown() {',
               '#endif // !__ANDROID__ (SDL window events)\nbool LoadingShown() {',
               'overlay event block')
+    # UI translations are runtime strings, not printf-style format literals.
+    # Android NDK enables -Wformat-security; no-argument ImGui printf calls
+    # need a fixed "%s" format so translations cannot be interpreted as code.
+    for portuguese,english in (
+        ('Geração de quadros: desligada','Frame generation: off'),
+        ('DLSS-G: aguardando (sem cena 3D)','DLSS-G: waiting (no 3D scene)'),
+        ('FSR 3: aguardando (sem cena 3D)','FSR 3: waiting (no 3D scene)'),
+    ):
+        call='ImGui::TextColored(grey, SotcUi::T("'+portuguese+'", "'+english+'"))'
+        pane=swap(pane,call,
+                  'ImGui::TextColored(grey, "%s", SotcUi::T("'+portuguese+'", "'+english+'"))',
+                  'safe translated UI text '+english)
     overlay.write_text(pane)
 
 def main():
