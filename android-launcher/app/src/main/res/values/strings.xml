@@ -334,13 +334,14 @@
     <string name="home_gsr2_summary_fmt">Snapdragon Super Resolution · %1$s</string>
     <string name="popup_gsr2_title">Snapdragon Super Resolution (GSR2)</string>
     <string name="popup_gsr2_off">Off</string>
-    <string name="popup_gsr2_on">On · GSR2 temporal upscaling</string>
+    <string name="popup_gsr2_on">On · GSR2 spatial filter (not temporal upscaling)</string>
     <string name="popup_gsr2_preset_title">GSR2 quality preset</string>
     <string name="popup_gsr2_native_aa">Native AA (720p → 720p)</string>
     <string name="popup_gsr2_quality">Quality</string>
     <string name="popup_gsr2_balanced">Balanced</string>
     <string name="popup_gsr2_performance">Performance</string>
     <string name="popup_gsr2_ultra_performance">Ultra Performance</string>
-    <string name="popup_gsr2_720p_notice">Experimental. GSR2 uses the verified 720p game output; quality presets change internal rendering resolution. Changes take effect at next launch.</string>
+    <string name="popup_gsr2_720p_notice">Spatial 1:1 filter, no temporal reconstruction or history. Uses selected game resolution including 8K, subject to GPU memory. Restart to apply.</string>
     <string name="popup_gsr2_summary_off">Off</string>
+    <string name="popup_gsr2_spatial_notice">GSR2 is a spatial-only filter, NOT temporal upscaling. It preserves the game's resolution without frame accumulation. Restart to apply.</string>
 </resources>
