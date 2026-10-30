@@ -102,7 +102,8 @@ mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || true)
 export GOW3_ANDROID_PORT=1
 # R7 forensic probe: one 32x18 RGB readback per GSR2 Vulkan stage, written
 # into android-game.log. No image substitution and no framegen/HUD changes.
-export GOW3_GSR2_AUTO_PROBE=1
+# No recurring GPU forensic probe in the stable spatial-only mode.
+export GOW3_GSR2_AUTO_PROBE=0
 # Experimental R8 correctness: initialize every GSR2 display tile before native UI.
 export GOW3_GSR2_PREFILL_DISPLAY=1
 # Upstream in-process bloodframe is opt-in; settings can update this file live.
@@ -121,23 +122,18 @@ eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_C
 # Do not force the desktop 1080p GSR2 output when the verified game patch uses
 # another native target: the temporal targets must match the actual guest frame.
 if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
-    if [ "${GOW3_GSR2_DIRECT_VIDEOOUT:-0}" = 1 ]; then
-        # Real GSR2 pre-HUD composition. Each guest flip chooses a scene
-        # snapshot before UI and only then computes GSR2. Native AA bypasses it.
-        # Set to 0 to force the last known-stable post-VideoOut path.
-        export GOW3_GSR2_PREHUD_COMPOSITE="${GOW3_GSR2_PREHUD_COMPOSITE:-1}"
-        # The guest is SHA-patched to the selected REAL input raster. The
-        # Snapdragon provider writes a separate 720p host image; unlike the
-        # previous SceneTargets path there is no proxy/downsample/re-render.
-        export GOW3_OUTPUT_RES="${GOW3_GSR2_OUTPUT_RES:-1280x720}"
-    else
-        case "${GOW3_PATCH_INPUT_RES:-}" in
-          *x*) export GOW3_OUTPUT_RES="$GOW3_PATCH_INPUT_RES" ;;
-        esac
-    fi
-    echo "GSR2: selected in gow3.ini, preset=$(sed -n 's/^preset=//p' "$GOW3_CONFIG" | tail -1), input=${GOW3_GSR2_INPUT_RES:-guest-native}, output=${GOW3_OUTPUT_RES:-game-native} direct_videoout=${GOW3_GSR2_DIRECT_VIDEOOUT:-0}"
+    # Temporary user-requested fallback: Qualcomm's current-frame spatial
+    # reconstruction only. Never reuse previous frame, never add Halton
+    # jitter, and NEVER substitute a forced 720p source/output.
+    # The game uses the resolution actually selected in Graphics settings.
+    export GOW3_GSR2_SPATIAL_ONLY=1
+    export GOW3_GSR2_DIRECT_VIDEOOUT=1
+    export GOW3_GSR2_PREHUD_COMPOSITE=0
+    unset GOW3_GSR2_INPUT_RES GOW3_GSR2_OUTPUT_RES GOW3_OUTPUT_RES
+    echo "GSR2: spatial-only reset=1 jitter=0 input/output=real-guest-videoout"
 else
-    unset GOW3_OUTPUT_RES
+    unset GOW3_GSR2_SPATIAL_ONLY GOW3_GSR2_DIRECT_VIDEOOUT
+    unset GOW3_GSR2_PREHUD_COMPOSITE GOW3_OUTPUT_RES
 fi
 echo "Bloodframe: state=$GOW3_LSFG_STATE_FILE dll=$([ -s "$GOW3_LSFG_DLL" ] && echo available || echo missing) lib=$([ -s "$GOW3_LSFG_LIB" ] && echo available || echo missing)"
 
