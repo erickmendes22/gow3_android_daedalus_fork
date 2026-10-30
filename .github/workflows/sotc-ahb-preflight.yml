@@ -1,0 +1,30 @@
+name: SotC experimental Android AHB Vulkan staging
+on:
+  push:
+    branches: [sotc-ahb-integration]
+permissions:
+  contents: read
+jobs:
+  stage-ahb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Check experimental Android AHB native source stage
+        run: |
+          python3 -m py_compile ports/sotc/android/wire_ahb.py ports/sotc/android/stage_renderer.py
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          test -s out/sotc-android/gpu/shim/gow3_present_client.cpp
+          test -s out/sotc-android/gpu/shim/vk_driver_loader.cpp
+          test -s out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp
+          grep -q 'VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
+          grep -q 'sotc_release_queues' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
