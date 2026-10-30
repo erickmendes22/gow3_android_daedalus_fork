@@ -43,6 +43,13 @@ jobs:
           "$ndk/bin/aarch64-linux-android30-clang" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -I. -Isrc -c src/runtime_fiber.c -o out/sotc-android/runtime_fiber.o
           "$ndk/bin/llvm-readelf" -h out/sotc-android/runtime_sotc.o | grep -q AArch64
           "$ndk/bin/llvm-readelf" -h out/sotc-android/probe.o | grep -q AArch64
+      - name: Compile SotC headless renderer window for ARM64
+        run: |
+          ndk="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          "$ndk/bin/aarch64-linux-android30-clang++" -std=c++23 -O2 -Wall -Wextra -Werror -fPIC \
+            -Iupstream-sotc/gpu/shim -Iupstream-sotc/gpu/shadps4 \
+            -c ports/sotc/android/window_android.cpp -o out/sotc-android/window_android.o
+          "$ndk/bin/llvm-readelf" -h out/sotc-android/window_android.o | grep -q AArch64
       - name: Host test low VA
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror ports/sotc/android/lowmem.c tests/test_sotc_lowmem.c -o /tmp/sotc-lowmem-test
