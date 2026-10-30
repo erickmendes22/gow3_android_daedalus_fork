@@ -12,8 +12,9 @@ INI = (ROOT / "android-launcher/app/src/main/java/com/gow3/android/data/Gow3Ini.
 
 class Gsr2Launcher217(unittest.TestCase):
     def test_bionic_home_exposes_selectable_provider(self):
-        self.assertIn('if (isBionic) {\n                val gsr2Preset', HOME)
-        self.assertIn('R.string.home_gsr2_summary_fmt', HOME)
+        # Exactly ONE video/resolution entry opens the provider selector.
+        self.assertNotIn('R.string.home_gsr2_summary_fmt', HOME)
+        self.assertIn('HomeAction(stringResource(R.string.home_resolution_summary_fmt,', HOME)
         self.assertIn('popup = HomePopupKind.VIDEO', HOME)
         self.assertIn('OptionRow(stringResource(R.string.popup_gsr2_off), !gsr2)', POPUP)
         self.assertIn('OptionRow(stringResource(R.string.popup_gsr2_on), gsr2)', POPUP)
