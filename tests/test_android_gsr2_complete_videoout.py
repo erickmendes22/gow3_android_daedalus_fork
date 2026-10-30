@@ -38,7 +38,7 @@ class FullVideoOutRegression(unittest.TestCase):
         self.assertIn('"full_videoout_temporal"',UPS)
         self.assertIn('full_color=%d temporal=%d',UPS)
         self.assertIn('fNNN_early_prehud_WxH_',APP)
-        self.assertIn('Post-scene selection is experimental',APP)
+        self.assertIn('GSR2_CAPTURE_FRAME finished_3d=1',APP)
         self.assertIn('fNNN_post_scene_WxH_',APP)
 
 if __name__ == "__main__":
