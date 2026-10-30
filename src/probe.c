@@ -533,6 +533,38 @@ static void install_stat_multipliers(const char *app0, Segment *segments, uint64
  * function pointers): the patch holds the address at the patches' base, rebased here. */
 #endif
 
+#ifdef __ANDROID__
+/* Bluepoint's engine reads a LEA RIP-relative command line; the original
+ * verified SOTCCMD1 patch is independent of x86-vs-FEX execution.
+ * Keep this text in the reserved image tail, not another game's memory. */
+static void apply_sotc_cmdline(const char *path, uint64_t size) {
+    if (!sotc_android_image) fail("SotC cmdline provided for a non-SotC image");
+    FILE *f=fopen(path,"rb");
+    if (!f) fail("cannot open SotC engine command line");
+    char magic[8];
+    if (fread(magic,1,8,f)!=8 || memcmp(magic,"SOTCCMD1",8))
+        fail("invalid SotC command line header");
+    uint64_t lea=read64(f);
+    char text[16384];
+    size_t n=fread(text,1,sizeof(text)-1,f);
+    if (fgetc(f)!=EOF || n==0 || memchr(text,0,n))
+        fail("invalid SotC engine command line text");
+    fclose(f);
+    text[n]=0;
+    if (lea>size || size-lea<7 || memcmp(image+lea,"\x48\x8d\x35",3))
+        fail("SotC command line instruction signature mismatch");
+    const size_t extra=16u*1024u*1024u;
+    unsigned char *place=image+round_page(size)+extra-sizeof(text);
+    memcpy(place,text,n+1);
+    intptr_t delta=place-(image+lea+7);
+    if (delta<INT32_MIN || delta>INT32_MAX)
+        fail("SotC engine command line out of RIP-relative range");
+    int32_t rel=(int32_t)delta;
+    memcpy(image+lea+3,&rel,4);
+    printf("SotC engine command line prepared (%zu bytes)\\n",n);
+}
+#endif
+
 static void apply_patches(const char *path, Segment *segments, uint64_t ns, const Reloc *relocs, uint64_t nr) {
     FILE *f=fopen(path,"rb");
     char magic[8];
@@ -641,6 +673,9 @@ int main(int argc, char **argv) {
     int cpu_only = 0, strict_imports = 0, check_imports = 0;
     unsigned timeout_seconds = 10;
     const char *content_profile=NULL, *app0=NULL, *user_dir=NULL, *patch_file=NULL;
+#ifdef __ANDROID__
+    const char *sotc_cmdline=NULL;
+#endif
     for (int i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--cpu-only")) cpu_only = 1;
         else if (!strcmp(argv[i], "--strict-imports")) strict_imports = 1;
@@ -649,6 +684,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--app0") && i+1<argc) app0=argv[++i];
         else if (!strcmp(argv[i], "--user") && i+1<argc) user_dir=argv[++i];
         else if (!strcmp(argv[i], "--patches") && i+1<argc) patch_file=argv[++i];
+#ifdef __ANDROID__
+        else if (!strcmp(argv[i], "--sotc-cmdline") && i+1<argc) sotc_cmdline=argv[++i];
+#endif
         else if (!strcmp(argv[i], "--timeout") && i+1<argc) timeout_seconds=(unsigned)strtoul(argv[++i],NULL,10);
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
     }
@@ -896,6 +934,9 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+#ifdef __ANDROID__
+    if (sotc_cmdline) apply_sotc_cmdline(sotc_cmdline,size);
+#endif
 #if defined(GUEST_CPU_NATIVE)
     /* These hooks write x86-64 machine-code stubs straight into the image (0xe9 jumps), which is
      * only meaningful when the game's code runs on the host CPU. Under the JIT the image is
