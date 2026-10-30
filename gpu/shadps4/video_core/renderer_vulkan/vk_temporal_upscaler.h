@@ -101,6 +101,8 @@ public:
     // Preserve the scene BEFORE guest UI/display-copy draws and select the
     // matching source at the verified VideoOut flip (three rotating buffers).
     void CaptureGsr2PreHudScene(VAddr guest_address);
+    // Snapshot the guest framebuffer AFTER its first scene-copy draw, BEFORE later HUD draws.
+    void CaptureGsr2AfterVideoOutCopy(VAddr guest_address, VideoCore::ImageId target);
     void SelectGsr2PreHudScene(VAddr guest_address);
     /// Final image boundary of CUSA01715's one/two MRT forward renderer.
     void OnDisplayBoundary(VideoCore::ImageId color);
@@ -293,6 +295,10 @@ private:
         VAddr guest = 0;
         VideoCore::UniqueImage image;
         vk::UniqueImageView view;
+        // Full scene candidate: captured between VideoOut scene-copy and HUD draws.
+        VideoCore::UniqueImage post_scene_image;
+        vk::UniqueImageView post_scene_view;
+        bool post_scene_valid = false;
         // Depth from the exact same pre-HUD draw as the saved color.
         VideoCore::UniqueImage depth_image;
         vk::UniqueImageView depth_view;
