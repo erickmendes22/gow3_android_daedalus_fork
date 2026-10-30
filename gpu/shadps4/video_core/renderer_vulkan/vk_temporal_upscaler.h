@@ -103,6 +103,10 @@ public:
     void CaptureGsr2PreHudScene(VAddr guest_address);
     // Snapshot the guest framebuffer AFTER its first scene-copy draw, BEFORE later HUD draws.
     void CaptureGsr2AfterVideoOutCopy(VAddr guest_address, VideoCore::ImageId target);
+    // Opt-in single-flip stage scan: real framebuffer readback at later draw boundaries.
+    void ProbeGsr2VideoOutStage(VAddr guest_address, VideoCore::ImageId target,
+                                u32 completed_draw, u64 next_shader);
+    void FinishGsr2VideoOutStageScan(VAddr presented_guest);
     void SelectGsr2PreHudScene(VAddr guest_address);
     /// Final image boundary of CUSA01715's one/two MRT forward renderer.
     void OnDisplayBoundary(VideoCore::ImageId color);
@@ -319,6 +323,10 @@ private:
     int pre_hud_completed_slot = -1;
     u32 pre_hud_consecutive_matches = 0;
     bool pre_hud_recording = false;
+    bool gsr2_stage_scan_armed = false;
+    u32 gsr2_stage_scan_samples = 0;
+    std::array<VAddr, 3> gsr2_stage_scan_guests{};
+    u32 gsr2_stage_scan_guest_count = 0;
     bool PreHudEnabled() const;
     bool guest_display_history_contiguous = false;
     // Every temporal GSR2 input must refer to exactly one fresh, real
