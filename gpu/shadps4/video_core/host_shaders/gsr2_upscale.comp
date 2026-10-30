@@ -113,6 +113,24 @@ float Gow3NativePatchError(ivec2 currentPixel, ivec2 displacement)
     return cost / 5.0;
 }
 
+// One center tap is a rigorous lower bound on the complete five-tap
+// photometric loss. It cannot skip a candidate that would beat bestError,
+// and avoids running the expensive four extra fetches for obviously wrong
+// offsets. This keeps the expanded search practical on Snapdragon 8 Elite.
+float Gow3NativeCenterLowerBound(ivec2 currentPixel, ivec2 displacement)
+{
+    ivec2 previous = currentPixel + displacement;
+    if (any(lessThan(currentPixel, ivec2(1))) ||
+        any(greaterThanEqual(currentPixel, ivec2(params.renderSize)-ivec2(1))) ||
+        any(lessThan(previous, ivec2(1))) ||
+        any(greaterThanEqual(previous, ivec2(params.renderSize)-ivec2(1))))
+        return 1.0e10;
+    vec3 currentYCoCg = DecodeColor(texelFetch(YCoCgColor, currentPixel, 0).x);
+    vec3 previousYCoCg = DecodeColor(texelFetch(PreviousNativeYCoCg, previous, 0).x);
+    vec3 d = currentYCoCg - previousYCoCg;
+    return dot(d*d, vec3(2.5, 0.8, 0.8)) / 5.0;
+}
+
 void main()
 {
     if (any(greaterThanEqual(gl_GlobalInvocationID.xy, params.displaySize))) return;
@@ -201,8 +219,13 @@ void main()
                 ivec2(-1,-2), ivec2(-1, 2),
                 ivec2(1,-2), ivec2(1, 2));
             for (int i = 0; i < 30; ++i) {
+                float motionPenalty = 0.00003 * length(vec2(shifts[i]));
+                // The five-tap loss is a sum of nonnegative terms. If the
+                // center tap alone cannot win, the other four cannot help.
+                if (Gow3NativeCenterLowerBound(InputPos, shifts[i]) +
+                    motionPenalty + 0.00004 >= bestError) continue;
                 float cost = Gow3NativePatchError(InputPos, shifts[i]) +
-                             0.00003 * length(vec2(shifts[i]));
+                             motionPenalty;
                 if (cost + 0.00004 < bestError) {
                     bestOffset = shifts[i];
                     bestError = cost;
