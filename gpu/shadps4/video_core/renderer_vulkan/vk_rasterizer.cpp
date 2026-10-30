@@ -1087,9 +1087,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             gsr2_stage_display_guest = address;
             gsr2_stage_display_draws = 0;
         }
-        if (++gsr2_stage_display_draws == 2) {
+        const u32 completed = ++gsr2_stage_display_draws - 1;
+        if (completed == 1) {
             upscaler->CaptureGsr2AfterVideoOutCopy(address, cb_descs[0].first);
         }
+        upscaler->ProbeGsr2VideoOutStage(
+            address, cb_descs[0].first, completed,
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash);
     }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
@@ -3859,6 +3863,9 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     gsr2_stage_display_draws = 0;
     const bool had_scene = scene_started;
     const bool had_camera = camera_motion->Gsr2CurrentShaderDebug() != 0;
+    // Resolve on the exact presented guest address, not the most recent
+    // target seen during drawing. The stage ZIP uses this flip identity.
+    upscaler->FinishGsr2VideoOutStageScan(guest_address);
     // The canonical scene-to-VideoOut boundary is one per REAL requested
     // guest flip. Never consume it in DrawRecord's intermediate display draws.
     upscaler->SelectGsr2PreHudScene(guest_address);
