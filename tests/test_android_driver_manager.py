@@ -117,5 +117,7 @@ class Harness {
             for name,source in sources.items():
                 p=work/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(source);paths.append(str(p))
             paths += [str(ROOT/'android-launcher/app/src/main/java/ro/cobrabm/fexdroid'/name) for name in ['DriverArchive.java','GpuDriverManager.java']]
-            subprocess.run([java,'-m','jdk.compiler/com.sun.tools.javac.Main','-d',str(work),*paths],check=True,text=True,capture_output=True)
+            # Do not swallow javac's stderr: on a production API change the
+            # failed compile must show the missing mock signature in CI logs.
+            subprocess.run([java,'-m','jdk.compiler/com.sun.tools.javac.Main','-d',str(work),*paths],check=True,text=True)
             subprocess.run([java,'-ea','-cp',str(work),'Harness',str(work)],check=True,text=True,capture_output=True)
