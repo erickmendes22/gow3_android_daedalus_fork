@@ -51,7 +51,7 @@ jobs:
       - name: Compile SotC headless renderer window for ARM64
         run: |
           ndk="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
-          "$ndk/bin/aarch64-linux-android30-clang++" -std=c++23 -O2 -Wall -Wextra -Werror -fPIC \
+          "$ndk/bin/aarch64-linux-android30-clang++" -std=c++23 -O2 -Wall -Wextra -Werror -Wno-unused-private-field -fPIC \
             -Iupstream-sotc/gpu/shim -Iupstream-sotc/gpu/shadps4 \
             -c ports/sotc/android/window_android.cpp -o out/sotc-android/window_android.o
           "$ndk/bin/llvm-readelf" -h out/sotc-android/window_android.o | grep -q AArch64
