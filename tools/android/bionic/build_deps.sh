@@ -20,7 +20,11 @@ fetch() { # name url archive-extension
     local dir=$src/$1
     [[ -d $dir ]] && return
     rm -rf -- "$dir.tmp"
-    curl -fsSL "$2" -o "$src/$1.tar" && mkdir -p "$dir.tmp" && tar --no-same-owner -xf "$src/$1.tar" -C "$dir.tmp" --strip-components=1 \
+    # Large third-party tarballs occasionally hit TLS/connection resets on CI.
+    # Retry transient network errors; never install an incomplete extraction.
+    curl --fail --show-error --location --retry 6 --retry-all-errors --retry-delay 3 \
+        --connect-timeout 30 "$2" -o "$src/$1.tar" \
+        && mkdir -p "$dir.tmp" && tar --no-same-owner -xf "$src/$1.tar" -C "$dir.tmp" --strip-components=1 \
         && mv "$dir.tmp" "$dir" && rm "$src/$1.tar"
 }
 cm() { # name source-dir extra cmake args...
