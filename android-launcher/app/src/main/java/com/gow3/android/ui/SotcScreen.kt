@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ro.cobrabm.fexdroid.SotcPaths
 import com.gow3.android.data.Gow3Ini
 import com.gow3.android.data.LogArchive
 import com.gow3.android.data.LogManager
@@ -161,13 +162,13 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
     saves:SaveManager,logs:LogManager,onChangeLanguage:(String)->Unit
 ) {
     val ctx=LocalContext.current
-    val config=remember { File(ctx.filesDir,"gow3port/gow3.ini") }
+    val config=remember { File(ctx.filesDir,"sotcport/sotc.ini") }
     var values by remember { mutableStateOf(Gow3Ini.read(config)) }
     var gameDir by remember(pkgGeneration) { mutableStateOf(
-        ctx.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("game_dir",null)) }
+        ctx.getSharedPreferences(SotcPaths.prefsName(ctx),Context.MODE_PRIVATE).getString("game_dir",null)) }
     // Reopening a tab refreshes the selected game folder after a SAF picker.
     androidx.compose.runtime.LaunchedEffect(tabIndex,pkgGeneration) {
-        gameDir=ctx.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("game_dir",null)
+        gameDir=ctx.getSharedPreferences(SotcPaths.prefsName(ctx),Context.MODE_PRIVATE).getString("game_dir",null)
         values=Gow3Ini.read(config)
     }
     fun save(key:String,value:String) {

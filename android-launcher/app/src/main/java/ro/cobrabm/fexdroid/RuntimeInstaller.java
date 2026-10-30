@@ -63,6 +63,33 @@ public final class RuntimeInstaller {
     }
 
     private static void validateRuntime(File root) throws Exception {
+        if (path(root,"sotcport/run-sotc-bionic.sh").isFile()) {
+            requireExecutable(root,"sotcport/run-sotc-bionic.sh");
+            for (String rel : new String[]{
+                    "sotcport/arm64/bin/sotc-probe",
+                    "sotcport/arm64/bin/orbis-pkg-util",
+                    "sotcport/arm64/python/bin/python3.13",
+                    "sotcport/arm64/lib/libbbgpu.so",
+                    "sotcport/arm64/lib/libgow3cpu.so",
+                    "sotcport/arm64/lib/libgow3gpu.so",
+                    "sotcport/arm64/lib/libgow3present.so",
+                    "sotcport/arm64/lib/libc++_shared.so",
+                    "sotcport/arm64/python/lib/libpython3.13.so",
+                    "sotcport/arm64/drivers/gen8/libvulkan_freedreno.so",
+                    "sotcport/scripts/sotc_prepare_game.py",
+                    "sotcport/scripts/sotc-upstream/scripts/prepare.py",
+                    "runtime-manifest.json"
+            }) if (!path(root,rel).isFile())
+                throw new IllegalStateException("Incomplete SotC runtime: "+rel);
+            requireDirectory(root,"home/sotcport");
+            String identity = new String(Files.readAllBytes(path(root,"runtime-manifest.json").toPath()),
+                    StandardCharsets.UTF_8);
+            if (!identity.contains("\"schema\": 1") ||
+                    !identity.contains("\"runtime_backend\": \"bionic\"") ||
+                    !identity.contains("\"application_id\": \"com.sotc.android.daedalus\""))
+                throw new IllegalStateException("Incompatible Shadow of the Colossus runtime identity");
+            return;
+        }
         if (path(root,"gow3port/run-bionic.sh").isFile()) {
             boolean sotc = path(root,"gow3port/run-sotc-bionic.sh").isFile();
             if (sotc) {
@@ -123,9 +150,12 @@ public final class RuntimeInstaller {
         // Home can save settings/import saves before the first game launch.
         // Runtime upgrades replace gow3port, so carry user-owned data into the
         // validated stage before promotion; the old copy remains for rollback.
-        for (String relative : new String[]{"gow3port/gow3.ini", "gow3port/user", "gow3port/Lossless.dll"}) {
+        boolean sotc = path(stage,"sotcport/run-sotc-bionic.sh").isFile();
+        String[] paths = sotc ? new String[]{"sotcport/sotc.ini","sotcport/user","gow3port/user"}
+                : new String[]{"gow3port/gow3.ini","gow3port/user","gow3port/Lossless.dll"};
+        for (String relative : paths) {
             java.nio.file.Path source = new File(files, relative).toPath();
-            java.nio.file.Path target = new File(stage, relative).toPath();
+            java.nio.file.Path target = new File(stage, sotc && relative.equals("gow3port/user") ? "sotcport/user" : relative).toPath();
             if (!Files.exists(source, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
             Files.walkFileTree(source, new SimpleFileVisitor<java.nio.file.Path>() {
                 @Override public FileVisitResult preVisitDirectory(java.nio.file.Path dir, BasicFileAttributes attrs)
@@ -147,8 +177,10 @@ public final class RuntimeInstaller {
 
     /** Fill only missing keys; never reset user settings during a runtime upgrade. */
     private static void completeConfig(File root) throws Exception {
-        File defaults = path(root, "gow3port/gow3.default.ini");
-        File config = path(root, "gow3port/gow3.ini");
+        boolean sotc = path(root,"sotcport/run-sotc-bionic.sh").isFile();
+        String stem = sotc ? "sotcport/sotc" : "gow3port/gow3";
+        File defaults = path(root, stem + ".default.ini");
+        File config = path(root, stem + ".ini");
         if (!defaults.isFile()) throw new IllegalStateException("Runtime archive is incomplete: default settings");
         String original = config.isFile()
                 ? new String(Files.readAllBytes(config.toPath()), StandardCharsets.UTF_8) : "";
@@ -185,26 +217,27 @@ public final class RuntimeInstaller {
         deleteTree(previous);
         if (!previous.mkdirs()) throw new IllegalStateException("Cannot create runtime rollback directory");
         File oldRoot = new File(previous, "rootfs");
-        File oldPort = new File(previous, "gow3port");
+        String portName = path(stage,"sotcport/run-sotc-bionic.sh").isFile() ? "sotcport" : "gow3port";
+        File oldPort = new File(previous, portName);
         File oldHome = new File(previous, "home");
         File oldManifest = new File(previous, "runtime-manifest.json");
         File root = new File(files, "rootfs");
-        File port = new File(files, "gow3port");
+        File port = new File(files, portName);
         File home = new File(files, "home");
         File manifest = new File(files, "runtime-manifest.json");
         boolean movedRoot = false, movedPort = false, movedHome = false, movedManifest = false;
         boolean installedRoot = false, installedPort = false, installedHome = false, installedManifest = false;
         try {
             if (root.exists()) { renameRequired(root, oldRoot, "rootfs"); movedRoot = true; }
-            if (port.exists()) { renameRequired(port, oldPort, "gow3port"); movedPort = true; }
+            if (port.exists()) { renameRequired(port, oldPort, portName); movedPort = true; }
             if (home.exists()) { renameRequired(home, oldHome, "home"); movedHome = true; }
             if (manifest.exists()) { renameRequired(manifest, oldManifest, "manifest"); movedManifest = true; }
             if (new File(stage,"rootfs").exists()) {
                 if (!new File(stage,"rootfs").renameTo(root)) throw new IllegalStateException("Cannot promote runtime rootfs");
                 installedRoot = true;
             }
-            if (!new File(stage, "gow3port").renameTo(port))
-                throw new IllegalStateException("Cannot promote gow3port");
+            if (!new File(stage, portName).renameTo(port))
+                throw new IllegalStateException("Cannot promote "+portName);
             installedPort = true;
             if (!new File(stage, "home").renameTo(home))
                 throw new IllegalStateException("Cannot promote runtime home");

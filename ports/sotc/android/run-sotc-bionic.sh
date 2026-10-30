@@ -2,11 +2,11 @@
 # SotC Bionic/FEX launcher, separate from the God of War III launcher.
 set -eu
 files=${FXD_FILES:?FXD_FILES is required}
-base="$files/gow3port"
+base="$files/sotcport"
 runtime="$base/arm64"
 python="$runtime/python/bin/python3.13"
-probe="$runtime/bin/gow3-probe"
-game=${SOTC_GAME_DIR:-${GOW3_GAME_DIR:-$base/game}}
+probe="$runtime/bin/sotc-probe"
+game=${SOTC_GAME_DIR:-$base/game}
 out="$base/sotc-out"
 upstream="$base/scripts/sotc-upstream"
 prepare="$base/scripts/sotc_prepare_game.py"
@@ -17,7 +17,8 @@ prepare="$base/scripts/sotc_prepare_game.py"
 [ -f "$game/eboot.bin" ] && [ -f "$game/sce_sys/param.sfo" ] ||
     { echo "SotC dump requires eboot.bin and sce_sys/param.sfo" >&2; exit 2; }
 
-export HOME="$files/home/gow3port" TMPDIR="$base/tmp" XDG_RUNTIME_DIR="$base/tmp"
+export HOME="$files/home/sotcport" TMPDIR="$base/tmp" XDG_RUNTIME_DIR="$base/tmp"
+export SOTC_PORT=1
 export PATH=/system/bin LD_LIBRARY_PATH="$runtime/lib:$runtime/python/lib"
 export PYTHONHOME="$runtime/python" PYTHONPATH="$base/scripts" PYTHONUTF8=1
 export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/"
@@ -59,7 +60,7 @@ export GOW3_AUDIO_FIFO="$base/audio.fifo"
 export GOW3_PRESENT_SOCKET="$base/present.sock"
 export SOTC_PRESENT_SOCKET="$GOW3_PRESENT_SOCKET"
 export SOTC_SCREEN_W=${SOTC_SCREEN_W:-1280} SOTC_SCREEN_H=${SOTC_SCREEN_H:-720}
-export SOTC_VSYNC=${SOTC_VSYNC:-${GOW3_VSYNC:-1}}
+export SOTC_VSYNC=${SOTC_VSYNC:-1}
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
     game) ;;

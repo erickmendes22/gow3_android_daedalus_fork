@@ -17,6 +17,7 @@ import com.gow3.android.data.SaveManager
 import com.gow3.android.data.PkgInstallManager
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import ro.cobrabm.fexdroid.SotcPaths
 import com.gow3.android.ui.LauncherScreen
 import com.gow3.android.ui.components.LauncherColors
 import com.gow3.android.ui.theme.Gow3LauncherTheme
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SotcPaths.migratePreferences(this)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         window.statusBarColor = LauncherColors.backgroundTop.toArgbCompat()
         window.navigationBarColor = LauncherColors.backgroundBottom.toArgbCompat()

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import ro.cobrabm.fexdroid.SotcPaths
 import com.gow3.android.R
 import java.io.File
 import java.io.FileInputStream
@@ -34,10 +35,10 @@ internal class SaveManager(private val activity: Activity) {
     private var pending: ((SaveResult) -> Unit)? = null
 
     /** 游戏的 savedata，即运行时以 `--user <user_dir>` 接收后在 `<user_dir>/savedata` 读写的目录。 */
-    fun savedataDir(): File = File(activity.filesDir, "gow3port/user/savedata")
+    fun savedataDir(): File = File(activity.filesDir, "${SotcPaths.baseName(activity)}/user/savedata")
 
     /** 每次导入前创建的安全备份，与 Linux 侧 savedata_backups 布局一致。 */
-    fun savedataBackupsDir(): File = File(activity.filesDir, "gow3port/user/savedata_backups")
+    fun savedataBackupsDir(): File = File(activity.filesDir, "${SotcPaths.baseName(activity)}/user/savedata_backups")
 
     /**
      * 当前游戏推导出的存档标题目录名，规则与运行时 `src/probe.c` 逐字对齐：
@@ -49,7 +50,7 @@ internal class SaveManager(private val activity: Activity) {
      * 都读不到时返回 null，调用方退到形状检查。
      */
     fun expectedTitle(): String? {
-        val prefs = activity.getSharedPreferences("gow3", Activity.MODE_PRIVATE)
+        val prefs = activity.getSharedPreferences(SotcPaths.prefsName(activity), Activity.MODE_PRIVATE)
         val candidates = listOfNotNull(
             prefs.getString("update_dir", null),
             prefs.getString("game_dir", null),
@@ -73,7 +74,7 @@ internal class SaveManager(private val activity: Activity) {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/zip"
-            putExtra(Intent.EXTRA_TITLE, "$DEFAULT_EXPORT_NAME-${SaveArchive.stamp()}.zip")
+            putExtra(Intent.EXTRA_TITLE, "${if (SotcPaths.isSotc(activity)) "ShadowOfTheColossus-Saves" else DEFAULT_EXPORT_NAME}-${SaveArchive.stamp()}.zip")
         }
         pending = onResult
         try {
@@ -129,7 +130,7 @@ internal class SaveManager(private val activity: Activity) {
     private fun exportTo(uri: Uri): SaveResult {
         val savedata = savedataDir()
         if (!SaveArchive.hasSaves(savedata)) return SaveResult.Failed(activity.getString(R.string.save_no_saves))
-        val temporary = File(activity.filesDir, "gow3port/.export-saves.tmp")
+        val temporary = File(activity.filesDir, "${SotcPaths.baseName(activity)}/.export-saves.tmp")
         temporary.delete()
         return try {
             SaveArchive.pack(savedata, temporary)
@@ -148,7 +149,7 @@ internal class SaveManager(private val activity: Activity) {
 
     /** 校验、解压到暂存目录、备份当前存档并替换生效。 */
     private fun importFrom(uri: Uri): SaveResult {
-        val user = File(activity.filesDir, "gow3port/user")
+        val user = File(activity.filesDir, "${SotcPaths.baseName(activity)}/user")
         val staging = File(user, "savedata.restoring")
         // 期望的标题目录名从当前游戏推导；推导不出时传 null，校验退到形状检查。
         val expected = expectedTitle()

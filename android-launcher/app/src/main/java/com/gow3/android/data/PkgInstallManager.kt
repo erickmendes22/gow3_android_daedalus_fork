@@ -16,6 +16,7 @@ import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import ro.cobrabm.fexdroid.RuntimeInstaller
+import ro.cobrabm.fexdroid.SotcPaths
 
 /**
  * Direct, zero-copy PKG installation.
@@ -53,7 +54,7 @@ internal class PkgInstallManager(
     private var pendingPermissionUpdate: Boolean? = null
     private val installing = AtomicBoolean(false)
     private val worker = Executors.newSingleThreadExecutor()
-    private val preferences get() = activity.getSharedPreferences("gow3", Activity.MODE_PRIVATE)
+    private val preferences get() = activity.getSharedPreferences(SotcPaths.prefsName(activity), Activity.MODE_PRIVATE)
 
     private fun localized(en: String, pt: String): String =
         if (LanguageManager.read(activity) == LanguageManager.PT) pt else en
@@ -245,8 +246,8 @@ internal class PkgInstallManager(
     }
 
     private fun install(sourceUri: Uri, targetUri: Uri, update: Boolean): String {
-        val helper = File(activity.filesDir, "gow3port/arm64/bin/orbis-pkg-util")
-        val bionic = File(activity.filesDir,"gow3port/run-bionic.sh").isFile
+        val helper = File(activity.filesDir, "${SotcPaths.baseName(activity)}/arm64/bin/orbis-pkg-util")
+        val bionic = (File(activity.filesDir,"${SotcPaths.baseName(activity)}/run-bionic.sh").isFile || File(activity.filesDir,"sotcport/run-sotc-bionic.sh").isFile)
         val loader = if (bionic) File("/system/bin/linker64") else File(activity.filesDir,
             "rootfs/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
         if (!helper.isFile || !helper.canExecute() || !loader.isFile)
@@ -403,14 +404,14 @@ internal class PkgInstallManager(
 
     private fun execute(loader: File, executable: File, args: List<String>,
                         workingDir: File): String {
-        val prefix = if (File(activity.filesDir,"gow3port/run-bionic.sh").isFile)
+        val prefix = if ((File(activity.filesDir,"${SotcPaths.baseName(activity)}/run-bionic.sh").isFile || File(activity.filesDir,"sotcport/run-sotc-bionic.sh").isFile))
             listOf(executable.absolutePath) else listOf(loader.absolutePath, executable.absolutePath)
         val builder = ProcessBuilder(prefix + args)
             .directory(workingDir)
             .redirectErrorStream(true)
         val files = activity.filesDir
         builder.environment()["LD_LIBRARY_PATH"] =
-            File(files, "gow3port/arm64/lib").path + ":" +
+            File(files, "${SotcPaths.baseName(activity)}/arm64/lib").path + ":" +
             File(files, "rootfs/usr/lib/aarch64-linux-gnu").path + ":" +
             File(files, "rootfs/usr/lib").path
         val process = builder.start()

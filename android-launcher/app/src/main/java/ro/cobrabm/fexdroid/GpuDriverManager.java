@@ -13,16 +13,16 @@ import java.util.*;
 /** Launcher selection and launch environment for the Bionic ICD/HAL loader. */
 public final class GpuDriverManager {
     private GpuDriverManager() {}
-    public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()); }
+    public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()) || SotcPaths.isSotc(context); }
     private static File root(Context context) { return new File(context.getFilesDir(),"gpu-drivers"); }
     public static String selected(Context context) {
-        return context.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("gpu_driver","auto");
+        return context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).getString("gpu_driver","auto");
     }
     public static void select(Context context,String value) throws IOException {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
         else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(value)) throw new IOException("Invalid driver selection");
-        if (!context.getSharedPreferences("gow3",Context.MODE_PRIVATE).edit().putString("gpu_driver",value).commit())
+        if (!context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).edit().putString("gpu_driver",value).commit())
             throw new IOException("Cannot save driver selection");
     }
     public static List<DriverArchive.Installed> installed(Context context) {

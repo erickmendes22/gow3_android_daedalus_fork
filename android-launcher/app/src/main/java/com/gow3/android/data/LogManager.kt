@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import ro.cobrabm.fexdroid.SotcPaths
 import com.gow3.android.R
 import java.io.File
 import java.io.FileInputStream
@@ -33,7 +34,7 @@ internal class LogManager(private val activity: Activity) {
     private var pending: ((LogResult) -> Unit)? = null
 
     /** launcher 的运行时日志目录，即 GameActivity 写入 `android-game.log` 的目录。 */
-    fun logsDir(): File = File(activity.filesDir, "gow3port/logs")
+    fun logsDir(): File = File(activity.filesDir, "${SotcPaths.baseName(activity)}/logs")
 
     /**
      * 打开系统“另存为”选择器。当没有日志时，立即以失败调用 [onResult]，且不显示
@@ -47,7 +48,7 @@ internal class LogManager(private val activity: Activity) {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/zip"
-            putExtra(Intent.EXTRA_TITLE, "$DEFAULT_EXPORT_NAME-${LogArchive.stamp()}.zip")
+            putExtra(Intent.EXTRA_TITLE, "${if (SotcPaths.isSotc(activity)) "ShadowOfTheColossus-Logs" else DEFAULT_EXPORT_NAME}-${LogArchive.stamp()}.zip")
         }
         pending = onResult
         try {
@@ -83,7 +84,7 @@ internal class LogManager(private val activity: Activity) {
     private fun exportTo(uri: Uri): LogResult {
         val logs = logsDir()
         if (!LogArchive.hasLogs(logs)) return LogResult.Failed(activity.getString(R.string.log_no_logs))
-        val temporary = File(activity.filesDir, "gow3port/.export-logs.tmp")
+        val temporary = File(activity.filesDir, "${SotcPaths.baseName(activity)}/.export-logs.tmp")
         temporary.delete()
         return try {
             LogArchive.pack(logs, temporary)

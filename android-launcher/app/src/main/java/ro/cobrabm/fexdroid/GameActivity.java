@@ -74,10 +74,11 @@ public final class GameActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        SotcPaths.migratePreferences(this);
         FILES=getFilesDir().getAbsolutePath();
-        ROOT=FILES+"/rootfs"; BASE=FILES+"/gow3port";
-        gameDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("game_dir",null);
-        updateDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("update_dir",null);
+        ROOT=FILES+"/rootfs"; BASE=FILES+"/"+SotcPaths.baseName(this);
+        gameDir=getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getString("game_dir",null);
+        updateDir=getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getString("update_dir",null);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT>=28) {
             WindowManager.LayoutParams attrs=getWindow().getAttributes();
@@ -86,7 +87,7 @@ public final class GameActivity extends Activity {
         }
         displayOnly="x".equals(getIntent().getStringExtra("action"));
         pad=new PadBridge(new File(BASE,"android-pad.state"));
-        pad.setSwapFaceButtons(getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("swap_square_triangle",false));
+        pad.setSwapFaceButtons(getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false));
         audio=new AudioBridge(new File(BASE,"audio.fifo"));
         buildScreen();
         immersive();
@@ -238,11 +239,11 @@ public final class GameActivity extends Activity {
          * 留着入口只会让玩家以为改了有用。接通后把下面两段取消注释即可。
         gameSettingsItem=menuItem("ic_settings","Game settings","",() -> {
             closeDrawer();
-            new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).showGame();
+            new SettingsDialog(this,new File(BASE,SotcPaths.iniName(this)),this::restartGame).showGame();
         });
         cheatsItem=menuItem("ic_cheats","Cheats","",() -> {
             closeDrawer();
-            new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).showCheats();
+            new SettingsDialog(this,new File(BASE,SotcPaths.iniName(this)),this::restartGame).showCheats();
         });
          */
         menuItem("ic_refresh","Restart game","Unsaved progress is lost",() -> new AlertDialog.Builder(this)
@@ -258,7 +259,7 @@ public final class GameActivity extends Activity {
         if (!sotcRuntime()) {
             graphicsItem=menuItem("ic_tune","Graphics settings","",() -> {
                 closeDrawer();
-                new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame).show();
+                new SettingsDialog(this,new File(BASE,SotcPaths.iniName(this)),this::restartGame).show();
             });
         } else {
             graphicsItem=menuItem("ic_tune","Shadow of the Colossus settings","Change settings in the launcher",() -> {
@@ -271,18 +272,18 @@ public final class GameActivity extends Activity {
         section("Controls");
         controllerItem=menuItem("ic_gamepad","On-screen controller","",() -> {
             boolean enabled=!controllerEnabled();
-            getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("controller_overlay",enabled).apply();
+            getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).edit().putBoolean("controller_overlay",enabled).apply();
             controllerOverlay.release();
             closeDrawer();
         });
         swapFaceItem=menuItem("ic_gamepad","Swap Square/Triangle","",() -> {
-            boolean enabled=!getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("swap_square_triangle",false);
-            getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("swap_square_triangle",enabled).apply();
+            boolean enabled=!getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false);
+            getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).edit().putBoolean("swap_square_triangle",enabled).apply();
             pad.setSwapFaceButtons(enabled);
             setDetail(swapFaceItem,enabled ? "On" : "Off");
         });
         menuItem("ic_edit","Edit controller layout","Drag and resize the buttons",() -> {
-            getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("controller_overlay",true).apply();
+            getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).edit().putBoolean("controller_overlay",true).apply();
             closeDrawer();
             controllerOverlay.edit(null);
         });
@@ -380,6 +381,12 @@ public final class GameActivity extends Activity {
         if ("1".equals(setting("cheat_item"))) cheats.add("infinite items");
         setDetail(cheatsItem,cheats.isEmpty() ? "Off" : String.join(" · ",cheats));
          */
+        if (sotcRuntime()) {
+            setDetail(graphicsItem,setting("sotc_resolution")+" · "+setting("sotc_fps_mode"));
+            setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
+            setDetail(swapFaceItem,getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
+            return;
+        }
         String upscaler="off".equals(setting("upscaler")) ? "No upscaling" : "FSR 3.1";
         String limit=setting("fps_limit");
         // 取值域与 SettingsDialog.FPS_VALUES 一致：只有 30/60/120/240 会按原值显示，0 是"不限制"，
@@ -387,7 +394,7 @@ public final class GameActivity extends Activity {
         setDetail(graphicsItem,upscaler+" · "+("0".equals(limit) ? "no FPS limit"
             : (limit==null || !limit.matches("30|60|120|240") ? "30" : limit)+" FPS limit"));
         setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
-        setDetail(swapFaceItem,getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
+        setDetail(swapFaceItem,getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
     }
 
     private void openDrawer() {
@@ -484,7 +491,7 @@ public final class GameActivity extends Activity {
         return pad.motion(e) || super.dispatchGenericMotionEvent(e);
     }
     private boolean controllerEnabled() {
-        return getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("controller_overlay",false);
+        return getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("controller_overlay",false);
     }
     @Override protected void onPause() {
         if (controllerOverlay!=null) controllerOverlay.release();
@@ -506,7 +513,7 @@ public final class GameActivity extends Activity {
         Map<String,String> env=b.environment(); env.clear();
         String target=args.length>1 && args[0].equals(ROOT+"/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1") ? args[1] : args[0];
         env.put("PATH",ROOT+"/usr/bin:"+ROOT+"/bin:/system/bin");
-        env.put("HOME",FILES+"/home/gow3port"); env.put("LANG","C.UTF-8");
+        env.put("HOME",FILES+"/home/"+SotcPaths.baseName(this)); env.put("LANG","C.UTF-8");
         env.put("TMPDIR",ROOT+"/tmp"); env.put("XDG_RUNTIME_DIR",ROOT+"/tmp");
         env.put("FXD_FILES",FILES); env.put("FXD_ROOT",ROOT); env.put("GOW3_ANDROID_INPUT","1");
         env.put("GOW3_LANGUAGE", UiText.gameLanguage(this));
@@ -667,7 +674,7 @@ public final class GameActivity extends Activity {
         }
         boolean changed=gameDir!=null && !gameDir.equals(dir.getPath());
         gameDir=dir.getPath();
-        getSharedPreferences("gow3",MODE_PRIVATE).edit().putString("game_dir",gameDir).apply();
+        getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).edit().putString("game_dir",gameDir).apply();
         status.setText(sotcRuntime() ? "Starting Shadow of the Colossus…" : UiText.get(this, "Starting God of War III…"));
         if (changed && game!=null) restartGame(); else startPending();
     }
@@ -757,7 +764,7 @@ public final class GameActivity extends Activity {
     /** The last value of a gow3.ini setting (as run-gow3.sh reads it), or null. */
     private String setting(String key) {
         String value=null;
-        try (BufferedReader r=new BufferedReader(new java.io.FileReader(new File(BASE,"gow3.ini")))) {
+        try (BufferedReader r=new BufferedReader(new java.io.FileReader(new File(BASE,SotcPaths.iniName(this))))) {
             for (String line; (line=r.readLine())!=null;)
                 if (line.startsWith(key+"=")) value=line.substring(key.length()+1).trim();
         } catch (Exception ignored) {}

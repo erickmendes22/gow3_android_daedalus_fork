@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
+import ro.cobrabm.fexdroid.SotcPaths
 import com.gow3.android.R
 import java.io.File
 
@@ -50,7 +51,7 @@ internal class GameFolderManager(private val activity: Activity) {
      */
     private var pendingFolderKind: Kind? = null
 
-    private fun prefs() = activity.getSharedPreferences("gow3", Activity.MODE_PRIVATE)
+    private fun prefs() = activity.getSharedPreferences(SotcPaths.prefsName(activity), Activity.MODE_PRIVATE)
 
     fun hasGameFolder(): Boolean {
         // App-installed PKGs are stored under externalFilesDir and do not need the
