@@ -1091,9 +1091,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         if (completed == 1) {
             upscaler->CaptureGsr2AfterVideoOutCopy(address, cb_descs[0].first);
         }
+        const auto& stage_key = pipeline->GetGraphicsKey();
         upscaler->ProbeGsr2VideoOutStage(
             address, cb_descs[0].first, completed,
-            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash);
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
+            stage_key.mrt_mask ? pipeline->GetStage(Shader::SwStage::Fragment).pgm_hash : 0,
+            bool(regs.depth_control.depth_enable),
+            stage_key.mrt_mask);
     }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
@@ -3859,6 +3863,14 @@ void Rasterizer::Gsr2OnVideoOutFlip(VAddr guest_address) {
     DrainDrawPipe();
     static u64 videoout_frames = 0;
     ++videoout_frames;
+    if (gsr2_stage_display_draws && std::getenv("GOW3_GSR2_STAGE_TRIGGER")) {
+        static u32 summaries = 0;
+        if (summaries++ < 4)
+            std::printf("GSR2_STAGE_DRAW_TOTAL presented_guest=%#llx recorded_guest=%#llx draws=%u\n",
+                        (unsigned long long)guest_address,
+                        (unsigned long long)gsr2_stage_display_guest,
+                        gsr2_stage_display_draws);
+    }
     gsr2_stage_display_guest = 0;
     gsr2_stage_display_draws = 0;
     const bool had_scene = scene_started;
