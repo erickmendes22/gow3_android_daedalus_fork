@@ -15,11 +15,14 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/checkout@v4
         with:
           repository: AjncSystem/ShadowOfTheColossus-PC
           ref: 27f376d602cefad357299295fa51edad587272d5
           path: upstream-sotc
+          submodules: recursive
       - name: Exercise portable SRT pointer chains, 512-dword shader windows and null roots
         run: |
           clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
