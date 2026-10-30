@@ -3409,7 +3409,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
             // Source image formats and bpp are explicitly included in file
             // names; never lie about the snapshot aspect or its encoding.
             DumpImages(instance, scheduler, cmd, capture_frame, {
-                {complete_videoout || !prehud ? source.GetImage() :
+                {post_scene ? vk::Image(pre_hud_slots[pre_hud_completed_slot].post_scene_image) :
+                  complete_videoout || !prehud ? source.GetImage() :
                           vk::Image(pre_hud_slots[pre_hud_completed_slot].image),
                  w,h,4,"input",fmt},
                 {source.GetImage(),w,h,4,"videoout",fmt},
