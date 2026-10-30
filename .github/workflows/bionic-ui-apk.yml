@@ -1,0 +1,65 @@
+name: Daedalus 2.1.8 UI APK
+
+on:
+  push:
+    branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
+    paths: ['.github/workflows/bionic-ui-apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bionic-ui-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GOW3_BUILD_TOOLS: '36.0.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+      - name: Restore established APK signing key
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-development.keystore
+          key: bionic-development-signing-v1
+      - name: Require existing signing identity
+        run: test -s .local-deps/android/bionic-development.keystore
+      - name: Download validated native baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: God-of-War-III-Daedalus-2.1.8-arm64
+          run-id: 41105078964
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: out/ui-baseline
+      - name: Verify and stage unchanged runtime
+        run: python tools/android/stage_ui_baseline.py out/ui-baseline/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk
+      - name: Android regression tests
+        run: python -m unittest discover -s tests -p 'test_android_*.py'
+      - name: Rebuild frontend and package APK
+        run: bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true --no-daemon --max-workers=2
+      - name: Sign and validate APK
+        run: bash tools/android/bionic/sign_apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: God-of-War-III-Daedalus-2.1.8-UI-Fixes-arm64
+          path: |
+            out/release/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk
+            out/release/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk.sha256
+          if-no-files-found: error

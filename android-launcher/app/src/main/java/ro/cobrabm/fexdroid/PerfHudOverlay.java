@@ -73,6 +73,10 @@ final class PerfHudOverlay extends View {
     private int gpuFailures;
 
     // ---- 拖动状态（仅主线程访问） ----
+    private TouchControllerOverlay touchControls;
+    void avoidControls(TouchControllerOverlay controls) {
+        touchControls=controls; controls.onGeometryChanged(this::invalidate); invalidate();
+    }
     private float hudX, hudY;          // Position is derived from the anchor and actual measured HUD size.
     private final float density = getResources().getDisplayMetrics().density;
     private int anchor = 1, vertical = 0;
@@ -329,6 +333,11 @@ final class PerfHudOverlay extends View {
                 ? (getHeight() - h) * 0.5f : maxY;
         hudX = Math.max(marginPx, Math.min(x, maxX));
         hudY = Math.max(marginPx, Math.min(y, maxY));
+        if(touchControls!=null) {
+            float[] safe=HudPlacement.place(getWidth(),getHeight(),w,h,hudX,hudY,
+                marginPx,touchControls.hudExclusions());
+            hudX=safe[0];hudY=safe[1];
+        }
     }
 
     /** Both the Android launcher and native in-game menu use the same 3x3 anchors. */

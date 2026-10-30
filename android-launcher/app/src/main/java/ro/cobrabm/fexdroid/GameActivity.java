@@ -81,7 +81,7 @@ public final class GameActivity extends Activity {
     private LinearLayout gameSettingsItem, cheatsItem, graphicsItem, controllerItem, swapFaceItem;
     private TouchControllerOverlay controllerOverlay;
     private PerfHudOverlay perfHud;
-    private LinearLayout perfHudItem, frameGenItem;
+    private LinearLayout perfHudItem, frameGenItem, displayModeItem;
     private PadBridge pad;
     private AudioBridge audio;
     private volatile Process xvfb, game;
@@ -235,9 +235,11 @@ public final class GameActivity extends Activity {
 
         controllerOverlay=new TouchControllerOverlay(this,pad,!bionicRuntime() && "1".equals(setting("overlay_mouse")));
         controllerOverlay.setVisibility(controllerEnabled() ? View.VISIBLE : View.GONE);
+        if(perfHud!=null) perfHud.invalidate();
         screen.addView(controllerOverlay,frame(-1,-1,Gravity.CENTER));
         // Upstream-style draggable HUD stays above the controller and below the drawer.
         perfHud=new PerfHudOverlay(this);
+        perfHud.avoidControls(controllerOverlay);
         screen.addView(perfHud,frame(-1,-1,Gravity.CENTER));
         perfHud.setActive(bionicRuntime() ? HudConfig.load(new File(BASE,"gow3.ini")).enabled
                 : getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("performance_hud",false));
@@ -293,6 +295,11 @@ public final class GameActivity extends Activity {
             .setNegativeButton(UiText.get(this, "Cancel"),null).setPositiveButton(UiText.get(this, "Restart"),(dialog,which) -> restartGame()).show());
 
         section("Graphics");
+        displayModeItem=menuItem("ic_fullscreen","Screen mode","",() -> {
+            closeDrawer();
+            new SettingsDialog(this,new File(BASE,"gow3.ini"),this::restartGame)
+                .showDisplayMode(() -> {immersive();refreshDrawer();});
+        });
         // Graphics 入口只保留运行时真正消费的那几项：upscaler / preset / sharpen / sharpness /
         // show_fps / fps_limit。原来的 CPU 核心（thor_cpus）、特效（effect_*）、模型细节
         // （model_lod）在本仓库启动链路没有消费方，已在 SettingsDialog.show() 里注释掉。
@@ -432,6 +439,7 @@ public final class GameActivity extends Activity {
     }
 
     private void refreshDrawer() {
+        setDetail(displayModeItem,"1".equals(setting("android_fullscreen")) ? "Stretch to fill" : "Centered 16:9");
         /* gameSettingsItem / cheatsItem 的摘要随上面两个入口一起注释掉了（接回来时一起放开）。
         java.util.List<String> game=new java.util.ArrayList<>();
         if (!"0".equals(setting("skip_network_choice"))) game.add("Offline start");
@@ -485,6 +493,7 @@ public final class GameActivity extends Activity {
         if (!drawerOpen) return;
         drawerOpen=false; pad.reset();
         controllerOverlay.setVisibility(controllerEnabled() ? View.VISIBLE : View.GONE);
+        if(perfHud!=null) perfHud.invalidate();
         scrim.animate().cancel(); drawer.animate().cancel();
         scrim.animate().alpha(0).setDuration(180).withEndAction(() -> scrim.setVisibility(View.GONE)).start();
         drawer.animate().translationX(-dp(320)).setDuration(200)

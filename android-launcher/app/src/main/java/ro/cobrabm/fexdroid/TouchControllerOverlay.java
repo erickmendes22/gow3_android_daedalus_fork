@@ -6,7 +6,6 @@ import android.graphics.Canvas;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.RectF;
-import android.graphics.DashPathEffect;
 import java.io.InputStream;
 import android.graphics.Paint;
 import android.graphics.PointF;
@@ -67,6 +66,9 @@ final class TouchControllerOverlay extends View {
     private final Map<String,Float> sizes=new LinkedHashMap<>();
     private PointF dodgeOrigin;
     private boolean weaponsOpen;
+    private Runnable geometryListener;
+    void onGeometryChanged(Runnable listener) { geometryListener=listener; }
+    private void geometryChanged() { if(geometryListener!=null) geometryListener.run(); }
     private final Map<String,Bitmap> actionIcons=new LinkedHashMap<>();
     private float pinchStartDistance,pinchStartSize;
     private String key(String axis,String name) { return "gow3_mobile_v218_"+axis+"_"+name; }
@@ -124,6 +126,7 @@ final class TouchControllerOverlay extends View {
         x=Math.max(margin,Math.min(getWidth()/scale()-margin,x));
         y=Math.max(margin,Math.min(getHeight()/scale()-margin-18,y));
         centers.get(name).set(x*scale()*1280f/getWidth(),y*scale()*576f/getHeight());
+        geometryChanged();
     }
     private static float distance(float x,float y,PointF p) { return (float)Math.hypot(x-p.x,y-p.y); }
     private static boolean stick(String name) { return name.equals("leftstick") || name.equals("rightstick"); }
@@ -149,8 +152,7 @@ final class TouchControllerOverlay extends View {
             PointF p=layoutCenter(name);
             float dx=Math.abs(x-p.x),dy=Math.abs(y-p.y);
             float scale=size(name);
-            boolean inside=name.equals("rightstick") ? dx<110*scale && dy<80*scale :
-                distance(x,y,p)<(name.equals("leftstick") ? 72 : 44)*scale;
+            boolean inside=distance(x,y,p)<(stick(name) ? 72 : 44)*scale;
             if (inside && distance(x,y,p)<best) { best=distance(x,y,p); winner=name; }
         }
         if (winner!=null || editing || save) return winner;
@@ -211,7 +213,7 @@ final class TouchControllerOverlay extends View {
             sizes.put(name,1f);
             editor.remove(key("x",name)).remove(key("y",name)).remove(key("size",name));
         }
-        editor.apply(); release(); invalidate();
+        editor.apply(); release(); invalidate(); geometryChanged();
     }
 
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
@@ -235,7 +237,7 @@ final class TouchControllerOverlay extends View {
                 if (e.getPointerCount()>=2 && pinchStartDistance>16f) {
                     float dx=e.getX(0)-e.getX(1),dy=e.getY(0)-e.getY(1);
                     sizes.put(dragged,Math.max(.6f,Math.min(1.6f,
-                        pinchStartSize*(float)Math.hypot(dx,dy)/pinchStartDistance)));
+                        pinchStartSize*(float)Math.hypot(dx,dy)/pinchStartDistance))); geometryChanged();
                 } else {
                     int index=e.findPointerIndex(editPointer);
                     if (index>=0) moveControl(dragged,layoutX(e,index),layoutY(e,index));
@@ -257,17 +259,17 @@ final class TouchControllerOverlay extends View {
         if (action==MotionEvent.ACTION_DOWN || action==MotionEvent.ACTION_POINTER_DOWN) {
             float x=layoutX(e,at),y=layoutY(e,at);
             String name=hit(x,y);
-            if (name==null && !mouseEnabled) { weaponsOpen=false; invalidate(); return true; }
+            if (name==null && !mouseEnabled) { weaponsOpen=false; invalidate(); geometryChanged(); return true; }
             if (name!=null && stick(name))
                 for (int i=0;i<controls.size();i++) if (name.equals(controls.valueAt(i))) return true;
             controls.put(id,name==null ? "mouse" : name);
             positions.put(id,new PointF(x,y));
-            if ("weapons".equals(name)) weaponsOpen=!weaponsOpen;
+            if ("weapons".equals(name)) { weaponsOpen=!weaponsOpen; geometryChanged(); }
             if ("rightstick".equals(name)) dodgeOrigin=new PointF(x,y);
         } else if (action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_POINTER_UP) {
             String released=controls.get(id);
             controls.remove(id); positions.remove(id);
-            if ("dpad".equals(released)) weaponsOpen=false;
+            if ("dpad".equals(released)) { weaponsOpen=false; geometryChanged(); }
 
             if ("rightstick".equals(released)) dodgeOrigin=null;
         }
@@ -350,7 +352,7 @@ final class TouchControllerOverlay extends View {
         c.restore();
     }
     private void drawStick(Canvas c,String name) {
-        PointF p=center(name);float s=size(name);
+        PointF p=layoutCenter(name);float s=size(name);
         boolean active=false;
         for(int i=0;i<controls.size();i++) if(name.equals(controls.valueAt(i))) active=true;
         c.save();c.scale(s,s,p.x,p.y);
@@ -361,8 +363,9 @@ final class TouchControllerOverlay extends View {
             float x=p.x,y=p.y;
             for(int i=0;i<controls.size();i++)if(name.equals(controls.valueAt(i))) {
                 PointF q=positions.get(controls.keyAt(i));
-                if(q!=null){x=p.x+Math.max(-26,Math.min(26,q.x-p.x));
-                            y=p.y+Math.max(-26,Math.min(26,q.y-p.y));}
+                if(q!=null){PointF origin=center(name);
+                    x=p.x+Math.max(-26,Math.min(26,q.x-origin.x));
+                    y=p.y+Math.max(-26,Math.min(26,q.y-origin.y));}
                 break;
             }
             c.drawCircle(x,y,22,paint);
@@ -370,22 +373,33 @@ final class TouchControllerOverlay extends View {
         c.restore();
     }
     private void drawDodge(Canvas c) {
+        // Same circular ring, dark fill and moving red thumb as the left stick.
+        // The arrows describe direction without a text panel over gameplay.
+        drawStick(c,"rightstick");
         PointF p=layoutCenter("rightstick");float s=size("rightstick");
-        c.save();c.scale(s,s,p.x,p.y);
-        paint.setStyle(Paint.Style.FILL);paint.setColor(0x24140912);
-        c.drawRoundRect(p.x-110,p.y-80,p.x+110,p.y+80,20,20,paint);
-        paint.setStyle(Paint.Style.STROKE);paint.setColor(0x99dbac7c);paint.setStrokeWidth(2);
-        paint.setPathEffect(new DashPathEffect(new float[]{7,7},0));
-        c.drawRoundRect(p.x-110,p.y-80,p.x+110,p.y+80,20,20,paint);paint.setPathEffect(null);
-        c.drawLine(p.x-20,p.y,p.x+20,p.y,paint);c.drawLine(p.x,p.y-20,p.x,p.y+20,paint);
-        paint.setStyle(Paint.Style.FILL);paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(13);
-        c.drawText(UiText.get(getContext(),"DODGE"),p.x,p.y-50,paint);
-        c.drawText(UiText.get(getContext(),"DRAG"),p.x,p.y+62,paint);
-        if (dodgeOrigin!=null) {
-            paint.setColor(0xaaffb06a);
-            c.drawCircle(p.x,p.y,8,paint);
+        c.save();c.scale(s,s,p.x,p.y);c.translate(p.x,p.y);
+        paint.setStyle(Paint.Style.STROKE);paint.setColor(0xccdbac7c);paint.setStrokeWidth(2.2f);
+        for(int i=0;i<4;i++) {
+            c.save();c.rotate(i*90f);
+            c.drawLine(-5,-45,0,-51,paint);c.drawLine(0,-51,5,-45,paint);
+            c.restore();
         }
         c.restore();
+    }
+    float[][] hudExclusions() {
+        if(getVisibility()!=VISIBLE || getWidth()<=0 || getHeight()<=0) return new float[0][];
+        java.util.ArrayList<float[]> result=new java.util.ArrayList<>();float factor=scale();
+        for(String name:NAMES) {
+            if(!editing && !saveDialogMode && !weaponsOpen && (name.equals("up") || name.equals("left") ||
+                name.equals("right") || name.equals("down"))) continue;
+            if(saveDialogMode && !dialogControlAllowed(name)) continue;
+            PointF at=layoutCenter(name);
+            float radius=(stick(name)?66:44)*size(name);
+            float label=stick(name)?0:20*size(name);
+            result.add(new float[]{(at.x-radius)*factor,(at.y-radius)*factor,
+                (at.x+radius)*factor,(at.y+radius+label)*factor});
+        }
+        return result.toArray(new float[0][]);
     }
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);

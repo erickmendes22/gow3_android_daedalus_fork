@@ -9,6 +9,9 @@ import java.util.Locale;
 final class UiText {
     private static final Map<String,String> PT = new LinkedHashMap<>();
     static {
+        PT.put("Screen mode", "Modo de tela");
+        PT.put("Centered 16:9", "16:9 centralizado");
+        PT.put("Stretch to fill", "Esticar para preencher");
         PT.put("God of War III game folder", "Pasta do jogo God of War III");
         PT.put("Choose folder", "Escolher pasta");
         PT.put("Not a God of War III folder", "A pasta não contém God of War III");

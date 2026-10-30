@@ -180,18 +180,24 @@ final class SettingsDialog {
         return -1;
     }
 
+    void showDisplayMode(Runnable applied) {
+        load();
+        String[] modes={UiText.get(activity,"Centered 16:9"),UiText.get(activity,"Stretch to fill")};
+        new AlertDialog.Builder(activity).setTitle(UiText.get(activity,"Screen mode"))
+            .setSingleChoiceItems(modes,"1".equals(get("android_fullscreen","0"))?1:0,(dialog,which) -> {
+                Map<String,String> changed=new LinkedHashMap<>();
+                changed.put("android_fullscreen",which==1?"1":"0");
+                if(save(changed)) {dialog.dismiss();applied.run();}
+                else new AlertDialog.Builder(activity).setMessage(UiText.get(activity,"The settings could not be saved."))
+                    .setPositiveButton("OK",null).show();
+            }).setNegativeButton(UiText.get(activity,"Cancel"),null).show();
+    }
+
     void show() {
         load();
         LinearLayout box=new LinearLayout(activity); box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(24),dp(4),dp(24),dp(8));
 
-        heading(box,"Display");
-        final Switch fullscreen=toggle(box,"Fullscreen — fill entire display",
-            "1".equals(get("android_fullscreen","0")));
-        final TextView fullscreenNote=new TextView(activity);
-        fullscreenNote.setText(UiText.get(activity,
-            "OFF keeps centered 16:9. ON stretches to fill without cropping. System bars stay hidden in both modes."));
-        fullscreenNote.setTextSize(13); fullscreenNote.setAlpha(0.7f); box.addView(fullscreenNote);
         heading(box,"Render resolution");
         final RadioGroup resolutions=choices(box,RESOLUTION_NAMES,
             indexOf(RESOLUTION_VALUES,canonicalResolution(get("render_resolution","720p")),5));
@@ -296,7 +302,6 @@ final class SettingsDialog {
                 changed.put("anisotropy",anisotropyValues[Math.max(0,checkedIndex(anisotropy))]);
                 changed.put("fps_limit",FPS_VALUES[Math.max(0,checkedIndex(fpsLimit))]);
                 changed.put("render_resolution",RESOLUTION_VALUES[Math.max(0,checkedIndex(resolutions))]);
-                changed.put("android_fullscreen",fullscreen.isChecked() ? "1" : "0");
                 changed.put("disable_dynamic_shadows",disableShadows.isChecked() ? "1" : "0");
                 changed.put("effect_dynamic_shadows",disableShadows.isChecked() ? "0" : "1");
                 changed.put("upscaler",gsr2Spatial.isChecked() ? "gsr2" : "off");
