@@ -26,6 +26,8 @@ void put32(std::size_t offset,std::uint32_t value) {
 }
 }
 int main() {
+    const SrtOp emitter_type=OpCopyWindow;
+    assert(emitter_type==CopyWindow);
     mem.resize(8192);base=UINT64_C(0x30000000);
     put32(256+5*4,0xDEADBEEFu);
     std::uint32_t user[16]{};user[0]=std::uint32_t(base+256);user[1]=0;user[2]=1;

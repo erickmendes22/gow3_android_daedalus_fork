@@ -15,6 +15,9 @@ enum Op : std::uint32_t {
     Add, Sub, Mul, Shl, Shr, And, Or, Xor, Not, UMin, UMax, BitExtract,
     CopyWindow,
 };
+// Keep the emitter's proven GoW3 IR lowering API; Android uses a different
+// bytecode interpreter while preserving its SrtOp parameter type.
+using SrtOp=Op;
 constexpr std::uint32_t Magic=0x33545253u; // SRT3: not x86 walker bytes or GoW3 SRT
 constexpr std::uint32_t MaxDepth=64, MaxValues=32;
 constexpr std::uint32_t MaxWords=262144, WindowDwords=512;
