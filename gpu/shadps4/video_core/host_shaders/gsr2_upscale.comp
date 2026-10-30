@@ -234,6 +234,34 @@ void main()
         }
         // Rejection is local: missing pixels, HUD transitions and particles
         // use the present spatial sample, not an unrelated temporal pixel.
+        // ZIP (12), same-flip complete-3D input: actual previous-image
+        // matches are near (-1,+3) / (-1,+4), but the old 30-vector
+        // table contains only (0,+4), (+/-1,+2) and (+/-3,+1).
+        // It therefore converges on incorrect +/-1..2-pixel vertical
+        // correspondences even though the native camera Y component is
+        // already near the correct displacement. Sample a small 5x3
+        // neighborhood around the camera's measured Y displacement,
+        // WITHOUT trusting its sign-inconsistent horizontal estimate.
+        // Use original-native frames only, the SAME cost/rejection rule,
+        // and a rigorous one-tap lower bound to avoid unnecessary 5-taps.
+        // This stage never modifies color, jitter, depth or the HUD.
+        if (bestError > 0.00012 && modelWithinRange &&
+            abs(modelOffset.y) >= 2) {
+            for (int y = -1; y <= 1; ++y) {
+                for (int x = -2; x <= 2; ++x) {
+                    ivec2 candidate = ivec2(x, modelOffset.y + y);
+                    float penalty = 0.00003 * length(vec2(candidate));
+                    if (Gow3NativeCenterLowerBound(InputPos, candidate) +
+                        penalty + 0.00004 >= bestError) continue;
+                    float cost = Gow3NativePatchError(InputPos, candidate) +
+                                 penalty;
+                    if (cost + 0.00004 < bestError) {
+                        bestOffset = candidate;
+                        bestError = cost;
+                    }
+                }
+            }
+        }
         if (bestError < 0.002) {
             vec2 nativeOffset = vec2(bestOffset);
             // A real continuous camera pan in ZIP (9) moves roughly 2.7
