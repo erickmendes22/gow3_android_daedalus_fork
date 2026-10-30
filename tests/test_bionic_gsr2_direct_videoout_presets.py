@@ -39,7 +39,7 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
                 with self.subTest(preset=p,resolution=choice),tempfile.TemporaryDirectory() as tmp:
                     folder=Path(tmp)
                     ini=folder/"gow3.ini"
-                    ini.write_text(f"upscaler=gsr2\\npreset={p}\\nrender_resolution={choice}\\n")
+                    ini.write_text(f"upscaler=gsr2\npreset={p}\nrender_resolution={choice}\n")
                     with patch.object(patches,"patch_profile_status",return_value=IDENT):
                         plan=launch_env.derive(folder,ini,folder/"state.json",{"GOW3_ANDROID_PORT":"1"})
                     up=plan['updates']
@@ -66,7 +66,7 @@ class Gsr2DirectVideoOutPresets(unittest.TestCase):
                            ('unverified-eboot',patches.CUSA01715_0102_ANDROID_SHA)]:
             with self.subTest(reason=reason),tempfile.TemporaryDirectory() as tmp:
                 folder=Path(tmp); ini=folder/'gow3.ini'
-                ini.write_text('upscaler=gsr2\\npreset=3\\nrender_resolution=240p\\n')
+                ini.write_text('upscaler=gsr2\npreset=3\nrender_resolution=240p\n')
                 ident={**IDENT,'reason':reason,'eboot_sha256':sha}
                 with patch.object(patches,"patch_profile_status",return_value=ident):
                     plan=launch_env.derive(folder,ini,folder/'state.json',{"GOW3_ANDROID_PORT":"1"})
