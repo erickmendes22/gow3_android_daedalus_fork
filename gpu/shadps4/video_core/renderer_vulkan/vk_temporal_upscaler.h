@@ -298,6 +298,8 @@ private:
         // Full scene candidate: captured between VideoOut scene-copy and HUD draws.
         VideoCore::UniqueImage post_scene_image;
         vk::UniqueImageView post_scene_view;
+        vk::Format post_scene_format = vk::Format::eUndefined;
+        u32 post_scene_width = 0, post_scene_height = 0;
         bool post_scene_valid = false;
         // Depth from the exact same pre-HUD draw as the saved color.
         VideoCore::UniqueImage depth_image;
