@@ -10,3 +10,5 @@ Validate direct VideoOut forward raster jitter eligibility after real ZIP4 measu
 Final CI after guarding TextureCache queries by verified native mode.
 
 Validate post-scene snapshot source, actor/depth preservation, and new same-flip ZIP capture fields (2026-10-30).
+
+Rerun stage tests after updating outdated HUD source assertion for new post-scene capture README.
