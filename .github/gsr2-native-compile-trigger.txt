@@ -11,3 +11,5 @@ Trigger full signed experimental Bionic APK packaging and artifact upload after 
 2026-10-30: compile real Android native C++ and package GSR2 post-scene VideoOut source experimental APK after Stage CI 41015061274 passed.
 
 2026-10-30: compile native Bionic and package diagnostic APK with menu-triggered draw-stage readback (1 through 2048) and flip-correlated final VideoOut.
+
+2026-10-30 ZIP7: compile Android Bionic with native-only jitter guard and fine-grained HUD transition captures from draw 17..48; keep Native AA unchanged.
