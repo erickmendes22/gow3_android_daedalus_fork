@@ -20,6 +20,9 @@
 #include "actor_hook.h"
 #include "damage_hook.h"
 #include "gpu/gow3gpu.h"
+#ifdef __ANDROID__
+#include "ports/sotc/android/gpu_bridge.h"
+#endif
 #if !defined(__GNUC__)
 #error This loader requires GCC or Clang.
 #endif
@@ -232,7 +235,14 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
 #ifndef _WIN32
 static void fault(int sig, siginfo_t *info, void *context) {
     /* GPU page tracking (write-protected guest pages) is resolved first. */
-    if (gpu_enabled && sig == SIGSEGV && gow3gpu_handle_fault(context, info->si_addr)) return;
+    if (gpu_enabled && sig == SIGSEGV) {
+#ifdef __ANDROID__
+        if (sotc_android_image && sotc_gpu_handle_fault(context, info->si_addr)) return;
+        if (!sotc_android_image && gow3gpu_handle_fault(context, info->si_addr)) return;
+#else
+        if (gow3gpu_handle_fault(context, info->si_addr)) return;
+#endif
+    }
     /* Faults the guest CPU itself raises (JIT bookkeeping) are handled and resumed. */
     if (guest_cpu_handle_fault(sig, info, context)) return;
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
@@ -260,7 +270,14 @@ static void fault(int sig, siginfo_t *info, void *context) {
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
-    if (gpu_enabled) gow3gpu_dump_guest_writes(context);
+    if (gpu_enabled) {
+#ifdef __ANDROID__
+        if (sotc_android_image) sotc_gpu_dump_guest_writes(context);
+        else gow3gpu_dump_guest_writes(context);
+#else
+        gow3gpu_dump_guest_writes(context);
+#endif
+    }
     /* Host call chain (frames with unwind info; guest frames end it). */
     void *frames[32];
     int depth = backtrace(frames, 32);
@@ -714,7 +731,6 @@ int main(int argc, char **argv) {
         if (sfo_value(sfo,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value(sfo,"TITLE_ID",id,sizeof(id),NULL))
             runtime_savedata_configure(id);
     }
-    gow3gpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
     AddVectoredExceptionHandler(1, vectored_fault);
@@ -749,6 +765,15 @@ int main(int argc, char **argv) {
     sotc_android_image = !memcmp(magic,"BBPROBE5",8);
 #if defined(__ANDROID__) || (!defined(_WIN32) && !defined(__MINGW32__))
     if (sotc_android_image) setenv("SOTC_PORT","1",1);
+    if (sotc_android_image) {
+        if (sotc_gpu_load(!cpu_only)) fail("SotC Vulkan renderer unavailable or incompatible");
+        if (sotc_gpu_available()) sotc_gpu_register_kernel();
+    } else {
+        gow3gpu_register_kernel();
+    }
+#endif
+#ifndef __ANDROID__
+    gow3gpu_register_kernel();
 #endif
     uint64_t capabilities = memcmp(magic, "G3PROBE1", 8) ? read64(f) : 0;
     if (capabilities & ~UINT64_C(1)) fail("unknown runtime capabilities");
@@ -865,8 +890,18 @@ int main(int argc, char **argv) {
         if (procparam) memcpy(&sdk,image+procparam+16,8); /* procparam: size, magic, count, sdk_version */
         Gow3GpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080};
         gpu_enabled=1; /* page tracking starts while the rasterizer registers guest memory */
+        #ifdef __ANDROID__
+        if (sotc_android_image ? sotc_gpu_init(&gpu) : gow3gpu_init(&gpu))
+            fail("GPU initialization failed");
+#else
         if (gow3gpu_init(&gpu)) fail("GPU initialization failed");
-        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,gow3gpu_symbol_count());
+#endif
+        #ifdef __ANDROID__
+        unsigned gpu_symbols=sotc_android_image ? sotc_gpu_symbol_count() : gow3gpu_symbol_count();
+#else
+        unsigned gpu_symbols=gow3gpu_symbol_count();
+#endif
+        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,gpu_symbols);
     }
     unsigned char *traps =
 #ifdef __ANDROID__

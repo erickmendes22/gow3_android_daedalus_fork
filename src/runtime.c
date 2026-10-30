@@ -1,6 +1,9 @@
 /* Narrow, explicit PS4 libc contracts. No automatic success stubs. */
 #define _CRT_RAND_S
 #include "runtime.h"
+#ifdef __ANDROID__
+#include "ports/sotc/android/gpu_bridge.h"
+#endif
 #include "guest_cpu.h"
 #include "gpu/gow3gpu.h"
 #include <stdio.h>
@@ -315,6 +318,9 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     }
     uintptr_t file = runtime_file_resolve(name);
     if (file) return file;
+#ifdef __ANDROID__
+    if (is_sotc) return sotc_gpu_resolve(name);
+#endif
     return gow3gpu_resolve(name);
 }
 static const struct { const char *nid, *symbol; } import_names[]={
