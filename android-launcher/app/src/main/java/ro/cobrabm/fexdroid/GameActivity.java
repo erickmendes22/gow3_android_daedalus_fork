@@ -303,15 +303,10 @@ public final class GameActivity extends Activity {
             }
         });
 
-        if (bionicRuntime()) {
-            menuItem("ic_frames","Capture GSR2 temporal scaling",
-                "6 temporal frames (reset=0) · all raw buffers",this::startGsr2Capture);
-            menuItem("ic_frames","Capture GSR2 render stages",
-                "One flip: every draw from 16 to 48, then sparse captures",
-                this::startGsr2RenderStages);
-            menuItem("ic_restore","Export GSR2 capture ZIP",
-                "Save raw frames and the game log for analysis",this::exportGsr2Capture);
-        }
+        // GSR2 is currently a spatial-only filter. Hide temporal/stage
+        // capture controls: they cannot complete a temporal history capture
+        // and must not mislead the user. Their diagnostic code is retained
+        // for when native motion/jitter reconstruction resumes.
 
         section("Controls");
         controllerItem=menuItem("ic_gamepad","On-screen controller","",() -> {
