@@ -3139,14 +3139,18 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
     runtime.FlushBarriers();
     const auto guest_view = CachedView(source, source.info.pixel_format,
                                        vk::ImageAspectFlagBits::eColor);
-    // Six actual GSR2 frames showed that early preHUD color contains only
-    // background, while same-frame depth and VideoOut contain animated actors.
-    // Use FULL final VideoOut for GSR2 color/depth/motion consistency.
-    // Optional GOW3_GSR2_USE_EARLY_PREHUD=1 restores old source for A/B.
-    const bool complete_videoout = prehud &&
-        !std::getenv("GOW3_GSR2_USE_EARLY_PREHUD");
-    const vk::ImageView source_view = complete_videoout ? guest_view : prehud
-        ? *pre_hud_slots[pre_hud_completed_slot].view : guest_view;
+    // The old early LDR snapshot lacks actors; final VideoOut already contains HUD.
+    // Prefer the frozen image AFTER the first guest display-copy draw, BEFORE
+    // later screen-space overlay draws. Keep explicit A/B escape hatches.
+    const bool force_early = prehud && std::getenv("GOW3_GSR2_USE_EARLY_PREHUD");
+    const bool post_scene = prehud && !force_early &&
+        pre_hud_slots[pre_hud_completed_slot].post_scene_valid &&
+        bool(pre_hud_slots[pre_hud_completed_slot].post_scene_view) &&
+        !std::getenv("GOW3_GSR2_FORCE_FULL_VIDEOOUT");
+    const bool complete_videoout = prehud && !post_scene && !force_early;
+    const vk::ImageView source_view = post_scene
+        ? *pre_hud_slots[pre_hud_completed_slot].post_scene_view
+        : force_early ? *pre_hud_slots[pre_hud_completed_slot].view : guest_view;
     auto cmd = scheduler.CommandBuffer();
     const auto full = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
     const auto all = vk::PipelineStageFlagBits2::eAllCommands;
@@ -3299,7 +3303,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                 .imageLayout=vk::ImageLayout::eGeneral};
         };
         const std::array<vk::DescriptorImageInfo,4> images{{
-            sampled(*pre_hud_slots[pre_hud_completed_slot].view),
+            sampled(post_scene ? *pre_hud_slots[pre_hud_completed_slot].post_scene_view
+                               : *pre_hud_slots[pre_hud_completed_slot].view),
             sampled(guest_view),sampled(*output_view),
             vk::DescriptorImageInfo{.imageView=*ui_storage_view,
                                     .imageLayout=vk::ImageLayout::eGeneral}
@@ -3367,7 +3372,8 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                     "output=%ux%u dispatch=%llu path=%s\n",
                     static_cast<unsigned long long>(source.info.guest_address),
                     w, h, ow, oh, static_cast<unsigned long long>(accepted),
-                    prehud ? (complete_videoout ? "full_videoout_temporal" :
+                    prehud ? (post_scene ? "post_scene_copy_temporal" :
+                              complete_videoout ? "full_videoout_temporal" :
                                                   "early_prehud_temporal")
                            : "post_videoout_native_aa");
     }
@@ -3413,6 +3419,14 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                 {vk::Image(output_image),ow,oh,8,"output","rgba16f"},
                 {vk::Image(ui_image),ow,oh,4,"composited","rgba_unorm"}
             }, true);
+            if (post_scene) {
+                // Same-flip source candidate: compare with early LDR and
+                // final VideoOut before accepting the stage as complete.
+                DumpImages(instance, scheduler, cmd, capture_frame, {
+                    {vk::Image(pre_hud_slots[pre_hud_completed_slot].post_scene_image),
+                     w,h,4,"post_scene",fmt}
+                }, true);
+            }
             if (depth_is_r32) {
                 DumpImages(instance, scheduler, cmd, capture_frame, {
                     {vk::Image(pre_hud_slots[pre_hud_completed_slot].depth_image),
@@ -3423,7 +3437,7 @@ bool TemporalUpscaler::PresentGsr2FromGuestDisplay(VideoCore::ImageId guest, Dis
                         "prehud=%d full_color=%d temporal=%d reset=%d depth_r32=%d history_gap=%llu "
                         "camera_shader=%016llx executable=CUSA01623_01.02\n",
                         capture_frame,(unsigned long long)flip_generation,w,h,ow,oh,
-                        int(prehud),int(complete_videoout),int(use_scene_motion),int(!reuse_history),
+                        int(prehud),int(complete_videoout || post_scene),int(use_scene_motion),int(!reuse_history),
                         int(depth_is_r32),(unsigned long long)temporal_gap,
                         (unsigned long long)camera_motion.CompletedCurrentShaderDebug());
             std::fflush(stdout);
