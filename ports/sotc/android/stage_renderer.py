@@ -64,6 +64,11 @@ target_link_libraries(bbgpu PUBLIC Vulkan::Headers ${SOTC_FMT_TARGET} Boost::hea
 if(ANDROID)
     target_compile_definitions(bbgpu PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
     target_link_libraries(bbgpu PRIVATE nativewindow android log dl)
+    # FFmpeg's Android NEON assembly uses direct ADRP references to global
+    # fft tables. Hide symbols from the statically linked FFmpeg archives in
+    # this shared object, so AArch64 resolves those references locally.
+    target_link_options(bbgpu PRIVATE
+        "-Wl,--exclude-libs,libavformat.a:libavcodec.a:libavutil.a:libswscale.a:libswresample.a")
 endif()
 """
     c.write_text(t)
