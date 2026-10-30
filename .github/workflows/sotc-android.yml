@@ -179,6 +179,13 @@ jobs:
             -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
             "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
           cmake --build out/sotc-android/cmake --target help | grep -q bbgpu
+      - name: Compile original SotC GPU library for ARM64
+        shell: bash -el {0}
+        run: |
+          cmake --build out/sotc-android/cmake --target bbgpu --parallel "${GOW3_JOBS:-2}"
+          lib=out/sotc-android/cmake/libbbgpu.so
+          test -s "$lib"
+          "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$lib" | grep -q AArch64
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
