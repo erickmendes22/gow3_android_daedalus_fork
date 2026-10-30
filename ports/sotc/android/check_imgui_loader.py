@@ -17,7 +17,7 @@ def section_between(start, end):
 
 try:
     guard = section_between('static bool SotcUnusedDesktopVkFunction(const char* name)',
-                            '#else\\nstatic bool SotcUnusedDesktopVkFunction')
+                            '#else\nstatic bool SotcUnusedDesktopVkFunction')
     macro = section_between('#define IMGUI_VULKAN_FUNC_LOAD(func)',
                             '    IMGUI_VULKAN_FUNC_MAP(IMGUI_VULKAN_FUNC_LOAD)')
 except ValueError as ex:
@@ -32,7 +32,7 @@ using PFN_vkVoidFunction = void (*)();
 static PFN_vkVoidFunction loader_func(const char*, void*) { return nullptr; }
 static PFN_vkVoidFunction vkGetPhysicalDeviceProperties = nullptr;
 static PFN_vkVoidFunction vkCreateSwapchainKHR = nullptr;
-''' + guard + '\\n' + macro + '''
+''' + guard + '\n' + macro + '''
 bool sotc_loader_compile_test() {
     void* user_data = nullptr;
     IMGUI_VULKAN_FUNC_LOAD(vkGetPhysicalDeviceProperties)
@@ -44,5 +44,5 @@ cmd = ['clang++', '-std=c++23', '-Wall', '-Wextra', '-Werror', '-Wno-unused-func
        '-D__ANDROID__', '-x', 'c++', '-fsyntax-only', '-']
 result = subprocess.run(cmd, input=source, text=True, capture_output=True)
 if result.returncode != 0:
-    sys.exit('SotC ImGui Vulkan loader preflight failed:\\n' + result.stderr)
+    sys.exit('SotC ImGui Vulkan loader preflight failed:\n' + result.stderr)
 print('SotC Android ImGui Vulkan injected guard and macro: clang++ C++23 syntax OK')
