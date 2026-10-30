@@ -112,7 +112,7 @@ def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
       'sotc_cpu':str(out/'sotc-cpu.bin'),'patches':str(out/'patches.bin'),
       'cmdline':str(out/'cmdline.bin') if (out/'cmdline.bin').is_file() else None,
       'cached':current and not force,'audio':bool(extras),
-      'requires':'SotC-specific Bionic/FEX native runtime (not yet integrated)'
+      'requires':'SotC-specific Android Bionic/FEX runtime (included in Daedalus)'
     }
 
 def main():
