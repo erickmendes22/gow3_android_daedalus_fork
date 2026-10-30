@@ -11,6 +11,9 @@
 #include <string.h>
 #include <inttypes.h>
 #include "runtime.h"
+#ifdef __ANDROID__
+#include "ports/sotc/android/lowmem.h"
+#endif
 #include "guest_cpu.h"
 #include "orb_hook.h"
 #include "cheat_hook.h"
@@ -68,6 +71,7 @@ static LinkedModule modules[16];
 static uint64_t module_count;
 static int entered_game;
 static int gpu_enabled;
+static int sotc_android_image; /* BBPROBE5 detected: use verified low 31-bit mapping */
 int vulkan_smoke(void);
 
 static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
@@ -532,7 +536,7 @@ static void install_stat_multipliers(const char *app0, Segment *segments, uint64
 static void apply_patches(const char *path, Segment *segments, uint64_t ns, const Reloc *relocs, uint64_t nr) {
     FILE *f=fopen(path,"rb");
     char magic[8];
-    if (!f || fread(magic,1,8,f)!=8 || memcmp(magic,"G3PATCH2",8)) fail("invalid patch file");
+    if (!f || fread(magic,1,8,f)!=8 || (memcmp(magic,"G3PATCH2",8) && memcmp(magic,"BBPATCH2",8))) fail("invalid patch file");
     uint64_t base=read64(f), count=read64(f), bytes=0, rebased=0;
     unsigned char data[4096];
     for (uint64_t i=0;i<count;++i) {
@@ -656,7 +660,7 @@ int main(int argc, char **argv) {
         FILE *profile=fopen(content_profile,"rb");
         unsigned char data[28];
         if (!profile) fail("cannot open content profile");
-        if (fread(data,1,sizeof(data),profile)!=sizeof(data) || fgetc(profile)!=EOF || memcmp(data,"G3CONT01",8)) fail("invalid content profile");
+        if (fread(data,1,sizeof(data),profile)!=sizeof(data) || fgetc(profile)!=EOF || (memcmp(data,"G3CONT01",8) && memcmp(data,"BBCONT01",8))) fail("invalid content profile");
         fclose(profile);
         uint32_t values[5];
         for (unsigned i=0;i<5;++i) {
@@ -701,15 +705,17 @@ int main(int argc, char **argv) {
     FILE *f = fopen(argv[1], "rb");
     if (!f) fail("cannot open boot file; run prepare.py first");
     char magic[8];
-    if (fread(magic, 1, 8, f) != 8 || (memcmp(magic, "G3PROBE1", 8) && memcmp(magic, "G3PROBE2", 8) && memcmp(magic,"G3PROBE3",8) && memcmp(magic,"G3PROBE4",8) && memcmp(magic,"G3PROBE5",8))) fail("bad boot file signature");
+    if (fread(magic, 1, 8, f) != 8 || (memcmp(magic, "G3PROBE1", 8) && memcmp(magic, "G3PROBE2", 8) && memcmp(magic,"G3PROBE3",8) && memcmp(magic,"G3PROBE4",8) && memcmp(magic,"G3PROBE5",8) && memcmp(magic,"BBPROBE5",8))) fail("bad boot file signature");
     uint64_t size = read64(f), entry = read64(f), ns = read64(f), nr = read64(f);
     import_count = read64(f);
+    sotc_android_image = !memcmp(magic,"BBPROBE5",8);
+    if (sotc_android_image) setenv("SOTC_PORT","1",1);
     uint64_t capabilities = memcmp(magic, "G3PROBE1", 8) ? read64(f) : 0;
     if (capabilities & ~UINT64_C(1)) fail("unknown runtime capabilities");
     runtime_start(strict_imports ? 0 : capabilities);
     if (!size || size > 512*1024*1024 || entry >= size || !ns || ns > 64 || nr > 1000000 || import_count > 100000)
         fail("boot file limits exceeded");
-    int multi=!memcmp(magic,"G3PROBE5",8);
+    int multi=!memcmp(magic,"G3PROBE5",8) || sotc_android_image;
     int linked=!memcmp(magic,"G3PROBE3",8) || !memcmp(magic,"G3PROBE4",8) || multi;
     int native_libc=linked && !strict_imports && (capabilities&1);
     uint64_t main_tls[4]={0};
@@ -796,7 +802,16 @@ int main(int argc, char **argv) {
             if (!executable) fail("native function is not executable");
         }
     }
+    /* SotC's eboot has 31-bit static pointers. A normal low-40-bit mapping
+     * (sufficient for GoW3) is NOT enough; never fall back above 2 GiB. */
+#ifdef __ANDROID__
+    const size_t sotc_extra = sotc_android_image ? (16u*1024u*1024u) : 0;
+    image = sotc_android_image ? sotc_map_guest_image(round_page(size)+sotc_extra)
+                              : allocate(round_page(size));
+    if (!image) fail("SotC: cannot reserve guest eboot image below 2 GiB");
+#else
     image = allocate(round_page(size));
+#endif
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (!cpu_only) {
@@ -813,8 +828,18 @@ int main(int argc, char **argv) {
         if (gow3gpu_init(&gpu)) fail("GPU initialization failed");
         printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,gow3gpu_symbol_count());
     }
-    unsigned char *traps = allocate(round_page((import_count + 1) * 32));
-    unsigned char *data_traps = allocate((import_count + 1) * page_size);
+    unsigned char *traps =
+#ifdef __ANDROID__
+        sotc_android_image ? sotc_map_guest_image(round_page((import_count + 1) * 32)) :
+#endif
+        allocate(round_page((import_count + 1) * 32));
+    if (!traps) fail("cannot reserve guest import traps");
+    unsigned char *data_traps =
+#ifdef __ANDROID__
+        sotc_android_image ? sotc_map_guest_image((import_count + 1) * page_size) :
+#endif
+        allocate((import_count + 1) * page_size);
+    if (!data_traps) fail("cannot reserve guest data traps");
     protect(data_traps, (import_count + 1) * page_size, 0);
     /* Guest code ranges: the image itself and the import traps. Done through the boundary so the
      * JIT can translate them (no-op on x86-64 hosts). */

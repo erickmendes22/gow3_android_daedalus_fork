@@ -252,6 +252,11 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (rtc) return rtc;
     uintptr_t save = runtime_savedata_resolve(name);
     if (save) return save;
+    if (getenv("SOTC_PORT")) {
+        extern uintptr_t runtime_sotc_resolve(const char *);
+        uintptr_t sotc = runtime_sotc_resolve(name);
+        if (sotc) return sotc;
+    }
     uintptr_t file = runtime_file_resolve(name);
     if (file) return file;
     return gow3gpu_resolve(name);

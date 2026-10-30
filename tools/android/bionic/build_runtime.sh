@@ -23,7 +23,7 @@ for source in third_party/LibAtrac9/C/src/*.c; do
 done
 "$llvm/bin/llvm-ar" rcs "$out/libatrac9.a" "$out"/atrac9/*.o
 objects=()
-for source in src/probe.c src/runtime*.c src/vulkan_smoke.c; do
+for source in src/probe.c src/runtime*.c src/vulkan_smoke.c ports/sotc/android/lowmem.c; do
     obj="$out/runtime-objects/$(basename "${source%.c}").o"
     "${cc[@]}" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I"$prefix/include" -I. -Isrc \
         -fPIE -c "$source" -o "$obj"

@@ -29,3 +29,16 @@ No game assets, decrypted Sony modules or firmware can be distributed.
 Do not relabel a GoW3 APK as SotC. GPL-2.0-or-later applies.
 
 Example: python3 ports/sotc/android/prepare_game.py --upstream ./upstream-sotc --game-dir /your/CUSA08809 --out /private/sotc-data --render 1280x720 --modes fps60game
+
+## Additional integrated backend work
+
+The Android GoW3 native loader in this **isolated branch** now reads SotC BBPROBE5,
+BBCONT01 and BBPATCH2; uses the strict 31-bit mapping for the SotC image, imported
+function traps and data traps; and loads SotC-specific HLE NIDs from the original
+upstream runtime_sotc.c. It detects this by the image header instead of changing the
+normal GoW3 G3PROBE5 behavior. The bridge reuses the same FEX guest CPU path.
+
+**Not yet a playable port:** this only establishes the image/import layer.
+SotC-specific Vulkan renderer and mandatory guest fiber state switching remain to
+be ported; upstream --sotc-cpu/--sotc-cmdline are not yet supported in the Android
+loader. Building the GoW3 APK alone is not a validation of SotC gameplay.

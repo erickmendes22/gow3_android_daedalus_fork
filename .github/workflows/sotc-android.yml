@@ -29,6 +29,13 @@ jobs:
           done
           python -m py_compile ports/sotc/android/prepare_game.py
           python -m unittest discover -s tests -p 'test_sotc_*.py' -v
+      - name: Validate actual SotC HLE on ARM64
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          ndk="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          mkdir -p out/sotc-android
+          "$ndk/bin/aarch64-linux-android30-clang" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -Isrc -c src/runtime_sotc.c -o out/sotc-android/runtime_sotc.o
+          "$ndk/bin/llvm-readelf" -h out/sotc-android/runtime_sotc.o | grep -q AArch64
       - name: Host test low VA
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror ports/sotc/android/lowmem.c tests/test_sotc_lowmem.c -o /tmp/sotc-lowmem-test
