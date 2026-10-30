@@ -764,6 +764,82 @@ void TemporalUpscaler::CaptureGsr2AfterVideoOutCopy(VAddr guest,
                     (unsigned long long)copied,(unsigned long long)guest,w,h);
 }
 
+// One explicitly requested scan captures the actual guest framebuffer at
+// multiple draw boundaries. The screenshot filenames carry guest address and
+// completed draw count, so they can be correlated with the TRUE VideoOut flip.
+// This is not a heuristic source substitution: it NEVER changes GSR2 input.
+void TemporalUpscaler::ProbeGsr2VideoOutStage(VAddr guest,
+                                             VideoCore::ImageId target,
+                                             u32 completed_draw,
+                                             u64 next_shader) {
+    if (!gsr2_stage_scan_armed || !guest || !target) return;
+    // Bound the number of readbacks to nine per guest buffer. A completed
+    // draw is one actual guest draw, not a host submission or camera tick.
+    static constexpr std::array<u32, 9> stage_draws{
+        1, 2, 4, 8, 16, 32, 64, 128, 256};
+    if (std::find(stage_draws.begin(),stage_draws.end(),completed_draw) ==
+        stage_draws.end()) return;
+    auto& color = texture_cache.GetImage(target);
+    if (color.info.guest_address != guest ||
+        !FrameCapture::IsDisplayBuffer(guest) ||
+        color.info.num_samples != 1 ||
+        !bool(color.usage_flags & vk::ImageUsageFlagBits::eTransferSrc))
+        return;
+    const char* format = GsrProbeFormat(color.info.pixel_format);
+    if (std::strcmp(format,"unsupported") == 0) return;
+    const u32 w = color.info.size.width, h = color.info.size.height;
+    if (!w || !h || w > 1280 || h > 720) return;
+    scheduler.EndRendering();
+    runtime.Transit(&color,vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferRead);
+    runtime.FlushBarriers();
+    char label[96];
+    std::snprintf(label,sizeof(label),"scan_guest_%llx_after_draw_%03u",
+                  (unsigned long long)guest,completed_draw);
+    DumpImages(instance,scheduler,scheduler.CommandBuffer(),0,
+               {{color.GetImage(),w,h,4,label,format}},true);
+    bool tracked = false;
+    for (u32 i=0;i<gsr2_stage_scan_guest_count;++i)
+        tracked |= gsr2_stage_scan_guests[i] == guest;
+    if (!tracked && gsr2_stage_scan_guest_count < gsr2_stage_scan_guests.size())
+        gsr2_stage_scan_guests[gsr2_stage_scan_guest_count++] = guest;
+    ++gsr2_stage_scan_samples;
+    std::printf("GSR2_STAGE_SCAN_SAMPLE guest=%#llx after_draw=%u next_vs=%016llx image=%u size=%ux%u\n",
+                (unsigned long long)guest, completed_draw,
+                (unsigned long long)next_shader,target.index,w,h);
+    std::fflush(stdout);
+}
+
+void TemporalUpscaler::FinishGsr2VideoOutStageScan(VAddr presented_guest) {
+    const char* path = std::getenv("GOW3_GSR2_STAGE_TRIGGER");
+    if (!path || !path[0]) return;
+    if (gsr2_stage_scan_armed) {
+        bool matched = false;
+        for (u32 i=0;i<gsr2_stage_scan_guest_count;++i)
+            matched |= gsr2_stage_scan_guests[i] == presented_guest;
+        if (matched && gsr2_stage_scan_samples != 0) {
+            std::printf("GSR2_STAGE_SCAN_FINISH actual_flip_guest=%#llx samples=%u guest_buffers=%u\n",
+                        (unsigned long long)presented_guest,
+                        gsr2_stage_scan_samples,gsr2_stage_scan_guest_count);
+            std::fflush(stdout);
+            std::remove(path);
+            gsr2_stage_scan_armed = false;
+            gsr2_stage_scan_samples = 0;
+            gsr2_stage_scan_guest_count = 0;
+        }
+        return;
+    }
+    if (FILE* trigger = std::fopen(path,"rb")) {
+        std::fclose(trigger);
+        gsr2_stage_scan_armed = true;
+        gsr2_stage_scan_samples = 0;
+        gsr2_stage_scan_guest_count = 0;
+        std::printf("GSR2_STAGE_SCAN_ARMED next_videoout_flip=1\n");
+        std::fflush(stdout);
+    }
+}
+
 void TemporalUpscaler::SelectGsr2PreHudScene(VAddr guest) {
     pre_hud_completed_slot = -1;
     if (!PreHudEnabled()) return;
