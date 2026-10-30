@@ -42,7 +42,9 @@ endif()""",'SDL3/X11')
     t=swap(t,'file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp sotc/*.cpp)',
 """file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp sotc/*.cpp)
 if(ANDROID)
-    list(FILTER SHIM_SOURCES EXCLUDE REGEX "shim/window\\.cpp$")
+    # These patchers emit native x86 machine code through Xbyak. The guest
+    # is translated by FEX on AArch64; never execute x86 patch stubs natively.
+    list(FILTER SHIM_SOURCES EXCLUDE REGEX "shim/window\\.cpp$|/sotc/cpu_patches\\.cpp$|/sotc/sotc_patches\\.cpp$")
 endif()""",'window')
     t=swap(t,'target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum',
 """if(ANDROID)
