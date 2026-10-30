@@ -159,13 +159,20 @@ jobs:
         run: |
           sdkmanager 'ndk;29.0.14206865'
           sudo apt-get update -qq
-          sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools
+          sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools ccache
           echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ci/environment.yml
           cache-environment: true
           init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: sotc-compiler-cache
+        with:
+          path: .ccache
+          key: sotc-native-compiler-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            sotc-native-compiler-${{ runner.os }}-
       - uses: actions/cache/restore@v4
         id: sotc-deps-cache
         with:
@@ -197,10 +204,13 @@ jobs:
           unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
           export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
           export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache" CCACHE_BASEDIR="$GITHUB_WORKSPACE"
+          export CCACHE_MAXSIZE=1600M CCACHE_NOHASHDIR=true
           cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
             -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
@@ -214,6 +224,11 @@ jobs:
           test -s "$lib"
           "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$lib" | grep -q AArch64
           "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D "$lib" | grep -q bbgpu_init
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-compiler-cache.outputs.cache-hit != 'true'
+        with:
+          path: .ccache
+          key: sotc-native-compiler-${{ runner.os }}-${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: sotc-original-renderer-arm64
