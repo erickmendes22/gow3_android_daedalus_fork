@@ -15,5 +15,30 @@ jobs:
         run: |
           sh -n ports/sotc/android/run-sotc-bionic.sh
           python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_package.py' -v
           grep -Fq -- '--sotc-cmdline' ports/sotc/android/run-sotc-bionic.sh
           grep -q 'BBPROBE5' ports/sotc/android/run-sotc-bionic.sh
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Compile SotC VM and timing HLE exports natively for ARM64
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          tc="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          mkdir -p /tmp/sotc-abi
+          for src in runtime_memory runtime_kernel runtime_sotc_stats; do
+            "$tc/bin/aarch64-linux-android30-clang" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -pthread \
+              -I. -Isrc -c "src/$src.c" -o "/tmp/sotc-abi/$src.o"
+          done
+          "$tc/bin/llvm-nm" /tmp/sotc-abi/runtime_memory.o | grep -q runtime_memory_copy_out
+          "$tc/bin/llvm-nm" /tmp/sotc-abi/runtime_memory.o | grep -q runtime_memory_backing_pointer
+          "$tc/bin/llvm-nm" /tmp/sotc-abi/runtime_kernel.o | grep -q runtime_read_tsc
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Compile distinct SotC Android launcher source
+        run: |
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac \
+            -PsotcAndroid=true --no-daemon --max-workers=2
