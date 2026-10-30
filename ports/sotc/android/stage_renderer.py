@@ -443,7 +443,7 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
         r'''    if (func == nullptr)   \
         return false;''',
         r'''    if (func == nullptr && !SotcUnusedDesktopVkFunction(#func)) { \
-        std::fprintf(stderr, "SotC ImGui: required Vulkan entry %s is unavailable\n", #func); \
+        ::fprintf(stderr, "SotC ImGui: required Vulkan entry %s is unavailable\n", #func); \
         return false; \
     }''',
         'fail safely when ImGui Vulkan loader misses required functions')

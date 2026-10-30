@@ -36,6 +36,7 @@ jobs:
           python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
           grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq 'SotcUnusedDesktopVkFunction' out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
+          python3 ports/sotc/android/check_imgui_loader.py out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
