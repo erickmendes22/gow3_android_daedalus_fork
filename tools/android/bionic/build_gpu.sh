@@ -12,7 +12,7 @@ out=$root/out/bionic
 build=${GOW3_BIONIC_GPU_BUILD:-$out/gpu}
 atomic=$("$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$api-clang" -print-file-name=libatomic.a)
 [[ -f $atomic ]] || { echo 'NDK ARM64 libatomic.a is missing' >&2; exit 1; }
-[[ -f $prefix/.done-ffmpeg ]] || { echo 'Run build_deps.sh first' >&2; exit 1; }
+[[ -f $prefix/.done-ffmpeg-hidden-v1 ]] || { echo 'Build Bionic FFmpeg with hidden ARM64 NEON globals first (build_deps.sh)' >&2; exit 1; }
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
 export PATH="$headers/bin:$PATH"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
