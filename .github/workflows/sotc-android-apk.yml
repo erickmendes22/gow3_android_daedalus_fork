@@ -46,6 +46,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_vendor_turnip.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
           # Compile and execute the portable SRT ABI and guest-memory tests
@@ -255,6 +256,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
           python3 ports/sotc/android/repack_verified_native.py \
             --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk \
             --root .
