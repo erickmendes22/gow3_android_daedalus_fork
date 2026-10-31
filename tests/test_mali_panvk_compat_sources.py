@@ -36,7 +36,7 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
         self.assertIn('renderer.toLowerCase(Locale.ROOT).contains("g615")',src)
         self.assertIn('("auto".equals(selection) && nextPanvkVerifiedAutoDevice())',src)
         self.assertIn('drv = bundledPanvk(context, false);',src)
-        self.assertIn('if (!"auto".equals(selection) || !wantNext) throw nextFailed;',src)
+        self.assertIn('if (!"auto".equals(selection) || !wantNext) throw new IOException("Selected PanVK driver unavailable",nextFailed);',src)
 
 if __name__=="__main__":
     unittest.main()
