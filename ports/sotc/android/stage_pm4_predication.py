@@ -134,7 +134,8 @@ def patch(gpu: Path):
         bool(feature_chain.get<vk::PhysicalDeviceConditionalRenderingFeaturesEXT>()
                  .conditionalRendering);
     std::fprintf(stderr, "SotC PM4 predication: conditional_rendering=%d host_query_reset=%d\\n",
-                 int(conditional_rendering), int(vk12_features.hostQueryReset));''',
+                 int(conditional_rendering),
+                 int(feature_chain.get<vk::PhysicalDeviceVulkan12Features>().hostQueryReset));''',
         "enable VK_EXT_conditional_rendering if supported")
     s = replace_once(s,
         '''        vk::PhysicalDeviceShaderClockFeaturesKHR{
