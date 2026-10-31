@@ -125,6 +125,11 @@ echo "SotC render coherence: precise GPU readbacks, synchronous completion"
 export SOTC_ASYNC_SHADERS=0
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
+# Native A/B for stale descriptor reuse vs Vulkan command recording.
+# Keep Wave32, TAA, texture LOD, shaders and readbacks unchanged.
+export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}
+export SOTC_RECORD_THREAD=${SOTC_RECORD_THREAD:-0}
+echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD (0=conservative)"
 echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
