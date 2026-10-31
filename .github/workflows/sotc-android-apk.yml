@@ -33,6 +33,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
           # Compile and execute the portable SRT ABI and guest-memory tests
           # before the expensive FEX and Vulkan build.
@@ -63,6 +64,8 @@ jobs:
           grep -Fq 'IR::Opcode::Phi' "$srt/flatten_extended_userdata_pass.cpp"
           grep -Fq 'const bool adreno_missing_barycentrics = instance.GetVendorID() == 0x5143;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
           grep -Fq 'GS_fallback=%d' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'constexpr u64 kTaaResolveHash = 0xa402ddac;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'taa_flat[kTaaEnableDword] &= ~1u;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'vk13_props.requiredSubgroupSizeStages & stage' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'android_fragment_tsharp && info.hw_stage == HwStage::Fragment' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/resource_patching_pass.cpp
           grep -Fq '(info.hw_stage == HwStage::Compute || fragment_table)' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/resource_patching_pass.cpp
@@ -181,10 +184,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.10-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.11-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.10-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.10-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.11-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.11-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
