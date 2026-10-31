@@ -20,7 +20,7 @@ jobs:
       - name: Install compiler and official SPIR-V validator
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ninja-build libboost-dev libvulkan-dev libfmt-dev spirv-tools
+          sudo apt-get install -y -qq ninja-build libboost-dev libvulkan-dev libfmt-dev libspdlog-dev spirv-tools
       - name: Stage exact Android SotC Vulkan source
         shell: bash
         run: |
