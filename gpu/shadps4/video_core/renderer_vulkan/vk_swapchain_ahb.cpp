@@ -472,8 +472,16 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) 
     u8* dst = static_cast<u8*>(mapped);
     // AHB stride is measured in RGBA pixels. A CPU-writable AHB forces a
     // layout that the Android compositor can consume without PanVK AFBC.
+    // The PS4 guest is allowed to leave the framebuffer alpha zero. Android
+    // SurfaceControl, however, composites RGBA AHBs using alpha: copying
+    // transparent game pixels would hide perfectly valid RGB scene contents.
+    // Output is an opaque game surface, including black letterbox bars.
     for (u32 y = 0; y < dst_h; ++y) {
-        std::memset(dst + size_t(y) * desc.stride * 4, 0, size_t(desc.stride) * 4);
+        u8* row = dst + size_t(y) * desc.stride * 4;
+        std::memset(row, 0, size_t(desc.stride) * 4);
+        for (u32 x = 0; x < dst_w; ++x) {
+            row[size_t(x) * 4 + 3] = 255;
+        }
     }
     if (rgba && src_width && src_height && dst_w && dst_h) {
         const float src_aspect = float(src_width) / float(src_height);
@@ -489,10 +497,14 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) 
             const u8* input_row = rgba + size_t(src_y) * src_width * 4;
             if (fit_w == src_width) {
                 std::memcpy(row, input_row, size_t(fit_w) * 4);
+                for (u32 x = 0; x < fit_w; ++x) {
+                    row[size_t(x) * 4 + 3] = 255;
+                }
             } else {
                 for (u32 x = 0; x < fit_w; ++x) {
                     const u32 src_x = std::min(src_width - 1, u32(u64(x) * src_width / fit_w));
                     std::memcpy(row + size_t(x) * 4, input_row + size_t(src_x) * 4, 4);
+                    row[size_t(x) * 4 + 3] = 255;
                 }
             }
         }

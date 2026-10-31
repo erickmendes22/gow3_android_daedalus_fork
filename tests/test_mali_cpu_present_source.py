@@ -32,6 +32,14 @@ class MaliCpuPresentContract(unittest.TestCase):
         self.assertIn("MALI_CPU_PRESENT_SOURCE frame=", PRESENTER)
         self.assertIn("swapchain.PresentCpuPixels(pixels, frame->width, frame->height)", PRESENTER)
 
+    def test_game_rgb_is_forced_opaque_for_android_compositor(self):
+        # The PS4 framebuffer's alpha need not represent visual opacity.
+        # Guard both the memcpy fast path and the resampling path, and keep
+        # black letterbox pixels opaque to avoid blending with Android UI.
+        self.assertIn("row[size_t(x) * 4 + 3] = 255;", SWAPCHAIN)
+        self.assertGreaterEqual(SWAPCHAIN.count("row[size_t(x) * 4 + 3] = 255;"), 3)
+        self.assertIn("alpha_nonzero={}/{} rgb_with_alpha={}/{}", PRESENTER)
+
     def test_frame_generation_disabled_on_cpu_fallback(self):
         self.assertIn('? nullptr : Lsfg::Create(instance, lsfg_requested)', PRESENTER)
 
