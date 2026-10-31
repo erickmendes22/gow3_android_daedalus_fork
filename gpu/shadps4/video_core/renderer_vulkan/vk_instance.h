@@ -101,6 +101,11 @@ public:
         return sparse_queue;
     }
 
+    // Only buffers with sparse binding AND sparse residency may be bound sparsely.
+    bool HasSparseBuffers() const noexcept {
+        return features.sparseBinding && features.sparseResidencyBuffer;
+    }
+
     vk::Queue GetPresentQueue() const {
         return present_queue;
     }

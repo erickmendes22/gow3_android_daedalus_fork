@@ -33,6 +33,20 @@ class SparseQueueContractTest(unittest.TestCase):
         )
         self.assertIn("sparse_queue = device->getQueue(sparse_queue_family_index, 0)", source)
 
+    def test_non_sparse_arena_contract(self):
+        source = BUFFER_CACHE.read_text()
+        self.assertIn("non_sparse_arenas = !instance.HasSparseBuffers()", source)
+        self.assertIn("non_sparse_arenas ? MemoryType::DeviceLocal", source)
+        self.assertIn("move_old(first_arena)", source)
+        self.assertIn("move_old(last_arena)", source)
+        self.assertIn("Unexpected sparse bind on non-sparse driver", source)
+
+    def test_mali_robustness_contract(self):
+        source = INSTANCE_CPP.read_text()
+        self.assertIn("properties.vendorID == 0x13B5", source)
+        self.assertIn("Mali needs robustImageAccess or robustImageAccess2", source)
+        self.assertIn(".robustImageAccess2 = enable_robust_image_access2", source)
+
     def test_sparse_bind_uses_sparse_queue(self):
         source = BUFFER_CACHE.read_text()
         self.assertIn("instance.GetSparseQueue().bindSparse(sparse_info)", source)

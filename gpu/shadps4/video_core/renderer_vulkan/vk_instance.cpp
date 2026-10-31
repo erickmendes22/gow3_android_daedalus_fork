@@ -223,7 +223,18 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE,
         vk::PhysicalDevicePipelineBinaryFeaturesKHR,
         vk::PhysicalDeviceMaintenance5FeaturesKHR,
-        vk::PhysicalDeviceConditionalRenderingFeaturesEXT>();
+        vk::PhysicalDeviceConditionalRenderingFeaturesEXT,
+        vk::PhysicalDeviceCustomBorderColorFeaturesEXT,
+        vk::PhysicalDeviceDepthClipControlFeaturesEXT,
+        vk::PhysicalDeviceDepthClipEnableFeaturesEXT,
+        vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT,
+        vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR,
+        vk::PhysicalDeviceProvokingVertexFeaturesEXT,
+        vk::PhysicalDeviceImageViewMinLodFeaturesEXT,
+        vk::PhysicalDeviceMaintenance8FeaturesKHR,
+        vk::PhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT,
+        vk::PhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT,
+        vk::PhysicalDeviceVertexAttributeDivisorFeatures>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
@@ -277,28 +288,56 @@ bool Instance::CreateDevice() {
                "Required Vulkan extension unavailable: {}", VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
 
     const auto robustness2_features = feature_chain.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
-    ASSERT_MSG(robustness2_features.robustBufferAccess2,
-               "Required Vulkan feature unavailable: robustBufferAccess2");
-    ASSERT_MSG(robustness2_features.robustImageAccess2,
-               "Required Vulkan feature unavailable: robustImageAccess2");
+    const bool is_mali = properties.vendorID == 0x13B5; // Arm Limited
+    const bool enable_robust_buffer_access2 = robustness2_features.robustBufferAccess2;
+    const bool enable_robust_image_access2 = robustness2_features.robustImageAccess2;
+    if (is_mali) {
+        // PanVK can omit robustness2. Retain real core bounds protections instead.
+        ASSERT_MSG(enable_robust_buffer_access2 || features.robustBufferAccess,
+                   "Mali needs robustBufferAccess or robustBufferAccess2");
+        ASSERT_MSG(enable_robust_image_access2 ||
+                       feature_chain.get<vk::PhysicalDeviceVulkan13Features>().robustImageAccess,
+                   "Mali needs robustImageAccess or robustImageAccess2");
+        LOG_WARNING(Render_Vulkan,
+                    "Mali/PanVK features: robustBufferAccess2={}, robustImageAccess2={}, "
+                    "robustBufferAccess={}, robustImageAccess13={}, sparseBinding={}, "
+                    "sparseResidencyBuffer={}", enable_robust_buffer_access2,
+                    enable_robust_image_access2, features.robustBufferAccess,
+                    feature_chain.get<vk::PhysicalDeviceVulkan13Features>().robustImageAccess,
+                    features.sparseBinding, features.sparseResidencyBuffer);
+    } else {
+        ASSERT_MSG(enable_robust_buffer_access2,
+                   "Required Vulkan feature unavailable: robustBufferAccess2");
+        ASSERT_MSG(enable_robust_image_access2,
+                   "Required Vulkan feature unavailable: robustImageAccess2");
+    }
     ASSERT_MSG(robustness2_features.nullDescriptor,
                "Required Vulkan feature unavailable: nullDescriptor");
+    ASSERT_MSG(feature_chain.get<vk::PhysicalDeviceVertexAttributeDivisorFeatures>()
+                   .vertexAttributeInstanceRateDivisor,
+               "Required Vulkan feature unavailable: vertexAttributeInstanceRateDivisor");
 
     // Optional
-    maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+    maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5;
     pipeline_binaries = maintenance_5 &&
         feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5 &&
         feature_chain.get<vk::PhysicalDevicePipelineBinaryFeaturesKHR>().pipelineBinaries &&
         add_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
-    maintenance_8 = add_extension(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
+    maintenance_8 = add_extension(VK_KHR_MAINTENANCE_8_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceMaintenance8FeaturesKHR>().maintenance8;
     attachment_feedback_loop = add_extension(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
     if (attachment_feedback_loop) {
-        attachment_feedback_loop =
+        const bool has_dynamic_extension =
             add_extension(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME);
-        if (!attachment_feedback_loop) {
-            // We want both extensions so remove the first if the second isn't available
+        if (!has_dynamic_extension) {
             enabled_extensions.pop_back();
         }
+        attachment_feedback_loop = has_dynamic_extension &&
+            feature_chain.get<vk::PhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT>()
+                .attachmentFeedbackLoopLayout &&
+            feature_chain.get<vk::PhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT>()
+                .attachmentFeedbackLoopDynamicState;
     }
     depth_range_unrestricted = add_extension(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
     dynamic_state_3 = add_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
@@ -308,10 +347,16 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- extendedDynamicState3ColorWriteMask: {}",
                  dynamic_state_3_features.extendedDynamicState3ColorWriteMask);
     }
-    custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
-    depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
-    depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-    vertex_input_dynamic_state = add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceCustomBorderColorFeaturesEXT>().customBorderColors &&
+        feature_chain.get<vk::PhysicalDeviceCustomBorderColorFeaturesEXT>()
+            .customBorderColorWithoutFormat;
+    depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceDepthClipControlFeaturesEXT>().depthClipControl;
+    depth_clip_enable = add_extension(vk::PhysicalDeviceDepthClipEnableFeaturesEXT>().depthClipEnable;
+    vertex_input_dynamic_state = add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT>()
+            .vertexInputDynamicState;
     list_restart = add_extension(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME);
     if (list_restart) {
         list_restart_features =
@@ -325,9 +370,12 @@ bool Instance::CreateDevice() {
         add_extension(VK_AMD_SHADER_EXPLICIT_VERTEX_PARAMETER_EXTENSION_NAME);
     if (!amd_shader_explicit_vertex_parameter) {
         fragment_shader_barycentric =
-            add_extension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
+            add_extension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME) &&
+            feature_chain.get<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>()
+                .fragmentShaderBarycentric;
     }
-    provoking_vertex = add_extension(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME);
+    provoking_vertex = add_extension(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceProvokingVertexFeaturesEXT>().provokingVertexLast;
     shader_stencil_export = add_extension(VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME);
     image_load_store_lod = add_extension(VK_AMD_SHADER_IMAGE_LOAD_STORE_LOD_EXTENSION_NAME);
     amd_gcn_shader = add_extension(VK_AMD_GCN_SHADER_EXTENSION_NAME);
@@ -367,7 +415,8 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- sampler2DViewOf3D: {}",
                  image_2d_view_of_3d_features.sampler2DViewOf3D);
     }
-    image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
+    image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceImageViewMinLodFeaturesEXT>().minLod;
     // gow3: IT_SET_PREDICATION emulation wraps predicated draws in conditional rendering.
     conditional_rendering = add_extension(VK_EXT_CONDITIONAL_RENDERING_EXTENSION_NAME);
     if (conditional_rendering) {
@@ -417,7 +466,8 @@ bool Instance::CreateDevice() {
     }
 
     u32 sparse_queue_family_index = queue_family_index;
-    if (!(family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
+    if (features.sparseBinding && features.sparseResidencyBuffer &&
+        !(family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
         const auto sparse_family = std::find_if(
             family_properties.begin(), family_properties.end(), [](const auto& family) {
                 return family.queueCount && (family.queueFlags & vk::QueueFlagBits::eSparseBinding);
@@ -430,9 +480,11 @@ bool Instance::CreateDevice() {
         }
         sparse_queue_family_index = static_cast<u32>(sparse_family - family_properties.begin());
     }
-    LOG_INFO(Render_Vulkan, "Queue families: graphics={}, sparse={}, reused_graphics={}",
+    LOG_INFO(Render_Vulkan, "Queue families: graphics={}, sparse={}, reused_graphics={}, "
+                            "sparse_buffers={}",
              queue_family_index, sparse_queue_family_index,
-             queue_family_index == sparse_queue_family_index);
+             queue_family_index == sparse_queue_family_index,
+             features.sparseBinding && features.sparseResidencyBuffer);
 
     static constexpr std::array queue_priorities = {1.0f};
     const vk::DeviceQueueCreateInfo queue_info = {
@@ -550,8 +602,8 @@ bool Instance::CreateDevice() {
             .depthClipEnable = true,
         },
         vk::PhysicalDeviceRobustness2FeaturesEXT{
-            .robustBufferAccess2 = true,
-            .robustImageAccess2 = true,
+            .robustBufferAccess2 = enable_robust_buffer_access2,
+            .robustImageAccess2 = enable_robust_image_access2,
             .nullDescriptor = true,
         },
         vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT{
