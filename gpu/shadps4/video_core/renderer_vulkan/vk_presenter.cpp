@@ -847,9 +847,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
+        // PanVK's final copy samples frame->image in a FRAGMENT shader.
+        // The guest-frame barrier must synchronize that shader read, not only
+        // transfer operations (vkCmdBlitImage). AllCommands covers both the
+        // transfer clear of the AHB and fragment sampling of the guest frame.
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                               vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                               {}, {}, pre_barriers);
+                               shader_present ? vk::PipelineStageFlagBits::eAllCommands
+                                              : vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, pre_barriers);
         const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
         cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
         if (shader_present) {
