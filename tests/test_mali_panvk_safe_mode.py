@@ -12,9 +12,9 @@ SCHEDULER = ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp"
 class MaliPanvkSafetyTests(unittest.TestCase):
     def profile(self, driver, safe=None):
         source = RUNNER.read_text()
-        block = source.split("# Mali PanVK safe profile.", 1)[1].split(
-            "# End Mali PanVK safe profile.", 1
-        )[0]
+        block = 'case "${GOW3_VULKAN_DRIVER:-}" in' + source.split(
+            'case "${GOW3_VULKAN_DRIVER:-}" in', 1
+        )[1].split("# End Mali PanVK safe profile.", 1)[0]
         env = dict(os.environ)
         env["GOW3_VULKAN_DRIVER"] = driver
         env.pop("GOW3_MALI_SAFE_MODE", None)
