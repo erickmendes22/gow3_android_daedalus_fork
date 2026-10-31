@@ -82,8 +82,10 @@ export SOTC_ASYNC_SHADERS=0
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
 echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
-# Descriptor-array lowering now also covers fragment shaders. A new cache
-# profile prevents reopening the old SPIR-V with unresolved resource locations.
+# Fragment barycentric interpolation now selects a capability-gated
+# auxiliary GS on Adreno where both native extensions are missing.
+# Old shaders have no matching GS inputs and MUST NOT be reused.
+# Descriptor-array lowering also covers fragment shaders.
 # The IR lowering changed after the early 0.1.4 SRT implementation.
 # Pipeline keys do not encode the lowering revision: never reopen old SPIR-V
 # or SRT walkers even if the game hash and Vulkan profile match.
@@ -92,9 +94,9 @@ case "${SOTC_ADRENO_WAVE32:-0}" in
     1) sotc_gpu_profile=wave32 ;;
     *) sotc_gpu_profile=wave64 ;;
 esac
-export BB_GPU_USER_DIR="$base/gpu-user-srt-phi3-fragment-tsharp-$sotc_gpu_profile"
+export BB_GPU_USER_DIR="$base/gpu-user-srt-phi4-barycentric-gs-$sotc_gpu_profile"
 mkdir -p "$BB_GPU_USER_DIR"
-echo "SotC GPU cache revision: srt-phi3-fragment-tsharp; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
+echo "SotC GPU cache revision: srt-phi4-barycentric-gs; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
     game) ;;
