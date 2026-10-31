@@ -12,7 +12,8 @@ add_subdirectory(${GPU_SOURCE}/third_party/sirit ${CMAKE_BINARY_DIR}/sirit)
 add_executable(sotc-gs-position-test
   ${CMAKE_CURRENT_SOURCE_DIR}/../test_sotc_gs_position_spv.cpp
   ${GPU_SOURCE}/shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp)
-target_include_directories(sotc-gs-position-test PRIVATE
+target_include_directories(sotc-gs-position-test BEFORE PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/shims
   ${GPU_SOURCE}/shadps4
   ${GPU_SOURCE}/shim
   ${GPU_SOURCE}/third_party/gcn/include
