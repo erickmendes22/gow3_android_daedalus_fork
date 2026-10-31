@@ -353,7 +353,8 @@ bool Instance::CreateDevice() {
             .customBorderColorWithoutFormat;
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME) &&
         feature_chain.get<vk::PhysicalDeviceDepthClipControlFeaturesEXT>().depthClipControl;
-    depth_clip_enable = add_extension(vk::PhysicalDeviceDepthClipEnableFeaturesEXT>().depthClipEnable;
+    depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME) &&
+        feature_chain.get<vk::PhysicalDeviceDepthClipEnableFeaturesEXT>().depthClipEnable;
     vertex_input_dynamic_state = add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME) &&
         feature_chain.get<vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT>()
             .vertexInputDynamicState;
@@ -962,6 +963,10 @@ void Instance::CollectToolingInfo() const {
 }
 
 u64 Instance::GetDeviceMemoryUsage() const {
+    if (!supports_memory_budget) {
+        // Querying unadvertised VK_EXT_memory_budget returns meaningless zeros.
+        return 0;
+    }
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_props{};
     vk::PhysicalDeviceMemoryProperties2 props = {
         .pNext = &memory_budget_props,
@@ -976,6 +981,9 @@ u64 Instance::GetDeviceMemoryUsage() const {
 }
 
 u64 Instance::GetDeviceMemoryBudgetNow() const {
+    if (!supports_memory_budget) {
+        return total_memory_budget;
+    }
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_props{};
     vk::PhysicalDeviceMemoryProperties2 props = {
         .pNext = &memory_budget_props,
