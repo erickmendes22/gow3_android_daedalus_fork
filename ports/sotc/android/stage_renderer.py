@@ -498,6 +498,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # provided the selected Vulkan driver actually supports geometryShader.
     from stage_adreno_barycentric_gs import patch_adreno_barycentric_gs
     patch_adreno_barycentric_gs(out)
+    # Android-only GS input/output uses the same standalone Position BuiltIn
+    # as our preceding vertex shader; leave all interpolated varyings intact.
+    from stage_adreno_gs_position import patch_adreno_gs_position
+    patch_adreno_gs_position(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
