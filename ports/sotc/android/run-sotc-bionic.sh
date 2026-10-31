@@ -101,6 +101,16 @@ export SOTC_RB_ASYNC=0
 # upload the actual texture before it is sampled, never its zero-fill placeholder.
 # 0 is a documented and implemented disable value in texture_cache.cpp.
 export SOTC_UPLOAD_BUDGET_MB=0
+# The original PC port defaults to texture quality High; it sets
+# SOTC_LOD_LINGER=1, unlike the renderer's own low-detail fallback (0).
+# With 0, even a recently sampled counter bank reports mip 15 (unused), so
+# the game never streams high-resolution mips (blurry ground/rocks, missing
+# waterfall/black water). Our 0.1.15 device log CONFIRMED "texture level off".
+# Preserve safe mip 2 and pool-pressure downgrade (8%) rather than Maximum.
+export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}
+export SOTC_LOD_LEVEL=${SOTC_LOD_LEVEL:-2}
+export SOTC_LOD_POOL_LOW=${SOTC_LOD_POOL_LOW:-8}
+echo "SotC texture streaming: high/stable (LOD linger=$SOTC_LOD_LINGER mip=$SOTC_LOD_LEVEL pool_low=$SOTC_LOD_POOL_LOW)"
 echo "SotC texture integrity: zero-fill upload deferral disabled"
 # Recover dynamic descriptor arrays in material/lighting fragment shaders.
 # The vertex shader array path stays excluded (known upstream GPU hang).
