@@ -46,7 +46,7 @@ class MetaClearIntegrity(unittest.TestCase):
         runner = (ROOT / "ports/sotc/android/run-sotc-bionic.sh").read_text()
         self.assertIn("from stage_meta_clear_integrity import patch_meta_clear_integrity", renderer)
         self.assertIn("patch_meta_clear_integrity(out)", renderer)
-        for important in ("export BB_READBACKS=2", "export SOTC_RB_ASYNC=0",
+        for important in ("export BB_READBACKS=2", "export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}",
                           "export SOTC_UPLOAD_BUDGET_MB=0",
                           "export SOTC_ASYNC_SHADERS=0"):
             self.assertIn(important, runner)
