@@ -61,6 +61,14 @@ export GOW3_PRESENT_SOCKET="$base/present.sock"
 export SOTC_PRESENT_SOCKET="$GOW3_PRESENT_SOCKET"
 export SOTC_SCREEN_W=${SOTC_SCREEN_W:-1280} SOTC_SCREEN_H=${SOTC_SCREEN_H:-720}
 export SOTC_VSYNC=${SOTC_VSYNC:-1}
+# The working Bachata S4+ SotC profile uses precise GPU readbacks (mode 2).
+# The PC SotC renderer also defaults to that mode, but additionally launches
+# readbacks asynchronously. Android keeps their completion synchronous to
+# avoid stale GPU data at CPU read faults while troubleshooting visual flicker.
+# These are scoped to this SotC process; they do not modify GoW3 or Bachata.
+export BB_READBACKS=2
+export SOTC_RB_ASYNC=0
+echo "SotC render coherence: precise GPU readbacks, synchronous completion"
 # Rendering correctness first on Android: the PC backend can return nullptr
 # for geometry draws while asynchronous shaders/pipelines are still being
 # compiled (vk_pipeline_cache.cpp). With a cold shader cache this produces
