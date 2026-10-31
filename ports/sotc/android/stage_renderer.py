@@ -488,6 +488,8 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # the validated portable ARM64 pass plus its cache/ABI adaptations.
     from stage_srt_arm64 import patch_sotc_arm64
     patch_sotc_arm64(root, out)
+    from stage_adreno_wave32 import patch_adreno_wave32
+    patch_adreno_wave32(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
