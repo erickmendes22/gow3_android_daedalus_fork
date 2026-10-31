@@ -580,7 +580,7 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_TAA_OFF",
                         "1".equals(setting("sotc_taa_history")) ? "0" : "1");
                 String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
-                if("1".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
+                // Keep motion blur OFF by default on SotC: it produces screen-wide trails\n                // even with the separate native TAA history blend disabled.\n                // An explicit user setting "0" restores the original game effect.\n                if(!"0".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
                 env.put("SOTC_CVARS",cvars);
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
