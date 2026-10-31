@@ -35,15 +35,23 @@ driver=${GOW3_BIONIC_DRIVER:-auto}
 case "$driver" in
   auto)
     case "$chip" in
-      0x44??????) driver=gen8 ;;
+      0x44??????)
+        # Prefer the validated GameHub driver on supported Android 14+
+        # only when the exact driver is genuinely bundled in the APK.
+        sdk=$(/system/bin/getprop ro.build.version.sdk 2>/dev/null || echo 0)
+        if [ "${sdk:-0}" -ge 34 ] && [ -f "$runtime/drivers/gamehub-dd/libvulkan_freedreno.so" ]; then
+            driver=gamehub-dd
+        else
+            driver=gen8
+        fi ;;
       0x07??????|0x43020[01]00|0x43030b00|0x43050a01|0x43050b00|0x43051401)
         driver=adreno7xx ;;
       *) driver=system ;;
     esac ;;
-  gen8|adreno7xx|system|custom) ;;
+  gen8|adreno7xx|gamehub-dd|system|custom) ;;
   *) echo "Invalid SotC Vulkan driver" >&2; exit 2 ;;
 esac
-if [ "$driver" = gen8 ] || [ "$driver" = adreno7xx ]; then
+if [ "$driver" = gen8 ] || [ "$driver" = adreno7xx ] || [ "$driver" = gamehub-dd ]; then
     export GOW3_VULKAN_DRIVER="$runtime/drivers/$driver/libvulkan_freedreno.so"
     [ -f "$GOW3_VULKAN_DRIVER" ] || { echo "Bundled SotC Vulkan driver missing" >&2; exit 2; }
 elif [ "$driver" = custom ]; then
