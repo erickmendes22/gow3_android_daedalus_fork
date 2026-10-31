@@ -585,6 +585,11 @@ public final class GameActivity extends Activity {
                 // A new setting defaults to suppressing motion blur; "0" restores it.
                 if(!"0".equals(setting("sotc_blur_suppression"))) cvars+=" r_motionBlurEnable=0";
                                 env.put("SOTC_CVARS",cvars);
+                // Controlled native GPU A/B with independent reversible settings.
+                env.put("SOTC_FAST_BIND",
+                        "1".equals(setting("sotc_fast_bind")) ? "1" : "0");
+                env.put("SOTC_RECORD_THREAD",
+                        "1".equals(setting("sotc_record_thread")) ? "1" : "0");
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();
