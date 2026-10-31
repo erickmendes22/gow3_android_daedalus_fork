@@ -1,0 +1,30 @@
+name: SotC shader-cache revision and Wave32 default audit (NO APK)
+on:
+  push:
+    branches: ['audit/sotc-flicker-cache-fix-20261030']
+permissions:
+  contents: read
+jobs:
+  safe-cache:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell and SotC cache regression tests
+        run: |
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_package.py' -v
+          ! grep -Fq 'gpu-user-wave32"' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'gpu-user-srt-phi2-$sotc_gpu_profile' ports/sotc/android/run-sotc-bionic.sh
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Compile SotC HUD/settings Android source without APK
+        run: |
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac \
+            -PsotcAndroid=true --no-daemon --max-workers=2
