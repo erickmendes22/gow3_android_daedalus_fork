@@ -14,3 +14,12 @@ Changes: query robustness2 + robustImageAccess13 per Mali device, ordinary backe
 arenas when sparse residency is absent, preserve GPU bytes and rebase BDA on
 arena merges, guard optional Vulkan feature bits, memory budget fallback.
 Request one signed 2.1.8 Bionic APK after source validation.
+
+GoW3 2.1.8 Mali-G615 PanVK full-device freeze mitigation — consolidated signed APK
+Source: a7dfb3d5ec70c8fd8aa2c9571a363323fb2241f5
+Validated source tests: https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41196965495
+New: non-sparse arenas use 32 MiB and zero initialize, 1536 MiB cumulative
+allocation ceiling including obsolete merged arenas; PanVK-only defaults to two
+in-flight submissions, one compiler, one guest frame ahead, and no warm-up
+or stale/deferred readback. Snapdragon/Adreno and system Vulkan unchanged.
+This is the first native APK compile of this consolidated freeze mitigation.
