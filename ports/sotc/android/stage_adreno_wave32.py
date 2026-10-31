@@ -41,7 +41,12 @@ def patch_adreno_wave32(gpu: Path) -> None:
     text=swap(text,'''    u32 RequiredSubgroupSize(vk::ShaderStageFlagBits stage) const {
         if (IsSubgroupSize64Supported()) {''',
     '''    u32 RequiredSubgroupSize(vk::ShaderStageFlagBits stage) const {
-        if (UseAdrenoWave32()) return 32u;
+        // The Wave32 mode verifies vertex/fragment/compute support. An
+        // auxiliary barycentric geometry shader may be present as well:
+        // never request a subgroup size in a stage the driver did not list.
+        if (UseAdrenoWave32()) {
+            return u32(vk13_props.requiredSubgroupSizeStages & stage) != 0 ? 32u : 0u;
+        }
         if (IsSubgroupSize64Supported()) {''',
     "required graphics/compute subgroup size")
     text=swap(text,'''    u32 SubgroupSize() const {
