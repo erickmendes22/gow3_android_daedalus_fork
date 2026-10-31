@@ -51,6 +51,7 @@ def main():
         shutil.copy2(original/'run-sotc-bionic.sh',base/'run-sotc-bionic.sh')
         (base/'run-sotc-bionic.sh').chmod(0o755)
         shutil.copy2(original/'prepare_game.py',scripts/'sotc_prepare_game.py')
+        shutil.copy2(original/'bachata_perf.py',scripts/'bachata_perf.py')
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
                         ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copy2(upstream/'LICENSE',notices/'LICENSE-ShadowOfTheColossus-PC.txt')
@@ -61,7 +62,7 @@ def main():
         for legacy in ('run-bionic.sh','gow3.ini','gow3.default.ini'):
             (base/legacy).unlink(missing_ok=True)
         for entry in scripts.iterdir():
-            if entry.name not in ('sotc_prepare_game.py','sotc-upstream'):
+            if entry.name not in ('sotc_prepare_game.py','bachata_perf.py','sotc-upstream'):
                 if entry.is_dir(): shutil.rmtree(entry)
                 else: entry.unlink()
         (base/'arm64/bin/gow3-probe').rename(base/'arm64/bin/sotc-probe')
@@ -75,6 +76,10 @@ sotc_af16=0
 sotc_blur_suppression=1
 sotc_fast_bind=0
 sotc_record_thread=0
+sotc_bachata_bloom=1
+sotc_bachata_ssr=0
+sotc_bachata_fog=0
+sotc_bachata_shadows=0
 android_fullscreen=0
 '''
         (base/'sotc.default.ini').write_text(defaults)
@@ -82,8 +87,8 @@ android_fullscreen=0
         manifest_path=stage/'runtime-manifest.json'
         identity=json.loads(manifest_path.read_text())
         identity.update(application_id='com.sotc.android.daedalus',
-                        runtime_name='sotc-daedalus-bionic-0.1.20',
-                        version='0.1.20-boot-test',
+                        runtime_name='sotc-daedalus-bionic-0.1.22',
+                        version='0.1.22-boot-test',
                         game='Shadow of the Colossus')
         manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
         output=ROOT/'out/release/sotc-runtime.tar.gz'
