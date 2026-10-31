@@ -82,6 +82,7 @@ sotc_af16=0
 sotc_blur_suppression=1
 sotc_fast_bind=0
 sotc_record_thread=0
+sotc_rb_async=0
 sotc_bachata_bloom=1
 sotc_bachata_ssr=0
 sotc_bachata_fog=0
