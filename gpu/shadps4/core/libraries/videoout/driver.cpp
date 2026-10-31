@@ -317,9 +317,23 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 
 void VideoOutDriver::Flip(const Request& req) {
     // Update HDR status before presenting, then present the frame (gow3: on the swap thread).
-    RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
+    // Do not release the most recent scanout label just because the frame was
+    // queued: GoW3 presents on a separate swap thread. Only schedule retirement
+    // AFTER the Vulkan present call completes (as in the Bachata S4 core).
+    RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr, port = req.port,
+                  index = req.index, eop = req.eop, generation = req.lock_generation] {
         presenter->SetHDR(hdr);
         presenter->Present(frame);
+        if (port->retire_labels_on_vblank && eop && index >= 0 &&
+            generation != FlipLabelTracker::kInvalidGeneration) {
+            u64 vblank;
+            {
+                std::scoped_lock lock{port->vo_mutex};
+                vblank = port->vblank_status.count;
+            }
+            std::scoped_lock lock{port->port_mutex};
+            port->flip_labels.ScheduleRetirement(index, generation, vblank + 1);
+        }
     });
     Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left
                                                 : 0);
@@ -597,12 +611,7 @@ void VideoOutDriver::Flip(const Request& req) {
         port->SignalVoLabel();
     }
     port->prev_index = req.index;
-    if (port->retire_labels_on_vblank && req.eop && req.index >= 0 &&
-        req.lock_generation != FlipLabelTracker::kInvalidGeneration) {
-        std::scoped_lock lock{port->port_mutex};
-        port->flip_labels.ScheduleRetirement(req.index, req.lock_generation,
-                                             port->vblank_status.count + 1);
-    }
+
 }
 
 void VideoOutDriver::DrawBlankFrame() {
@@ -823,7 +832,14 @@ void VideoOutDriver::ApplyDueLabelRetirement() {
     if (!retired) return;
     main_port.buffer_labels[*retired] = 0;
     main_port.SignalVoLabel();
-    LOG_INFO(Lib_VideoOut, "PanVK: retired final VideoOut label at vblank, index={}", *retired);
+    // Retire events can occur at the guest flip rate. Keep startup evidence but
+    // do not flood Android logging during long sessions.
+    static std::atomic<u32> reports{};
+    const u32 report = reports.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (report <= 12 || report % 1200 == 0) {
+        LOG_INFO(Lib_VideoOut, "PanVK: retired final VideoOut label at vblank, index={} count={}",
+                 *retired, report);
+    }
 }
 
 } // namespace Libraries::VideoOut
