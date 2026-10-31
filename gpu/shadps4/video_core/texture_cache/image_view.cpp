@@ -222,7 +222,7 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
                             view_range.levelCount, view_range.baseArrayLayer,
                             view_range.layerCount, image.info.guest_address);
             }
-            if (shader_only) {
+            if (shader_only || info.is_storage) {
                 // nullDescriptor is mandatory in the Instance. This avoids
                 // submitting an illegal view to the driver while the game
                 // can continue rendering with a zero-valued texture.
