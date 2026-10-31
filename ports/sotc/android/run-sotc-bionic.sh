@@ -93,6 +93,21 @@ export SOTC_ASYNC_SHADERS=0
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
 echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
+# SotC PC's default command processor queues draw calls onto a second thread
+# (SOTC_CP_THREADS defaults to 1) and snapshots registers/user-data there.
+# The PC project itself documents a "vertex explosion" during reuse of
+# command-buffer task memory. Android Bionic/FEX requires an unambiguous
+# draw/WRITE_DATA/indirect-argument order until that lifetime race is repaired.
+# Only SotC's process is changed, and the confirmed barycentric GS, Wave32,
+# texture cache and precise readback remain unchanged.
+# 0 = draw and command processor on the SAME GPU command thread, ordered.
+# 1 = original PC split draw-thread path (explicit A/B diagnostic override).
+export SOTC_CP_THREADS=${SOTC_CP_THREADS:-0}
+case "$SOTC_CP_THREADS" in
+    0) echo "SotC GPU draw order: in-order command processor (single-threaded GPU draws)" ;;
+    1) echo "SotC GPU draw order: experimental split draw thread" ;;
+    *) echo "SotC GPU draw order: invalid SOTC_CP_THREADS=$SOTC_CP_THREADS" >&2; exit 2 ;;
+esac
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
 # Old shaders have no matching GS inputs and MUST NOT be reused.
