@@ -157,7 +157,11 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_FRAMES_AHEAD=1
       export GOW3_DEFERRED_READBACK=0
       export GOW3_STALE_READBACK=0
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off"
+      # The GoW3-specific partial-height cache shortcut is not in the
+      # Bachata renderer. It may alias an earlier target after a layout or
+      # sample-count change. Prefer correct full image reconstruction on Mali.
+      export GOW3_PARTIAL_HEIGHT_VIEWS=0
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off"
     fi
     ;;
 esac

@@ -31,6 +31,23 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
         self.assertIn("PanVK-android-v3.2-universal-2a9358a.zip",script)
         self.assertNotIn('environment.put("GOW3_BIONIC_DRIVER","gen8")',java)
 
+    def test_bachata_optional_descriptor_and_divisor_fallbacks(self):
+        instance=src("gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp")
+        header=src("gpu/shadps4/video_core/renderer_vulkan/vk_instance.h")
+        pipeline=src("gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp")
+        self.assertIn("const bool push_descriptors = add_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)",instance)
+        self.assertIn("push_descriptor_props.maxPushDescriptors = 0;",instance)
+        self.assertIn("device_chain.unlink<vk::PhysicalDeviceVertexAttributeDivisorFeatures>();",instance)
+        self.assertIn("bool IsVertexAttributeDivisorSupported() const",header)
+        self.assertIn("if (instance.IsVertexAttributeDivisorSupported())",pipeline)
+        self.assertNotIn("ASSERT_MSG(add_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)",instance)
+
+    def test_mali_original_image_layout_on_panvk(self):
+        launcher=src("tools/android/bionic/run-bionic.sh")
+        self.assertIn("export GOW3_PARTIAL_HEIGHT_VIEWS=0",launcher)
+        self.assertIn("GOW3_MALI_CPU_PRESENT",launcher)
+        self.assertIn("GOW3_PRESENT_THREAD=0",launcher)
+
     def test_verified_g615_auto_and_g720_conservative(self):
         src=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java").read_text()
         self.assertIn('renderer.toLowerCase(Locale.ROOT).contains("g615")',src)

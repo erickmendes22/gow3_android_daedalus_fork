@@ -896,19 +896,26 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         static u64 probe_count = 0;
         if (++probe_count <= 8 || probe_count % 120 == 0) {
             u64 nonblack = 0, alpha_nonzero = 0, rgb_with_alpha = 0, sampled = 0;
+            u64 rgb_hash = 14695981039346656037ull;
             for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {
                 const bool has_rgb = (pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0;
                 const bool has_alpha = pixels[i + 3] != 0;
                 nonblack += has_rgb;
+                // A constant nonblack *count* need not mean a frozen frame.
+                // Hash the sampled source RGB to distinguish actual changes.
+                for (u32 channel = 0; channel < 3; ++channel) {
+                    rgb_hash ^= pixels[i + channel];
+                    rgb_hash *= 1099511628211ull;
+                }
                 alpha_nonzero += has_alpha;
                 rgb_with_alpha += has_rgb && has_alpha;
                 ++sampled;
             }
             LOG_WARNING(Render_Vulkan,
                         "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{} "
-                        "alpha_nonzero={}/{} rgb_with_alpha={}/{}",
+                        "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
                         probe_count, frame->width, frame->height, nonblack, sampled,
-                        alpha_nonzero, sampled, rgb_with_alpha, sampled);
+                        alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
         }
         swapchain.PresentCpuPixels(pixels, frame->width, frame->height);
         free_frame();

@@ -279,11 +279,18 @@ bool Instance::CreateDevice() {
     ASSERT_MSG(add_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
                "Required Vulkan extension unavailable: {}", VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 #endif
-    ASSERT_MSG(add_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME),
-               "Required Vulkan extension unavailable: {}", VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
-    ASSERT_MSG(add_extension(VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME),
-               "Required Vulkan extension unavailable: {}",
-               VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+    // Bachata S4: both extensions are optional on Mali. The existing
+    // DescriptorHeap path is selected when MaxPushDescriptors()==0.
+    // Vertex attributes keep their default divisor=1 when the optional
+    // extension or its feature is absent. Preserve the fast paths on Adreno.
+    const bool push_descriptors = add_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    if (!push_descriptors) {
+        push_descriptor_props.maxPushDescriptors = 0;
+    }
+    vertex_attribute_divisor =
+        feature_chain.get<vk::PhysicalDeviceVertexAttributeDivisorFeatures>()
+            .vertexAttributeInstanceRateDivisor &&
+        add_extension(VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
     ASSERT_MSG(add_extension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME),
                "Required Vulkan extension unavailable: {}", VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
 
@@ -313,9 +320,10 @@ bool Instance::CreateDevice() {
     }
     ASSERT_MSG(robustness2_features.nullDescriptor,
                "Required Vulkan feature unavailable: nullDescriptor");
-    ASSERT_MSG(feature_chain.get<vk::PhysicalDeviceVertexAttributeDivisorFeatures>()
-                   .vertexAttributeInstanceRateDivisor,
-               "Required Vulkan feature unavailable: vertexAttributeInstanceRateDivisor");
+    if (!vertex_attribute_divisor) {
+        LOG_WARNING(Render_Vulkan,
+                    "Mali compatibility: vertex attribute divisor unavailable; using divisor 1");
+    }
 
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME) &&
@@ -701,6 +709,9 @@ bool Instance::CreateDevice() {
     }
     if (!provoking_vertex) {
         device_chain.unlink<vk::PhysicalDeviceProvokingVertexFeaturesEXT>();
+    }
+    if (!vertex_attribute_divisor) {
+        device_chain.unlink<vk::PhysicalDeviceVertexAttributeDivisorFeatures>();
     }
     if (!maintenance_5) {
         device_chain.unlink<vk::PhysicalDeviceMaintenance5FeaturesKHR>();

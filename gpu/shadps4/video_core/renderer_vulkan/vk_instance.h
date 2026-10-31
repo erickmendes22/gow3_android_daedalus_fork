@@ -410,9 +410,13 @@ public:
         return properties.limits.maxSamplerAnisotropy;
     }
 
-    /// Returns the maximum number of push descriptors.
+    /// Returns 0 when push descriptors are unavailable (DescriptorHeap fallback).
     u32 MaxPushDescriptors() const {
         return push_descriptor_props.maxPushDescriptors;
+    }
+
+    bool IsVertexAttributeDivisorSupported() const {
+        return vertex_attribute_divisor;
     }
 
     /// Returns the maximum size of a single VkDeviceMemory
@@ -579,6 +583,7 @@ private:
     bool vertex_input_dynamic_state{};
     bool list_restart{};
     bool provoking_vertex{};
+    bool vertex_attribute_divisor{};
     bool shader_stencil_export{};
     bool image_load_store_lod{};
     bool amd_gcn_shader{};

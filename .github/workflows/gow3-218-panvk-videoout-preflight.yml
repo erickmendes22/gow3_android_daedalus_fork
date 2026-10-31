@@ -1,7 +1,7 @@
 name: GoW3 PanVK framebuffer label retirement source preflight (no APK)
+# The native APK workflow already executes these tests on every push.
+# Keep the lightweight check available on demand to avoid duplicate runs.
 on:
-  push:
-    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
   workflow_dispatch:
 permissions:
   contents: read

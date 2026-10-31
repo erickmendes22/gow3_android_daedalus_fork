@@ -483,16 +483,21 @@ void GraphicsPipeline::GetVertexInputs(
             .inputRate = step_rate == InstanceIdType::None ? vk::VertexInputRate::eVertex
                                                            : vk::VertexInputRate::eInstance,
         });
-        const u32 divisor = step_rate == InstanceIdType::OverStepRate0
-                                ? step_rate_0
-                                : (step_rate == InstanceIdType::OverStepRate1 ? step_rate_1 : 1);
-        if constexpr (std::is_same_v<Binding, vk::VertexInputBindingDescription2EXT>) {
-            bindings.back().divisor = divisor;
-        } else if (step_rate != InstanceIdType::None) {
-            divisors.push_back(vk::VertexInputBindingDivisorDescriptionEXT{
-                .binding = attrib.semantic,
-                .divisor = divisor,
-            });
+        // Bachata fallback: do not emit an EXT divisor description when
+        // PanVK exposes neither the extension nor its feature. Vulkan's
+        // default instance divisor is 1; the vertex buffer is still bound.
+        if (instance.IsVertexAttributeDivisorSupported()) {
+            const u32 divisor = step_rate == InstanceIdType::OverStepRate0
+                                    ? step_rate_0
+                                    : (step_rate == InstanceIdType::OverStepRate1 ? step_rate_1 : 1);
+            if constexpr (std::is_same_v<Binding, vk::VertexInputBindingDescription2EXT>) {
+                bindings.back().divisor = divisor;
+            } else if (step_rate != InstanceIdType::None) {
+                divisors.push_back(vk::VertexInputBindingDivisorDescriptionEXT{
+                    .binding = attrib.semantic,
+                    .divisor = divisor,
+                });
+            }
         }
         guest_buffers.emplace_back(buffer);
     }
