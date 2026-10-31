@@ -11,7 +11,7 @@ class SotcLauncherTest(unittest.TestCase):
 
     def test_gpu_cache_profiles_do_not_reuse_old_shaders(self):
         s = SCRIPT.read_text()
-        self.assertIn('gpu-user-srt-phi3-fragment-tsharp-$sotc_gpu_profile', s)
+        self.assertIn('gpu-user-srt-phi4-barycentric-gs-$sotc_gpu_profile', s)
         self.assertIn('1) sotc_gpu_profile=wave32', s)
         self.assertIn('*) sotc_gpu_profile=wave64', s)
         self.assertIn('--user "$base/user"', s)
