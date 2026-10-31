@@ -73,6 +73,8 @@ sotc_fps_mode=fps60game
 sotc_vsync=1
 sotc_af16=0
 sotc_blur_suppression=1
+sotc_fast_bind=0
+sotc_record_thread=0
 android_fullscreen=0
 '''
         (base/'sotc.default.ini').write_text(defaults)
@@ -80,8 +82,8 @@ android_fullscreen=0
         manifest_path=stage/'runtime-manifest.json'
         identity=json.loads(manifest_path.read_text())
         identity.update(application_id='com.sotc.android.daedalus',
-                        runtime_name='sotc-daedalus-bionic-0.1.17',
-                        version='0.1.17-boot-test',
+                        runtime_name='sotc-daedalus-bionic-0.1.18',
+                        version='0.1.18-boot-test',
                         game='Shadow of the Colossus')
         manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
         output=ROOT/'out/release/sotc-runtime.tar.gz'
