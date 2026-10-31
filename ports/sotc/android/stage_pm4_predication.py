@@ -29,7 +29,7 @@ def patch(gpu: Path):
     s = (VENDOR / "vk_predication.cpp").read_text()
     s = replace_once(s,
         'Compile(HostShaders::OCCLUSION_PREDICATE_COMP, vk::ShaderStageFlagBits::eCompute, device)',
-        'CompileSPV(HostShaders::OCCLUSION_PREDICATE_COMP, device)',
+        'CompileSPV(OCCLUSION_PREDICATE_COMP, device)',
         "SotC shader utility signature")
     s = replace_once(s,
         '''      predicate_buffer{instance_,
