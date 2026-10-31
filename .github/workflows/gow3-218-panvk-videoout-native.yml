@@ -3,7 +3,14 @@ name: GoW3 2.1.8 Mali PanVK VideoOut isolated native verification
 on:
   push:
     branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
-    paths: ['.github/workflows/gow3-218-panvk-videoout-native.yml']
+    paths:
+      - '.github/workflows/gow3-218-panvk-videoout-native.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h'
+      - 'tools/android/bionic/run-bionic.sh'
+      - 'tests/test_mali_cpu_present_source.py'
   workflow_dispatch:
 
 permissions:
@@ -52,6 +59,7 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_android_*.py'
           bash tools/android/bionic/build_prepare.sh host
           python -m unittest discover -s tests -p 'test_bionic_*.py'
