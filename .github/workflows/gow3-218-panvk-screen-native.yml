@@ -1,4 +1,5 @@
 name: GoW3 2.1.8 Mali final-frame copy compatibility
+# Revalidation: fragment shader visibility barrier for sampled AHB frame
 
 on:
   pull_request:
