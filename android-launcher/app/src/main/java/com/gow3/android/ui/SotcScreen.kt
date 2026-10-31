@@ -272,8 +272,11 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Thread separada de comandos Vulkan (teste)" else "Separate Vulkan recording thread (test)",
                         (values["sotc_record_thread"]?:"0")=="1",
                         {save("sotc_record_thread",if(it)"1" else "0")})
-                    Text(if(pt) "Teste A/B: ambas desligadas por padrão. Mantém Wave32, TAA, LOD e shaders iguais. Reinicie a cada mudança."
-                         else "A/B test: both OFF by default. Wave32, TAA, LOD and shaders unchanged. Restart after each change.",
+                    SotcToggle(if(pt) "Readback assíncrono da GPU (teste)" else "Asynchronous GPU readback (test)",
+                        (values["sotc_rb_async"]?:"0")=="1",
+                        {save("sotc_rb_async",if(it)"1" else "0")})
+                    Text(if(pt) "Teste A/B: gravação Vulkan e readback assíncrono independentes e desligados por padrão. Ative um de cada vez; Readbacks 2 permanece ativo. Reinicie a cada mudança."
+                         else "A/B test: Vulkan recording and async readback are independent and default OFF. Enable one at a time; required readbacks remain mode 2. Restart after changing.",
                          color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
