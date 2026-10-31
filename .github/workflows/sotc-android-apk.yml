@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031]
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
@@ -39,6 +39,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gs_position_interface.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_tess_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gpu_pass_capture.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
@@ -72,6 +73,10 @@ jobs:
           grep -Fq 'IR::Opcode::Phi' "$srt/flatten_extended_userdata_pass.cpp"
           grep -Fq 'const bool adreno_missing_barycentrics = instance.GetVendorID() == 0x5143;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
           grep -Fq 'const Id gs_position_block{m.TypeStruct(vec4_id)};' out/sotc-android/gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp
+          grep -Fq 'SOTC GPU PASS CAPTURE armed' out/sotc-android/gpu/shim/bbgpu.cpp
+          grep -Fq 'SOTC GPU PASS CAPTURE image shader=' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'export SOTC_AUTO_GPU_DUMP_AFTER=80' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'export SOTC_DUMP=b33e9db6,91c6c95e,25338711,47c1dc64' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'const bool tessellated_triangles = has_guest_tes &&' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
           grep -Fq '(!has_guest_tes || tessellated_triangles))' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
           grep -Fq 'm.MemberDecorate(gs_position_block, 0U, spv::Decoration::Invariant);' out/sotc-android/gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp
@@ -197,10 +202,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.19-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.20-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.19-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.19-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.20-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.20-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
