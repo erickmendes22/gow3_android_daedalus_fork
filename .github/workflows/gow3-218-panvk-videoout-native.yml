@@ -17,6 +17,9 @@ on:
       - 'android-launcher/app/src/main/res/values-pt-rBR/strings.xml'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
       - 'tests/test_mali_panvk_compat_sources.py'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/robust_image_view.h'
+      - 'tests/test_mali_robust_image_view.py'
       - 'tests/test_mali_cpu_present_source.py'
   workflow_dispatch:
 
@@ -68,6 +71,7 @@ jobs:
           python -m pip install unicorn==2.1.4
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
+          python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
           python -m unittest discover -s tests -p 'test_android_*.py'
           bash tools/android/bionic/build_prepare.sh host
           python -m unittest discover -s tests -p 'test_bionic_*.py'

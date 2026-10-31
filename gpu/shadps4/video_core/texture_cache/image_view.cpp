@@ -7,8 +7,10 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/image_view.h"
+#include "video_core/texture_cache/robust_image_view.h"
 
 #include <magic_enum/magic_enum.hpp>
+#include <atomic>
 
 namespace VideoCore {
 
@@ -142,19 +144,102 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
         }
     }
 
+    // The requested view is not necessarily the physical image format. PanVK
+    // accepts a smaller subset of mutable formats than Turnip. Validate the
+    // actual backing and the shader-view usage before creating this view.
+    // Never re-interpret compressed BCn data as RGBA or swap a R32UI view
+    // for an unrelated format; this would corrupt the mip and texel layout.
+    vk::Format view_format = instance.GetSupportedFormat(format, image.format_features);
+    vk::ImageSubresourceRange view_range{
+        .aspectMask = aspect,
+        .baseMipLevel = info.range.base.level,
+        .levelCount = info.range.extent.levels,
+        .baseArrayLayer = info.range.base.layer,
+        .layerCount = info.range.extent.layers,
+    };
+    const bool is_mali = instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    const bool shader_only = !image.usage.render_target && !image.usage.depth_target &&
+                             !image.usage.vo_surface;
+    if (is_mali) {
+        // Attachment usage is speculative in the cache. When the view is
+        // exclusively for shader access, don't require attachment/storage
+        // capabilities which the shader will never use. This is important
+        // for compressed BCn and packed color views on PanVK.
+        if (shader_only) {
+            const auto shader_usage = info.is_storage ? vk::ImageUsageFlagBits::eStorage
+                                                      : vk::ImageUsageFlagBits::eSampled;
+            usage_ci.usage &= shader_usage;
+        }
+        const auto backing_format = image.backing->image.image_ci.format;
+        // Same physical backing for the D16S8/R8-sRGB fallback resolved by
+        // Image::Image; doing so on an unrelated format is not legal.
+        if (format == image.info.pixel_format && backing_format != format &&
+            instance.GetSupportedFormat(format, image.format_features) == backing_format) {
+            view_format = backing_format;
+        }
+        const auto required = info.is_storage ? vk::FormatFeatureFlagBits2::eStorageImage
+                                               : vk::FormatFeatureFlagBits2::eSampledImage;
+        // Color/depth attachment views can also be created via this class.
+        // Keep their original handling until attachment-specific proof exists.
+        const bool shader_access = shader_only || info.is_storage;
+        const bool native_supported = !shader_access ||
+                                      instance.IsFormatSupported(view_format, required);
+        RobustImage::PhysicalView physical{
+            .requested_format = view_format,
+            .backing_format = backing_format,
+            .view_aspects = aspect,
+            .backing_aspects = image.aspect_mask,
+            .components = info.mapping,
+            .view_usage = usage_ci.usage,
+            .backing_usage = image.usage_flags,
+            .base_mip = view_range.baseMipLevel,
+            .mip_count = view_range.levelCount,
+            .mip_capacity = image.backing->image.image_ci.mipLevels,
+            .base_layer = view_range.baseArrayLayer,
+            .layer_count = view_range.layerCount,
+            .layer_capacity = image.backing->image.image_ci.arrayLayers,
+            .storage = info.is_storage,
+            .shader_only = shader_only,
+            .native_format_supported = native_supported,
+        };
+        auto check = RobustImage::Validate(physical);
+        // Physical fallbacks may be outside Vulkan's mutable-format class,
+        // but only when creation already chose the backing type from the
+        // *same* original guest format. This is distinct from guest aliases.
+        if (check.issue == RobustImage::Issue::IncompatiblePhysicalFormat &&
+            view_format == backing_format) {
+            check.issue = RobustImage::Issue::None;
+        }
+        if (check.issue != RobustImage::Issue::None) {
+            static std::atomic<u32> warnings{0};
+            if (warnings.fetch_add(1, std::memory_order_relaxed) < 32) {
+                LOG_WARNING(Render_Vulkan,
+                            "PanVK RobustImage::Validate issue={} request={} physical={} "
+                            "usage={} image_usage={} mip={}/{} layers={}/{} guest={:#x}",
+                            static_cast<u32>(check.issue), vk::to_string(view_format),
+                            vk::to_string(backing_format), vk::to_string(usage_ci.usage),
+                            vk::to_string(image.usage_flags), view_range.baseMipLevel,
+                            view_range.levelCount, view_range.baseArrayLayer,
+                            view_range.layerCount, image.info.guest_address);
+            }
+            if (shader_only) {
+                // nullDescriptor is mandatory in the Instance. This avoids
+                // submitting an illegal view to the driver while the game
+                // can continue rendering with a zero-valued texture.
+                return;
+            }
+        } else {
+            view_range.levelCount = check.mip_count;
+            view_range.layerCount = check.layer_count;
+        }
+    }
     const vk::ImageViewCreateInfo image_view_ci = {
         .pNext = &usage_ci,
         .image = image.GetImage(),
         .viewType = ConvertImageViewType(info.type),
-        .format = instance.GetSupportedFormat(format, image.format_features),
+        .format = view_format,
         .components = info.mapping,
-        .subresourceRange{
-            .aspectMask = aspect,
-            .baseMipLevel = info.range.base.level,
-            .levelCount = info.range.extent.levels,
-            .baseArrayLayer = info.range.base.layer,
-            .layerCount = info.range.extent.layers,
-        },
+        .subresourceRange = view_range,
     };
     if (!IsViewTypeCompatible(info.type, image.info.type)) {
         LOG_ERROR(Render_Vulkan, "image view type {} is incompatible with image type {}",
