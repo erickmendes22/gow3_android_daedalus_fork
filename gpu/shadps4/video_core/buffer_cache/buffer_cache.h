@@ -132,6 +132,9 @@ private:
         return &pending_binds.emplace_back(arena);
     }
 
+    // Non-sparse Mali/PanVK arenas must be zeroed and accounted for before use.
+    const Buffer* AllocateArena(VAddr base, u64 bytes);
+
     const Buffer* GetArena(u64 first_block, u64 last_block);
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
@@ -179,6 +182,8 @@ private:
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
     std::deque<Buffer> arenas;
     bool non_sparse_arenas{false};
+    // Track dedicated GPU allocation pressure including old merged buffers still in flight.
+    u64 backed_arena_bytes{};
     std::vector<ArenaBinds> pending_binds;
     Vulkan::Semaphore memory_semaphore;
 

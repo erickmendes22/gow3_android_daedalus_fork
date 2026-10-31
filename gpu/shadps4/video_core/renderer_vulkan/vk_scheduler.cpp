@@ -423,7 +423,19 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     // exact, already submitted GPU tick only if the producer outruns the GPU.
     // Readback demand paths retain their own mandatory waits; no guest memory
     // becomes visible until its matching timeline tick is complete.
-    constexpr u64 MaxAndroidInFlightSubmissions = 8;
+    // PanVK's experimental Mali path needs a shallower GPU queue to avoid
+    // building up driver allocations and unbounded outstanding work.
+    // Default is unchanged for Adreno/desktop.
+    static const u64 MaxAndroidInFlightSubmissions = [] {
+        const char* value = std::getenv("GOW3_VK_MAX_IN_FLIGHT");
+        if (value && *value) {
+            const u64 requested = std::strtoull(value, nullptr, 10);
+            if (requested >= 1 && requested <= 8) {
+                return requested;
+            }
+        }
+        return u64{8};
+    }();
     // Cache the policy once: this is the hot path for thousands of submissions.
     // GOW3_VK_POLL_EACH_SUBMIT=1 re-enables the old path for device A/B testing.
     static const bool bounded_submit = [] {

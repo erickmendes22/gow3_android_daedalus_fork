@@ -62,8 +62,10 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
       memory_semaphore{instance} {
     non_sparse_arenas = !instance.HasSparseBuffers();
     if (non_sparse_arenas) {
-        // Ordinary dedicated buffers, capped at 128 MiB per page (256 MiB merged).
-        arena_page_bits = 27;
+        // PanVK has no sparse residency; full-buffer allocations cost device RAM.
+        // 32 MiB pages reduce waste when the game touches many scattered VA ranges.
+        // Maximum merged arena is 64 MiB, keeping both copies within budget.
+        arena_page_bits = 25;
         while (arena_page_bits > MIN_BACKED_ARENA_PAGE_BITS &&
                (u64{2} << arena_page_bits) > instance.GetMaxBufferSize()) {
             --arena_page_bits;
@@ -122,6 +124,31 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 }
 
 BufferCache::~BufferCache() = default;
+
+const Buffer* BufferCache::AllocateArena(VAddr base, u64 bytes) {
+    if (!non_sparse_arenas) {
+        return &arenas.emplace_back(instance, base, bytes, MemoryType::Sparse);
+    }
+
+    // Full, dedicated VkBuffer allocations stay alive until shutdown, including
+    // superseded arenas still referenced by GPU commands. Bound that pressure
+    // before risking a device-wide Mali GPU/LMK stall.
+    constexpr u64 MaxBackedArenaBytes = 1536_MB;
+    ASSERT_MSG(bytes <= MaxBackedArenaBytes - backed_arena_bytes,
+               "Non-sparse arena memory budget exceeded: current={} MiB new={} MiB cap={} MiB",
+               backed_arena_bytes >> 20, bytes >> 20, MaxBackedArenaBytes >> 20);
+
+    const auto* arena = &arenas.emplace_back(instance, base, bytes, MemoryType::DeviceLocal);
+    backed_arena_bytes += bytes;
+    // A sparse arena returns zeros for unbound blocks. An ordinary VkBuffer does
+    // not: leaving untouched shader inputs uninitialized risks invalid guest data
+    // and non-deterministic GPU behavior. Zero before any uploads or migration.
+    runtime.FillBuffer(arena, 0, bytes, 0u);
+    LOG_WARNING(Render_Vulkan, "PanVK backed arena: reserved={} MiB, cumulative={} MiB "
+                               "(cap={} MiB), base={:#x}",
+                bytes >> 20, backed_arena_bytes >> 20, MaxBackedArenaBytes >> 20, base);
+    return arena;
+}
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
@@ -465,10 +492,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
             const u64 base_block = Common::AlignDownPow2<u64>(first_block, blocks_per_arena_page);
             const u64 num_pages = last_page - first_page + 1;
             const auto* new_arena =
-                &arenas.emplace_back(instance, base_block << block_shift,
-                                     num_pages << arena_page_bits,
-                                     non_sparse_arenas ? MemoryType::DeviceLocal
-                                                       : MemoryType::Sparse);
+                AllocateArena(base_block << block_shift, num_pages << arena_page_bits);
             address_space[first_page] = new_arena;
             address_space[last_page] = new_arena;
         }
@@ -484,8 +508,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     const u64 base_block = first_addr >> block_shift;
     const u64 total_size = first_size + last_size;
     const u64 end_block = (first_addr + total_size) >> block_shift;
-    auto* new_arena = &arenas.emplace_back(instance, first_addr, total_size,
-        non_sparse_arenas ? MemoryType::DeviceLocal : MemoryType::Sparse);
+    const auto* new_arena = AllocateArena(first_addr, total_size);
     if (non_sparse_arenas) {
         // Preserve data written by the GPU before rebasing an arena, then update BDA.
         const auto move_old = [&](const Buffer* old) {

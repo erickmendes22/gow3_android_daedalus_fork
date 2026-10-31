@@ -47,6 +47,18 @@ class SparseQueueContractTest(unittest.TestCase):
         self.assertIn("Mali needs robustImageAccess or robustImageAccess2", source)
         self.assertIn(".robustImageAccess2 = enable_robust_image_access2", source)
 
+    def test_non_sparse_allocation_must_zero_memory_and_limit_device_ram(self):
+        source = BUFFER_CACHE.read_text()
+        allocation = source.split("const Buffer* BufferCache::AllocateArena(", 1)[1].split(
+            "void BufferCache::InvalidateMemory", 1
+        )[0]
+        self.assertIn("runtime.FillBuffer(arena, 0, bytes, 0u)", allocation)
+        self.assertIn("MaxBackedArenaBytes = 1536_MB", allocation)
+        self.assertIn("backed_arena_bytes += bytes", allocation)
+        self.assertIn("AllocateArena(first_addr, total_size)", source)
+        self.assertIn("AllocateArena(base_block << block_shift", source)
+        self.assertNotIn("arena_page_bits = 27", source)
+
     def test_sparse_bind_uses_sparse_queue(self):
         source = BUFFER_CACHE.read_text()
         self.assertIn("instance.GetSparseQueue().bindSparse(sparse_info)", source)

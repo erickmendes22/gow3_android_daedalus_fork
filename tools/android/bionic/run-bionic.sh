@@ -135,6 +135,22 @@ else
     unset GOW3_GSR2_SPATIAL_ONLY GOW3_GSR2_DIRECT_VIDEOOUT
     unset GOW3_GSR2_PREHUD_COMPOSITE GOW3_OUTPUT_RES
 fi
+# Mali PanVK safe profile. Do not change Snapdragon, Exynos system Vulkan or
+# imported drivers that are not Panfrost. Opt out with GOW3_MALI_SAFE_MODE=0.
+case "${GOW3_VULKAN_DRIVER:-}" in
+  */libvulkan_panfrost.so)
+    if [ "${GOW3_MALI_SAFE_MODE:-1}" != 0 ]; then
+      export GOW3_GPU_COMPILER_WORKERS=1
+      export GOW3_BACKGROUND_WARMUP=0
+      export GOW3_VK_MAX_IN_FLIGHT=2
+      export GOW3_FRAMES_AHEAD=1
+      export GOW3_DEFERRED_READBACK=0
+      export GOW3_STALE_READBACK=0
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off"
+    fi
+    ;;
+esac
+# End Mali PanVK safe profile.
 echo "Bloodframe: state=$GOW3_LSFG_STATE_FILE dll=$([ -s "$GOW3_LSFG_DLL" ] && echo available || echo missing) lib=$([ -s "$GOW3_LSFG_LIB" ] && echo available || echo missing)"
 
 # Report what will actually be patched into the verified CUSA01715 eboot, not
