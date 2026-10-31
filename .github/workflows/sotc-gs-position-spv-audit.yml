@@ -1,0 +1,64 @@
+name: SotC GS Position interface - real SPIR-V validator (NO APK)
+on:
+  push:
+    branches: [fix/sotc-gs-position-interface-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Install compiler and official SPIR-V validator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libboost-dev libvulkan-dev libfmt-dev spirv-tools
+      - name: Stage exact Android SotC Vulkan source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_renderer.py
+          python3 -m unittest discover -s tests -p test_sotc_gs_position_interface.py -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-gs-position/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          gpu=Path("out/sotc-gs-position/gpu")
+          src=(gpu/"shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp").read_text()
+          vs=(gpu/"shadps4/shader_recompiler/backend/spirv/spirv_emit_context.cpp").read_text()
+          assert "const Id gs_position_block{m.TypeStruct(vec4_id)};" in src
+          assert "m.MemberDecorate(gs_position_block, 0U, spv::Decoration::Invariant);" in src
+          assert 'm.MemberDecorate(per_vertex, 3U, spv::Decoration::BuiltIn, u32(spv::BuiltIn::CullDistance));' not in src
+          assert "output_position = DefineVariable(F32[4], spv::BuiltIn::Position" in vs
+          assert "m.OpStore(bary_smooth, bary);" in src
+          assert "m.OpEmitVertex();" in src
+          print("PASS: staged GS position block is minimal; vertex and material outputs preserved")
+          PY
+      - name: Compile the actual SotC geometry shader generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S tests/sotc_gs_position_spv -B out/gs-spv-validator -G Ninja \
+            -DGPU_SOURCE="$PWD/out/sotc-gs-position/gpu" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build out/gs-spv-validator --target sotc-gs-position-test -j 4
+          mkdir -p out/gs-spv-validator/generated
+          out/gs-spv-validator/sotc-gs-position-test out/gs-spv-validator/generated/geometry.spv
+      - name: Validate exact generated SPIR-V with Khronos SPIRV-Tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          spirv-val --target-env vulkan1.2 out/gs-spv-validator/generated/geometry.spv
+          spirv-dis out/gs-spv-validator/generated/geometry.spv -o out/gs-spv-validator/generated/geometry.spvasm
+          grep -q 'BuiltIn Position' out/gs-spv-validator/generated/geometry.spvasm
+          if grep -Eq 'BuiltIn (ClipDistance|CullDistance|PointSize)' out/gs-spv-validator/generated/geometry.spvasm; then
+            echo 'ERROR: uninitialized GS built-ins still declared'; exit 1
+          fi
+          echo 'PASS: generated production SotC GS is Vulkan-valid and has no unused clip/cull/point interface'
