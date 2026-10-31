@@ -155,3 +155,16 @@ so simply changing the UI default to 1 would NOT affect upgraded installations.
 setting is deliberately ignored to avoid retaining the old wrong default.
 The engine cvar `r_motionBlurEnable=0` will be included unless the user
 explicitly changes this new setting to 0. Android game saves are unchanged.
+
+## GPU A/B 0.1.18 (diagnosis only)
+The latest 0.1.17 Android log shows TAA history off, r_motionBlurEnable=0,
+LOD High, full texture uploads and Wave32. FastBind and the Vulkan recording
+thread remained ON because their upstream core defaults to ON on absent env.
+The pinned PC changelog reports artifacts on reused descriptor resources;
+the Android port's previous synchronous shader/readback settings did NOT
+disable either native path. Expose two independent settings, both OFF at
+launch, with an explicit startup banner. Run the SAME scene with
+(FAST_BIND=0, RECORD_THREAD=0), then (1,0), then (0,1), keeping driver,
+Wave32, LOD, TAA and shader caches identical. This isolates descriptor-reuse
+and recording-thread races from GCN/GS/fog-stage bugs without recompiling
+native code. Do not claim visual correctness before device A/B evidence.
