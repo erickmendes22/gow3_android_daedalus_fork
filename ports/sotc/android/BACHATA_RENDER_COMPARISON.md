@@ -99,3 +99,17 @@ A frame may stall during first upload; preserve Wave32, GS barycentrics, TSharp
 fragment arrays, readback coherence and original LOD. This removes one verified
 source of intentionally missing texels; it does not prove all remaining missing
 geometry or flicker is solved without a device comparison.
+
+## SotC Android 0.1.16: validated auxiliary GS Position interface
+
+Pinned upstream SotC renderer emits an auxiliary barycentric GS on Android
+Adreno with a gl_PerVertex block declaring Position, PointSize, ClipDistance
+and CullDistance, although the preceding vertex shader emits a standalone
+Position BuiltIn. Android-only staging reduces the GS block to Position and
+Invariant, removing unused, unwritten members while preserving all
+material/texture varyings and barycentric interpolation. The actual generated
+geometry SPIR-V was compiled and passed Khronos SPIRV-Tools Vulkan 1.2
+spirv-val in successful GitHub Actions run 41220978037 (separate source
+audit). Shader caches are segregated by the GS ABI revision (phi6).
+The earlier verified no-zero-fill upload budget fix is preserved. This
+source/IR verification is not a substitute for same-scene testing on Adreno.
