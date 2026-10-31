@@ -61,17 +61,17 @@ export GOW3_PRESENT_SOCKET="$base/present.sock"
 export SOTC_PRESENT_SOCKET="$GOW3_PRESENT_SOCKET"
 export SOTC_SCREEN_W=${SOTC_SCREEN_W:-1280} SOTC_SCREEN_H=${SOTC_SCREEN_H:-720}
 export SOTC_VSYNC=${SOTC_VSYNC:-1}
-# Shader cache for Wave32 is isolated from previously compiled Wave64/PC
-# pipelines. Keep saves in $base/user; BB_GPU_USER_DIR only stores GPU state.
-if [ "${SOTC_ADRENO_WAVE32:-0}" = 1 ]; then
-    case "$driver" in
-        gen8|adreno7xx|custom)
-            export BB_GPU_USER_DIR="$base/gpu-user-wave32"
-            mkdir -p "$BB_GPU_USER_DIR"
-            echo "SotC GPU cache: isolated Wave32 compatibility profile"
-            ;;
-    esac
-fi
+# The IR lowering changed after the early 0.1.4 SRT implementation.
+# Pipeline keys do not encode the lowering revision: never reopen old SPIR-V
+# or SRT walkers even if the game hash and Vulkan profile match.
+# Keep both subgroup variants separate and preserve --user "$base/user" saves.
+case "${SOTC_ADRENO_WAVE32:-0}" in
+    1) sotc_gpu_profile=wave32 ;;
+    *) sotc_gpu_profile=wave64 ;;
+esac
+export BB_GPU_USER_DIR="$base/gpu-user-srt-phi2-$sotc_gpu_profile"
+mkdir -p "$BB_GPU_USER_DIR"
+echo "SotC GPU cache revision: srt-phi2; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
     game) ;;

@@ -226,7 +226,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
                     SotcToggle(if(pt) "Adreno: compatibilidade Wave32" else "Adreno: Wave32 compatibility",
-                        (values["sotc_adreno_wave32"]?:"1")=="1",
+                        (values["sotc_adreno_wave32"]?:"0")=="1",
                         {save("sotc_adreno_wave32",if(it)"1" else "0")})
                     Text(if(pt) "Experimental. Usa cache de shaders separado; reinicie o jogo para comparar Wave32 e Wave64."
                          else "Experimental. Uses a separate shader cache; restart to compare Wave32 and Wave64.",
