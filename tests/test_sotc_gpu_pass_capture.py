@@ -55,13 +55,13 @@ class GpuPassCapture(unittest.TestCase):
             with self.assertRaises(ValueError):
                 stage_pass_capture(gpu)
 
-    def test_runner_arms_single_bounded_session_exported_to_logs(self):
+    def test_runner_preserves_manual_bounded_capture_export(self):
         runner = (ROOT / "ports/sotc/android/run-sotc-bionic.sh").read_text()
-        self.assertIn("export SOTC_DUMP=b33e9db6,91c6c95e,25338711,47c1dc64", runner)
-        self.assertIn("export SOTC_AUTO_GPU_DUMP_AFTER=80", runner)
+        self.assertNotIn("export SOTC_DUMP=", runner)
+        self.assertNotIn("export SOTC_AUTO_GPU_DUMP_AFTER=", runner)
         self.assertIn('export SOTC_GPU_DUMP_DIR="$base/logs/gpu_capture"', runner)
-        self.assertIn("export SOTC_PASS_TRACE=1", runner)
-        self.assertIn('mkdir -p "$SOTC_GPU_DUMP_DIR"', runner)
+        self.assertNotIn("export SOTC_PASS_TRACE=1", runner)
+        self.assertIn("GPU pass dumps remain available on demand", runner)
         stage = (ROOT / "ports/sotc/android/stage_renderer.py").read_text()
         self.assertIn("stage_pass_capture(out)", stage)
         java = (ROOT / "android-launcher/app/src/main/java/com/gow3/android/data/LogManager.kt").read_text()
