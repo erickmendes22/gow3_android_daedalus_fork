@@ -6,3 +6,11 @@ presenter atomic update, safe Android insets, compact GoW3 action pad with
 button-ID-only captions, PanVK Mali notice and availability gating.
 Downloads in build_deps.sh now retry transient curl 35 network failures.
 This is the consolidated APK build for these fixes.
+
+GoW3 v2.1.8 Mali PanVK compatibility final integration (2026-10-31)
+Source: 1fb560dabf9cd5f24ac0a88d3b47d5d9529b53ba
+Verified source preflight: https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41164419802
+Changes: query robustness2 + robustImageAccess13 per Mali device, ordinary backed
+arenas when sparse residency is absent, preserve GPU bytes and rebase BDA on
+arena merges, guard optional Vulkan feature bits, memory budget fallback.
+Request one signed 2.1.8 Bionic APK after source validation.
