@@ -120,6 +120,12 @@ jobs:
           sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools \
             make curl tar zip unzip ccache
           echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Compile Android launcher Java before costly native build
+        run: |
+          # Catch missing Java imports (including Bachata toggles) before FEX/Vulkan.
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac \
+            -PsotcAndroid=true --no-daemon --max-workers=2
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ci/environment.yml
