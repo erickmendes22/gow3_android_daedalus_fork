@@ -112,7 +112,7 @@ public:
     Frame* PrepareLastFrame();
 
 private:
-    Frame* GetRenderFrame();
+    Frame* GetRenderFrame(bool from_guest_flip = false);
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
