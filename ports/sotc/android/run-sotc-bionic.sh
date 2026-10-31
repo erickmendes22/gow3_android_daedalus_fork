@@ -61,6 +61,17 @@ export GOW3_PRESENT_SOCKET="$base/present.sock"
 export SOTC_PRESENT_SOCKET="$GOW3_PRESENT_SOCKET"
 export SOTC_SCREEN_W=${SOTC_SCREEN_W:-1280} SOTC_SCREEN_H=${SOTC_SCREEN_H:-720}
 export SOTC_VSYNC=${SOTC_VSYNC:-1}
+# AjncSystem's native TAA resolve shader 0xa402ddac uses SRT dword 42 bit 0
+# to blend the previous scene. On Adreno this makes previous geometry appear
+# as dragged ghosts after the barycentric fallback restored materials.
+# 1 = no temporal history blend; exposure, tonemap and stencil remain intact.
+# Separate SotC-only setting; no change to Wave32, texture cache or GoW3.
+export SOTC_TAA_OFF=${SOTC_TAA_OFF:-1}
+case "$SOTC_TAA_OFF" in
+    0) echo "SotC native TAA: temporal history enabled (comparison)" ;;
+    1) echo "SotC native TAA: temporal history disabled (no old frames)" ;;
+    *) echo "SotC native TAA: expected 0/1" >&2; exit 2 ;;
+esac
 # The working Bachata S4+ SotC profile uses precise GPU readbacks (mode 2).
 # The PC SotC renderer also defaults to that mode, but additionally launches
 # readbacks asynchronously. Android keeps their completion synchronous to
