@@ -16,5 +16,7 @@ jobs:
       - run: |
           sh -n tools/android/bionic/run-bionic.sh
           python -m unittest discover -s tests -p 'test_bionic_videoout_flip_retirement.py' -v
-          python -m unittest discover -s tests -p 'test_bionic_*.py' -q
-          python -m unittest discover -s tests -p 'test_android_*.py' -q
+          # Dependency-free source guards; the complete native/Bionic suite runs
+          # after provisioning the Android NDK and third-party headers.
+          python -m unittest discover -s tests -p 'test_sparse_queue.py' -v
+          python -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v
