@@ -105,6 +105,10 @@ export SOTC_RB_ASYNC=0
 # upload the actual texture before it is sampled, never its zero-fill placeholder.
 # 0 is a documented and implemented disable value in texture_cache.cpp.
 export SOTC_UPLOAD_BUDGET_MB=0
+# Bachata S4+ 0.2.7 game effects; strictly verified before BBPATCH2 creation.
+# These options do not change Wave64, tessellation or the working Turnip.
+export SOTC_BACHATA_PERF=${SOTC_BACHATA_PERF:-bloom,blur}
+echo "SotC Bachata game performance patches: $SOTC_BACHATA_PERF"
 # The original PC port defaults to texture quality High; it sets
 # SOTC_LOD_LINGER=1, unlike the renderer's own low-detail fallback (0).
 # With 0, even a recently sampled counter bank reports mip 15 (unused), so
@@ -157,7 +161,8 @@ case ${1:-game} in
 esac
 set -- "$python" "$prepare" --upstream "$upstream" --game-dir "$game" \
     --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-fps60game}" \
-    --cvars "${SOTC_CVARS:-doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0}"
+    --cvars "${SOTC_CVARS:-doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0}" \
+    --perf "$SOTC_BACHATA_PERF"
 if [ -n "${SOTC_SYS_MODULES:-}" ]; then
     set -- "$@" --sys-modules "$SOTC_SYS_MODULES"
 fi
