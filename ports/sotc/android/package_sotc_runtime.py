@@ -72,7 +72,7 @@ sotc_resolution=720p
 sotc_fps_mode=fps60game
 sotc_vsync=1
 sotc_af16=0
-sotc_blur_off=0
+sotc_blur_suppression=1
 android_fullscreen=0
 '''
         (base/'sotc.default.ini').write_text(defaults)

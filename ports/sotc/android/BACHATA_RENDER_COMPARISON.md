@@ -147,3 +147,11 @@ changes; the vertex workaround is deliberately not enabled globally due
 to a documented GPU hang in VS 0x9d6f9bf4.
 
 Do not claim visual correctness until a same-scene Android run confirms it.
+
+### Upgrade path for existing 0.1.15 users
+The previous SotC runtime shipped `sotc_blur_off=0` in the default user INI,
+so simply changing the UI default to 1 would NOT affect upgraded installations.
+0.1.17 now uses a new setting `sotc_blur_suppression` (default 1); the old
+setting is deliberately ignored to avoid retaining the old wrong default.
+The engine cvar `r_motionBlurEnable=0` will be included unless the user
+explicitly changes this new setting to 0. Android game saves are unchanged.
