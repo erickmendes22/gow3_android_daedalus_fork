@@ -490,6 +490,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     patch_sotc_arm64(root, out)
     from stage_adreno_wave32 import patch_adreno_wave32
     patch_adreno_wave32(out)
+    # Recover dynamically indexed material/lighting textures on Android.
+    # Staged SotC-only; vertex shader workaround remains explicitly excluded.
+    from stage_fragment_tsharp import patch_fragment_tsharp
+    patch_fragment_tsharp(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
