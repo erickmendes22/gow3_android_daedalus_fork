@@ -113,3 +113,37 @@ spirv-val in successful GitHub Actions run 41220978037 (separate source
 audit). Shader caches are segregated by the GS ABI revision (phi6).
 The earlier verified no-zero-fill upload budget fix is preserved. This
 source/IR verification is not a substitute for same-scene testing on Adreno.
+
+## Android 0.1.17: regression confirmed on the phone and corrected in launcher
+
+The 0.1.15 Android device log (2026-10-31 14:04:01; Adreno 830, Turnip
+26.2.99, Wave32 active) explicitly prints `[TEXTURE] Texture level in use: Off`
+and `SOTC LOD: texture level off`. Unlike earlier reports that assumed an
+enabled PM4 GET_LOD_STATS handler was sufficient, the pinned SotC PC source's
+default is `Linger=0`: `SotcLod::Collect` returns mip 15 (unused) for all
+banks, *including those marked sampled that frame*. This leaves the game at
+256x256 base textures, can produce black water and missing waterfall sheets,
+and is an actual initialization mistake in the Android runner.
+
+The PC launcher's High (stable) mode sets `SOTC_LOD_LINGER=1`, mip 2,
+`SOTC_LOD_POOL_LOW=8`. The Android runner now initializes these three
+values explicitly, retaining the same conservative page-pool pressure
+protection rather than Maximum (which has documented guest allocator faults).
+`SOTC_UPLOAD_BUDGET_MB=0` remains, so the streaming change is not obscured
+by zero-filled placeholders. The source/default regression is tested.
+
+The same 0.1.15 game command line included NO `r_motionBlurEnable=0`. The
+Android UI exposed "Disable Motion Blur" but left it disabled by default.
+Android now starts with `r_motionBlurEnable=0` by default, with a reversible
+option for the user to restore original motion blur. The separate
+`SOTC_TAA_OFF=1` remains and the Adreno barycentric GS Position repair
+is retained. Motion blur suppression targets the visible long streaks; it
+does not prove every earlier ghost is the game's motion blur.
+
+Also observed: 16 `Sharp source uses a runtime index` warnings, still
+not isolated to shader stage or source. Those may explain residual missing
+materials and require per-shader evidence before unsafe descriptor array
+changes; the vertex workaround is deliberately not enabled globally due
+to a documented GPU hang in VS 0x9d6f9bf4.
+
+Do not claim visual correctness until a same-scene Android run confirms it.
