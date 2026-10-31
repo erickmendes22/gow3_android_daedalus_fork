@@ -61,6 +61,16 @@ export GOW3_PRESENT_SOCKET="$base/present.sock"
 export SOTC_PRESENT_SOCKET="$GOW3_PRESENT_SOCKET"
 export SOTC_SCREEN_W=${SOTC_SCREEN_W:-1280} SOTC_SCREEN_H=${SOTC_SCREEN_H:-720}
 export SOTC_VSYNC=${SOTC_VSYNC:-1}
+# Rendering correctness first on Android: the PC backend can return nullptr
+# for geometry draws while asynchronous shaders/pipelines are still being
+# compiled (vk_pipeline_cache.cpp). With a cold shader cache this produces
+# missing geometry and transient flicker, not merely poor FPS.
+# The Android port must never silently drop these draws. Shader compilation
+# can stall a frame, but the complete frame will be drawn once compiled.
+export SOTC_ASYNC_SHADERS=0
+export SOTC_ASYNC_TRANSLATE=0
+export SOTC_ASYNC_PRELOAD=0
+echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
 # The IR lowering changed after the early 0.1.4 SRT implementation.
 # Pipeline keys do not encode the lowering revision: never reopen old SPIR-V
 # or SRT walkers even if the game hash and Vulkan profile match.
