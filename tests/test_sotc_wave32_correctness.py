@@ -21,7 +21,10 @@ class Wave32Policy(unittest.TestCase):
         script = STAGE.read_text()
         self.assertIn('if (UseAdrenoWave32()) return false;', script)
         self.assertIn('if (UseAdrenoWave32()) return 32u;', script)
-        self.assertEqual(script.count('if (UseAdrenoWave32()) return 32u;'), 2)
+        # Compiler remains 32-wide; auxiliary GS must only request 32
+        # if Vulkan lists geometry among requiredSubgroupSizeStages.
+        self.assertEqual(script.count('if (UseAdrenoWave32()) return 32u;'), 1)
+        self.assertIn('requiredSubgroupSizeStages & stage', script)
 
     def test_bachata_precise_readback_parity_without_wave32_regression(self):
         run = RUN.read_text()
