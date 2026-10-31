@@ -22,5 +22,5 @@ class ControlledGpuAB(unittest.TestCase):
                      "export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}",
                      "export SOTC_TAA_OFF=${SOTC_TAA_OFF:-1}"):
             self.assertIn(line,RUN)
-        self.assertIn("gpu-user-srt-phi6-gs-position",RUN)
+        self.assertIn("gpu-user-srt-phi7-tess-gs-position",RUN)
 if __name__=="__main__":unittest.main()
