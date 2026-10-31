@@ -494,6 +494,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Staged SotC-only; vertex shader workaround remains explicitly excluded.
     from stage_fragment_tsharp import patch_fragment_tsharp
     patch_fragment_tsharp(out)
+    # Reuse SotC's existing barycentric geometry-shader fallback on Adreno,
+    # provided the selected Vulkan driver actually supports geometryShader.
+    from stage_adreno_barycentric_gs import patch_adreno_barycentric_gs
+    patch_adreno_barycentric_gs(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
