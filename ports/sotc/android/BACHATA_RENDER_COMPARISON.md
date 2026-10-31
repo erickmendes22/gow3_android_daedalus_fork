@@ -46,6 +46,20 @@ It DOES NOT establish that PM4 LOD statistics are disabled; the default
 `SOTC_LOD_STATS` is enabled. Do not force mip 0/1 or unconditional high-LOD
 linger: the PC fork documents guest page-pool corruption in those modes.
 
+## GPU readback scheduling: conservative Android compatibility
+
+The Bachata SotC profile uses precise readbacks (mode 2), and the PC fork
+already defaults to `BB_READBACKS=2` (`gpu/shim/core/emulator_settings.h`).
+Thus simply switching relaxed->precise was NOT a missing fix. However, the
+PC fork also enables a separate `SOTC_RB_ASYNC` path by default; it begins
+the GPU readback on the command processor, waits for a GPU timeline tick,
+and only then installs the copy. The user prioritizes correct textures over
+FPS, so the Android SotC runner now explicitly sets `BB_READBACKS=2` and
+`SOTC_RB_ASYNC=0`. The latter follows the PC fork's synchronous
+`SendCommand<true>(flush_request)` path. This is a deliberate compatibility
+trial based on a concrete scheduling difference, NOT proven to eliminate
+the overexposure/flicker. Keep the Wave32 option intact for both A/B cases.
+
 ## Remaining known divergence
 
 The Android SotC port uses a custom portable ARM64 SRT walker with dynamic
