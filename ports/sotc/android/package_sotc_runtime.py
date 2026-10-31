@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import os
+from vendor_turnip import embed_verified_turnip, ARCHIVE_RELATIVE
 
 ROOT=Path(__file__).resolve().parents[3]
 
@@ -55,6 +57,10 @@ def main():
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
                         ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copy2(upstream/'LICENSE',notices/'LICENSE-ShadowOfTheColossus-PC.txt')
+        # Optional, hash-pinned user-provided Android HAL Turnip. Never substitute
+        # another binary. The normal Gen8/custom/system choices remain present.
+        vendor_zip=Path(os.environ.get('SOTC_GAMEHUB_TURNIP_ZIP', str(ROOT/ARCHIVE_RELATIVE)))
+        driver_included=embed_verified_turnip(stage,vendor_zip)
         # No GoW3 game patches, cheats, launcher, or resolution config in SotC.
         # Existing FEX and native ABI libraries remain because the BBPROBE5
         # executable still links against their shared low-level interfaces.
@@ -89,7 +95,8 @@ android_fullscreen=0
         identity.update(application_id='com.sotc.android.daedalus',
                         runtime_name='sotc-daedalus-bionic-0.1.22',
                         version='0.1.22-boot-test',
-                        game='Shadow of the Colossus')
+                        game='Shadow of the Colossus',
+                        gamehub_dd_turnip_bundled=driver_included)
         manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
         output=ROOT/'out/release/sotc-runtime.tar.gz'
         with tarfile.open(output,'w:gz',compresslevel=6) as tar:
