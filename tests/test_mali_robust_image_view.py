@@ -20,10 +20,21 @@ class RobustImageViewTests(unittest.TestCase):
         self.assertIn("vendorID == 0x13B5",c)
         self.assertIn("if (is_mali) {",c)
         self.assertIn("RobustImage::Validate(physical)",c)
-        self.assertIn("if (shader_only && (info.is_storage || image.info.props.is_block))",c)
+        self.assertIn("if (shader_only && (shader_storage || image.info.props.is_block))",c)
         self.assertIn("return;",c)
         self.assertIn("view_range.levelCount = check.mip_count;",c)
         self.assertIn("view_format == backing_format",c)
+
+    def test_mali_writable_depth_attachment_not_misclassified_as_shader_storage(self):
+        c=(ROOT/"gpu/shadps4/video_core/texture_cache/image_view.cpp").read_text()
+        self.assertIn("const bool depth_attachment = image.info.props.is_depth && image.usage.depth_target;",c)
+        self.assertIn("const bool shader_storage = info.is_storage && !depth_attachment;",c)
+        self.assertIn(".storage = shader_storage",c)
+        self.assertIn("const bool shader_access = shader_only || shader_storage",c)
+        self.assertIn("if (shader_only || shader_storage)",c)
+        # The depth-specific distinction belongs in the Mali branch. The
+        # unconditional usage handling remains unmodified for Turnip.
+        self.assertLess(c.index("if (is_mali) {"), c.index("RobustImage::Validate(physical)"))
 
     def test_no_zero_usage_or_unsupported_storage_view(self):
         h=(ROOT/"gpu/shadps4/video_core/texture_cache/robust_image_view.h").read_text()
@@ -31,7 +42,7 @@ class RobustImageViewTests(unittest.TestCase):
         self.assertIn("v.storage && !(v.view_usage & vk::ImageUsageFlagBits::eStorage)", h)
         self.assertIn('!IsVulkanFormatCompatible(v.requested_format, v.backing_format)', h)
         source=(ROOT/"gpu/shadps4/video_core/texture_cache/image_view.cpp").read_text()
-        self.assertIn("if (shader_only || info.is_storage)", source)
+        self.assertIn("if (shader_only || shader_storage)", source)
 
 if __name__=="__main__":
     unittest.main()

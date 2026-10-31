@@ -160,6 +160,13 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
     const bool is_mali = instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     const bool shader_only = !image.usage.render_target && !image.usage.depth_target &&
                              !image.usage.vo_surface;
+    // A writable PS4 depth *attachment* sets ImageViewInfo::is_storage through
+    // DepthControl::depth_write_enable. This is not a Vulkan storage image.
+    // Requiring VK_IMAGE_USAGE_STORAGE_BIT here rejects valid D32S8 depth targets
+    // on PanVK and returns a null image view, so subsequent 3D depth draws are
+    // missing. Preserve storage checks for real shader storage images instead.
+    const bool depth_attachment = image.info.props.is_depth && image.usage.depth_target;
+    const bool shader_storage = info.is_storage && !depth_attachment;
     if (is_mali) {
         // Attachment usage is speculative in the cache. When the view is
         // exclusively for shader access, don't require attachment/storage
@@ -170,9 +177,9 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
         // texture cache. Narrowing its view to sampled-only would then make
         // the attachment illegal. Compressed BCn cannot be an attachment;
         // storage views have a distinct cached is_storage key.
-        if (shader_only && (info.is_storage || image.info.props.is_block)) {
-            const auto shader_usage = info.is_storage ? vk::ImageUsageFlagBits::eStorage
-                                                      : vk::ImageUsageFlagBits::eSampled;
+        if (shader_only && (shader_storage || image.info.props.is_block)) {
+            const auto shader_usage = shader_storage ? vk::ImageUsageFlagBits::eStorage
+                                                     : vk::ImageUsageFlagBits::eSampled;
             usage_ci.usage &= shader_usage;
         }
         const auto backing_format = image.backing->image.image_ci.format;
@@ -182,11 +189,11 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
             instance.GetSupportedFormat(format, image.format_features) == backing_format) {
             view_format = backing_format;
         }
-        const auto required = info.is_storage ? vk::FormatFeatureFlagBits2::eStorageImage
-                                               : vk::FormatFeatureFlagBits2::eSampledImage;
-        // Color/depth attachment views can also be created via this class.
-        // Keep their original handling until attachment-specific proof exists.
-        const bool shader_access = shader_only || info.is_storage;
+        const auto required = shader_storage ? vk::FormatFeatureFlagBits2::eStorageImage
+                                             : vk::FormatFeatureFlagBits2::eSampledImage;
+        // Depth attachment views are not storage images, even when writes
+        // are enabled. Test storage capabilities only for shader storage.
+        const bool shader_access = shader_only || shader_storage;
         const bool native_supported = !shader_access ||
                                       instance.IsFormatSupported(view_format, required);
         RobustImage::PhysicalView physical{
@@ -203,7 +210,7 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
             .base_layer = view_range.baseArrayLayer,
             .layer_count = view_range.layerCount,
             .layer_capacity = image.backing->image.image_ci.arrayLayers,
-            .storage = info.is_storage,
+            .storage = shader_storage,
             .shader_only = shader_only,
             .native_format_supported = native_supported,
         };
@@ -227,7 +234,7 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
                             view_range.levelCount, view_range.baseArrayLayer,
                             view_range.layerCount, image.info.guest_address);
             }
-            if (shader_only || info.is_storage) {
+            if (shader_only || shader_storage) {
                 // nullDescriptor is mandatory in the Instance. This avoids
                 // submitting an illegal view to the driver while the game
                 // can continue rendering with a zero-valued texture.
