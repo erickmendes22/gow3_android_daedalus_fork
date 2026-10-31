@@ -54,13 +54,13 @@ def repack(base_apk: Path, root: Path) -> None:
                             if data.count(b"sotc_blur_off=0") != 1:
                                 raise RuntimeError("Unexpected legacy default ini")
                             data = data.replace(b"sotc_blur_off=0",
-                                                b"sotc_blur_suppression=1")
+                                                b"sotc_blur_suppression=1\nsotc_fast_bind=0\nsotc_record_thread=0")
                         else:
                             record = json.loads(data)
                             if record.get("version") != "0.1.16-boot-test":
                                 raise RuntimeError("Wrong native source runtime")
-                            record["version"] = "0.1.17-boot-test"
-                            record["runtime_name"] = "sotc-daedalus-bionic-0.1.17"
+                            record["version"] = "0.1.18-boot-test"
+                            record["runtime_name"] = "sotc-daedalus-bionic-0.1.18"
                             data = (json.dumps(record, indent=2) + "\n").encode()
                         member.size = len(data)
                         dest.addfile(member, io.BytesIO(data))
@@ -84,10 +84,12 @@ def repack(base_apk: Path, root: Path) -> None:
         assert b"export SOTC_UPLOAD_BUDGET_MB=0" in s
         assert b"gpu-user-srt-phi6-gs-position" in s
         assert b"sotc_blur_suppression=1" in t.extractfile("sotcport/sotc.ini").read()
-        assert json.load(t.extractfile("runtime-manifest.json"))["version"] == "0.1.17-boot-test"
+        assert b"sotc_fast_bind=0" in t.extractfile("sotcport/sotc.ini").read()
+        assert b"sotc_record_thread=0" in t.extractfile("sotcport/sotc.ini").read()
+        assert json.load(t.extractfile("runtime-manifest.json"))["version"] == "0.1.18-boot-test"
         for key, old_digest in signatures.items():
             assert hashlib.sha256(t.extractfile(key).read()).hexdigest() == old_digest
-    print("PASS: 0.1.17 verified-native repack, 3 key ELF files bit-identical; sha256", digest)
+    print("PASS: 0.1.18 verified-native repack, 3 key ELF files bit-identical; sha256", digest)
 
 
 if __name__ == "__main__":
