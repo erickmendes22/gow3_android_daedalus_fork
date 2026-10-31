@@ -27,7 +27,7 @@ class SotcFragmentTsharpTest(unittest.TestCase):
     def test_cache_does_not_reuse_old_unbound_descriptors(self):
         run = RUNNER.read_text()
         self.assertIn("export SOTC_ANDROID_FRAGMENT_TSHARP=1", run)
-        self.assertIn("gpu-user-srt-phi6-gs-position-turnip-nomultipos", run)
+        self.assertIn("gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos", run)
         self.assertIn("profile=$sotc_gpu_profile", run)
         self.assertNotIn("gpu-user-srt-phi2-", run)
         self.assertIn("export BB_READBACKS=2", run)
