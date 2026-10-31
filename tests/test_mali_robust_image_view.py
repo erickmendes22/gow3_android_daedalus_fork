@@ -20,7 +20,7 @@ class RobustImageViewTests(unittest.TestCase):
         self.assertIn("vendorID == 0x13B5",c)
         self.assertIn("if (is_mali) {",c)
         self.assertIn("RobustImage::Validate(physical)",c)
-        self.assertIn("if (shader_only)",c)
+        self.assertIn("if (shader_only && (info.is_storage || image.info.props.is_block))",c)
         self.assertIn("return;",c)
         self.assertIn("view_range.levelCount = check.mip_count;",c)
         self.assertIn("view_format == backing_format",c)

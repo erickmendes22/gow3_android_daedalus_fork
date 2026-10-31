@@ -165,7 +165,12 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
         // exclusively for shader access, don't require attachment/storage
         // capabilities which the shader will never use. This is important
         // for compressed BCn and packed color views on PanVK.
-        if (shader_only) {
+        // An uncompressed sampled image can be bound as a color/depth
+        // attachment in a later draw, with its ImageViewInfo reused by the
+        // texture cache. Narrowing its view to sampled-only would then make
+        // the attachment illegal. Compressed BCn cannot be an attachment;
+        // storage views have a distinct cached is_storage key.
+        if (shader_only && (info.is_storage || image.info.props.is_block)) {
             const auto shader_usage = info.is_storage ? vk::ImageUsageFlagBits::eStorage
                                                       : vk::ImageUsageFlagBits::eSampled;
             usage_ci.usage &= shader_usage;
