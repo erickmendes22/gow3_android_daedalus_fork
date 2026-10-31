@@ -51,7 +51,7 @@ def fingerprint(paths):
     return digest.hexdigest()
 
 def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
-            render='1280x720',cvars='',force=False):
+            render='1280x720',cvars='',force=False,perf_effects=''):
     upstream,game,out=(Path(p).resolve() for p in (upstream,game,out))
     if out==game or game in out.parents:
         raise ValueError('Do not write generated files into the game dump')
@@ -103,6 +103,10 @@ def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
     if render and render!='1920x1080':
         modeargs+=['--render',render]
     run('sotc_modes.py',*modeargs)
+    # Exact SELF SHA256, executable-ELF original bytes, and call targets are
+    # verified before appending any Bachata 0.2.7 BBPATCH2 guest writes.
+    from bachata_perf import append_bachata_patches
+    applied_perf = append_bachata_patches(upstream,eboot,out/'patches.bin',title,perf_effects)
     for name in OUTPUTS:
         if not (out/name).is_file():
             raise RuntimeError('Upstream output missing: '+name)
@@ -112,6 +116,7 @@ def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
       'sotc_cpu':str(out/'sotc-cpu.bin'),'patches':str(out/'patches.bin'),
       'cmdline':str(out/'cmdline.bin') if (out/'cmdline.bin').is_file() else None,
       'cached':current and not force,'audio':bool(extras),
+      'bachata_perf':applied_perf,
       'requires':'SotC-specific Android Bionic/FEX runtime (included in Daedalus)'
     }
 
@@ -124,11 +129,12 @@ def main():
     p.add_argument('--modes',default='fps60game')
     p.add_argument('--render',default='1280x720')
     p.add_argument('--cvars',default='doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0')
+    p.add_argument('--perf',default='',help='Bachata 0.2.7: comma-separated bloom,blur,ssr,fog,shadows')
     p.add_argument('--force',action='store_true')
     a=p.parse_args()
     try:
         result=prepare(a.upstream,a.game_dir,a.out,a.sys_modules,a.modes,
-                       a.render,a.cvars,a.force)
+                       a.render,a.cvars,a.force,a.perf)
     except (OSError,ValueError,subprocess.CalledProcessError,RuntimeError) as e:
         p.exit(1,'SotC preparation failed: '+str(e)+'\n')
     print(json.dumps(result,indent=2))
