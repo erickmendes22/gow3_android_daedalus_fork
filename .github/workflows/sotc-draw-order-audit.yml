@@ -1,0 +1,47 @@
+name: SotC Android in-order graphics renderer audit
+on:
+  push:
+    branches: [fix/sotc-draw-order-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: In-order PM4 and GPU-state checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_draw_order.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-draw-order/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          gpu=Path('out/sotc-draw-order/gpu/shadps4')
+          liverpool=(gpu/'video_core/amdgpu/liverpool.cpp').read_text()
+          shader=(gpu/'video_core/renderer_vulkan/vk_pipeline_cache.cpp').read_text()
+          inst=(gpu/'video_core/renderer_vulkan/vk_instance.h').read_text()
+          assert 'const char* threads = std::getenv("SOTC_CP_THREADS")' in liverpool
+          assert "back_threaded = !threads || threads[0] != '0';" in liverpool
+          assert 'if (!back_threaded)' in liverpool
+          assert 'rasterizer->Draw(is_indexed, index_offset);' in liverpool
+          assert 'rasterizer->DrawIndirect(is_indexed, address, offset, stride, max_count,' in liverpool
+          assert 'vertex explosion' in liverpool
+          assert 'GS_fallback=%d' in shader
+          assert 'vk13_props.requiredSubgroupSizeStages & stage' in inst
+          print('PASS: original renderer can execute draws in PM4 order, without the deferred draw-state snapshot')
+          PY
