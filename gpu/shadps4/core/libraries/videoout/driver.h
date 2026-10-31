@@ -122,8 +122,20 @@ private:
     void DrawBlankFrame(); // Video port out not open
     void DrawLastFrame();  // Used when there is no flip request
     void SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop,
-                            u64 lock_generation);
+                            u64 lock_generation, bool is_retry = false);
     void ApplyDueLabelRetirement();
+    // The PanVK renderer may have all presentation frames busy. Re-issue at
+    // most one postponed flip per vblank instead of blocking the GPU PM4 thread.
+    void RetryDeferredFlip();
+    struct DeferredFlip {
+        VideoOutPort* port{};
+        s32 index{};
+        s64 flip_arg{};
+        bool eop{};
+        u64 generation{};
+    };
+    std::mutex deferred_flip_mutex;
+    std::deque<DeferredFlip> deferred_flips;
     void PresentThread(std::stop_token token);
     /// gow3: runs presenter work (acquire, blit, vkQueuePresent) off the vblank thread, in
     /// order. Acquire and present block while the GPU is the bottleneck (much longer on NVIDIA);
