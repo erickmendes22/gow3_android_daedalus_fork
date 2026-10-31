@@ -279,4 +279,53 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
     }
 }
 
+void PostProcessingPass::RenderToSwapchain(vk::CommandBuffer cmdbuf, vk::ImageView input,
+                                          vk::ImageView target, vk::Rect2D rect) {
+    if (rect.extent.width == 0 || rect.extent.height == 0) return;
+    // Input has ALREADY been post-processed; this shader is an identity copy.
+    const Settings identity{.gamma = 1.0f, .hdr = 1u, .srgb_input = 0u};
+    const vk::DescriptorImageInfo sample{
+        .sampler = *sampler,
+        .imageView = input,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::WriteDescriptorSet write{
+        .dstSet = VK_NULL_HANDLE,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .pImageInfo = &sample,
+    };
+    const vk::RenderingAttachmentInfo attachment{
+        .imageView = target,
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eLoad,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+    };
+    const vk::RenderingInfo rendering{
+        .renderArea = rect,
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &attachment,
+    };
+    const vk::Viewport viewport{
+        .x = static_cast<float>(rect.offset.x),
+        .y = static_cast<float>(rect.offset.y),
+        .width = static_cast<float>(rect.extent.width),
+        .height = static_cast<float>(rect.extent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+    cmdbuf.setViewport(0, viewport);
+    cmdbuf.setScissor(0, rect);
+    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, write);
+    cmdbuf.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0,
+                         sizeof(Settings), &identity);
+    cmdbuf.beginRendering(rendering);
+    cmdbuf.draw(3, 1, 0, 0);
+    cmdbuf.endRendering();
+}
+
 } // namespace Vulkan::HostPasses

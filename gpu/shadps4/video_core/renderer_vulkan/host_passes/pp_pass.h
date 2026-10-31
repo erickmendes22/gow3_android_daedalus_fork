@@ -24,6 +24,10 @@ public:
 
     void Render(vk::CommandBuffer cmdbuf, vk::ImageView input, vk::Extent2D input_size,
                 Frame& output, Settings settings);
+    // Render the completed guest frame directly into an Android AHB.
+    // The caller handles image barriers, clear, and letterboxing.
+    void RenderToSwapchain(vk::CommandBuffer cmdbuf, vk::ImageView input,
+                           vk::ImageView target, vk::Rect2D rect);
 
 private:
     vk::UniquePipeline pipeline{};

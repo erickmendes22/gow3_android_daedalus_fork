@@ -143,6 +143,9 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
       export GOW3_VK_MAX_IN_FLIGHT=2
+      # PanVK supports AHB color attachment but its AHB linear blit can yield
+      # a black buffer; use a sampled identity draw for the final frame.
+      export GOW3_PANVK_SHADER_PRESENT=1
       export GOW3_FRAMES_AHEAD=1
       export GOW3_DEFERRED_READBACK=0
       export GOW3_STALE_READBACK=0

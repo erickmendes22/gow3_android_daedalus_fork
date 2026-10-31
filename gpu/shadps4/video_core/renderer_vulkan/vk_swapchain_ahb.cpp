@@ -170,9 +170,15 @@ void Swapchain::CreateBuffer(u32 index) {
     ASSERT_MSG(format_props.format != vk::Format::eUndefined,
                "The driver maps the AHardwareBuffer to no Vulkan format (external format {:#x})",
                format_props.externalFormat);
-    const auto required = vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eBlitDst;
+    const char* shader_present = std::getenv("GOW3_PANVK_SHADER_PRESENT");
+    const bool shader_fallback = shader_present && shader_present[0] == '1';
+    // The shader path only requires a color attachment and transfer clear.
+    // Do not reject an AHB solely because vkCmdBlitImage is unsupported.
+    const auto required = vk::FormatFeatureFlagBits::eColorAttachment |
+        (shader_fallback ? vk::FormatFeatureFlagBits::eTransferDst
+                         : vk::FormatFeatureFlagBits::eBlitDst);
     ASSERT_MSG((format_props.formatFeatures & required) == required,
-               "The driver cannot render/blit into the AHardwareBuffer format {} (features {})",
+               "The driver cannot render into the AHardwareBuffer format {} (features {})",
                vk::to_string(format_props.format), vk::to_string(format_props.formatFeatures));
     surface_format.format = format_props.format;
 
