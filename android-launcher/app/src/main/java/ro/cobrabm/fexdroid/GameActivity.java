@@ -573,6 +573,12 @@ public final class GameActivity extends Activity {
                 // Wave32 is experimental; opt-in avoids unexpected visual regressions.
                 env.put("SOTC_ADRENO_WAVE32",
                         "1".equals(setting("sotc_adreno_wave32")) ? "1" : "0");
+                // GPU barycentric interpolation is fixed; remaining ghost copies
+                // can originate from native TAA sampling an invalid old frame.
+                // Keep exposure and tonemap; disable ONLY its history blend.
+                // User can re-enable original history from SotC patches for A/B.
+                env.put("SOTC_TAA_OFF",
+                        "1".equals(setting("sotc_taa_history")) ? "0" : "1");
                 String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
                 if("1".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
                 env.put("SOTC_CVARS",cvars);
