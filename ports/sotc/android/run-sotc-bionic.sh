@@ -101,9 +101,9 @@ case "$SOTC_TAA_OFF" in
     *) echo "SotC native TAA: expected 0/1" >&2; exit 2 ;;
 esac
 # The working Bachata S4+ SotC profile uses precise GPU readbacks (mode 2).
-# The PC SotC renderer also defaults to that mode, but additionally launches
-# readbacks asynchronously. Android keeps their completion synchronous to
-# avoid stale GPU data at CPU read faults while troubleshooting visual flicker.
+# PC SotC can run GPU reads asynchronously for lower CPU-thread blocking.
+# The Android path is selectable for controlled tests, but remains OFF by
+# default until verified on the GameHub-DD Turnip that fixed geometry.
 # These are scoped to this SotC process; they do not modify GoW3 or Bachata.
 export BB_READBACKS=2
 # Optional upstream GPU/guest readback synchronization path.
