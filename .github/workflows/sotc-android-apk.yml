@@ -31,6 +31,7 @@ jobs:
           python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
           # Compile and execute the portable SRT ABI and guest-memory tests
           # before the expensive FEX and Vulkan build.
           clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
@@ -173,10 +174,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.7-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.8-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.7-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.7-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.8-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.8-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
