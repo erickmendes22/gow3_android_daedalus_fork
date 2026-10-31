@@ -144,6 +144,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_BACKGROUND_WARMUP=0
       export GOW3_VK_MAX_IN_FLIGHT=2
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
+      # Bachata S4 completes Present() before publishing a guest flip event.
+      # Do not acknowledge a Mali guest framebuffer while swap work is queued
+      # on a different thread; this could recycle a not-yet-presented image.
+      export GOW3_PRESENT_THREAD=0
       export GOW3_FRAMES_AHEAD=1
       export GOW3_DEFERRED_READBACK=0
       export GOW3_STALE_READBACK=0
