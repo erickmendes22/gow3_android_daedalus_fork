@@ -1,0 +1,35 @@
+name: SotC render-completeness staging audit (NO APK)
+on:
+  push:
+    branches: [fix/sotc-render-completeness-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Validate Android strict-render launch and SRT
+        run: |
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_runtime_index.py' -v
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic tests/test_sotc_arm64_srt.cpp -o /tmp/sotc-srt-test
+          /tmp/sotc-srt-test
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-audit/gpu
+          grep -Fq 'SotcArm64Srt::Run' out/sotc-audit/gpu/shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+          grep -Fq 'return (inst->Flags<u32>() & ReadConstDynamicWindowFlag) != 0;' out/sotc-audit/gpu/shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+          pipeline=upstream-sotc/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'SOTC_ASYNC_SHADERS' "$pipeline"
+          grep -Fq 'return nullptr; // the draws that need it are skipped until it is ready' "$pipeline"
+          grep -Fq '!async_workers.empty() && AsyncTranslateEnabled()' "$pipeline"
