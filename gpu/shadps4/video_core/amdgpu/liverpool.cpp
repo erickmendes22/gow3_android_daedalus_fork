@@ -1686,6 +1686,10 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             ASSERT(write_data->dst_sel.Value() == 2 || write_data->dst_sel.Value() == 5);
             const u32 data_size = (header->type3.count.Value() - 2) * 4;
             if (!write_data->wr_one_addr.Value()) {
+                // Compute queues can also write a VideoOut label. Track their
+                // generation before guest visibility, just like the gfx queue.
+                MaybeRecordVideoOutLabelLock(vo_port, write_data->Address<u64*>(),
+                                             write_data->data, data_size);
                 std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
             } else {
                 UNREACHABLE();
