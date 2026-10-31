@@ -249,6 +249,15 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Reutilização rápida de descritores GPU (teste)" else "GPU fast descriptor reuse (test)",
+                        (values["sotc_fast_bind"]?:"0")=="1",
+                        {save("sotc_fast_bind",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Thread separada de comandos Vulkan (teste)" else "Separate Vulkan recording thread (test)",
+                        (values["sotc_record_thread"]?:"0")=="1",
+                        {save("sotc_record_thread",if(it)"1" else "0")})
+                    Text(if(pt) "Teste A/B: ambas desligadas por padrão. Mantém Wave32, TAA, LOD e shaders iguais. Reinicie a cada mudança."
+                         else "A/B test: both OFF by default. Wave32, TAA, LOD and shaders unchanged. Restart after each change.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
                         {save("sotc_taa_history",if(it)"1" else "0")})
@@ -263,7 +272,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.17 boot test",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.18 boot test",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
