@@ -782,7 +782,25 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
 
-    // gow3: the game frame is blitted (letterboxed) straight into the swapchain image.
+    // PanVK: a color-capable imported AHB may advertise linear blits while
+    // producing black pixels. Sample the FINISHED post-process frame instead.
+    // On normal Vulkan/Turnip, retain vkCmdBlitImage.
+    const auto fmt_features = instance.GetPhysicalDevice()
+        .getFormatProperties(swapchain.GetSurfaceFormat().format).optimalTilingFeatures;
+    const auto blit_features = vk::FormatFeatureFlagBits::eBlitSrc |
+        vk::FormatFeatureFlagBits::eBlitDst |
+        vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
+    const bool blit_supported = (fmt_features & blit_features) == blit_features;
+    const char* panvk_present = std::getenv("GOW3_PANVK_SHADER_PRESENT");
+    const bool force_shader = panvk_present && panvk_present[0] == '1';
+    const bool shader_present = force_shader || !blit_supported;
+    static std::atomic<bool> mode_reported{};
+    if (!mode_reported.exchange(true)) {
+        std::printf("VideoOut final copy: %s, format=%s, linear_blit=%d, panvk=%d\n",
+                    shader_present ? "sampled shader draw" : "Vulkan image blit",
+                    vk::to_string(swapchain.GetSurfaceFormat().format).c_str(),
+                    int(blit_supported), int(force_shader));
+    }
     const vk::Image swapchain_image = swapchain.Image();
     auto& scheduler = present_scheduler;
     const auto cmdbuf = scheduler.CommandBuffer();
@@ -818,9 +836,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             },
             vk::ImageMemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-                .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+                .dstAccessMask = shader_present ? vk::AccessFlagBits::eShaderRead
+                                                : vk::AccessFlagBits::eTransferRead,
                 .oldLayout = vk::ImageLayout::eGeneral,
-                .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+                .newLayout = shader_present ? vk::ImageLayout::eShaderReadOnlyOptimal
+                                            : vk::ImageLayout::eTransferSrcOptimal,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .image = frame->image,
@@ -832,25 +852,49 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                                {}, {}, pre_barriers);
         const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
         cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
-        const vk::MemoryBarrier clear_done{
-            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
-                               vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
-                         vk::ImageLayout::eTransferDstOptimal,
-                         MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
-                         vk::Filter::eLinear);
+        if (shader_present) {
+            // Black letterbox outside the aspect-fitted game viewport.
+            const vk::ImageMemoryBarrier to_attachment{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
+                                 vk::AccessFlagBits::eColorAttachmentWrite,
+                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = swapchain_image,
+                .subresourceRange = color_range,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                   vk::DependencyFlagBits::eByRegion, {}, {}, to_attachment);
+            const auto& area = FitImage(frame->width, frame->height, extent.width, extent.height);
+            pp_pass.RenderToSwapchain(cmdbuf, frame->image_view, swapchain.ImageView(),
+                vk::Rect2D{.offset = area.offset, .extent = area.extent});
+        } else {
+            const vk::MemoryBarrier clear_done{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eTransfer,
+                                   vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
+            cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
+                             vk::ImageLayout::eTransferDstOptimal,
+                             MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
+                             vk::Filter::eLinear);
+        }
         // gow3: the settings menu / FPS counter over the frame, at display resolution.
         const bool overlay = Gow3Overlay::Visible();
         const std::array post_barriers{
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .srcAccessMask = shader_present ? vk::AccessFlagBits::eColorAttachmentWrite
+                                                : vk::AccessFlagBits::eTransferWrite,
                 .dstAccessMask = overlay ? vk::AccessFlagBits::eColorAttachmentRead |
                                                vk::AccessFlagBits::eColorAttachmentWrite
                                          : vk::AccessFlagBits::eNone,
-                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                .oldLayout = shader_present ? vk::ImageLayout::eColorAttachmentOptimal
+                                            : vk::ImageLayout::eTransferDstOptimal,
                 .newLayout = overlay ? vk::ImageLayout::eColorAttachmentOptimal
                                      : swapchain.PresentLayout(),
                 .srcQueueFamilyIndex = overlay ? VK_QUEUE_FAMILY_IGNORED : release_queues.first,
@@ -859,9 +903,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+                .srcAccessMask = shader_present ? vk::AccessFlagBits::eShaderRead
+                                                : vk::AccessFlagBits::eTransferRead,
                 .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-                .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+                .oldLayout = shader_present ? vk::ImageLayout::eShaderReadOnlyOptimal
+                                            : vk::ImageLayout::eTransferSrcOptimal,
                 .newLayout = vk::ImageLayout::eGeneral,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -869,7 +915,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
                                vk::PipelineStageFlagBits::eAllCommands,
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
