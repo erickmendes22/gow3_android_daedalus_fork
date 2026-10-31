@@ -1,0 +1,47 @@
+name: SotC Bachata GPU comparison / Wave32 policy audit
+on:
+  push:
+    branches: [fix/sotc-wave32-real-status-bachata-audit-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Verify both Wave32 and Wave64, stage real SotC renderer
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_runtime_index.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-wave-audit/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          s=(Path("out/sotc-wave-audit/gpu")/"shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text()
+          label="SotC Adreno Wave32 effective: %s"
+          init="vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();"
+          assert s.count(label)==1
+          assert s.index(init)<s.index(label), "status logged before Vulkan feature assignment"
+          assert "SotC Adreno Wave32: %s" not in s
+          assert "RequiredSubgroupSize(vk::ShaderStageFlagBits::eVertex)" in s
+          assert "RequiredSubgroupSize(vk::ShaderStageFlagBits::eFragment)" in s
+          assert "RequiredSubgroupSize(vk::ShaderStageFlagBits::eCompute)" in s
+          h=(Path("out/sotc-wave-audit/gpu")/"shadps4/video_core/renderer_vulkan/vk_instance.h").read_text()
+          assert h.count("if (UseAdrenoWave32()) return 32u;")==2
+          r=(Path("out/sotc-wave-audit/gpu")/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+          assert "SotcLod::Mark(element.counter_bank_id)" in r
+          assert "SotcLod::Mark(tsharp.counter_bank_id)" in r
+          assert "buffer_cache.DropGpuModified(addr, size)" in r
+          print("PASS: after-initialization Wave32 truth, shader policy, LOD texture array and unmap parity")
+          PY
