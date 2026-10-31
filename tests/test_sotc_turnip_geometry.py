@@ -39,7 +39,7 @@ class TurnipGeometry(unittest.TestCase):
 
     def test_shader_cache_and_proven_workarounds_stay_intact(self):
         s = RUNNER.read_text()
-        self.assertIn("gpu-user-srt-phi6-gs-position-turnip-nomultipos-$sotc_gpu_profile", s)
+        self.assertIn("gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-$sotc_gpu_profile", s)
         self.assertIn("sotc_gpu_profile=wave32", s)
         self.assertIn("sotc_gpu_profile=wave64", s)
         self.assertIn("export SOTC_ANDROID_FRAGMENT_TSHARP=1", s)
