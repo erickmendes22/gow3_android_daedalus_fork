@@ -54,6 +54,22 @@ else
     unset GOW3_VULKAN_DRIVER
 fi
 
+# Geometry correctness on Turnip: the Adreno 830 is running a generated
+# barycentric geometry shader. Mesa's multi-position shader optimization can
+# produce stretched/repeated polygons on this path. TU_DEBUG=nomultipos is
+# consumed by Turnip before VkCreateDevice and sets IR3 no_multi_pos.
+# Only change bundled Mesa drivers, never the proprietary Vulkan system driver.
+# Preserve any existing comma-separated TU_DEBUG choices from the launcher.
+case "$driver" in
+  gen8|adreno7xx)
+    case ",${TU_DEBUG:-}," in
+      *,nomultipos,*) ;;
+      *) TU_DEBUG="${TU_DEBUG:+$TU_DEBUG,}nomultipos"; export TU_DEBUG ;;
+    esac
+    echo "SotC Turnip vertex integrity: nomultipos requested; TU_DEBUG=$TU_DEBUG"
+    ;;
+esac
+
 export GOW3_ANDROID_INPUT=1 GOW3_PAD_FILE="$base/android-pad.state"
 export GOW3_PAD_QUIET=1 GOW3_IME_FILE="$base/ime.request"
 export GOW3_AUDIO_FIFO="$base/audio.fifo"
@@ -105,9 +121,9 @@ case "${SOTC_ADRENO_WAVE32:-0}" in
     1) sotc_gpu_profile=wave32 ;;
     *) sotc_gpu_profile=wave64 ;;
 esac
-export BB_GPU_USER_DIR="$base/gpu-user-srt-phi4-barycentric-gs-$sotc_gpu_profile"
+export BB_GPU_USER_DIR="$base/gpu-user-srt-phi5-turnip-nomultipos-$sotc_gpu_profile"
 mkdir -p "$BB_GPU_USER_DIR"
-echo "SotC GPU cache revision: srt-phi4-barycentric-gs; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
+echo "SotC GPU cache revision: srt-phi5-turnip-nomultipos; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
     game) ;;
