@@ -502,6 +502,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Keep barycentric interpolants and all material varyings unchanged.
     from stage_adreno_gs_position import patch_adreno_gs_position
     patch_adreno_gs_position(out)
+    # Keep the auxiliary barycentric GS producer after guest triangle/quad TES.
+    from stage_adreno_tess_barycentric import patch_adreno_tess_barycentric
+    patch_adreno_tess_barycentric(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
