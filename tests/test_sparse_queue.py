@@ -36,7 +36,8 @@ class SparseQueueContractTest(unittest.TestCase):
     def test_non_sparse_arena_contract(self):
         source = BUFFER_CACHE.read_text()
         self.assertIn("non_sparse_arenas = !instance.HasSparseBuffers()", source)
-        self.assertIn("non_sparse_arenas ? MemoryType::DeviceLocal", source)
+        self.assertIn("return &arenas.emplace_back(instance, base, bytes, MemoryType::Sparse)", source)
+        self.assertIn("arenas.emplace_back(instance, base, bytes, MemoryType::DeviceLocal)", source)
         self.assertIn("move_old(first_arena)", source)
         self.assertIn("move_old(last_arena)", source)
         self.assertIn("Unexpected sparse bind on non-sparse driver", source)
