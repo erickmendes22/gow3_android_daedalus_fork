@@ -1,0 +1,119 @@
+name: GoW3 2.1.8 Mali final-frame copy compatibility
+
+on:
+  pull_request:
+    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
+    paths:
+      - '.github/gsr2-atomic-depth-build-trigger.txt'
+  push:
+    branches: [fix/gow3-218-panvk-shader-present-black-screen-20261031]
+    paths:
+      - '.github/workflows/gow3-218-panvk-screen-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bionic-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-shader-present-black-screen-20261031'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+      GOW3_BUILD_TOOLS: '36.0.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - name: Restore established APK upgrade signing key
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-development.keystore
+          key: bionic-development-signing-v1
+      - name: Require the established signing key (never replace the installed identity)
+        run: test -s .local-deps/android/bionic-development.keystore
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          targets: aarch64-linux-android
+      - name: Source and native preparation tests
+        run: |
+          # Runtime launcher is executed directly in the signed APK.
+          # Git mode must be 100755; fail before expensive native compilation.
+          test -x tools/android/bionic/run-bionic.sh
+          test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
+          python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_panvk_black_screen_present.py' -v
+          python -m unittest discover -s tests -p 'test_android_*.py'
+          bash tools/android/bionic/build_prepare.sh host
+          python -m unittest discover -s tests -p 'test_bionic_*.py'
+          python -m compileall -q tools/android/bionic scripts
+          "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
+      - name: Check launcher compilation before building native runtime
+        run: bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2
+      - name: Build Android Python for existing patch validators
+        run: GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865" bash tools/android/bionic/build_python.sh
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Host headers and native tools
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build Android dependencies and audit GPU configuration before compilation
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh --configure-only
+      - name: Build and validate CPU, GPU and native runtime
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_runtime.sh
+      - name: Build pinned MIT Bloodframe 2x/3x/4x engine
+        shell: bash
+        run: |
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          bash tools/android/build_framegen.sh
+          test -s out/bionic/lib/libbloodframe.so
+      - name: Build Android PKG extractor
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_pkg.sh
+      - name: Package, sign and validate GoW3 2.1.8 APK
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_apk.sh --package-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: God-of-War-III-Daedalus-2.1.8-Mali-BlackScreen-Experimental
+          path: |
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Bionic-build-diagnostics
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/gpu/.cmake/api/v1/reply/target-gow3gpu-*.json
+            android-launcher/app/build/outputs/logs/
+          if-no-files-found: ignore
