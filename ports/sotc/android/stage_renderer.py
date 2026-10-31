@@ -508,6 +508,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Instrument the actual GPU fog images, without changing rasterization.
     from stage_gpu_pass_capture import stage_pass_capture
     stage_pass_capture(out)
+    # Do not suppress real compute writes when a shader also touches metadata.
+    from stage_meta_clear_integrity import patch_meta_clear_integrity
+    patch_meta_clear_integrity(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
