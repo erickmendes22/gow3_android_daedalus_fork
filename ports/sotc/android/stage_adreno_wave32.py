@@ -57,11 +57,21 @@ def patch_adreno_wave32(gpu: Path) -> None:
     # without guessing whether Turnip ignored the subgroup request.
     path=gpu/"shadps4/video_core/renderer_vulkan/vk_instance.cpp"
     text=path.read_text()
-    old='''    std::fprintf(stderr, "GPU subgroups: size %u, min %u, max %u, required stages %#x\\n",'''
-    new='''    std::fprintf(stderr, "SotC Adreno Wave32: %s (requested=%s, vendor=%#x)\\n",
+    # vk13_features is assigned after the early "GPU subgroups" log. Checking
+    # UseAdrenoWave32() there *always* reported false for a freshly initialized
+    # device, although pipeline compilation could subsequently request 32 lanes.
+    # Log the actual pipeline subgroup policy only after vk13_features is set.
+    old='''    vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();'''
+    new='''    vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
+    std::fprintf(stderr,
+                 "SotC Adreno Wave32 effective: %s (requested=%s, vendor=%#x; "
+                 "compiler=%u, vertex=%u, fragment=%u, compute=%u, physical=%u)\\n",
                  UseAdrenoWave32() ? "active" : "inactive",
                  std::getenv("SOTC_ADRENO_WAVE32") ? std::getenv("SOTC_ADRENO_WAVE32") : "0",
-                 GetVendorID());
-    std::fprintf(stderr, "GPU subgroups: size %u, min %u, max %u, required stages %#x\\n",'''
-    text=swap(text,old,new,"log effective requested wave size")
+                 GetVendorID(), SubgroupSize(),
+                 RequiredSubgroupSize(vk::ShaderStageFlagBits::eVertex),
+                 RequiredSubgroupSize(vk::ShaderStageFlagBits::eFragment),
+                 RequiredSubgroupSize(vk::ShaderStageFlagBits::eCompute),
+                 vk11_props.subgroupSize);'''
+    text=swap(text,old,new,"log effective waveform after Vulkan feature initialization")
     path.write_text(text)
