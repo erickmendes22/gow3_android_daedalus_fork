@@ -584,7 +584,17 @@ public final class GameActivity extends Activity {
                 // so it cannot distinguish a previous default from a user choice.
                 // A new setting defaults to suppressing motion blur; "0" restores it.
                 if(!"0".equals(setting("sotc_blur_suppression"))) cvars+=" r_motionBlurEnable=0";
-                                env.put("SOTC_CVARS",cvars);
+                env.put("SOTC_CVARS",cvars);
+                // Bachata S4+ 0.2.7: each requested game effect is verified
+                // against the original CUSA08809 SELF before BBPATCH2 is made.
+                // The older generic graphics-toggle backend is not used.
+                ArrayList<String> bachataEffects=new ArrayList<>();
+                if(!"0".equals(setting("sotc_bachata_bloom"))) bachataEffects.add("bloom");
+                if(!"0".equals(setting("sotc_blur_suppression"))) bachataEffects.add("blur");
+                if("1".equals(setting("sotc_bachata_ssr"))) bachataEffects.add("ssr");
+                if("1".equals(setting("sotc_bachata_fog"))) bachataEffects.add("fog");
+                if("1".equals(setting("sotc_bachata_shadows"))) bachataEffects.add("shadows");
+                env.put("SOTC_BACHATA_PERF",String.join(",",bachataEffects));
                 // Controlled native GPU A/B with independent reversible settings.
                 env.put("SOTC_FAST_BIND",
                         "1".equals(setting("sotc_fast_bind")) ? "1" : "0");
