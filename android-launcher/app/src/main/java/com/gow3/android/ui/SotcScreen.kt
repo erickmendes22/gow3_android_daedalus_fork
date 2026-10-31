@@ -246,6 +246,23 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                 SotcPanel {
                     SotcToggle(if(pt) "Filtragem anisotrópica 16×" else "16× anisotropic filtering",
                         (values["sotc_af16"]?:"0")=="1",{save("sotc_af16",if(it)"1" else "0")})
+                    Text(if(pt) "BACHATA S4+ 0.2.7 — PERFORMANCE" else "BACHATA S4+ 0.2.7 — PERFORMANCE",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcToggle(if(pt) "Desativar Bloom" else "Disable Bloom",
+                        (values["sotc_bachata_bloom"]?:"1")=="1",
+                        {save("sotc_bachata_bloom",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Desativar reflexos SSR" else "Disable screen-space reflections",
+                        (values["sotc_bachata_ssr"]?:"0")=="1",
+                        {save("sotc_bachata_ssr",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Desativar névoa volumétrica" else "Disable fog",
+                        (values["sotc_bachata_fog"]?:"0")=="1",
+                        {save("sotc_bachata_fog",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Desativar sombras dinâmicas (experimental)" else "Disable dynamic shadows (experimental)",
+                        (values["sotc_bachata_shadows"]?:"0")=="1",
+                        {save("sotc_bachata_shadows",if(it)"1" else "0")})
+                    Text(if(pt) "Patches no eboot CUSA08809 original com bytes e hash validados. Bloom e Motion Blur desligados por padrão; outros opcionais. Reinicie o jogo."
+                         else "Original CUSA08809 eboot patches with validated bytes and SHA256. Bloom and Motion Blur off by default; other effects optional. Restart the game.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
@@ -272,7 +289,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.20 boot test",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.22 boot test",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
