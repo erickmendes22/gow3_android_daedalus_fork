@@ -1,0 +1,20 @@
+name: GoW3 PanVK framebuffer label retirement source preflight (no APK)
+on:
+  push:
+    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          sh -n tools/android/bionic/run-bionic.sh
+          python -m unittest discover -s tests -p 'test_bionic_videoout_flip_retirement.py' -v
+          python -m unittest discover -s tests -p 'test_bionic_*.py' -q
+          python -m unittest discover -s tests -p 'test_android_*.py' -q

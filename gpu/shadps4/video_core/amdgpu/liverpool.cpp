@@ -30,6 +30,17 @@
 
 namespace AmdGpu {
 
+static void MaybeRecordVideoOutLabelLock(Libraries::VideoOut::VideoOutPort* port,
+                                         u64* address, const void* data, u32 size) {
+    if (!port || !port->retire_labels_on_vblank || !address ||
+        !port->IsVoLabel(address) || size < sizeof(u32)) return;
+    u64 value = 0;
+    std::memcpy(&value, data, std::min<size_t>(size, sizeof(value)));
+    if (value != 1) return;
+    std::scoped_lock lock{port->port_mutex};
+    port->flip_labels.RecordGpuLock(port->LabelIndex(address));
+}
+
 static const char* dcb_task_name{"DCB_TASK"};
 static const char* ccb_task_name{"CCB_TASK"};
 
@@ -1266,6 +1277,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto* write_data = reinterpret_cast<const PM4CmdWriteData*>(header);
                 ASSERT(write_data->dst_sel.Value() == 2 || write_data->dst_sel.Value() == 5);
                 ASSERT(!write_data->wr_one_addr.Value());
+                MaybeRecordVideoOutLabelLock(vo_port, write_data->Address<u64*>(),
+                                             write_data->data, (count - 2) * sizeof(u32));
                 if (rasterizer) {
                     // In order with the draws (on the draw recording thread when in use).
                     Gow3WriteLog::NoteIntent(write_data->Address<u64>(), write_data->data,

@@ -351,6 +351,25 @@ s32 sceVideoOutSubmitEopFlip(s32 handle, u32 buf_id, u32 mode, s64 flip_arg, voi
     Platform::IrqC::Instance()->RegisterOnce(
         Platform::InterruptId::GfxFlip, [=](Platform::InterruptId irq) {
             ASSERT_MSG(irq == Platform::InterruptId::GfxFlip, "An unexpected IRQ occured");
+            if (port->retire_labels_on_vblank) {
+                if (buf_id >= MaxDisplayBuffers) {
+                    LOG_ERROR(Lib_VideoOut, "PanVK: invalid EOP flip buffer {}", buf_id);
+                    return;
+                }
+                if (port->buffer_labels[buf_id] != 1) {
+                    LOG_WARNING(Lib_VideoOut,
+                                "PanVK: early EOP flip IRQ index={} label={}",
+                                buf_id, port->buffer_labels[buf_id]);
+                }
+                u64 generation;
+                {
+                    std::scoped_lock lock{port->port_mutex};
+                    generation = port->flip_labels.Generation(static_cast<s32>(buf_id));
+                }
+                const auto result = driver->SubmitFlip(port, buf_id, flip_arg, true, generation);
+                ASSERT_MSG(result, "EOP flip submission failed");
+                return;
+            }
             ASSERT_MSG(port->buffer_labels[buf_id] == 1, "Out of order flip IRQ");
             const auto result = driver->SubmitFlip(port, buf_id, flip_arg, true);
             ASSERT_MSG(result, "EOP flip submission failed");

@@ -69,6 +69,8 @@ constexpr u32 PixelFormatBpp(PixelFormat pixel_format) {
 }
 
 VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
+    const char* retire = std::getenv("GOW3_VIDEOOUT_LABEL_RETIRE");
+    main_port.retire_labels_on_vblank = retire && retire[0] == '1';
     main_port.resolution.full_width = width;
     main_port.resolution.full_height = height;
     main_port.resolution.pane_width = width;
@@ -132,6 +134,10 @@ void VideoOutDriver::Close(s32 handle) {
     main_port.is_open = false;
     main_port.flip_rate = 0;
     main_port.prev_index = -1;
+    {
+        std::scoped_lock port_lock{main_port.port_mutex};
+        main_port.flip_labels.ResetAll();
+    }
 
     // Clear port information
     std::memset(main_port.buffer_labels.data(), 0, sizeof(main_port.buffer_labels));
@@ -234,6 +240,10 @@ int VideoOutDriver::RegisterBuffers(VideoOutPort* port, s32 startIndex, void* co
 
         // Reset flip label also when registering buffer
         port->buffer_labels[startIndex + i] = 0;
+        if (port->retire_labels_on_vblank) {
+            std::scoped_lock lock{port->port_mutex};
+            port->flip_labels.ResetBuffer(static_cast<s32>(startIndex + i));
+        }
         port->SignalVoLabel();
 
         presenter->RegisterVideoOutSurface(group, address);
@@ -252,11 +262,16 @@ int VideoOutDriver::UnregisterBuffers(VideoOutPort* port, s32 attributeIndex) {
     auto& group = port->groups[attributeIndex];
     group.is_occupied = false;
 
-    for (auto& buffer : port->buffer_slots) {
-        if (buffer.group_index != attributeIndex) {
-            continue;
-        }
+    for (u32 i = 0; i < port->buffer_slots.size(); ++i) {
+        auto& buffer = port->buffer_slots[i];
+        if (buffer.group_index != attributeIndex) continue;
         buffer.group_index = -1;
+        if (port->retire_labels_on_vblank) {
+            std::scoped_lock lock{port->port_mutex};
+            port->flip_labels.ResetBuffer(static_cast<s32>(i));
+        }
+        port->buffer_labels[i] = 0;
+        port->SignalVoLabel();
     }
 
     return ORBIS_OK;
@@ -571,13 +586,23 @@ void VideoOutDriver::Flip(const Request& req) {
         }
     }
 
-    // Reset prev flip label
+    // Reset the prior scanout label. For the final EOP buffer, the PanVK
+    // path also retires it on the NEXT vblank without needing another flip.
     if (port->prev_index != -1) {
         port->buffer_labels[port->prev_index] = 0;
+        if (port->retire_labels_on_vblank) {
+            std::scoped_lock lock{port->port_mutex};
+            port->flip_labels.CancelRetirementForIndex(port->prev_index);
+        }
         port->SignalVoLabel();
     }
-    // save to prev buf index
     port->prev_index = req.index;
+    if (port->retire_labels_on_vblank && req.eop && req.index >= 0 &&
+        req.lock_generation != FlipLabelTracker::kInvalidGeneration) {
+        std::scoped_lock lock{port->port_mutex};
+        port->flip_labels.ScheduleRetirement(req.index, req.lock_generation,
+                                             port->vblank_status.count + 1);
+    }
 }
 
 void VideoOutDriver::DrawBlankFrame() {
@@ -597,7 +622,7 @@ void VideoOutDriver::DrawLastFrame() {
 }
 
 bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
-                                bool is_eop /*= false*/) {
+                                bool is_eop /*= false*/, u64 lock_generation) {
     {
         std::unique_lock lock{port->port_mutex};
         if (index != -1 && port->flip_status.flip_pending_num > 16) {
@@ -614,15 +639,17 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 
     if (!is_eop) {
         // Non EOP flips can arrive from any thread so ask GPU thread to perform them
-        liverpool->SendCommand([=, this]() { SubmitFlipInternal(port, index, flip_arg, is_eop); });
+        liverpool->SendCommand([=, this]() { SubmitFlipInternal(port, index, flip_arg, is_eop,
+                                                                lock_generation); });
     } else {
-        SubmitFlipInternal(port, index, flip_arg, is_eop);
+        SubmitFlipInternal(port, index, flip_arg, is_eop, lock_generation);
     }
 
     return true;
 }
 
-void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop) {
+void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg,
+                                            bool is_eop, u64 lock_generation) {
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
@@ -641,6 +668,7 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
             .flip_arg = flip_arg,
             .index = index,
             .eop = is_eop,
+            .lock_generation = lock_generation,
         });
     }
     request_cv.notify_one();
@@ -708,6 +736,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
         // Check if it's time to take a request.
         auto& vblank_status = main_port.vblank_status;
+        // The last GPU-locked framebuffer needs to retire at vblank even if
+        // a new EOP flip never arrives. Matches the Bachata S4 flip-label contract.
+        if (main_port.retire_labels_on_vblank) ApplyDueLabelRetirement();
         const auto now = std::chrono::steady_clock::now();
         const bool flip_slot = !frame_limit || now >= next_flip;
         if (flip_slot && vblank_status.count % (main_port.flip_rate + 1) == 0) {
@@ -783,4 +814,17 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     }
 }
 
+void VideoOutDriver::ApplyDueLabelRetirement() {
+    std::optional<s32> retired;
+    {
+        std::scoped_lock lock{main_port.port_mutex};
+        retired = main_port.flip_labels.ConsumeDueRetirement(main_port.vblank_status.count);
+    }
+    if (!retired) return;
+    main_port.buffer_labels[*retired] = 0;
+    main_port.SignalVoLabel();
+    LOG_INFO(Lib_VideoOut, "PanVK: retired final VideoOut label at vblank, index={}", *retired);
+}
+
 } // namespace Libraries::VideoOut
+
