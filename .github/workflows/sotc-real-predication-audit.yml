@@ -1,0 +1,54 @@
+name: SotC real PM4 ZPASS/predication source integration audit
+on:
+  push:
+    branches: [fix/sotc-gpu-predication-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Validate real predication source against original renderer (NO APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_pm4_predication.py ports/sotc/android/stage_pm4_predication_commands.py ports/sotc/android/stage_renderer.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p test_sotc_pm4_predication.py -v
+          python3 -m unittest discover -s tests -p test_sotc_adreno_barycentric.py -v
+          python3 -m unittest discover -s tests -p test_sotc_taa_history.py -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-real-predication/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          core=Path("out/sotc-real-predication/gpu/shadps4/video_core")
+          pm4=(core/"amdgpu/pm4_cmds.h").read_text()
+          liv=(core/"amdgpu/liverpool.cpp").read_text()
+          ras=(core/"renderer_vulkan/vk_rasterizer.cpp").read_text()
+          ins=(core/"renderer_vulkan/vk_instance.cpp").read_text()
+          pred=(core/"renderer_vulkan/vk_predication.cpp").read_text()
+          cmake=Path("out/sotc-real-predication/gpu/CMakeLists.txt").read_text()
+          assert "enum class PredicationOp" in pm4
+          assert "RestorePredicatedIndexBase()" in liv
+          assert "case PredicationOp::Zpass" in liv
+          assert "case PredicationOp::Bool32" in liv
+          assert "Unimplemented IT_SET_PREDICATION" not in liv
+          assert "predication->DumpZpassCounters" in liv
+          assert "predication.BeginDraw(cmdbuf" in ras
+          assert "predication.EndDraw(cmdbuf" in ras
+          assert "vk::PhysicalDeviceConditionalRenderingFeaturesEXT" in ins
+          assert "HostShaders::OCCLUSION_PREDICATE_COMP" in pred
+          assert "occlusion_predicate_comp" in cmake
+          assert "SotC Adreno barycentric" in (core/"renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+          print("PASS: real PM4→queries→Vulkan conditional GPU draws wired in SotC only.")
+          PY
