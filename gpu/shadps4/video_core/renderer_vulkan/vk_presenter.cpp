@@ -882,10 +882,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         cpu_info.AddWait(frame->ready_semaphore, frame->ready_tick);
         cpu_info.AddSignal(frame->present_done);
         cpu_scheduler.Flush(cpu_info);
-        // The CPU must not map the staging buffer before the GPU copy is done.
-        const auto done = instance.GetDevice().waitIdle();
+        // Wait for this readback submission, not every outstanding GPU queue.
+        // The present_done fence is signaled after the transfer completes.
+        // A global device.waitIdle() serializes unrelated PanVK work per frame.
+        const auto done = instance.GetDevice().waitForFences(frame->present_done, true, ~0ull);
         ASSERT_MSG(done == vk::Result::eSuccess,
-                   "MALI_CPU_PRESENT readback GPU wait failed: {}", vk::to_string(done));
+                   "MALI_CPU_PRESENT readback fence failed: {}", vk::to_string(done));
         const VkResult invalidate =
             vmaInvalidateAllocation(instance.GetAllocator(), mali_cpu_readback_allocation,
                                     0, required);
