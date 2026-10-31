@@ -43,7 +43,7 @@ class TurnipGeometry(unittest.TestCase):
         self.assertIn("sotc_gpu_profile=wave32", s)
         self.assertIn("sotc_gpu_profile=wave64", s)
         self.assertIn("export SOTC_ANDROID_FRAGMENT_TSHARP=1", s)
-        self.assertIn("export SOTC_RB_ASYNC=0", s)
+        self.assertIn("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}", s)
         self.assertIn("export BB_READBACKS=2", s)
         self.assertIn("export SOTC_TAA_OFF=", s)
         self.assertNotIn("export SOTC_ADRENO_WAVE32=0", s)

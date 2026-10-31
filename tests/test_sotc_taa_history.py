@@ -14,7 +14,7 @@ class NativeTaaHistoryTest(unittest.TestCase):
         self.assertIn('SotC native TAA: temporal history disabled',s)
         self.assertIn('SotC native TAA: temporal history enabled',s)
         self.assertIn('export BB_READBACKS=2',s)
-        self.assertIn('export SOTC_RB_ASYNC=0',s)
+        self.assertIn('export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}',s)
         self.assertIn('gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos',s)
 
     def test_launch_environment_respects_user_choice(self):

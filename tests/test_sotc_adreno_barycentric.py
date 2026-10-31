@@ -40,7 +40,7 @@ class AdrenoBarycentricTest(unittest.TestCase):
         self.assertIn("gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-",s)
         self.assertIn("profile=$sotc_gpu_profile",s)
         self.assertIn("export BB_READBACKS=2",s)
-        self.assertIn("export SOTC_RB_ASYNC=0",s)
+        self.assertIn("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}",s)
         self.assertNotIn("export SOTC_ADRENO_WAVE32=0",s)
 
 if __name__ == "__main__":
