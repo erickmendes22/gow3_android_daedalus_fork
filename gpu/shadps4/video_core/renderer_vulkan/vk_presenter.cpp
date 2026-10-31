@@ -438,7 +438,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         upscaled = rasterizer->GetUpscaler().PresentGsr2FromGuestDisplay(image_id, display);
     }
 
-    Frame* frame = GetRenderFrame();
+    Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
 
     const auto frame_subresources = vk::ImageSubresourceRange{
@@ -590,7 +590,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
-    Frame* frame = GetRenderFrame();
+    Frame* frame = GetRenderFrame(!present_thread);
     if (!frame) return nullptr;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
@@ -1283,13 +1283,12 @@ bool Presenter::PresentWithLsfg(Frame* frame) {
 #endif // __ANDROID__
 
 
-Frame* Presenter::GetRenderFrame() {
-    // Bachata S4 avoids waiting for a presentation fence from the GPU PM4
-    // command processor. That processor must keep running so the outstanding
-    // guest flip and GPU work can retire. Enable only for PanVK.
+Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
+    // EOP flips may originate from the GPU thread OR its recording/IRQ callback.
+    // Neither should block on a present fence that depends on later GPU work.
+    // This is enabled only for PanVK, and never for host redraw/blank presents.
     const char* panvk = std::getenv("GOW3_VIDEOOUT_LABEL_RETIRE");
-    const bool nonblock = panvk && panvk[0] == '1' && liverpool &&
-        std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread();
+    const bool nonblock = panvk && panvk[0] == '1' && from_guest_flip;
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
