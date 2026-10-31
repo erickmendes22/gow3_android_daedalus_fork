@@ -25,5 +25,14 @@ class RobustImageViewTests(unittest.TestCase):
         self.assertIn("view_range.levelCount = check.mip_count;",c)
         self.assertIn("view_format == backing_format",c)
 
+    def test_no_zero_usage_or_unsupported_storage_view(self):
+        h=(ROOT/"gpu/shadps4/video_core/texture_cache/robust_image_view.h").read_text()
+        self.assertIn("if (!v.view_usage", h)
+        self.assertIn("v.storage && !(v.view_usage & vk::ImageUsageFlagBits::eStorage)", h)
+        self.assertIn('!IsVulkanFormatCompatible(v.requested_format, v.backing_format)', h)
+        source=(ROOT/"gpu/shadps4/video_core/texture_cache/image_view.cpp").read_text()
+        self.assertIn("if (shader_only || info.is_storage)", source)
+
 if __name__=="__main__":
     unittest.main()
+

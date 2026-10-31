@@ -100,8 +100,16 @@ public final class GpuDriverManager {
             Build.VERSION.SDK_INT>=31 ? Build.SOC_MANUFACTURER : "",kgsl,mali,maliRenderer());
     }
 
+    private static boolean nextPanvkVerifiedAutoDevice() {
+        // The 26.3.1 release contains actual G615 MC6 validation, not G720
+        // gameplay validation. Keep G720 on the established driver by default.
+        String renderer=maliRenderer();
+        return supportedCsfMali(renderer) &&
+               renderer.toLowerCase(Locale.ROOT).contains("g615");
+    }
     public static String automaticDescription(Context context) {
-        if (maliCandidate()) return context.getString(R.string.gpu_driver_panvk);
+        if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice()
+            ? R.string.gpu_driver_panvk_next : R.string.gpu_driver_panvk);
         if (adrenoCandidate()) return context.getString(R.string.gpu_driver_adreno_auto);
         return context.getString(R.string.gpu_driver_system);
     }
@@ -191,13 +199,27 @@ public final class GpuDriverManager {
             ("auto".equals(selection) && maliCandidate())) {
             if (Build.VERSION.SDK_INT>=35) {
                 try {
-                    DriverArchive.Installed drv=bundledPanvk(context,"panvk-next".equals(selection));
+                    final boolean wantNext = "panvk-next".equals(selection) ||
+                        ("auto".equals(selection) && nextPanvkVerifiedAutoDevice());
+                    DriverArchive.Installed drv;
+                    boolean usingNext = wantNext;
+                    try {
+                        drv = bundledPanvk(context, wantNext);
+                    } catch (Exception nextFailed) {
+                        if (!"auto".equals(selection) || !wantNext) throw nextFailed;
+                        // A failed auto-update must not leave a supported Mali
+                        // device on the stock Vulkan loader. Use the old, pinned
+                        // PanVK instead; explicit driver selection never falls back.
+                        android.util.Log.w("GoW3","PanVK 26.3.1 auto unavailable; using 3.2",nextFailed);
+                        drv = bundledPanvk(context, false);
+                        usingNext = false;
+                    }
                     DriverArchive.validateLibrary(drv.library);
                     environment.put("GOW3_BIONIC_DRIVER","custom");
                     environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
                     environment.put("GOW3_GPU_AUTO_REASON",
-                        "panvk-next".equals(selection) ? "PanVK 26.3.1 (Mali experimental)"
-                                                       : "PanVK 3.2 (Mali experimental)");
+                        usingNext ? "PanVK 26.3.1 (Mali G615 tested release)"
+                                  : "PanVK 3.2 (Mali experimental)");
                     return;
                 } catch (Exception ex) {
                     if ("panvk".equals(selection) || "panvk-next".equals(selection))

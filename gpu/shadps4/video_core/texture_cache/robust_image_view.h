@@ -6,6 +6,8 @@
 // guest format transcoding are deliberately NOT approximated here.
 #pragma once
 
+#include <algorithm>
+#include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/texture_cache/host_compatibility.h"
 
@@ -82,7 +84,11 @@ inline Validation Validate(const PhysicalView& v) {
         out.issue = Issue::InvalidAspect;
         return out;
     }
-    if ((v.view_usage & v.backing_usage) != v.view_usage) {
+    if (!v.view_usage ||
+        (v.storage && !(v.view_usage & vk::ImageUsageFlagBits::eStorage)) ||
+        (!v.storage && v.shader_only &&
+         !(v.view_usage & vk::ImageUsageFlagBits::eSampled)) ||
+        (v.view_usage & v.backing_usage) != v.view_usage) {
         out.issue = Issue::UnsupportedShaderUsage;
         return out;
     }
@@ -91,7 +97,8 @@ inline Validation Validate(const PhysicalView& v) {
         return out;
     }
     if (v.requested_format != v.backing_format &&
-        !IsVulkanFormatCompatible(v.backing_format, v.requested_format)) {
+        !IsVulkanFormatCompatible(v.backing_format, v.requested_format) &&
+        !IsVulkanFormatCompatible(v.requested_format, v.backing_format)) {
         // D16S8 -> D24S8/D32S8 and R8-sRGB -> R8-UNORM are selected
         // at backing-image creation. Only that exact physical backing can
         // replace its original requested format, not an unrelated R32UI,

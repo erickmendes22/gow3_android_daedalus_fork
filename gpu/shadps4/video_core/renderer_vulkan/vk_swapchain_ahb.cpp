@@ -158,7 +158,7 @@ void Swapchain::CreateBuffer(u32 index) {
     const vk::Device device = instance.GetDevice();
     Buffer& buffer = buffers[index];
 
-    const AHardwareBuffer_Desc desc{
+    AHardwareBuffer_Desc desc{
         .width = width,
         .height = height,
         .layers = 1,
@@ -169,7 +169,18 @@ void Swapchain::CreateBuffer(u32 index) {
                         AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY)
                      : AhbUsage,
     };
-    const int allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
+    int allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
+    if (allocated != 0 && cpu_present) {
+        // Some Mali grallocs cannot simultaneously provide a CPU-linear
+        // buffer and a hardware composer overlay. SurfaceControl can fall
+        // back to GPU composition, which only needs a sampled AHB.
+        desc.usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
+                     AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
+        LOG_WARNING(Render_Vulkan,
+                    "MALI_CPU_PRESENT overlay allocation failed {}; retry sampled linear AHB",
+                    allocated);
+        allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
+    }
     ASSERT_MSG(allocated == 0 && buffer.ahb, "AHardwareBuffer_allocate {}x{} failed: {}", width,
                height, allocated);
     // CPU presentation never binds this AHB to a VkImage. This also avoids

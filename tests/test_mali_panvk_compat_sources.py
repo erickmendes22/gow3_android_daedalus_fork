@@ -31,5 +31,13 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
         self.assertIn("PanVK-android-v3.2-universal-2a9358a.zip",script)
         self.assertNotIn('environment.put("GOW3_BIONIC_DRIVER","gen8")',java)
 
+    def test_verified_g615_auto_and_g720_conservative(self):
+        src=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java").read_text()
+        self.assertIn('renderer.toLowerCase(Locale.ROOT).contains("g615")',src)
+        self.assertIn('("auto".equals(selection) && nextPanvkVerifiedAutoDevice())',src)
+        self.assertIn('drv = bundledPanvk(context, false);',src)
+        self.assertIn('if (!"auto".equals(selection) || !wantNext) throw nextFailed;',src)
+
 if __name__=="__main__":
     unittest.main()
+
