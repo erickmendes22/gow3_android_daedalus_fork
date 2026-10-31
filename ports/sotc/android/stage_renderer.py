@@ -498,6 +498,12 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # provided the selected Vulkan driver actually supports geometryShader.
     from stage_adreno_barycentric_gs import patch_adreno_barycentric_gs
     patch_adreno_barycentric_gs(out)
+    # Full GPU ZPASS queries + PM4 predication from shadPS4, adapted to the
+    # isolated SotC renderer. Include actual indirect and indexed draw handling.
+    from stage_pm4_predication import patch as patch_predication_backend
+    patch_predication_backend(out)
+    from stage_pm4_predication_commands import patch as patch_predication_commands
+    patch_predication_commands(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
