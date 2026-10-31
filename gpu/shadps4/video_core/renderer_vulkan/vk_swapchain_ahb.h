@@ -52,6 +52,10 @@ public:
     bool AcquireNextImage();
     /// Hands the current buffer to the app.
     bool Present();
+    // Mali/PanVK: present a CPU-readback RGBA8 frame without importing gralloc as
+    // a Vulkan color attachment. This is intentionally independent from Adreno.
+    bool UsesCpuPresentation() const { return cpu_present; }
+    bool PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height);
     vk::Image Image() const { return buffers[image_index].image; }
     vk::ImageView ImageView() const { return buffers[image_index].view; }
     vk::SurfaceFormatKHR GetSurfaceFormat() const { return surface_format; }
@@ -124,6 +128,7 @@ private:
     u64 frame_counter = 0;
     bool zero_extent = false;
     bool needs_recreation = true;
+    bool cpu_present = false; ///< Mali-only linear AHB + CPU copy instead of GPU-AHB rendering.
     bool sync_import_ok = true; ///< importing sync files as semaphores works (else poll them)
 };
 

@@ -140,6 +140,11 @@ fi
 case "${GOW3_VULKAN_DRIVER:-}" in
   */libvulkan_panfrost.so)
     if [ "${GOW3_MALI_SAFE_MODE:-1}" != 0 ]; then
+      # PanVK's Vulkan AHB import succeeds on G615/G720, but direct GPU
+      # presentation can leave a black Android surface. Read the completed
+      # game frame into a host buffer and copy into a linear, CPU-writable AHB.
+      # Off (0) reverts to the unmodified accelerated path for comparisons.
+      export GOW3_MALI_CPU_PRESENT=${GOW3_MALI_CPU_PRESENT:-1}
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
       export GOW3_VK_MAX_IN_FLIGHT=2

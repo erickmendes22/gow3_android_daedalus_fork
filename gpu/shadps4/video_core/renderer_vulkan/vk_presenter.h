@@ -146,6 +146,10 @@ private:
     Gow3LsfgState::State lsfg_requested{Gow3LsfgState::Initial()};
     Gow3LsfgState::Watcher lsfg_watch{lsfg_requested};
     std::unique_ptr<Lsfg> lsfg;
+    VkBuffer mali_cpu_readback{VK_NULL_HANDLE};
+    VmaAllocation mali_cpu_readback_allocation{};
+    void* mali_cpu_readback_mapped{};
+    VkDeviceSize mali_cpu_readback_size{};
     std::atomic<u32> frames_cap{0};
     std::chrono::steady_clock::time_point lsfg_stats_ts{};
     bool lsfg_stats_active{false};

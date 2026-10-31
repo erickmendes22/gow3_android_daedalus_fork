@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include "common/assert.h"
 #include "gow3_settings.h"
 #include "common/logging/log.h"
@@ -57,11 +58,17 @@ Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& windo
                      u32 framegen_multiplier)
     : instance{instance_}, window{window_} {
     image_count = BufferCount(framegen_multiplier);
+    const char* cpu_setting = std::getenv("GOW3_MALI_CPU_PRESENT");
+    cpu_present = cpu_setting && cpu_setting[0] == '1';
+    if (cpu_present) {
+        LOG_WARNING(Render_Vulkan,
+                    "MALI_CPU_PRESENT enabled: linear CPU-writable AHB, no Vulkan gralloc import");
+    }
     const vk::PhysicalDeviceExternalSemaphoreInfo semaphore_info{
         .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
     };
     const auto semaphore_props = instance.GetPhysicalDevice().getExternalSemaphoreProperties(semaphore_info);
-    ASSERT_MSG(
+    if (!cpu_present) ASSERT_MSG(
         (semaphore_props.externalSemaphoreFeatures & vk::ExternalSemaphoreFeatureFlagBits::eExportable) &&
             (semaphore_props.externalSemaphoreFeatures & vk::ExternalSemaphoreFeatureFlagBits::eImportable),
         "The Vulkan driver cannot export and import sync-file semaphores (SYNC_FD): the AHB "
@@ -120,6 +127,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
     present_ready.resize(image_count);
     for (u32 i = 0; i < image_count; ++i) {
         CreateBuffer(i);
+        if (!cpu_present) {
         auto [acquired_result, acquired] = device.createSemaphore({});
         ASSERT_MSG(acquired_result == vk::Result::eSuccess, "Failed to create semaphore: {}",
                    vk::to_string(acquired_result));
@@ -134,6 +142,7 @@ void Swapchain::Create(u32 width_, u32 height_) {
         present_ready[i] = ready;
         SetObjectName(device, image_acquired[i], "AHB swapchain image_acquired {}", i);
         SetObjectName(device, present_ready[i], "AHB swapchain present_ready {}", i);
+        }
         free_queue.push_back(i);
         if (client.Connected() &&
             !client.SendBuffer(generation, i, width, height, AhbFormat, buffers[i].ahb)) {
@@ -154,11 +163,18 @@ void Swapchain::CreateBuffer(u32 index) {
         .height = height,
         .layers = 1,
         .format = AhbFormat,
-        .usage = AhbUsage,
+        .usage = cpu_present
+                     ? (AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
+                        AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
+                        AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY)
+                     : AhbUsage,
     };
     const int allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
     ASSERT_MSG(allocated == 0 && buffer.ahb, "AHardwareBuffer_allocate {}x{} failed: {}", width,
                height, allocated);
+    // CPU presentation never binds this AHB to a VkImage. This also avoids
+    // PanVK/gralloc AFBC layout disagreements on Mali G615/G720.
+    if (cpu_present) return;
 
     auto [props_result, props_chain] = device.getAndroidHardwareBufferPropertiesANDROID<
         vk::AndroidHardwareBufferPropertiesANDROID, vk::AndroidHardwareBufferFormatPropertiesANDROID>(
@@ -275,9 +291,11 @@ void Swapchain::Destroy() {
                     vk::to_string(wait_result));
     }
     for (Buffer& buffer : buffers) {
+        if (!cpu_present) {
         device.destroyImageView(buffer.view);
         device.destroyImage(buffer.image);
         device.freeMemory(buffer.memory);
+        }
         // The app and the compositor keep the memory while they use it (reference counted).
         if (buffer.ahb) {
             AHardwareBuffer_release(buffer.ahb);
@@ -287,11 +305,13 @@ void Swapchain::Destroy() {
         }
     }
     buffers.clear();
-    for (const auto sem : image_acquired) {
-        device.destroySemaphore(sem);
-    }
-    for (const auto sem : present_ready) {
-        device.destroySemaphore(sem);
+    if (!cpu_present) {
+        for (const auto sem : image_acquired) {
+            device.destroySemaphore(sem);
+        }
+        for (const auto sem : present_ready) {
+            device.destroySemaphore(sem);
+        }
     }
     image_acquired.clear();
     present_ready.clear();
@@ -367,6 +387,15 @@ void Swapchain::ImportAcquire(u32 index) {
         return; // never shown, or released at once: nothing to wait for
     }
     buffer.release_fd = -1;
+    if (cpu_present) {
+        // We write CPU pixels, not Vulkan commands. The display release fence
+        // must be completed on the CPU before locking the same AHB again.
+        while (!WaitSyncFile(fd, 1000)) {
+            LOG_WARNING(Render_Vulkan, "MALI_CPU_PRESENT waiting for display release buffer {}", index);
+        }
+        close(fd);
+        return;
+    }
     if (sync_import_ok) {
         const vk::ImportSemaphoreFdInfoKHR import_info{
             .semaphore = image_acquired[index],
@@ -411,6 +440,78 @@ int Swapchain::ExportPresentReady() {
         return -1;
     }
     return fd; // -1 is possible too: the semaphore was already signaled
+}
+
+bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) {
+    ASSERT_MSG(cpu_present && image_index < buffers.size(), "Invalid CPU present");
+    Buffer& buffer = buffers[image_index];
+    AHardwareBuffer_Desc desc{};
+    AHardwareBuffer_describe(buffer.ahb, &desc);
+    void* mapped = nullptr;
+    const int lock_result = AHardwareBuffer_lock(
+        buffer.ahb, AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, nullptr, &mapped);
+    if (lock_result != 0 || !mapped) {
+        LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_lock failed: {}",
+                  lock_result);
+        free_queue.push_back(image_index);
+        return false;
+    }
+    const u32 dst_w = std::min<u32>(width, desc.width);
+    const u32 dst_h = std::min<u32>(height, desc.height);
+    u8* dst = static_cast<u8*>(mapped);
+    // AHB stride is measured in RGBA pixels. A CPU-writable AHB forces a
+    // layout that the Android compositor can consume without PanVK AFBC.
+    for (u32 y = 0; y < dst_h; ++y) {
+        std::memset(dst + size_t(y) * desc.stride * 4, 0, size_t(desc.stride) * 4);
+    }
+    if (rgba && src_width && src_height && dst_w && dst_h) {
+        const float src_aspect = float(src_width) / float(src_height);
+        const float dst_aspect = float(dst_w) / float(dst_h);
+        const u32 fit_w = src_aspect > dst_aspect
+                            ? dst_w : std::max(1u, u32(float(dst_h) * src_aspect));
+        const u32 fit_h = src_aspect > dst_aspect
+                            ? std::max(1u, u32(float(dst_w) / src_aspect)) : dst_h;
+        const u32 x0 = (dst_w - fit_w) / 2, y0 = (dst_h - fit_h) / 2;
+        for (u32 y = 0; y < fit_h; ++y) {
+            const u32 src_y = std::min(src_height - 1, u32(u64(y) * src_height / fit_h));
+            u8* row = dst + (size_t(y + y0) * desc.stride + x0) * 4;
+            const u8* input_row = rgba + size_t(src_y) * src_width * 4;
+            if (fit_w == src_width) {
+                std::memcpy(row, input_row, size_t(fit_w) * 4);
+            } else {
+                for (u32 x = 0; x < fit_w; ++x) {
+                    const u32 src_x = std::min(src_width - 1, u32(u64(x) * src_width / fit_w));
+                    std::memcpy(row + size_t(x) * 4, input_row + size_t(src_x) * 4, 4);
+                }
+            }
+        }
+    } else if (dst_h) {
+        // A visible gold line on loading frames separates compositor failure
+        // from a black render source even before the first guest draw.
+        for (u32 y = 0; y < std::min<u32>(8, dst_h); ++y) {
+            for (u32 x = 0; x < dst_w; ++x) {
+                u8* pixel = dst + (size_t(y) * desc.stride + x) * 4;
+                pixel[0] = 200; pixel[1] = 145; pixel[2] = 35; pixel[3] = 255;
+            }
+        }
+    }
+    const int unlock_result = AHardwareBuffer_unlock(buffer.ahb, nullptr);
+    if (unlock_result != 0) {
+        LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_unlock failed: {}",
+                  unlock_result);
+        free_queue.push_back(image_index);
+        return false;
+    }
+    ++frame_counter;
+    if (client.Connected()) {
+        if (!client.SendFrame(generation, image_index, frame_counter, width, height, -1)) {
+            PeerGone();
+        }
+    } else {
+        free_queue.push_back(image_index);
+    }
+    buffer.acquire_imported = false;
+    return !needs_recreation;
 }
 
 bool Swapchain::Present() {

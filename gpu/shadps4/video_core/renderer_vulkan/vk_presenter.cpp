@@ -143,7 +143,9 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
       draw_scheduler{instance, true}, present_scheduler{instance}, flip_scheduler{instance},
 #ifdef __ANDROID__
       lsfg_requested{Gow3LsfgState::Initial()}, lsfg_watch{lsfg_requested},
-      lsfg{Lsfg::Create(instance, lsfg_requested)},
+      lsfg{(std::getenv("GOW3_MALI_CPU_PRESENT") &&
+            std::getenv("GOW3_MALI_CPU_PRESENT")[0] == '1')
+               ? nullptr : Lsfg::Create(instance, lsfg_requested)},
       swapchain{instance, window, lsfg ? lsfg->Multiplier() : 0},
 #else
       swapchain{instance, window},
@@ -221,6 +223,11 @@ Presenter::~Presenter() {
     Check(flip_scheduler.CommandBuffer().reset());
 
     const vk::Device device = instance.GetDevice();
+#ifdef __ANDROID__
+    if (mali_cpu_readback != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(instance.GetAllocator(), mali_cpu_readback, mali_cpu_readback_allocation);
+    }
+#endif
     for (auto& frame : present_frames) {
         vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
         device.destroyImageView(frame.image_view);
@@ -673,6 +680,12 @@ void Presenter::PresentLoadingFrame() {
     if (!swapchain.AcquireNextImage()) {
         return;
     }
+#ifdef __ANDROID__
+    if (swapchain.UsesCpuPresentation()) {
+        swapchain.PresentCpuPixels(nullptr, 0, 0);
+        return;
+    }
+#endif
     const vk::Image image = swapchain.Image();
     const vk::Extent2D extent = swapchain.GetExtent();
     const auto cmdbuf = present_scheduler.CommandBuffer();
@@ -785,6 +798,118 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
+
+#ifdef __ANDROID__
+    if (swapchain.UsesCpuPresentation()) {
+        // A Mali-specific path analogous to Bachata's conservative software
+        // presentation: render normally with PanVK, read the completed RGBA8
+        // frame back to host-visible memory, then CPU-copy into linear gralloc.
+        // This never changes the working Adreno/Turnip zero-copy path.
+        const VkDeviceSize required = VkDeviceSize(frame->width) * frame->height * 4;
+        ASSERT_MSG(frame->width && frame->height && required,
+                   "MALI_CPU_PRESENT invalid frame dimensions");
+        if (required > mali_cpu_readback_size) {
+            if (mali_cpu_readback != VK_NULL_HANDLE) {
+                const auto idle = instance.GetDevice().waitIdle();
+                ASSERT_MSG(idle == vk::Result::eSuccess,
+                           "MALI_CPU_PRESENT cannot retire the old staging buffer: {}",
+                           vk::to_string(idle));
+                vmaDestroyBuffer(instance.GetAllocator(), mali_cpu_readback,
+                                 mali_cpu_readback_allocation);
+                mali_cpu_readback = VK_NULL_HANDLE;
+            }
+            const VkBufferCreateInfo buffer_ci{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                .size = required,
+                .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            };
+            const VmaAllocationCreateInfo allocation_ci{
+                .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                         VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+                .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+            };
+            VmaAllocationInfo allocation_info{};
+            const VkResult create_result =
+                vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &allocation_ci,
+                                &mali_cpu_readback, &mali_cpu_readback_allocation,
+                                &allocation_info);
+            ASSERT_MSG(create_result == VK_SUCCESS && allocation_info.pMappedData,
+                       "MALI_CPU_PRESENT staging allocation failed: {}",
+                       vk::to_string(vk::Result(create_result)));
+            mali_cpu_readback_mapped = allocation_info.pMappedData;
+            mali_cpu_readback_size = required;
+        }
+        auto& cpu_scheduler = present_scheduler;
+        const auto cmdbuf = cpu_scheduler.CommandBuffer();
+        const vk::ImageSubresourceRange range{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1,
+        };
+        const vk::ImageMemoryBarrier to_readback{
+            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = frame->image, .subresourceRange = range,
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                               vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, to_readback);
+        const vk::BufferImageCopy region{
+            .bufferOffset = 0,
+            .bufferRowLength = 0, .bufferImageHeight = 0,
+            .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {frame->width, frame->height, 1},
+        };
+        cmdbuf.copyImageToBuffer(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                                 vk::Buffer{mali_cpu_readback}, region);
+        const vk::ImageMemoryBarrier restore_frame{
+            .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = frame->image, .subresourceRange = range,
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                               vk::PipelineStageFlagBits::eAllCommands,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, restore_frame);
+        SubmitInfo cpu_info{};
+        cpu_info.AddWait(frame->ready_semaphore, frame->ready_tick);
+        cpu_info.AddSignal(frame->present_done);
+        cpu_scheduler.Flush(cpu_info);
+        // The CPU must not map the staging buffer before the GPU copy is done.
+        const auto done = instance.GetDevice().waitIdle();
+        ASSERT_MSG(done == vk::Result::eSuccess,
+                   "MALI_CPU_PRESENT readback GPU wait failed: {}", vk::to_string(done));
+        const VkResult invalidate =
+            vmaInvalidateAllocation(instance.GetAllocator(), mali_cpu_readback_allocation,
+                                    0, required);
+        ASSERT_MSG(invalidate == VK_SUCCESS,
+                   "MALI_CPU_PRESENT invalidate failed: {}",
+                   vk::to_string(vk::Result(invalidate)));
+        const u8* pixels = static_cast<const u8*>(mali_cpu_readback_mapped);
+        static u64 probe_count = 0;
+        if (++probe_count <= 8 || probe_count % 120 == 0) {
+            u64 nonblack = 0, sampled = 0;
+            for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {
+                nonblack += (pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0;
+                ++sampled;
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{}",
+                        probe_count, frame->width, frame->height, nonblack, sampled);
+        }
+        swapchain.PresentCpuPixels(pixels, frame->width, frame->height);
+        free_frame();
+        if (!is_reusing_frame && is_game_frame) DebugState.IncFlipFrameNum();
+        return;
+    }
+#endif
 
     // gow3: the game frame is blitted (letterboxed) straight into the swapchain image.
     const vk::Image swapchain_image = swapchain.Image();
