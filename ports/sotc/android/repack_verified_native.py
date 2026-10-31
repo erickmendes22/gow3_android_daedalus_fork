@@ -24,14 +24,19 @@ def repack(base_apk: Path, root: Path) -> None:
     signatures = {}
     with zipfile.ZipFile(base_apk) as apk:
         jni = root / "out/bionic/apk-jni"
-        for name in apk.namelist():
-            if name.startswith("lib/arm64-v8a/") and name.endswith(".so"):
-                target = jni / name[len("lib/"):]
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(apk.read(name))
-        for essential in ("libfxdisplay.so", "libfxio.so", "libgow3present.so"):
-            if not (jni / "arm64-v8a" / essential).is_file():
-                raise RuntimeError("Missing verified JNI: " + essential)
+        # Two JNI bridges already come from tools/android/bridges and
+        # androidx.graphics.path comes from the Android dependency. Readding
+        # them from the source APK creates duplicate JNI resources in Gradle.
+        # Only libgow3present.so is produced outside those source sets.
+        name = "lib/arm64-v8a/libgow3present.so"
+        target = jni / "arm64-v8a/libgow3present.so"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(apk.read(name))
+        for essential in ("libfxdisplay.so", "libfxio.so"):
+            if not (root / "tools/android/bridges/arm64-v8a" / essential).is_file():
+                raise RuntimeError("Missing bundled bridge: " + essential)
+        if not target.is_file():
+            raise RuntimeError("Missing verified JNI: libgow3present.so")
         payload = io.BytesIO(apk.read("assets/runtime.payload"))
         with tarfile.open(fileobj=payload, mode="r:gz") as source:
             with tarfile.open(out, mode="w:gz", compresslevel=6) as dest:
