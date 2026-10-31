@@ -249,6 +249,12 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_off"]?:"0")=="1",
                         {save("sotc_blur_off",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
+                        (values["sotc_taa_history"]?:"0")=="1",
+                        {save("sotc_taa_history",if(it)"1" else "0")})
+                    Text(if(pt) "Desligado por padrão para evitar imagens anteriores arrastadas. A iluminação e a exposição permanecem. Reinicie o jogo após mudar."
+                         else "Off by default to avoid trailing previous frames. Lighting and exposure remain. Restart after changing.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
                     Text(if(pt) "O modo 60 FPS e as resoluções ficam na tela Inicial. Patches de God of War III não são utilizados."
                         else "60 FPS modes and resolutions are on Home. God of War III patches are not used.",
                         color=SotcPalette.secondary,fontSize=12.sp)
