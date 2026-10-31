@@ -10,6 +10,9 @@
 #include <cerrno>
 #include <climits>
 #include <cstdlib>
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 
 MappedFile& MappedFile::operator=(MappedFile&& o) noexcept {
     close();
@@ -39,12 +42,36 @@ MappedFile read_file(const std::string& path) {
     if (S_ISREG(st.st_mode) && st.st_size > 0) {
         void* m = mmap(nullptr, (size_t)st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
         if (m != MAP_FAILED) {
-            madvise(m, (size_t)st.st_size, MADV_SEQUENTIAL);
-            f.map_ = m;
-            f.map_len_ = f.size_ = (size_t)st.st_size;
-            f.data_ = (const u8*)m;
-            ::close(fd);
-            return f;
+            // Android external-storage FUSE can provide a mapped view that
+            // differs from direct I/O. Verify the executable's header before
+            // handing the full mapping to the SELF parser. Normal images stay
+            // zero-copy; only a proven mismatch falls back to buffered I/O.
+            bool inconsistent = false;
+            if (path.size() >= 10 &&
+                path.compare(path.size() - 10, 10, "/eboot.bin") == 0) {
+                u8 disk_header[16]{};
+                ssize_t n;
+                do { n = pread(fd, disk_header, sizeof(disk_header), 0); }
+                while (n < 0 && errno == EINTR);
+                if (n >= 4) {
+                    const size_t compare_size =
+                        std::min(static_cast<size_t>(n), static_cast<size_t>(st.st_size));
+                    inconsistent = std::memcmp(m, disk_header, compare_size) != 0;
+                }
+            }
+            if (!inconsistent) {
+                madvise(m, (size_t)st.st_size, MADV_SEQUENTIAL);
+                f.map_ = m;
+                f.map_len_ = f.size_ = (size_t)st.st_size;
+                f.data_ = (const u8*)m;
+                ::close(fd);
+                return f;
+            }
+            std::fprintf(stderr,
+                         "Game executable I/O: mmap header disagrees with pread; "
+                         "retrying buffered file read: %s\n", path.c_str());
+            munmap(m, (size_t)st.st_size);
+            // pread leaves fd's offset unchanged; buffered read starts at 0.
         }
     }
     Bytes buf;

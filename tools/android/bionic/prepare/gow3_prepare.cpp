@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <functional>
 #include <set>
 
@@ -29,8 +30,25 @@ void say(const std::string& line) {
 Boot prepare(const std::string& game, const std::string& out) {
     SelfInfo s;
     {
-        MappedFile source = read_file(path_join(game, "eboot.bin"));
-        s = parse_self(source.view());
+        const std::string source_path = path_join(game, "eboot.bin");
+        MappedFile source = read_file(source_path);
+        View bytes = source.view();
+        const bool is_self = bytes.n >= 4 && std::memcmp(bytes.p, "O\x15=\x1d", 4) == 0;
+        const bool is_elf = bytes.n >= 4 && std::memcmp(bytes.p, "\x7f" "ELF", 4) == 0;
+        char prefix[49]{};
+        const size_t count = std::min(bytes.n, static_cast<size_t>(16));
+        for (size_t i = 0; i < count; ++i)
+            std::snprintf(prefix + i * 2, sizeof(prefix) - i * 2, "%02x", bytes.p[i]);
+        std::printf("Game executable: path=%s bytes=%zu first16=%s type=%s\n",
+                    source_path.c_str(), bytes.n, prefix,
+                    is_self ? "PS4-SELF" : is_elf ? "ELF" : "UNRECOGNIZED");
+        if (!is_self && !is_elf) {
+            std::printf("Game executable rejected: sha256=%s; this is the actual "
+                        "file read, not a requirement for any game update\n",
+                        sha256_hex(bytes).c_str());
+        }
+        std::fflush(stdout);
+        s = parse_self(bytes);
     }
     { OutFile decoded(path_join(out,"eboot.elf")); decoded.write(s.elf.data(),s.elf.size()); decoded.close(); }
     std::vector<Phdr> loads;

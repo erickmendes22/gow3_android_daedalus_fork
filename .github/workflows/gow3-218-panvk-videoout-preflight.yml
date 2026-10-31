@@ -21,5 +21,6 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
           python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
+          python -m unittest discover -s tests -p 'test_bionic_eboot_source.py' -v
           python -m unittest discover -s tests -p 'test_sparse_queue.py' -v
           python -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v

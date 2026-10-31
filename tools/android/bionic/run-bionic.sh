@@ -55,6 +55,7 @@ mkdir -p "$out"
 # GOW3_GAME_DIR: the game's folder (eboot.bin, sce_module, sce_sys). Default: gow3port/game.
 game=${GOW3_GAME_DIR:-$base/game}
 [ -f "$game/eboot.bin" ] || { echo "Game missing: $game (no eboot.bin)" >&2; exit 2; }
+echo "Game selection: base=$game update=${GOW3_PATCH_DIR:-none} (update optional)"
 
 # GOW3_PATCH_DIR: an update folder (eboot.bin, sce_sys) laid over the game at start. The merged
 # read-only view (scripts/game_update.py) is what prepare/patches/probe use; both dumps stay intact.

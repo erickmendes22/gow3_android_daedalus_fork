@@ -77,7 +77,7 @@ const Phdr& require_phdr(const std::vector<Phdr>& ph, u32 type) {
 SelfInfo parse_self(View data) {
     if (std::memcmp(span(data, 0, 4).p, "\x7f" "ELF", 4) == 0) return parse_elf(data);
     if (std::memcmp(span(data, 0, 4).p, "O\x15=\x1d", 4) != 0)
-        raise("ValueError", "expected PS4 SELF or ELF (eboot.bin is neither: an encrypted or damaged dump?)");
+        raise("ValueError", "expected PS4 SELF or ELF: unrecognized eboot header; see actual bytes, source path and SHA-256 in Game executable log");
     u16 count = unpack(data, 24, 2).u16_();
     u64 base = 32 + (u64)count * 32;
     SelfInfo r;

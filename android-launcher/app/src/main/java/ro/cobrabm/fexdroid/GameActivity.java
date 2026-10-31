@@ -1033,6 +1033,11 @@ public final class GameActivity extends Activity {
     private void startGame() {
         if (destroyed) return;
         hadError=false;
+        // Always resolve the most recently saved source at the actual launch,
+        // not only when this Activity was first created. The update is optional.
+        android.content.SharedPreferences gamePrefs=getSharedPreferences("gow3",MODE_PRIVATE);
+        gameDir=gamePrefs.getString("game_dir",null);
+        updateDir=gamePrefs.getString("update_dir",null);
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
         try {
             Process launched=bionicRuntime() ? process("/system/bin/sh",BASE+"/run-bionic.sh","game")

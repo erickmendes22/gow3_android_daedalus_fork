@@ -63,6 +63,22 @@ class BionicPrepareParity(unittest.TestCase):
                 self.assertNotEqual(a.returncode, 0)
                 self.assertFalse((root/'native/game-source.json').exists())
 
+    def test_unrecognized_base_eboot_reports_actual_file_and_keeps_update_optional(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = write_game(root/'game', *synthetic_game())
+            invalid = b"NOT_A_SELF_OR_ELF" + bytes(range(32))
+            (game/'eboot.bin').write_bytes(invalid)
+            a, b = self.compare(game, root)
+            self.assertNotEqual(a.returncode, 0)
+            self.assertIn("Game executable:", b.stdout)
+            self.assertIn("first16=4e4f545f415f53454c465f4f525f454c", b.stdout)
+            self.assertIn("type=UNRECOGNIZED", b.stdout)
+            self.assertIn("sha256=", b.stdout)
+            self.assertIn("expected PS4 SELF or ELF", b.stderr)
+            self.assertNotIn("update is required", b.stderr)
+            self.assertFalse((root/'native/boot-linked.bin').exists())
+
     def test_empty_sfo_fails_without_cached_image(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
