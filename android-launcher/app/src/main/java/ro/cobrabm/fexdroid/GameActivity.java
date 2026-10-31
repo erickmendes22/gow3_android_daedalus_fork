@@ -57,6 +57,12 @@ public final class GameActivity extends Activity {
     private LinearLayout drawer;
     private LinearLayout drawerItems;
     private TextView status;
+    // SotC's Android surface receives decoded game frames through Gow3Present.
+    // This HUD measures those frames, never fake patch targets or CPU loop speed.
+    private TextView sotcFpsHud;
+    private long sotcFpsLastFrames = -1L;
+    private long sotcFpsLastAtMillis = 0L;
+    private boolean framesPollScheduled;
     private View resume;
     private LinearLayout gameSettingsItem, cheatsItem, graphicsItem, controllerItem, swapFaceItem;
     private TouchControllerOverlay controllerOverlay;
@@ -199,6 +205,26 @@ public final class GameActivity extends Activity {
         controllerOverlay=new TouchControllerOverlay(this,pad,!bionicRuntime() && "1".equals(setting("overlay_mouse")));
         controllerOverlay.setVisibility(controllerEnabled() ? View.VISIBLE : View.GONE);
         screen.addView(controllerOverlay,frame(-1,-1,Gravity.CENTER));
+
+        if (sotcRuntime()) {
+            // Separate Android UI view, above Vulkan but below the game drawer.
+            // Keep it below the touch controller's top shoulder buttons.
+            sotcFpsHud=text("FPS --",12,0xfff7eddf);
+            sotcFpsHud.setTypeface(android.graphics.Typeface.MONOSPACE,
+                                   android.graphics.Typeface.BOLD);
+            sotcFpsHud.setPadding(dp(9),dp(5),dp(9),dp(5));
+            GradientDrawable hudBackground=new GradientDrawable();
+            hudBackground.setColor(0xb0151c24);
+            hudBackground.setCornerRadius(dp(7));
+            sotcFpsHud.setBackground(hudBackground);
+            sotcFpsHud.setClickable(false);
+            sotcFpsHud.setFocusable(false);
+            sotcFpsHud.setContentDescription("Shadow of the Colossus frame rate");
+            FrameLayout.LayoutParams hudPos=frame(-2,-2,Gravity.TOP|Gravity.LEFT);
+            hudPos.leftMargin=dp(12);
+            hudPos.topMargin=dp(72);
+            screen.addView(sotcFpsHud,hudPos);
+        }
 
         handle=new View(this);
         GradientDrawable grip=new GradientDrawable(); grip.setColor(0x80c6ad76); grip.setCornerRadius(dp(4));
@@ -544,6 +570,8 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","0".equals(setting("sotc_vsync")) ? "0" : "1");
+                env.put("SOTC_ADRENO_WAVE32",
+                        "0".equals(setting("sotc_adreno_wave32")) ? "0" : "1");
                 String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
                 if("1".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
                 env.put("SOTC_CVARS",cvars);
@@ -696,9 +724,34 @@ public final class GameActivity extends Activity {
     }
 
     private void pollFrames() {
-        if (destroyed) return;
-        if (!hadError && (bionicRuntime() ? Gow3Present.framesIfLoaded() : DisplayBridge.directFrames())>0) status.setVisibility(View.GONE);
-        main.postDelayed(this::pollFrames,1000);
+        if (destroyed || framesPollScheduled) return;
+        final long now=android.os.SystemClock.elapsedRealtime();
+        final long frames=bionicRuntime() ? Gow3Present.framesIfLoaded() : DisplayBridge.directFrames();
+        if (!hadError && frames>0) status.setVisibility(View.GONE);
+        if (sotcFpsHud!=null) {
+            final boolean visible=!"0".equals(setting("sotc_show_fps"));
+            sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
+            if (sotcFpsLastFrames<0 || now<sotcFpsLastAtMillis ||
+                frames<sotcFpsLastFrames) {
+                sotcFpsHud.setText("FPS --");
+                sotcFpsLastFrames=frames;
+                sotcFpsLastAtMillis=now;
+            } else if (now-sotcFpsLastAtMillis>=950) {
+                final long elapsed=now-sotcFpsLastAtMillis;
+                final long delivered=frames-sotcFpsLastFrames;
+                // Count real renderer frames received by the Android bridge.
+                // They may be dropped by SurfaceFlinger if VSync is disabled.
+                final double fps=delivered*1000.0/elapsed;
+                sotcFpsHud.setText(String.format(java.util.Locale.US,"FPS %.1f",fps));
+                sotcFpsLastFrames=frames;
+                sotcFpsLastAtMillis=now;
+            }
+        }
+        framesPollScheduled=true;
+        main.postDelayed(() -> {
+            framesPollScheduled=false;
+            pollFrames();
+        },1000);
     }
 
     /** The game's text dialog (the character name, GOW3_IME_FILE in run-gow3.sh): shown here with the
@@ -773,6 +826,8 @@ public final class GameActivity extends Activity {
     private void startGame() {
         if (destroyed) return;
         hadError=false;
+        sotcFpsLastFrames=-1L;
+        sotcFpsLastAtMillis=0L;
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
         try {
             Process launched=bionicRuntime() ? process("/system/bin/sh",
