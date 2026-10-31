@@ -498,6 +498,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # provided the selected Vulkan driver actually supports geometryShader.
     from stage_adreno_barycentric_gs import patch_adreno_barycentric_gs
     patch_adreno_barycentric_gs(out)
+    # Position-only GS interface validated with Khronos spirv-val (Vulkan 1.2).
+    # Keep barycentric interpolants and all material varyings unchanged.
+    from stage_adreno_gs_position import patch_adreno_gs_position
+    patch_adreno_gs_position(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
