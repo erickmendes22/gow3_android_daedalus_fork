@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: github.ref != 'refs/heads/fix/sotc-real-lod-and-blur-20261031'
     name: Build SotC FEX Bionic, verify original Vulkan ABI, package independent APK
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -207,4 +208,82 @@ jobs:
             out/bionic/logs
             .local-deps/android/bionic-build/*.log
             out/release/sotc-badging.txt
+          if-no-files-found: ignore
+
+  repackage-verified-native:
+    if: github.ref == 'refs/heads/fix/sotc-real-lod-and-blur-20261031'
+    name: Repackage verified SotC 0.1.16 ARM64 runtime and rebuild 0.1.17 Android launcher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK for signed launcher
+        run: sdkmanager 'build-tools;35.0.0' 'platforms;android-37'
+      - name: Verify original successful 0.1.16 native artifact and repackage only changed inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh run download 41221644670 --repo "$GITHUB_REPOSITORY" \
+            --name 'Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.16-boot-test' --dir original
+          (cd original && sha256sum -c Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk.sha256)
+          python3 -m py_compile ports/sotc/android/repack_verified_native.py
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 ports/sotc/android/repack_verified_native.py \
+            --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk \
+            --root .
+      - name: Compile 0.1.17 UI, sign APK, and inspect embedded corrected payload
+        run: |
+          set -euo pipefail
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from io import BytesIO
+          import tarfile, hashlib, json
+          apk = Path("out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.17-boot-test-arm64.apk")
+          assert apk.is_file() and apk.stat().st_size > 40_000_000
+          with ZipFile(apk) as z:
+              payload = z.read("assets/runtime.payload")
+              assert hashlib.sha256(payload).hexdigest() == z.read("assets/runtime.sha256").decode().strip()
+              with tarfile.open(fileobj=BytesIO(payload), mode="r:gz") as t:
+                  script = t.extractfile("sotcport/run-sotc-bionic.sh").read()
+                  assert b"export SOTC_LOD_LINGER=" in script
+                  assert b"export SOTC_UPLOAD_BUDGET_MB=0" in script
+                  assert b"gpu-user-srt-phi6-gs-position" in script
+                  assert b"sotc_blur_suppression=1" in t.extractfile("sotcport/sotc.ini").read()
+                  assert json.load(t.extractfile("runtime-manifest.json"))["version"] == "0.1.17-boot-test"
+              for name in ("lib/arm64-v8a/libfxdisplay.so", "lib/arm64-v8a/libfxio.so",
+                           "lib/arm64-v8a/libgow3present.so"):
+                  assert z.getinfo(name).file_size > 10000
+          print("PASS: actual signed APK includes corrected SotC config, native GS and JNI bridges")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.17-boot-test
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.17-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.17-boot-test-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: SotC-0.1.17-repackage-diagnostics
+          path: |
+            out/release/sotc-badging.txt
+            android-launcher/app/build/outputs
           if-no-files-found: ignore
