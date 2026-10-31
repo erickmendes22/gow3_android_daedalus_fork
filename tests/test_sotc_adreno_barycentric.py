@@ -37,7 +37,7 @@ class AdrenoBarycentricTest(unittest.TestCase):
 
     def test_no_stale_barycentric_shader_cache_and_no_wave_regression(self):
         s=RUN.read_text()
-        self.assertIn("gpu-user-srt-phi5-turnip-nomultipos-",s)
+        self.assertIn("gpu-user-srt-phi6-gs-position-turnip-nomultipos-",s)
         self.assertIn("profile=$sotc_gpu_profile",s)
         self.assertIn("export BB_READBACKS=2",s)
         self.assertIn("export SOTC_RB_ASYNC=0",s)
