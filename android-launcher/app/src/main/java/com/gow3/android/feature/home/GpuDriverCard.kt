@@ -53,7 +53,9 @@ internal fun GpuDriverCard() {
         "system" to stringResource(R.string.gpu_driver_system),
         "gen8" to stringResource(R.string.gpu_driver_bundled),
         "adreno7xx" to stringResource(R.string.gpu_driver_adreno7xx),
-    ) + installed.map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
+    ) + (if (GpuDriverManager.hasBundledGameHubDD(context)) listOf(
+        "gamehub-dd" to "Turnip GameHub 26.3 DD GMEM + PWR_MAX (experimental)"
+    ) else emptyList()) + installed.map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
     val label = choices.firstOrNull { it.first == selected }?.second
         ?: stringResource(R.string.gpu_driver_missing)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
