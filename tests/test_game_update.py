@@ -84,6 +84,62 @@ class GameUpdateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             game_update.create_view(self.base, update, self.out)
 
+    def test_missing_base_sfo_exact_cusa_directory_accepts_matching_update(self):
+        # Real-world GoW3 CUSA01715 LITE layouts may have no readable base
+        # sce_sys/param.sfo even though the update provides valid metadata.
+        base = self.root/'CUSA01715'
+        self.base.rename(base)
+        (base/'sce_sys/param.sfo').unlink()
+        update = self.make_update('CUSA01715', eboot=b'updated eboot')
+        view = game_update.create_view(base, update, self.out)
+        self.assertEqual((view/'eboot.bin').read_bytes(), b'updated eboot')
+        self.assertEqual((view/'dvdroot_ps4/data.x.wad').read_bytes(), b'base asset')
+        self.assertTrue((view/'sce_sys/param.sfo').is_file())
+        self.assertEqual((base/'eboot.bin').read_bytes(), b'base eboot')
+        game_update.remove_view(view)
+        self.assertFalse(view.exists())
+
+    def test_unreadable_base_sfo_exact_directory_accepts_matching_update(self):
+        base = self.root/'CUSA01715'
+        self.base.rename(base)
+        (base/'sce_sys/param.sfo').write_bytes(b'not a PS4 SFO')
+        update = self.make_update('CUSA01715')
+        view = game_update.create_view(base, update, self.out)
+        self.assertEqual((view/'eboot.bin').read_bytes(), b'updated eboot')
+        game_update.remove_view(view)
+
+    def test_base_sfo_missing_rejects_non_exact_title_folder(self):
+        (self.base/'sce_sys/param.sfo').unlink()
+        update = self.make_update('CUSA01623')
+        with self.assertRaisesRegex(ValueError,'not the same title'):
+            game_update.create_view(self.base, update, self.out)
+
+    def test_base_sfo_missing_rejects_mismatched_update(self):
+        base = self.root/'CUSA01715'
+        self.base.rename(base)
+        (base/'sce_sys/param.sfo').unlink()
+        update = self.make_update('CUSA01623')
+        with self.assertRaisesRegex(ValueError,'not the same title'):
+            game_update.create_view(base, update, self.out)
+
+    def test_explicit_base_sfo_mismatch_never_bypassed_by_folder_name(self):
+        base = self.root/'CUSA01715'
+        self.base.rename(base)
+        update = self.make_update('CUSA01715')
+        # The base SFO explicitly identifies another title, so trusting the
+        # directory name would be unsafe even if it matches the update.
+        with self.assertRaisesRegex(ValueError,'not the same title'):
+            game_update.create_view(base, update, self.out)
+
+    def test_base_eboot_missing_rejected_even_with_matching_folder(self):
+        base = self.root/'CUSA01715'
+        self.base.rename(base)
+        (base/'sce_sys/param.sfo').unlink()
+        (base/'eboot.bin').unlink()
+        update = self.make_update('CUSA01715')
+        with self.assertRaisesRegex(ValueError,'not the same title'):
+            game_update.create_view(base, update, self.out)
+
     def test_same_or_nested_folder_rejected(self):
         with self.assertRaises(ValueError):
             game_update.create_view(self.base, self.base, self.out)

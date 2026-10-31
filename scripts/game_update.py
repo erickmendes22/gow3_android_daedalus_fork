@@ -12,6 +12,7 @@ Android 的 run-gow3.sh 以子命令调用：
 """
 from pathlib import Path
 import argparse
+import re
 import shutil
 import sys
 import tempfile
@@ -54,17 +55,34 @@ def remove(path):
         path.unlink()
 
 
+def _validated_title_pair(base, update):
+    """Use SFO IDs first. Lite dumps may lack base SFO but retain the exact CUSA directory.
+
+    Never infer IDs from a parent folder or a loose substring. In particular, an
+    explicit but mismatching base SFO must NEVER be bypassed by a folder name.
+    """
+    from patches import game_title_id
+    base_id, update_id = game_title_id(base), game_title_id(update)
+    if base_id is None and update_id is not None:
+        directory_id = base.name.upper()
+        if re.fullmatch(r'CUSA[0-9]{5}', directory_id) and directory_id == update_id:
+            if (base / 'eboot.bin').is_file():
+                print(f'Game update: base TITLE_ID unavailable; accepting exact '
+                      f'base directory {directory_id} matched to update SFO',
+                      file=sys.stderr)
+                base_id = directory_id
+    if not base_id or not update_id or base_id != update_id:
+        raise ValueError(f'Game and update are not the same title: {base_id} / {update_id}')
+
+
 def create_view(base, update, out):
     """包含 base、并在其上叠放 update 的目录，建在 out 里；由调用方负责删除。"""
-    from patches import game_title_id
     base, update = Path(base).resolve(), Path(update).resolve()
-    base_id, update_id = game_title_id(base), game_title_id(update)
-    if not base_id or base_id != update_id:
-        raise ValueError(f'Game and update are not the same title: {base_id} / {update_id}')
     if base == update or base in update.parents or update in base.parents:
         raise ValueError('Choose two separate folders for the game and its update')
     if not (update / 'eboot.bin').is_file():
         raise ValueError('The update folder needs eboot.bin and sce_sys/param.sfo')
+    _validated_title_pair(base, update)
     Path(out).mkdir(parents=True, exist_ok=True)
     target = Path(tempfile.mkdtemp(prefix='game-update-', dir=out))
     try:
