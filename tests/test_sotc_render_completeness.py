@@ -23,6 +23,16 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("zero-fill upload deferral disabled", text)
         self.assertIn("export SOTC_RB_ASYNC=0", text)
 
+    def test_real_texture_lod_streaming_starts_high_stable(self):
+        text = LAUNCHER.read_text()
+        # Verified in the 0.1.15 Android log: with linger 0, the renderer
+        # reported "texture level off" (no fine mip streaming).
+        self.assertIn('export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}', text)
+        self.assertIn('export SOTC_LOD_LEVEL=${SOTC_LOD_LEVEL:-2}', text)
+        self.assertIn('export SOTC_LOD_POOL_LOW=${SOTC_LOD_POOL_LOW:-8}', text)
+        self.assertIn("SotC texture streaming: high/stable", text)
+        self.assertLess(text.index('export SOTC_LOD_LINGER='), text.index('exec "$@"'))
+
     def test_dynamic_srt_offset_remains_shader_owned(self):
         text = SRT.read_text()
         self.assertIn("NeedsShaderDynamicOffset(src_off_dw) ||", text)
