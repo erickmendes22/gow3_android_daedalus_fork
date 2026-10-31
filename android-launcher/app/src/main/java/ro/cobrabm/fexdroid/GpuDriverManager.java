@@ -206,7 +206,7 @@ public final class GpuDriverManager {
                     try {
                         drv = bundledPanvk(context, wantNext);
                     } catch (Exception nextFailed) {
-                        if (!"auto".equals(selection) || !wantNext) throw nextFailed;
+                        if (!"auto".equals(selection) || !wantNext) throw new IOException("Selected PanVK driver unavailable",nextFailed);
                         // A failed auto-update must not leave a supported Mali
                         // device on the stock Vulkan loader. Use the old, pinned
                         // PanVK instead; explicit driver selection never falls back.
