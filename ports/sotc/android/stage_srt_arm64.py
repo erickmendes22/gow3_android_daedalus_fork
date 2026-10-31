@@ -182,6 +182,43 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {''',
         SetFlatbufOffset(use, pass_info.dst_off_dw++);
     }'''
     source = replace_once(source,before,after,"preserve dynamic SRT windows")
+    # Phi/loop offsets are evaluated by the shader, not the CPU at draw time.
+    # Recursing into them in ComputeOffset logs an error for each compiled shader
+    # and cannot work: use the original PC port's 512-dword window fallback.
+    # Recursively detect a Phi nested in additions/masks as well.
+    source = replace_once(source,
+        '''static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
+                         SrtProgram& p) {''',
+        '''static bool NeedsShaderDynamicOffset(const IR::Value& value, unsigned depth = 0) {
+    if (value.IsImmediate()) return false;
+    auto* inst = value.TryInst();
+    if (!inst || depth > 32) return true;
+    switch (inst->GetOpcode()) {
+    case IR::Opcode::GetUserData:
+    case IR::Opcode::ReadConst:
+    case IR::Opcode::ReadConstBuffer:
+        return false; // values already in a stable user/flat register
+    case IR::Opcode::Phi:
+        return true; // shader loop / divergent control flow
+    default:
+        break;
+    }
+    if (!IsAllowedOffsetInstruction(inst)) return true;
+    for (size_t n = 0; n < inst->NumArgs(); ++n) {
+        if (NeedsShaderDynamicOffset(inst->Arg(n), depth + 1))
+            return true;
+    }
+    return false;
+}
+
+static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
+                         SrtProgram& p) {''',
+        "recognize IR Phi and nested shader runtime offsets")
+    source = replace_once(source,
+        '''            if (!ComputeOffset(offset, pass_info, src_off_dw)) {''',
+        '''            if (NeedsShaderDynamicOffset(src_off_dw) ||
+                !ComputeOffset(offset, pass_info, src_off_dw)) {''',
+        "avoid interpreting Phi loops on host")
     source = replace_once(source,
         '''        SetFlatbufOffset(readconst, GetFlatbufOffset(original));''',
         '''        CopyFlatbufPlacement(readconst, original);''',
