@@ -25,17 +25,10 @@ export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/"
 export FEX_APP_DATA_LOCATION="$HOME/.fex-emu/"
 export FEX_APP_CACHE_LOCATION="$HOME/.cache/fex-emu/"
 mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/logs" "$out"
-# Single bounded source-of-truth capture of the actual GPU fog passes (not
-# TAA, motion blur, scaling or shader-workaround toggles). The native port
-# already identifies these four compute passes; its Android trigger was inert.
-# Dump after shader compilation and scene loading, once only. The existing
-# Export logs feature includes the complete logs/gpu_capture directory.
-export SOTC_DUMP=b33e9db6,91c6c95e,25338711,47c1dc64
-export SOTC_AUTO_GPU_DUMP_AFTER=80
+# GPU pass dumps remain available on demand but are not forced at launch.
+# Automatic volumetric-fog capture was unrelated to the missing geometry.
+# Do not alter SOTC_DUMP/SOTC_AUTO_GPU_DUMP_AFTER supplied by the caller.
 export SOTC_GPU_DUMP_DIR="$base/logs/gpu_capture"
-export SOTC_PASS_TRACE=1
-mkdir -p "$SOTC_GPU_DUMP_DIR"
-echo "SotC GPU isolation: fog pass readback after 80s, max 64MiB under $SOTC_GPU_DUMP_DIR"
 
 chip=$("$runtime/bin/kgsl-chip-id" 2>/dev/null || true)
 driver=${GOW3_BIONIC_DRIVER:-auto}
