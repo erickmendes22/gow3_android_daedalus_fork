@@ -225,6 +225,9 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                             "fps60" to "60 FPS (patch)"),{save("sotc_fps_mode",it)})
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "HUD de FPS" else "FPS HUD",
+                        (values["sotc_show_fps"]?:"1")=="1",
+                        {save("sotc_show_fps",if(it)"1" else "0")})
                 }
                 GpuDriverCard()
             }
