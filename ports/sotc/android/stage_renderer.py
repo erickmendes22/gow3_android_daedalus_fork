@@ -505,6 +505,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Keep the auxiliary barycentric GS producer after guest triangle/quad TES.
     from stage_adreno_tess_barycentric import patch_adreno_tess_barycentric
     patch_adreno_tess_barycentric(out)
+    # Instrument the actual GPU fog images, without changing rasterization.
+    from stage_gpu_pass_capture import stage_pass_capture
+    stage_pass_capture(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
