@@ -1,0 +1,46 @@
+name: SotC fragment TSharp renderer audit (no APK)
+on:
+  push:
+    branches: [fix/sotc-fragment-dynamic-tsharp-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Verify stage patch and tests before APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_renderer.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_runtime_index.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-fragment-audit/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('out/sotc-fragment-audit/gpu/shadps4/shader_recompiler/ir/passes/resource_patching_pass.cpp')
+          s=p.read_text()
+          assert 'android_fragment_tsharp && info.hw_stage == HwStage::Fragment' in s
+          assert '(info.hw_stage == HwStage::Compute || fragment_table)' in s
+          assert 'HwStage::Vertex ||' not in s
+          assert 'MatchSharpTable(resource.sharps[0])' in s
+          assert 'NumArrayDescriptors(info) + array_size + 1' in s
+          assert 'ir.ImageArrayHandle' in s
+          assert s.count('const u32 array_size =') == 1
+          v=Path('out/sotc-fragment-audit/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h').read_text()
+          assert v.count('if (UseAdrenoWave32()) return 32u;') == 2
+          print('PASS: SotC-only fragment table recovery; vertex safe; wave32 preserved')
+          PY
