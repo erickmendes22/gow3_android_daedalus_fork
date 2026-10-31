@@ -23,3 +23,9 @@ allocation ceiling including obsolete merged arenas; PanVK-only defaults to two
 in-flight submissions, one compiler, one guest frame ahead, and no warm-up
 or stale/deferred readback. Snapdragon/Adreno and system Vulkan unchanged.
 This is the first native APK compile of this consolidated freeze mitigation.
+
+Mali G615 freeze mitigation: final signed 2.1.8 APK after full-source preflight
+Source preflight passed: https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41197225773
+Updated 2026-10-31: tests now assert default 8 in-flight submissions with
+PanVK-only configurable 2, preserving 2.1.8 Bionic signing and app identity.
+Native GPU compilation and APK packaging requested once.
