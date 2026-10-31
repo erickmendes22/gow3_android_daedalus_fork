@@ -47,7 +47,7 @@ jobs:
           assert "predication.BeginDraw(cmdbuf" in ras
           assert "predication.EndDraw(cmdbuf" in ras
           assert "vk::PhysicalDeviceConditionalRenderingFeaturesEXT" in ins
-          assert "HostShaders::OCCLUSION_PREDICATE_COMP" in pred
+          assert "CompileSPV(OCCLUSION_PREDICATE_COMP, device)" in pred
           assert "occlusion_predicate_comp" in cmake
           assert "SotC Adreno barycentric" in (core/"renderer_vulkan/vk_pipeline_cache.cpp").read_text()
           print("PASS: real PM4→queries→Vulkan conditional GPU draws wired in SotC only.")
