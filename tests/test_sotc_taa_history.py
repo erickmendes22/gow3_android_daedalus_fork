@@ -23,6 +23,7 @@ class NativeTaaHistoryTest(unittest.TestCase):
         self.assertIn('"1".equals(setting("sotc_taa_history")) ? "0" : "1"',code)
         self.assertIn('env.put("SOTC_ADRENO_WAVE32",',code)
         self.assertIn('env.put("SOTC_CVARS",cvars);',code)
+        self.assertIn('if(!"0".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";',code)
 
     def test_reversible_ui_pt_en_with_restart(self):
         code=UI.read_text()
