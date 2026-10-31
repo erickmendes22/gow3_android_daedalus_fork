@@ -16,6 +16,13 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("no async draw skips", text)
         self.assertLess(text.index("export SOTC_ASYNC_SHADERS=0"), text.index('exec "$@"'))
 
+    def test_no_zero_filled_texture_placeholders_on_android(self):
+        text = LAUNCHER.read_text()
+        self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", text)
+        self.assertLess(text.index("export SOTC_UPLOAD_BUDGET_MB=0"), text.index('exec "$@"'))
+        self.assertIn("zero-fill upload deferral disabled", text)
+        self.assertIn("export SOTC_RB_ASYNC=0", text)
+
     def test_dynamic_srt_offset_remains_shader_owned(self):
         text = SRT.read_text()
         self.assertIn("NeedsShaderDynamicOffset(src_off_dw) ||", text)

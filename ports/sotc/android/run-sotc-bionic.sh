@@ -95,6 +95,13 @@ esac
 # These are scoped to this SotC process; they do not modify GoW3 or Bachata.
 export BB_READBACKS=2
 export SOTC_RB_ASYNC=0
+# Upstream's 32 MiB/frame texture upload budget defers large first-use textures
+# and explicitly fills those images with zero texels (black) until a later flip.
+# SotC Android prioritizes complete materials over area-transition frame time:
+# upload the actual texture before it is sampled, never its zero-fill placeholder.
+# 0 is a documented and implemented disable value in texture_cache.cpp.
+export SOTC_UPLOAD_BUDGET_MB=0
+echo "SotC texture integrity: zero-fill upload deferral disabled"
 # Recover dynamic descriptor arrays in material/lighting fragment shaders.
 # The vertex shader array path stays excluded (known upstream GPU hang).
 export SOTC_ANDROID_FRAGMENT_TSHARP=1

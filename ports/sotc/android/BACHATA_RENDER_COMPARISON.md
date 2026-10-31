@@ -86,3 +86,16 @@ against GPU hangs on vertex shaders. Evaluate synchronization only if captures
 show frame-to-frame stale resource or missing barriers. Do not apply a brightness
 clamp, don't turn Wave32 off, and don't claim texture correctness without
 on-device comparison.
+
+## Android texture upload integrity (0.1.15)
+
+The pinned SotC PC renderer (`texture_cache.cpp`) defaults to a 32 MiB/frame
+`SOTC_UPLOAD_BUDGET_MB` limit. Large first-use colour textures past that limit
+are intentionally uploaded as zero-filled placeholders and retried on a later
+frame. On Android this can look like missing black materials during area changes.
+The Android runner now sets `SOTC_UPLOAD_BUDGET_MB=0`, the upstream's documented
+off switch, so no texture is skipped or replaced by zeros by this budget path.
+A frame may stall during first upload; preserve Wave32, GS barycentrics, TSharp
+fragment arrays, readback coherence and original LOD. This removes one verified
+source of intentionally missing texels; it does not prove all remaining missing
+geometry or flicker is solved without a device comparison.
