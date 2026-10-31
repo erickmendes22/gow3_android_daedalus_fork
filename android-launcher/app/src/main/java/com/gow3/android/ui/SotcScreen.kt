@@ -247,7 +247,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Filtragem anisotrópica 16×" else "16× anisotropic filtering",
                         (values["sotc_af16"]?:"0")=="1",{save("sotc_af16",if(it)"1" else "0")})
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
-                        (values["sotc_blur_off"]?:"0")=="1",
+                        (values["sotc_blur_off"]?:"1")=="1",
                         {save("sotc_blur_off",if(it)"1" else "0")})
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
