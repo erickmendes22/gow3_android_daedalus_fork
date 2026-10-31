@@ -17,10 +17,14 @@ class ControlledGpuAB(unittest.TestCase):
             self.assertIn(key+"=0",PACK)
         self.assertIn("SotC GPU A/B: fast_bind=",RUN)
     def test_keep_other_graphics_invariants(self):
-        for line in ("export SOTC_RB_ASYNC=0","export SOTC_UPLOAD_BUDGET_MB=0",
+        for line in ("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}","export SOTC_UPLOAD_BUDGET_MB=0",
                      "export SOTC_ASYNC_SHADERS=0",
                      "export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}",
                      "export SOTC_TAA_OFF=${SOTC_TAA_OFF:-1}"):
             self.assertIn(line,RUN)
+        self.assertIn('env.put("SOTC_RB_ASYNC",',GAME)
+        self.assertIn('values["sotc_rb_async"]?:"0"',UI)
+        self.assertIn('save("sotc_rb_async",if(it)"1" else "0")',UI)
+        self.assertIn("sotc_rb_async=0",(ROOT/"ports/sotc/android/package_sotc_runtime.py").read_text())
         self.assertIn("gpu-user-srt-phi7-tess-gs-position",RUN)
 if __name__=="__main__":unittest.main()
