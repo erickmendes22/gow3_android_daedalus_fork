@@ -6,7 +6,7 @@ The PC fallback's GS consumes and emits a gl_PerVertex Block containing
 Position, PointSize, ClipDistance[1], CullDistance[1], while the preceding
 SotC vertex shader emits a standalone BuiltIn Position variable and may emit
 other separate BuiltIns. On Turnip, avoid an unnecessary mismatched block:
-declare an arrayed Input Position and a scalar Output Position explicitly.
+declare geometry gl_PerVertex blocks containing only BuiltIn Position.
 The interpolation varyings (locations, qualifiers, barycentric vectors,
 triangle ordering) are unchanged.
 """
@@ -29,25 +29,28 @@ def patch_adreno_gs_position(gpu: Path):
     // not a gl_PerVertex Block. Using that same interface here also avoids
     // declaring unwritten PointSize/ClipDistance/CullDistance block members.
     // Do not touch parameter locations or barycentric interpolation.
-    const Id gs_position_input_type{m.TypeArray(vec4_id, m.Constant(uint_id, 3U))};'''
+    const Id gs_position_block{m.TypeStruct(vec4_id)};
+    m.Decorate(gs_position_block, spv::Decoration::Block);
+    m.MemberDecorate(gs_position_block, 0U, spv::Decoration::BuiltIn,
+                     u32(spv::BuiltIn::Position));
+    m.MemberDecorate(gs_position_block, 0U, spv::Decoration::Invariant);'''
     if text.count(before)!=1:
         raise ValueError(f"SotC GS position: expected one PC block declaration, saw {text.count(before)}")
     text=text.replace(before,after,1)
     before='''    const Id gl_in{variable(spv::StorageClass::Input,
                             m.TypeArray(per_vertex, m.Constant(uint_id, 3U)), std::nullopt)};
     const Id gl_out{variable(spv::StorageClass::Output, per_vertex, std::nullopt)};'''
-    after='''    const Id gl_in{variable(spv::StorageClass::Input, gs_position_input_type, std::nullopt)};
-    const Id gl_out{variable(spv::StorageClass::Output, vec4_id, std::nullopt)};
-    m.Decorate(gl_in, spv::Decoration::BuiltIn, u32(spv::BuiltIn::Position));
-    m.Decorate(gl_out, spv::Decoration::BuiltIn, u32(spv::BuiltIn::Position));
-    m.Decorate(gl_out, spv::Decoration::Invariant);'''
+    after='''    const Id gl_in{variable(spv::StorageClass::Input,
+                            m.TypeArray(gs_position_block, m.Constant(uint_id, 3U)),
+                            std::nullopt)};
+    const Id gl_out{variable(spv::StorageClass::Output, gs_position_block, std::nullopt)};'''
     if text.count(before)!=1:
         raise ValueError(f"SotC GS position: expected one PC Position IO, saw {text.count(before)}")
     text=text.replace(before,after,1)
     before='''        const Id position{m.OpLoad(vec4_id, m.OpAccessChain(in_vec4, gl_in, index(v), index(0)))};
         m.OpStore(m.OpAccessChain(out_vec4, gl_out, index(0)), position);'''
-    after='''        const Id position{m.OpLoad(vec4_id, m.OpAccessChain(in_vec4, gl_in, index(v)))};
-        m.OpStore(gl_out, position);'''
+    after='''        const Id position{m.OpLoad(vec4_id, m.OpAccessChain(in_vec4, gl_in, index(v), index(0)))};
+        m.OpStore(m.OpAccessChain(out_vec4, gl_out, index(0)), position);'''
     if text.count(before)!=1:
         raise ValueError(f"SotC GS position: expected one vertex position loop, saw {text.count(before)}")
     text=text.replace(before,after,1)
