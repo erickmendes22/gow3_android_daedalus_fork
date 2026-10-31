@@ -1,0 +1,51 @@
+name: SotC Adreno barycentric interpolation GPU audit (NO APK)
+on:
+  push:
+    branches: [fix/sotc-adreno-barycentric-gs-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Validate source transforms and enforce shader interpolation fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_renderer.py
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_runtime_index.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-bary-gs/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("out/sotc-bary-gs/gpu/shadps4")
+          pipeline=(root/"video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+          graph=(root/"video_core/renderer_vulkan/vk_graphics_pipeline.cpp").read_text()
+          spirv=(root/"shader_recompiler/backend/spirv/spirv_emit_context.cpp").read_text()
+          instance=(root/"video_core/renderer_vulkan/vk_instance.h").read_text()
+          assert 'const bool adreno_missing_barycentrics = instance.GetVendorID() == 0x5143;' in pipeline
+          assert 'instance.IsGeometryStageSupported()' in pipeline
+          assert 'int(instance.IsGeometryStageSupported()), int(barycentric_via_gs)' in pipeline
+          assert 'GraphicsPipeline::SerializationSupport::with_gs = barycentric_via_gs;' in pipeline
+          assert 'EmitBarycentricGeometryShader(fs_runtime,' in graph
+          assert 'NeedsBarycentricGs(fs_runtime, *fs_stage_info)' in graph
+          assert 'if (profile.barycentric_via_gs)' in spirv
+          assert 'vk13_props.requiredSubgroupSizeStages & stage' in instance
+          assert '(instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||' in pipeline
+          print('PASS: Vulkan capability gate, Adreno fallback, GS interpolation, Wave32 stage check, and shader serialization.')
+          PY
