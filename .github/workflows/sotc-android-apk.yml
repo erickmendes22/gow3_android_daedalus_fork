@@ -225,7 +225,7 @@ jobs:
         with:
           packages: 'platform-tools'
       - name: Install Android SDK for signed launcher
-        run: sdkmanager 'build-tools;35.0.0' 'platforms;android-37'
+        run: sdkmanager 'build-tools;35.0.0'
       - name: Verify original successful 0.1.16 native artifact and repackage only changed inputs
         env:
           GH_TOKEN: ${{ github.token }}
