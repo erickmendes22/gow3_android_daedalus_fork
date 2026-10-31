@@ -1,0 +1,35 @@
+name: SotC dynamic SRT render correctness audit (NO APK)
+on:
+  push:
+    branches: [fix/sotc-render-srt-dynamic-readconst-20261030]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  srt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Validate ARM64 SRT portable interpreter
+        run: |
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic tests/test_sotc_arm64_srt.cpp -o /tmp/sotc-srt-test
+          /tmp/sotc-srt-test
+          python3 -m unittest discover -s tests -p 'test_sotc_render_runtime_index.py' -v
+          python3 -m py_compile ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_renderer.py
+      - name: Stage unchanged PC renderer with corrected Android dynamic window handling
+        run: |
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-audit/gpu
+          srt=out/sotc-audit/gpu/shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+          grep -Fq 'return (inst->Flags<u32>() & ReadConstDynamicWindowFlag) != 0;' "$srt"
+          grep -Fq 'NeedsShaderDynamicOffset(src_off_dw)' "$srt"
+          grep -Fq 'OpCopyWindow' "$srt"
+          ! grep -Fq 'FlattenExtendedUserdataPass unimplemented for target architecture.' "$srt"
