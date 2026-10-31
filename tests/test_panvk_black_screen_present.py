@@ -23,6 +23,11 @@ class PanvkFinalCopy(unittest.TestCase):
         self.assertIn("vk::ImageLayout::eShaderReadOnlyOptimal", src)
         self.assertIn("vk::FormatFeatureFlagBits::eSampledImageFilterLinear", src)
         self.assertIn("VideoOut final copy:", src)
+        # Fragment shader must be included in the barrier destination stages,
+        # not just VK_PIPELINE_STAGE_TRANSFER (black samples on PanVK).
+        self.assertIn("shader_present ? vk::PipelineStageFlagBits::eAllCommands", src)
+        self.assertIn("shader_present ? vk::AccessFlagBits::eShaderRead", src)
+        self.assertIn("vk::ImageLayout::eShaderReadOnlyOptimal", src)
     def test_ahb_format_guards_for_shader_copy(self):
         src = read("gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp")
         self.assertIn("shader_fallback ? vk::FormatFeatureFlagBits::eTransferDst", src)
