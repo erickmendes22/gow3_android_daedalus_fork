@@ -106,7 +106,9 @@ esac
 # avoid stale GPU data at CPU read faults while troubleshooting visual flicker.
 # These are scoped to this SotC process; they do not modify GoW3 or Bachata.
 export BB_READBACKS=2
-export SOTC_RB_ASYNC=0
+# Optional upstream GPU/guest readback synchronization path.
+# The PS4-required BB_READBACKS=2 remains unchanged for correctness.
+export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
 # and explicitly fills those images with zero texels (black) until a later flip.
 # SotC Android prioritizes complete materials over area-transition frame time:
@@ -145,7 +147,7 @@ export SOTC_ASYNC_PRELOAD=0
 # Keep Wave32, TAA, texture LOD, shaders and readbacks unchanged.
 export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}
 export SOTC_RECORD_THREAD=${SOTC_RECORD_THREAD:-0}
-echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD (0=conservative)"
+echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD rb_async=$SOTC_RB_ASYNC (0=conservative)"
 echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
