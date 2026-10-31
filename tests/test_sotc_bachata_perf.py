@@ -72,6 +72,11 @@ class BachataPerf(unittest.TestCase):
         self.assertIn("shutil.copy2(original/'bachata_perf.py',scripts/'bachata_perf.py')", package)
         self.assertIn('--perf "$SOTC_BACHATA_PERF"', run)
         self.assertIn("export SOTC_ASYNC_SHADERS=0", run)
+        # The original 0.1.22 CI compiled the renderer successfully but javac
+        # failed because ArrayList was used without an import in GameActivity.
+        game = (ROOT / "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java").read_text()
+        self.assertIn("import java.util.ArrayList;", game)
+        self.assertIn("ArrayList<String> bachataEffects=new ArrayList<>();", game)
 
 
 if __name__ == "__main__":
