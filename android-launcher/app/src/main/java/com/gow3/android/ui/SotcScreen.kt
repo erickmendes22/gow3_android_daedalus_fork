@@ -263,7 +263,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.11 boot test",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.12 boot test",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
