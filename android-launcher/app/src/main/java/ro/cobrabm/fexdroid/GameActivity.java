@@ -570,8 +570,9 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","0".equals(setting("sotc_vsync")) ? "0" : "1");
+                // Wave32 is experimental; opt-in avoids unexpected visual regressions.
                 env.put("SOTC_ADRENO_WAVE32",
-                        "0".equals(setting("sotc_adreno_wave32")) ? "0" : "1");
+                        "1".equals(setting("sotc_adreno_wave32")) ? "1" : "0");
                 String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
                 if("1".equals(setting("sotc_blur_off"))) cvars+=" r_motionBlurEnable=0";
                 env.put("SOTC_CVARS",cvars);
