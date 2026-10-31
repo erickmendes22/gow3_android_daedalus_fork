@@ -23,6 +23,13 @@ class Wave32Policy(unittest.TestCase):
         self.assertIn('if (UseAdrenoWave32()) return 32u;', script)
         self.assertEqual(script.count('if (UseAdrenoWave32()) return 32u;'), 2)
 
+    def test_bachata_precise_readback_parity_without_wave32_regression(self):
+        run = RUN.read_text()
+        self.assertIn('export BB_READBACKS=2', run)
+        self.assertIn('export SOTC_RB_ASYNC=0', run)
+        self.assertIn('synchronous completion', run)
+        self.assertNotIn('export SOTC_ADRENO_WAVE32=0', run)
+
     def test_user_toggle_and_cache_variants_remain(self):
         run = RUN.read_text()
         ui = UI.read_text()
