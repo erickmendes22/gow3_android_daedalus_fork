@@ -4,6 +4,7 @@ on:
     branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
     paths:
       - 'tests/test_bionic_*.py'
+      - 'tests/test_android_readback_affinity.py'
       - 'tests/test_android_gow3_mobile_fullscreen.py'
       - 'tests/test_android_gsr2_launcher_217.py'
       - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/TouchControllerOverlay.java'
