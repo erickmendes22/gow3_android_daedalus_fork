@@ -1,0 +1,28 @@
+name: SotC Adreno Turnip vertex integrity audit (NO APK)
+on:
+  push:
+    branches: [fix/sotc-turnip-nomultipos-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Verify Turnip vertex shader compiler option and SotC renderer retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          echo "PASS: Turnip nomultipos compiler flag before Vulkan load, existing flags preserved, Wave32/GS unchanged"
