@@ -71,7 +71,7 @@ public class EGL14 {
  public static boolean eglDestroyContext(EGLDisplay d,EGLContext ctx) { return true; }
  public static boolean eglTerminate(EGLDisplay d) { return true; }
 }''',
-'com/gow3/android/R.java':'package com.gow3.android; public class R { public static class string { public static final int gpu_driver_invalid=1,gpu_driver_wrong_abi=2,gpu_driver_newer_android=3,gpu_driver_panvk=4,gpu_driver_adreno_auto=5,gpu_driver_system=6; } }',
+'com/gow3/android/R.java':'package com.gow3.android; public class R { public static class string { public static final int gpu_driver_invalid=1,gpu_driver_wrong_abi=2,gpu_driver_newer_android=3,gpu_driver_panvk=4,gpu_driver_panvk_next=7,gpu_driver_adreno_auto=5,gpu_driver_system=6; } }',
 'org/json/JSONObject.java':'''package org.json; public class JSONObject {
  public JSONObject(String text) {} public int getInt(String name) { throw new UnsupportedOperationException(); }
  public String getString(String name) { throw new UnsupportedOperationException(); }
