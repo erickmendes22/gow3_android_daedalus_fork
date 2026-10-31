@@ -21,7 +21,7 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", text)
         self.assertLess(text.index("export SOTC_UPLOAD_BUDGET_MB=0"), text.index('exec "$@"'))
         self.assertIn("zero-fill upload deferral disabled", text)
-        self.assertIn("export SOTC_RB_ASYNC=0", text)
+        self.assertIn("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}", text)
 
     def test_real_texture_lod_streaming_starts_high_stable(self):
         text = LAUNCHER.read_text()
