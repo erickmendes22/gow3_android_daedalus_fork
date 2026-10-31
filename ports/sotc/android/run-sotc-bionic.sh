@@ -93,6 +93,14 @@ export SOTC_ASYNC_SHADERS=0
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
 echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
+# Real PM4 predicates operate on GPU query results in the same command stream.
+# No delayed draw-state snapshots, asynchronous Vulkan recorder trampoline or
+# CPU-read indirect arguments until a correctly ordered predication path exists.
+# These options are scoped to SotC; Wave32 and barycentric GS remain unchanged.
+export SOTC_CP_THREADS=0
+export SOTC_RECORD_THREAD=0
+export SOTC_INDIRECT_DIRECT=0
+echo "SotC PM4 predication: in-order draw/query/conditional rendering and GPU indirect commands"
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
 # Old shaders have no matching GS inputs and MUST NOT be reused.
