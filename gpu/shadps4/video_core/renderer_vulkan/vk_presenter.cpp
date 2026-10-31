@@ -10,6 +10,7 @@
 #include "core/emulator_settings.h"
 #include "sdl_window.h"
 #include "video_core/buffer_cache/buffer.h"
+#include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_ahb_acquire_wait.h"
@@ -43,6 +44,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
@@ -437,6 +439,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
 
     Frame* frame = GetRenderFrame();
+    if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -588,6 +591,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
+    if (!frame) return nullptr;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
     scheduler.EndRendering();
@@ -1280,19 +1284,29 @@ bool Presenter::PresentWithLsfg(Frame* frame) {
 
 
 Frame* Presenter::GetRenderFrame() {
-    // Wait for free presentation frames
+    // Bachata S4 avoids waiting for a presentation fence from the GPU PM4
+    // command processor. That processor must keep running so the outstanding
+    // guest flip and GPU work can retire. Enable only for PanVK.
+    const char* panvk = std::getenv("GOW3_VIDEOOUT_LABEL_RETIRE");
+    const bool nonblock = panvk && panvk[0] == '1' && liverpool &&
+        std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread();
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
+        const auto available = [this] {
 #ifdef __ANDROID__
-        free_cv.wait(lock, [this] {
             const u32 cap = frames_cap.load(std::memory_order_relaxed);
             return !free_queue.empty() &&
                    (cap == 0 || present_frames.size() - free_queue.size() < cap);
-        });
 #else
-        free_cv.wait(lock, [this] { return !free_queue.empty(); });
+            return !free_queue.empty();
 #endif
+        };
+        if (nonblock) {
+            if (!available()) return nullptr;
+        } else {
+            free_cv.wait(lock, available);
+        }
         LOG_DEBUG(Render_Vulkan, "Got render frame, remaining {}", free_queue.size() - 1);
 
         // Take the frame from the queue
@@ -1304,7 +1318,9 @@ Frame* Presenter::GetRenderFrame() {
     vk::Result result{};
 
     const auto wait = [&]() {
-        result = device.waitForFences(frame->present_done, false, std::numeric_limits<u64>::max());
+        // 1ms poll on the PanVK GPU PM4 thread instead of an infinite wait.
+        const u64 timeout = nonblock ? 1'000'000ull : std::numeric_limits<u64>::max();
+        result = device.waitForFences(frame->present_done, false, timeout);
         return result;
     };
 
@@ -1314,6 +1330,14 @@ Frame* Presenter::GetRenderFrame() {
                    "Device lost during waiting for a frame");
         // Retry if the waiting times out
         if (result == vk::Result::eTimeout) {
+            if (nonblock) {
+                // Frame was popped but its present fence is still in flight.
+                // Return it to the pool; the EOP request retries next vblank.
+                std::scoped_lock lock{free_mutex};
+                free_queue.push(frame);
+                free_cv.notify_one();
+                return nullptr;
+            }
             continue;
         }
     }
