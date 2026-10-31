@@ -490,6 +490,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     patch_sotc_arm64(root, out)
     from stage_adreno_wave32 import patch_adreno_wave32
     patch_adreno_wave32(out)
+    # Adreno Wave64 must retain the LDS barriers already used on Wave32.
+    from stage_adreno_lds_integrity import patch_adreno_lds_integrity
+    patch_adreno_lds_integrity(out)
     # Recover dynamically indexed material/lighting textures on Android.
     # Staged SotC-only; vertex shader workaround remains explicitly excluded.
     from stage_fragment_tsharp import patch_fragment_tsharp

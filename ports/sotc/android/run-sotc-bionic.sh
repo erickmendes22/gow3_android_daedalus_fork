@@ -147,7 +147,7 @@ case "${SOTC_ADRENO_WAVE32:-0}" in
     1) sotc_gpu_profile=wave32 ;;
     *) sotc_gpu_profile=wave64 ;;
 esac
-export BB_GPU_USER_DIR="$base/gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-$sotc_gpu_profile"
+export BB_GPU_USER_DIR="$base/gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-$sotc_gpu_profile/lds-meta1"
 mkdir -p "$BB_GPU_USER_DIR"
 echo "SotC GPU cache revision: srt-phi7-tess-gs-position-turnip-nomultipos; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in

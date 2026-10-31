@@ -29,7 +29,7 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
@@ -41,6 +41,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_tess_barycentric.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_pass_capture.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_meta_clear_integrity.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_lds_integrity.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
@@ -78,6 +79,7 @@ jobs:
           grep -Fq 'SOTC GPU PASS CAPTURE image shader=' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           ! grep -Fq 'export SOTC_AUTO_GPU_DUMP_AFTER=80' ports/sotc/android/run-sotc-bionic.sh
           ! grep -Fq 'export SOTC_DUMP=b33e9db6,91c6c95e,25338711,47c1dc64' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'instance.GetVendorID() == 0x5143,' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
           grep -Fq 'metadata_only_dispatch = info.images.empty()' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'non_special_writes > 1' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'const bool tessellated_triangles = has_guest_tes &&' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
