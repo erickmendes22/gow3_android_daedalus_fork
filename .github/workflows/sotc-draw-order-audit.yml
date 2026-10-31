@@ -40,7 +40,8 @@ jobs:
           assert 'if (!back_threaded)' in liverpool
           assert 'rasterizer->Draw(is_indexed, index_offset);' in liverpool
           assert 'rasterizer->DrawIndirect(is_indexed, address, offset, stride, max_count,' in liverpool
-          assert 'vertex explosion' in liverpool
+          assert 'void Liverpool::CaptureBackOp(BackOp& op' in liverpool
+          assert 'if (!back_threaded)' in liverpool
           assert 'GS_fallback=%d' in shader
           assert 'vk13_props.requiredSubgroupSizeStages & stage' in inst
           print('PASS: original renderer can execute draws in PM4 order, without the deferred draw-state snapshot')
