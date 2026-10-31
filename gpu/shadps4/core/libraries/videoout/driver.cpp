@@ -138,6 +138,10 @@ void VideoOutDriver::Close(s32 handle) {
         std::scoped_lock port_lock{main_port.port_mutex};
         main_port.flip_labels.ResetAll();
     }
+    {
+        std::scoped_lock deferred_lock{deferred_flip_mutex};
+        deferred_flips.clear();
+    }
 
     // Clear port information
     std::memset(main_port.buffer_labels.data(), 0, sizeof(main_port.buffer_labels));
@@ -658,7 +662,14 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 }
 
 void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg,
-                                            bool is_eop, u64 lock_generation) {
+                                            bool is_eop, u64 lock_generation, bool is_retry) {
+    if (port->retire_labels_on_vblank && !is_retry) {
+        std::scoped_lock lock{deferred_flip_mutex};
+        if (!deferred_flips.empty()) {
+            deferred_flips.push_back({port, index, flip_arg, is_eop, lock_generation});
+            return;
+        }
+    }
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
@@ -667,6 +678,20 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         ASSERT_MSG(buffer.group_index >= 0, "Trying to flip an unregistered buffer!");
         const auto& group = port->groups[buffer.group_index];
         frame = presenter->PrepareFrame(group, buffer.address_left);
+    }
+
+    if (!frame) {
+        // On PanVK the PM4 command processor is not permitted to wait for a
+        // present fence: the outstanding swap work needs that thread to run.
+        // Retry on a future vblank, never recursively in ProcessCommands().
+        if (port->retire_labels_on_vblank) {
+            std::scoped_lock lock{deferred_flip_mutex};
+            const DeferredFlip item{port, index, flip_arg, is_eop, lock_generation};
+            if (is_retry) deferred_flips.push_front(item);
+            else deferred_flips.push_back(item);
+            return;
+        }
+        ASSERT_MSG(frame, "VideoOut framebuffer unavailable");
     }
 
     {
@@ -747,7 +772,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         auto& vblank_status = main_port.vblank_status;
         // The last GPU-locked framebuffer needs to retire at vblank even if
         // a new EOP flip never arrives. Matches the Bachata S4 flip-label contract.
-        if (main_port.retire_labels_on_vblank) ApplyDueLabelRetirement();
+        if (main_port.retire_labels_on_vblank) {
+            ApplyDueLabelRetirement();
+            RetryDeferredFlip();
+        }
         const auto now = std::chrono::steady_clock::now();
         const bool flip_slot = !frame_limit || now >= next_flip;
         if (flip_slot && vblank_status.count % (main_port.flip_rate + 1) == 0) {
@@ -821,6 +849,20 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         }
         std::this_thread::sleep_until(tick_deadline);
     }
+}
+
+void VideoOutDriver::RetryDeferredFlip() {
+    DeferredFlip item;
+    {
+        std::scoped_lock lock{deferred_flip_mutex};
+        if (deferred_flips.empty()) return;
+        item = deferred_flips.front();
+        deferred_flips.pop_front();
+    }
+    liverpool->SendCommand([this, item]() {
+        SubmitFlipInternal(item.port, item.index, item.flip_arg, item.eop,
+                           item.generation, true);
+    });
 }
 
 void VideoOutDriver::ApplyDueLabelRetirement() {
