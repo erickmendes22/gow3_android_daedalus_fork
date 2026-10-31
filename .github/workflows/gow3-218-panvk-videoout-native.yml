@@ -10,6 +10,13 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h'
       - 'tools/android/bionic/run-bionic.sh'
+      - 'tools/android/bionic/fetch_panvk.sh'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/home/GpuDriverCard.kt'
+      - 'android-launcher/app/src/main/res/values/strings.xml'
+      - 'android-launcher/app/src/main/res/values-pt-rBR/strings.xml'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'tests/test_mali_panvk_compat_sources.py'
       - 'tests/test_mali_cpu_present_source.py'
   workflow_dispatch:
 
@@ -60,6 +67,7 @@ jobs:
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
+          python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
           python -m unittest discover -s tests -p 'test_android_*.py'
           bash tools/android/bionic/build_prepare.sh host
           python -m unittest discover -s tests -p 'test_bionic_*.py'

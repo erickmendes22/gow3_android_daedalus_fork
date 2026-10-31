@@ -19,5 +19,6 @@ jobs:
           # Dependency-free source guards; the complete native/Bionic suite runs
           # after provisioning the Android NDK and third-party headers.
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
+          python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
           python -m unittest discover -s tests -p 'test_sparse_queue.py' -v
           python -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v

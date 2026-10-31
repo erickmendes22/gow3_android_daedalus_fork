@@ -54,7 +54,8 @@ internal fun GpuDriverCard() {
     ) + (if (GpuDriverManager.adrenoCandidate()) listOf(
         "gen8" to stringResource(R.string.gpu_driver_bundled),
         "adreno7xx" to stringResource(R.string.gpu_driver_adreno7xx)) else emptyList()) + (if (GpuDriverManager.maliCandidate() && android.os.Build.VERSION.SDK_INT >= 35)
-        listOf("panvk" to stringResource(R.string.gpu_driver_panvk))
+        listOf("panvk" to stringResource(R.string.gpu_driver_panvk),
+               "panvk-next" to stringResource(R.string.gpu_driver_panvk_next))
         else emptyList()) + installed.map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
     val label = choices.firstOrNull { it.first == selected }?.second
         ?: stringResource(R.string.gpu_driver_missing)

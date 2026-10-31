@@ -325,5 +325,6 @@
     <string name="home_swap_rb">Inverter vermelho e azul (R/B)</string>
     <string name="home_swap_rb_hint">Use se as cores do jogo estiverem invertidas com seu driver. Vale no próximo início do jogo.</string>
     <string name="gpu_driver_panvk">PanVK 3.2 (Mali; experimental)</string>
+    <string name="gpu_driver_panvk_next">PanVK 26.3.1 (Mali; driver experimental atualizado)</string>
     <string name="gpu_driver_adreno_auto">Gen8 V38 Patched (Adreno 8xx) / v27 R1 (Adreno 6xx/7xx)</string>
 </resources>

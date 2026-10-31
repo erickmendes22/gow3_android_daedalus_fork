@@ -182,6 +182,30 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
             format_info.usage = usage_flags;
         }
     }
+    // The PanVK BCn decoder can sample compressed blocks even when optional
+    // ExtendedUsage is unavailable for the combination of image flags and
+    // transfer usage. Keep BC data compressed and let the driver decode it:
+    // silently reinterpreting BCn as RGBA8 would corrupt pitches and mipmaps.
+    // Scope this retry strictly to Arm; Adreno retains the prior flags.
+    if (image_format_properties.result == vk::Result::eErrorFormatNotSupported &&
+        info.props.is_block &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (format_info.flags & vk::ImageCreateFlagBits::eExtendedUsage)) {
+        const auto original_flags = format_info.flags;
+        format_info.flags &= ~vk::ImageCreateFlagBits::eExtendedUsage;
+        const auto retry = instance.GetPhysicalDevice().getImageFormatProperties2(format_info);
+        if (retry.result == vk::Result::eSuccess) {
+            flags = format_info.flags;
+            image_format_properties = retry;
+            LOG_WARNING(Render_Vulkan,
+                        "PanVK BCn image compatibility: format {} accepted without "
+                        "optional ExtendedUsage (usage {}, flags {})",
+                        vk::to_string(supported_format), vk::to_string(usage_flags),
+                        vk::to_string(flags));
+        } else {
+            format_info.flags = original_flags;
+        }
+    }
     if (image_format_properties.result == vk::Result::eErrorFormatNotSupported) {
         LOG_ERROR(Render_Vulkan, "image format {} type {} is not supported (flags {}, usage {})",
                   vk::to_string(supported_format), vk::to_string(format_info.type),
