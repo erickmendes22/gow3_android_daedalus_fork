@@ -1,0 +1,45 @@
+name: SotC native TAA history ghosting audit (NO APK)
+on:
+  push:
+    branches: [fix/sotc-taa-history-ghosts-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Verify exact native temporal history bypass and existing GPU fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-taa-gs-audit/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          gpu=Path('out/sotc-taa-gs-audit/gpu/shadps4')
+          ras=(gpu/'video_core/renderer_vulkan/vk_rasterizer.cpp').read_text()
+          pipe=(gpu/'video_core/renderer_vulkan/vk_pipeline_cache.cpp').read_text()
+          assert 'constexpr u64 kTaaResolveHash = 0xa402ddac;' in ras
+          assert 'constexpr u32 kTaaEnableDword = 42;' in ras
+          assert 'TaaOff()' in ras
+          assert 'taa_flat[kTaaEnableDword] &= ~1u;' in ras
+          assert 'SOTC TAA off: resolve without history blend' in ras
+          assert 'const bool adreno_missing_barycentrics = instance.GetVendorID() == 0x5143;' in pipe
+          assert 'GS_fallback=%d' in pipe
+          print('PASS: native TAA history bit disabled without altering exposure, GS interpolation and Wave32')
+          PY
