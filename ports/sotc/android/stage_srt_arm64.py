@@ -195,9 +195,13 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {''',
     if (!inst || depth > 32) return true;
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
-    case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
         return false; // values already in a stable user/flat register
+    case IR::Opcode::ReadConst:
+        // A ReadConst backed by a dynamic SRT window has no fixed
+        // descriptor offset. Do not reinterpret its flag-bearing placement
+        // as a stable register in the CPU SRT walker.
+        return (inst->Flags<u32>() & ReadConstDynamicWindowFlag) != 0;
     case IR::Opcode::Phi:
         return true; // shader loop / divergent control flow
     default:
