@@ -2,6 +2,10 @@ name: SotC v0.1.30 FastBind resource hazard preflight
 on:
   push:
     branches: [fix/sotc-v030-fastbind-resource-sync-20261101]
+    paths:
+      - ports/sotc/android/stage_renderer.py
+      - ports/sotc/android/stage_resource_coherence.py
+      - tests/test_sotc_resource_coherence.py
   workflow_dispatch:
 permissions:
   contents: read
