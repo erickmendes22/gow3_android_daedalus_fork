@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -55,7 +56,14 @@ inline u8 Byte(float v, bool hdr = false) {
 
 // Snapshot format is the PHYSICAL VkImage format, not guest ImageInfo format.
 // D24S8/D32S8 use DEPTH aspect only: 4 bytes per copied depth texel.
-inline u32 BytesPerPixel(vk::Format format, bool depth) {
+inline u32 BytesPerPixel(vk::Format format, bool depth, bool stencil = false) {
+    if (stencil) {
+        switch (format) {
+        case vk::Format::eD24UnormS8Uint:
+        case vk::Format::eD32SfloatS8Uint: return 1;
+        default: return 0;
+        }
+    }
     if (depth) {
         switch (format) {
         case vk::Format::eD16Unorm: return 2;
@@ -78,7 +86,11 @@ inline u32 BytesPerPixel(vk::Format format, bool depth) {
     default: return 0;
     }
 }
-inline void Pixel(const u8* input, vk::Format format, bool depth, u8* rgb) {
+inline void Pixel(const u8* input, vk::Format format, bool depth, bool stencil, u8* rgb) {
+    if (stencil) {
+        rgb[0] = rgb[1] = rgb[2] = input[0];
+        return;
+    }
     if (depth) {
         float d = 0.f;
         switch (format) {
@@ -132,7 +144,7 @@ inline void Pixel(const u8* input, vk::Format format, bool depth, u8* rgb) {
 // A plain 24-bit BMP allows viewing pixels on-device without external tools.
 // Scales in software AFTER the fence; never writes into game images.
 inline bool SaveBmp(const std::string& path, const u8* pixels, u32 w, u32 h, u32 bytes_per_pixel,
-                    vk::Format format, bool depth, u64& nonblack) {
+                    vk::Format format, bool depth, bool stencil, u64& nonblack) {
     constexpr u32 preview_w = 960, preview_h = 540;
     const u32 dw = std::min(w, preview_w), dh = std::min(h, preview_h);
     const u32 stride = (dw * 3 + 3) & ~u32{3};
@@ -159,7 +171,7 @@ inline bool SaveBmp(const std::string& path, const u8* pixels, u32 w, u32 h, u32
             const u32 sx = u32((u64(x) * w) / dw);
             const u8* pixel = pixels + (size_t(sy) * w + sx) * bytes_per_pixel;
             u8 rgb[3]{};
-            Pixel(pixel, format, depth, rgb);
+            Pixel(pixel, format, depth, stencil, rgb);
             nonblack += (rgb[0] | rgb[1] | rgb[2]) != 0;
             u8* dst = row.data() + size_t(x) * 3;
             dst[0] = rgb[2]; dst[1] = rgb[1]; dst[2] = rgb[0];
@@ -173,10 +185,11 @@ inline bool SaveBmp(const std::string& path, const u8* pixels, u32 w, u32 h, u32
 // Called only for a handful of 3D draws when GOW3_MALI_AUTOCAPTURE=1 on Arm.
 // Returns reason for any skipped target to the per-pass metadata file.
 inline std::string Queue(const Instance& instance, Scheduler& scheduler, Runtime& runtime,
-                         VideoCore::Image& image, bool depth, const std::string& path) {
+                         VideoCore::Image& image, bool depth, const std::string& path,
+                         bool stencil = false) {
     const auto& ci = image.backing->image.image_ci;
     const u32 w = ci.extent.width, h = ci.extent.height;
-    const u32 bpp = BytesPerPixel(ci.format, depth);
+    const u32 bpp = BytesPerPixel(ci.format, depth, stencil);
     if (!bpp) return "unsupported_physical_format";
     if (!w || !h || w > 4096 || h > 4096) return "invalid_extent";
     if (ci.imageType != vk::ImageType::e2D || ci.samples != vk::SampleCountFlagBits::e1)
@@ -212,8 +225,9 @@ inline std::string Queue(const Instance& instance, Scheduler& scheduler, Runtime
     runtime.FlushBarriers();
     const vk::BufferImageCopy copy{
         .bufferOffset = 0,
-        .imageSubresource = {.aspectMask = depth ? vk::ImageAspectFlagBits::eDepth
-                                                 : vk::ImageAspectFlagBits::eColor,
+        .imageSubresource = {.aspectMask = stencil ? vk::ImageAspectFlagBits::eStencil
+                                                 : depth ? vk::ImageAspectFlagBits::eDepth
+                                                         : vk::ImageAspectFlagBits::eColor,
                              .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
         .imageExtent = {w, h, 1},
     };
@@ -221,15 +235,17 @@ inline std::string Queue(const Instance& instance, Scheduler& scheduler, Runtime
         cb.copyImageToBuffer(img, vk::ImageLayout::eTransferSrcOptimal, dst, copy);
     });
     scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation,
-                                      mapped, bytes, bpp, format = ci.format, w, h, path, depth] {
+                                      mapped, bytes, bpp, format = ci.format, w, h, path, depth,
+                                      stencil] {
         const VkResult invalidate = vmaInvalidateAllocation(allocator, allocation, 0, bytes);
         u64 nonblack = 0;
         const bool ok = invalidate == VK_SUCCESS &&
                         SaveBmp(path, static_cast<const u8*>(mapped.pMappedData), w, h,
-                                bpp, format, depth, nonblack);
-        std::printf("GOW3_MALI_PASS_IMAGE path=%s size=%ux%u depth=%d format=%s "
+                                bpp, format, depth, stencil, nonblack);
+        std::printf("GOW3_MALI_PASS_IMAGE path=%s size=%ux%u depth=%d stencil=%d format=%s "
                     "nonblack=%llu/%llu ok=%d\n",
-                    path.c_str(), w, h, int(depth), vk::to_string(format).c_str(),
+                    path.c_str(), w, h, int(depth), int(stencil),
+                    vk::to_string(format).c_str(),
                     static_cast<unsigned long long>(nonblack),
                     static_cast<unsigned long long>(u64(std::min(w, 960u)) * std::min(h, 540u)),
                     int(ok));
@@ -255,16 +271,16 @@ inline void CaptureDraw(const Instance& instance, Scheduler& scheduler, Runtime&
     if (!first || !first->backing || first->info.size.width < 320 ||
         first->info.size.height < 180) return;
     const bool has_depth = depth_enabled && depth && depth->backing;
-    static u32 depth_draws = 0;
-    static bool first_color_only = false;
+    // DrawRecord can execute on a separate recording worker.
+    static std::atomic<u32> depth_draws{0};
+    static std::atomic<bool> first_color_only{false};
     u32 number = 0;
     bool take = false;
     if (has_depth) {
-        number = ++depth_draws;
+        number = depth_draws.fetch_add(1, std::memory_order_relaxed) + 1;
         take = number == 1 || number == 8 || number == 32 ||
                number == 128 || number == 512;
-    } else if (!first_color_only) {
-        first_color_only = true;
+    } else if (!first_color_only.exchange(true, std::memory_order_relaxed)) {
         take = true;
     }
     if (!take) return;
@@ -330,6 +346,18 @@ inline void CaptureDraw(const Instance& instance, Scheduler& scheduler, Runtime&
         std::printf("GOW3_MALI_PASS_CAPTURE depth guest=%#llx format=%s result=%s\n",
                     static_cast<unsigned long long>(depth->info.guest_address),
                     vk::to_string(format).c_str(), status.c_str());
+        // Stencil is an independent Vulkan aspect. A grayscale copy can expose
+        // masking failures even when the depth/color attachments look correct.
+        if (depth->info.props.has_stencil) {
+            const std::string stencil_path = prefix + "_stencil.bmp";
+            const std::string stencil_result = !depth->binding.is_bound
+                ? Queue(instance, scheduler, runtime, *depth, false, stencil_path, true)
+                : "texture_feedback_alias";
+            if (meta) std::fprintf(meta, "stencil format=%s result=%s file=%s\n",
+                vk::to_string(format).c_str(), stencil_result.c_str(), stencil_path.c_str());
+            std::printf("GOW3_MALI_PASS_CAPTURE stencil format=%s result=%s\n",
+                        vk::to_string(format).c_str(), stencil_result.c_str());
+        }
     } else if (meta) {
         std::fprintf(meta, "depth not_active_on_this_pass\n");
     }

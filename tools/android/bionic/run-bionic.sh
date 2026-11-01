@@ -175,6 +175,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           'PanVK capture stages: guest = PS4 VideoOut, post = host Vulkan output, cpu = readback before Android AHB.' \
           'scene_????_3d_colorN.bmp = REAL Vulkan render-target contents after selected 3D draws.' \
           'scene_????_3d_depth.bmp = REAL Vulkan depth attachment, grayscale; scene_????_color is first non-depth pass.' \
+          'scene_????_3d_stencil.bmp = stencil aspect as grayscale where available.' \
           'scene_*_pass.txt = pass shader hashes, buffer addresses, physical formats and skip/failure reasons.' \
           'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.' \
           'Previews: accepted guest frames 1 4 12 32 120 360 480 720 and first nonblack transition.' \

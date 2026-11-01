@@ -27,6 +27,8 @@ class MaliAttachmentCapture(unittest.TestCase):
         self.assertIn("texture_cache.GetImage(db_desc.first)", RASTER)
         self.assertIn("vk::ImageAspectFlagBits::eDepth", PASS)
         self.assertIn("vk::ImageAspectFlagBits::eColor", PASS)
+        self.assertIn("vk::ImageAspectFlagBits::eStencil", PASS)
+        self.assertIn('"_stencil.bmp"', PASS)
         self.assertIn("scene_%04u_%s", PASS)
         self.assertIn('"_depth.bmp"', PASS)
         self.assertIn('"_pass.txt"', PASS)
@@ -39,6 +41,8 @@ class MaliAttachmentCapture(unittest.TestCase):
         for n in (1, 8, 32, 128, 512):
             self.assertIn(f"number == {n}", PASS)
         self.assertIn("first_color_only", PASS)
+        self.assertIn("std::atomic<u32> depth_draws", PASS)
+        self.assertIn("first_color_only.exchange(true", PASS)
         self.assertIn("32ull << 20", PASS)
         self.assertIn("ci.samples != vk::SampleCountFlagBits::e1", PASS)
         self.assertIn("ci.usage & vk::ImageUsageFlagBits::eTransferSrc", PASS)
