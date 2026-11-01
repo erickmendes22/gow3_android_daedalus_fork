@@ -297,6 +297,17 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Desligado por padrão. A cada 5 s registra CPU real das threads de desenho/processamento, tempo em binds, readback, esperas GPU, texturas e comandos. A medição tem custo: desligue ao comparar FPS e reinicie para aplicar."
                          else "OFF by default. Logs real draw/command CPU time, binds, readbacks, GPU waits, textures and command costs every 5 s. Profiling has overhead: disable for FPS comparisons and restart to apply.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Reuso exato de especializações FS/CS (CPU)"
+                                      else "Exact FS/CS shader specialization reuse (CPU)",
+                        (values["sotc_stage_spec_memo"]?:"1")=="1",
+                        {save("sotc_stage_spec_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Transferir dados SRT sem copiar (CPU)"
+                                      else "Zero-copy CP-to-draw SRT snapshot (CPU)",
+                        (values["sotc_stage_snapshot_swap"]?:"1")=="1",
+                        {save("sotc_stage_snapshot_swap",if(it)"1" else "0")})
+                    Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.27 e reinicie."
+                         else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.27, then restart.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Cache de bind Vulkan (sem pular draws)" else "Vulkan pipeline bind cache (no skipped draws)",
                         (values["sotc_pipeline_bind_memo"]?:"1")=="1",
                         {save("sotc_pipeline_bind_memo",if(it)"1" else "0")})
