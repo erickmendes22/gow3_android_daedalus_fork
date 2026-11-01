@@ -1026,23 +1026,52 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     }
     auto* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
+    // A dynamic offset can depend on a ReadConst assigned later in the *same*
+    // pointer group. The old single forward pass dropped these reads when that
+    // dependency's flatbuf_off_dw was still zero, silently losing shader inputs.
+    // Revisit only unresolved operations as their prerequisites acquire slots.
+    using PendingCopy = std::pair<IR::Value, IR::Inst*>;
+    std::vector<PendingCopy> pending;
+    pending.reserve(use_list->size());
     for (auto [src_off_dw, use] : *use_list) {
-        if (!IsCpuSrtOffset(src_off_dw)) continue;
-        if (src_off_dw.IsImmediate()) {
-            p.insert(p.end(), {OpCopyImm, src_off_dw.U32(), pass_info.dst_off_dw});
-        } else {
-            SrtProgram offset;
-            if (!ComputeOffset(offset, pass_info, src_off_dw)) {
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
-                continue;
-            }
-            p.insert(p.end(), offset.begin(), offset.end());
-            p.insert(p.end(), {OpCopyDyn, pass_info.dst_off_dw});
+        if (IsCpuSrtOffset(src_off_dw)) {
+            pending.emplace_back(src_off_dw, use);
         }
-        SetFlatbufOffset(use, pass_info.dst_off_dw++);
+    }
+    // At most one new dependency is resolved per iteration; terminate on no progress.
+    for (size_t pass = 0, max_passes = pending.size(); pass < max_passes && !pending.empty();
+         ++pass) {
+        bool progress = false;
+        for (size_t i = 0; i < pending.size();) {
+            const auto [src_off_dw, use] = pending[i];
+            SrtProgram offset;
+            if (!src_off_dw.IsImmediate() &&
+                !ComputeOffset(offset, pass_info, src_off_dw)) {
+                ++i;
+                continue; // Dependency may be assigned on a later iteration.
+            }
+            if (src_off_dw.IsImmediate()) {
+                p.insert(p.end(), {OpCopyImm, src_off_dw.U32(), pass_info.dst_off_dw});
+            } else {
+                p.insert(p.end(), offset.begin(), offset.end());
+                p.insert(p.end(), {OpCopyDyn, pass_info.dst_off_dw});
+            }
+            SetFlatbufOffset(use, pass_info.dst_off_dw++);
+            pending.erase(pending.begin() + i);
+            progress = true;
+        }
+        if (!progress) break;
+    }
+    if (!pending.empty()) {
+        // These inputs are genuinely non-flattenable on this CPU path. Keep their
+        // flatbuf slot zero so later GPU ReadConst lowering can still identify them.
+        // Report one aggregate warning rather than one error for every dependency.
+        LOG_WARNING(Render_Recompiler,
+                    "ORDER1886_SRT_UNRESOLVED: {} CPU pointer offsets lack flatbuf dependencies",
+                    pending.size());
     }
     for (const auto [src_off_dw, use] : *use_list) {
-        if (IsCpuSrtOffset(src_off_dw) && pass_info.GetUsesAsPointer(use)) {
+        if (GetFlatbufOffset(use) != 0 && pass_info.GetUsesAsPointer(use)) {
             VisitPointer(src_off_dw, use, pass_info, p);
         }
     }
