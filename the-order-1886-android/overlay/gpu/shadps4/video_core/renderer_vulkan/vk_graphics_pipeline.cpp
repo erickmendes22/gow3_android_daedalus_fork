@@ -207,6 +207,13 @@ GraphicsPipeline::GraphicsPipeline(
                infos[fs] && Shader::Backend::SPIRV::NeedsPerVertexAuxGS(
                    profile, *infos[fs], runtime_infos[fs])) {
         // Direct VS->FS TriangleList only. No game GS is replaced.
+        // One-time observability: on a real Adreno run this proves the correction was
+        // selected rather than merely compiled into libps4gpu.
+        static std::atomic_bool order_aux_gs_reported{false};
+        if (!order_aux_gs_reported.exchange(true, std::memory_order_relaxed)) {
+            LOG_INFO(Render_Vulkan, "ORDER1886_PER_VERTEX_INTERP auxiliary GS enabled "
+                                    "(no native barycentric extension)");
+        }
         const std::vector<u32> aux_spv = Shader::Backend::SPIRV::EmitPerVertexAuxGS(
             profile, *infos[fs], runtime_infos[fs]);
         const vk::ShaderModuleCreateInfo aux_create_info{
