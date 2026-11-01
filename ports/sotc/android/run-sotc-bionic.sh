@@ -173,7 +173,15 @@ export SOTC_STAGE_SNAPSHOT_SWAP=${SOTC_STAGE_SNAPSHOT_SWAP:-1}
 export SOTC_REG_SNAPSHOT_MEMO=${SOTC_REG_SNAPSHOT_MEMO:-1}
 # Experimental: OFF until validated on real SotC gameplay.
 export SOTC_RT_MEMO=${SOTC_RT_MEMO:-1}
+# Native Bionic guest-memory region cache (64 writes journal, 512 direct slots).
+# 0 restores generation-only eight-entry cache and all old lock checks.
+export SOTC_VM_RANGE_CACHE=${SOTC_VM_RANGE_CACHE:-1}
+case "$SOTC_VM_RANGE_CACHE" in
+  0|1) ;;
+  *) echo "Invalid SOTC_VM_RANGE_CACHE (expected 0/1)" >&2; exit 2 ;;
+esac
 echo "SotC CPU hot path: shader_spec_exact=$SOTC_STAGE_SPEC_MEMO stage_snapshot_swap=$SOTC_STAGE_SNAPSHOT_SWAP reg_snapshot_memo=$SOTC_REG_SNAPSHOT_MEMO"
+echo "SotC Bionic VM: interval cache=$SOTC_VM_RANGE_CACHE; reserve logging capped to 16 (BB_MEMORY_LOG=1 overrides)"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"
 # would STILL activate it. Unset both unless explicitly selected in UI.

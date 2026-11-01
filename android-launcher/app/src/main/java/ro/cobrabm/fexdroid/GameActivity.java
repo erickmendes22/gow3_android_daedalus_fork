@@ -627,6 +627,10 @@ public final class GameActivity extends Activity {
                 // Never enable speculative render-pass reuse by default.
                 env.put("SOTC_RT_MEMO",
                         "0".equals(setting("sotc_rt_memo")) ? "0" : "1");
+                // SotC-only VM journal and 512-slot direct cache, fail-closed
+                // to the original Bionic pthread RW lock on any uncertainty.
+                env.put("SOTC_VM_RANGE_CACHE",
+                        "0".equals(setting("sotc_vm_range_cache")) ? "0" : "1");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.
