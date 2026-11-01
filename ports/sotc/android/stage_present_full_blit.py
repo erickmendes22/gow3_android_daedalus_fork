@@ -41,7 +41,7 @@ def patch_present_full_blit(gpu: Path) -> None:
     # Remove the old rect declaration only at the barrier end first.
     s = s.replace(barrier, barrier.replace(old_rect, "            } // Clear and barrier required only for partial destination blits."), 1)
     s = s.replace(clear, prefix + clear, 1)
-    if s.count("const auto rect = FitImage(frame->width, frame->height, extent.width, extent.height);") != 1:
+    if s.count(old_rect) != 1:
         raise AssertionError("SotC fullscreen blit now has multiple/missing rects")
     if s.index("if (needs_black_clear)") >= s.index(clear):
         raise AssertionError("Clear was not guarded before the memory writes")
