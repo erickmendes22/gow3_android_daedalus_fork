@@ -522,6 +522,11 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # SotC-only exact Vulkan host-state memos; never reuse guest descriptors.
     from stage_perf_fastpaths import patch_fastpaths
     patch_fastpaths(root, out)
+    # SotC Android ~43ms CPU on CP and ~35ms on the draw thread in the
+    # 12:42 log: verified stage variant reuse + zero-copy draw snapshot.
+    # Neither the 0.1.28 register-chunk change nor its spin change is ported.
+    from stage_sotc_stage_spec_cpu import patch_sotc_stage_spec_cpu
+    patch_sotc_stage_spec_cpu(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
