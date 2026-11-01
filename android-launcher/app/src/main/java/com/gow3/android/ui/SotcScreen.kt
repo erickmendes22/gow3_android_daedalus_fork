@@ -309,6 +309,10 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                                       else "Skip unchanged GPU register snapshots (CPU)",
                         (values["sotc_reg_snapshot_memo"]?:"1")=="1",
                         {save("sotc_reg_snapshot_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Reutilização conservadora de render targets (teste)"
+                                      else "Conservative render-state memo (test)",
+                        (values["sotc_rt_memo"]?:"0")=="1",
+                        {save("sotc_rt_memo",if(it)"1" else "0")})
                     Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.29 e reinicie."
                          else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.29, then restart.",
                         color=SotcPalette.secondary,fontSize=11.sp)

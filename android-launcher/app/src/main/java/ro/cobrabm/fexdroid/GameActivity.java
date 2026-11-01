@@ -620,6 +620,9 @@ public final class GameActivity extends Activity {
                 // CP-owned last-published register chunks; ordered draw stream unchanged.
                 env.put("SOTC_REG_SNAPSHOT_MEMO",
                         "0".equals(setting("sotc_reg_snapshot_memo")) ? "0" : "1");
+                // Never enable speculative render-pass reuse by default.
+                env.put("SOTC_RT_MEMO",
+                        "1".equals(setting("sotc_rt_memo")) ? "1" : "0");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.

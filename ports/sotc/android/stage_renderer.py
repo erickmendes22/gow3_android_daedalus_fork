@@ -530,6 +530,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Skip duplicate last-published register snapshots on the CP->draw FIFO.
     from stage_sotc_reg_snapshot import patch_sotc_reg_snapshot
     patch_sotc_reg_snapshot(out)
+    # Conservative render-state cache from other ports, SotC hazards preserved.
+    from stage_sotc_rt_memo import patch_sotc_rt_memo
+    patch_sotc_rt_memo(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
