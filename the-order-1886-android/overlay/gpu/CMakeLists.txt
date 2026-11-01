@@ -319,7 +319,13 @@ if(ANDROID)
     target_compile_definitions(ps4gpu PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
     target_include_directories(ps4gpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tools/android/present)
     target_link_libraries(ps4gpu PRIVATE nativewindow dl)
-    target_link_options(ps4gpu PRIVATE -Wl,-z,undefs)
+    # FFmpeg's AArch64 NEON tx_float_neon.S uses direct ADRP/ADD relocations to
+    # ff_tx_tab_* globals from libavutil.a. Those archive symbols must not be
+    # interposable from the resulting Android shared library. Hide archive
+    # exports instead of disabling NEON or video decode acceleration.
+    target_link_options(ps4gpu PRIVATE
+        "-Wl,--exclude-libs,libavutil.a:libavcodec.a:libavformat.a:libswscale.a:libswresample.a"
+        "-Wl,-z,undefs")
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
