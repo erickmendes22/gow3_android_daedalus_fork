@@ -7,6 +7,9 @@ on:
       - ".github/workflows/order1886-bionic-gpu.yml"
       - "the-order-1886-android/overlay/gpu/**"
       - "the-order-1886-android/overlay/tools/android/**"
+      - "the-order-1886-android/overlay/src/**"
+      - "the-order-1886-android/overlay/cpu/**"
+      - "the-order-1886-android/scripts/**"
   workflow_dispatch:
 
 permissions:
