@@ -362,8 +362,8 @@ public final class Order1886Activity extends Activity {
             "16:9".equals(prefs().getString("aspect","original"))?1:0,
             n->{prefs().edit().putString("aspect",n==0?"original":"16:9").apply();selectionChange();});
         selectSpinner(c,"Readback",new String[]{"Relaxed","Selective","Precise"},
-            "precise".equals(prefs().getString("readback","precise"))?2:
-            "selective".equals(prefs().getString("readback","precise"))?1:0,
+            "precise".equals(prefs().getString("readback","relaxed"))?2:
+            "selective".equals(prefs().getString("readback","relaxed"))?1:0,
             n->{prefs().edit().putString("readback",
                 n==2?"precise":n==1?"selective":"relaxed").apply();selectionChange();});
         selectSpinner(c,"Filtro de apresentação",new String[]{"FSR 1 espacial","Linear (sem FSR)"},
@@ -563,7 +563,7 @@ public final class Order1886Activity extends Activity {
         if(gameDir==null)throw new IOException("Nenhum jogo selecionado");
         preparer.prepare(gameDir,prefs().getInt("fps",30),
                 prefs().getString("aspect","original"),prefs().getInt("width",1920),
-                prefs().getString("readback","precise"),
+                prefs().getString("readback","relaxed"),
                 prefs().getInt("language",1),this::show);
         if(!prefs().edit().putString("preparedSignature",prepSignature()).commit())
             throw new IOException("Não foi possível salvar perfil preparado");
@@ -592,8 +592,8 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_PRESENT_SOCKET",new File(base,"present.sock").getAbsolutePath());
         env.put("ORDER1886_GPU_USER_DIR",new File(base,"gpu-cache").getAbsolutePath());
         env.put("ORDER1886_READBACKS",Integer.toString(
-            "precise".equals(prefs().getString("readback","precise"))?2:
-            "selective".equals(prefs().getString("readback","precise"))?3:1));
+            "precise".equals(prefs().getString("readback","relaxed"))?2:
+            "selective".equals(prefs().getString("readback","relaxed"))?3:1));
         env.put("ORDER1886_VSYNC",prefs().getBoolean("vsync",false)?"1":"0");
         env.put("ORDER1886_BACKGROUND_WARMUP",prefs().getBoolean("warmup",false)?"1":"0");
         env.put("ORDER1886_DISPLAY_HZ",
