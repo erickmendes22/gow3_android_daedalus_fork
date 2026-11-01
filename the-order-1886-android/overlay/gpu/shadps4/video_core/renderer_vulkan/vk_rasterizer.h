@@ -16,7 +16,6 @@
 #include "video_core/renderer_vulkan/vk_draw_prep.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
-#include "video_core/renderer_vulkan/vk_predication.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/texture_cache.h"
 
@@ -156,10 +155,6 @@ public:
 
     PipelineCache& GetPipelineCache() {
         return pipeline_cache;
-    }
-
-    PredicationManager& GetPredication() {
-        return predication;
     }
 
     template <typename Func>
@@ -343,7 +338,6 @@ private:
     boost::icl::interval_set<VAddr> mapped_ranges;
     Common::SharedFirstMutex mapped_ranges_mutex;
     PipelineCache pipeline_cache;
-    PredicationManager predication;
     std::unique_ptr<DrawPreparation> draw_prep;
     std::unique_ptr<CameraMotion> camera_motion; // gow3: motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
