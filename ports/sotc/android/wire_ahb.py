@@ -199,6 +199,10 @@ def wire(root: Path, gpu: Path):
     content=content.replace('info.AddWait(swapchain.GetImageAcquiredSemaphore());',
        'if (auto acquired = swapchain.GetImageAcquiredSemaphore()) info.AddWait(acquired);')
     presenter.write_text(content)
+    # The AHB presentation path is now wired. Elide its full-surface redundant
+    # transfer clear/barrier, retaining both for any letterboxed blit.
+    from stage_present_full_blit import patch_present_full_blit
+    patch_present_full_blit(gpu)
     print('Wired SotC Vulkan renderer to Android AHB, Turnip loader and APK frame socket')
 
 def main():
