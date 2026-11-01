@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026, diag/sotc-real-frame-bottleneck-027, perf/sotc-stage-spec-cpu-029, perf/sotc-cp-register-snapshot-030, fix/sotc-v030-complete-draws-a830-20261101, fix/sotc-v030-fastbind-resource-sync-20261101]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026, diag/sotc-real-frame-bottleneck-027, perf/sotc-stage-spec-cpu-029, perf/sotc-cp-register-snapshot-030, fix/sotc-v030-complete-draws-a830-20261101, fix/sotc-v030-fastbind-resource-sync-20261101, fix/sotc-v031-file-read-resource-coherence-20261101]
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,8 @@ jobs:
           grep -Fq 'export SOTC_LOD_POOL_LOW=${SOTC_LOD_POOL_LOW:-8}' ports/sotc/android/run-sotc-bionic.sh
           python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_resource_coherence.py' -v
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Isrc -I. -pthread -c src/runtime_file.c -o "$RUNNER_TEMP/sotc-file-bounce.o"
+          grep -Fq 'sotc_file_bounce_buffer(size)' src/runtime_file.c
           python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gs_position_interface.py' -v
@@ -258,7 +260,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.30-graphics-resource-coherent
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.30-resource-bounce-consolidated
           path: |
             out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.30-boot-test-arm64.apk
             out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.30-boot-test-arm64.apk.sha256
