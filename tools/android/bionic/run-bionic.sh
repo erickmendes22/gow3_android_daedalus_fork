@@ -173,8 +173,8 @@ case "${GOW3_VULKAN_DRIVER:-}" in
         printf '%s\n' \
           'PanVK capture stages: guest = PS4 VideoOut, post = host Vulkan output, cpu = readback before Android AHB.' \
           'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.' \
-          'Previews: guest flips 120 360 480 720, maximum size 960x540 BMP.' \
-          'See GOW3_MALI_CAPTURE markers in logs/android-game.log for any missing stage.' \
+          'Previews: accepted guest frames 1 4 12 32 120 360 480 720 and first nonblack transition.' \
+          'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.' \
           > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
       echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE"

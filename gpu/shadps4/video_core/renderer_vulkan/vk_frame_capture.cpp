@@ -164,7 +164,8 @@ void FrameCapture::OnFlip(VAddr presented_address) {
     // Correlate one early and one late scene-pass graph with the BMP stages.
     // This writes target/depth/shader metadata, not guessed scene pixels.
     if (!arm && mali_auto && mali_auto[0] == '1' &&
-        (flip_index == 119 || flip_index == 479)) arm = true;
+        (flip_index == 1 || flip_index == 11 ||
+         flip_index == 119 || flip_index == 479)) arm = true;
     if (!arm && trigger && std::filesystem::exists(trigger)) {
         std::error_code ec;
         std::filesystem::remove(trigger, ec);

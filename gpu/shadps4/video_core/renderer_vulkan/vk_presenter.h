@@ -151,6 +151,9 @@ private:
     VmaAllocation mali_cpu_readback_allocation{};
     void* mali_cpu_readback_mapped{};
     VkDeviceSize mali_cpu_readback_size{};
+    // The present thread reports when the GPU finally produced visible RGB.
+    // Capture the next accepted guest frame at each of the three pipeline stages.
+    std::atomic<bool> mali_capture_first_content{false};
     std::atomic<u32> frames_cap{0};
     std::chrono::steady_clock::time_point lsfg_stats_ts{};
     bool lsfg_stats_active{false};

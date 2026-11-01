@@ -427,6 +427,16 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
                     vk::Image image, vk::ImageLayout layout, u32 w, u32 h, const char* name,
                     int index, bool bitmap = false,
                     vk::Format physical_format = vk::Format::eR8G8B8A8Unorm) {
+    // Diagnostic preview is valid only for 32-bit RGBA/BGRA. Do not copy
+    // unknown compressed/HDR formats into an undersized 4-byte staging buffer.
+    if (bitmap && physical_format != vk::Format::eR8G8B8A8Unorm &&
+        physical_format != vk::Format::eR8G8B8A8Srgb &&
+        physical_format != vk::Format::eB8G8R8A8Unorm &&
+        physical_format != vk::Format::eB8G8R8A8Srgb) {
+        LOG_WARNING(Render_Vulkan, "GOW3_MALI_CAPTURE skip stage={} unsupported format={}",
+                    name, vk::to_string(physical_format));
+        return;
+    }
     const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                        .size = VkDeviceSize(w) * h * 4,
                                        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
@@ -482,12 +492,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const char* capture_setting = std::getenv("GOW3_MALI_AUTOCAPTURE");
     const bool mali_auto = capture_setting && capture_setting[0] == '1' &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
-    const u32 mali_index = mali_auto ? ++mali_flip_index : 0;
-    const bool image_capture = mali_auto &&
-                               (mali_index == 120 || mali_index == 360 ||
-                                mali_index == 480 || mali_index == 720);
-    const bool frame_dump = manual_dump || image_capture;
-    const int selected_dump_index = image_capture ? int(mali_index) : frame_dump_index;
+    // Count only accepted guest frames. Nonblocking PanVK can reject a flip
+    // before GetRenderFrame; counting those discarded frames skipped EVERY
+    // diagnostic image on the user's actual run.
     // The actual guest flip, not arbitrary draws into any of the game's
     // registered display targets, defines the GSR2 camera/depth frame.
     // This is a no-op for Native AA, desktop and other upscalers.
@@ -517,10 +524,23 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 
     Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
+    const u32 mali_index = mali_auto ? ++mali_flip_index : 0;
+    const bool first_content = mali_auto &&
+                               mali_capture_first_content.exchange(false, std::memory_order_acq_rel);
+    // Capture immediately, at a few increasingly spaced startup frames,
+    // and again after the longer startup/scene transition.
+    const bool scheduled = mali_auto &&
+                           (mali_index == 1 || mali_index == 4 || mali_index == 12 ||
+                            mali_index == 32 || mali_index == 120 || mali_index == 360 ||
+                            mali_index == 480 || mali_index == 720);
+    const bool image_capture = scheduled || first_content;
+    const bool frame_dump = manual_dump || image_capture;
+    const int selected_dump_index = image_capture ? int(mali_index) : frame_dump_index;
     frame->mali_capture_frame = image_capture ? mali_index : 0;
     if (image_capture) {
-        std::printf("GOW3_MALI_CAPTURE scheduled frame=%u guest=%#llx\n",
-                    mali_index, static_cast<unsigned long long>(cpu_address));
+        LOG_WARNING(Render_Vulkan,
+                    "GOW3_MALI_CAPTURE accepted_frame={} first_content={} guest={:#x}",
+                    mali_index, first_content, cpu_address);
     }
 
     const auto frame_subresources = vk::ImageSubresourceRange{
@@ -974,7 +994,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                    vk::to_string(vk::Result(invalidate)));
         const u8* pixels = static_cast<const u8*>(mali_cpu_readback_mapped);
         static u64 probe_count = 0;
-        if (++probe_count <= 8 || probe_count % 120 == 0) {
+        static bool mali_seen_nonblack = false;
+        const bool periodic_probe = ++probe_count <= 8 || probe_count % 120 == 0;
+        if (periodic_probe || !mali_seen_nonblack) {
             u64 nonblack = 0, alpha_nonzero = 0, rgb_with_alpha = 0, sampled = 0;
             u64 rgb_hash = 14695981039346656037ull;
             for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {
@@ -991,11 +1013,21 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 rgb_with_alpha += has_rgb && has_alpha;
                 ++sampled;
             }
-            LOG_WARNING(Render_Vulkan,
-                        "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{} "
-                        "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
-                        probe_count, frame->width, frame->height, nonblack, sampled,
-                        alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
+            if (nonblack && !mali_seen_nonblack) {
+                mali_seen_nonblack = true;
+                mali_capture_first_content.store(true, std::memory_order_release);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW3_MALI_CAPTURE first_nonblack_output={} of {} at present_frame={}; "
+                            "requesting complete guest/post/cpu capture of next accepted frame",
+                            nonblack, sampled, probe_count);
+            }
+            if (periodic_probe || nonblack) {
+                LOG_WARNING(Render_Vulkan,
+                            "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{} "
+                            "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
+                            probe_count, frame->width, frame->height, nonblack, sampled,
+                            alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
+            }
         }
         if (frame->mali_capture_frame) {
             const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
@@ -1518,6 +1550,16 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
     // This is enabled only for PanVK, and never for host redraw/blank presents.
     const char* panvk = std::getenv("GOW3_VIDEOOUT_LABEL_RETIRE");
     const bool nonblock = panvk && panvk[0] == '1' && from_guest_flip;
+    const auto note_skip = [&](const char* reason) {
+        if (!nonblock) return;
+        static std::atomic<u64> rejected{0};
+        const u64 count = rejected.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || count % 120 == 0) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW3_MALI_VIDEOOUT_SKIP reason={} total={} -- retry next vblank",
+                        reason, count);
+        }
+    };
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
@@ -1531,7 +1573,10 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
 #endif
         };
         if (nonblock) {
-            if (!available()) return nullptr;
+            if (!available()) {
+                note_skip("no_free_present_frame");
+                return nullptr;
+            }
         } else {
             free_cv.wait(lock, available);
         }
@@ -1564,6 +1609,7 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
                 std::scoped_lock lock{free_mutex};
                 free_queue.push(frame);
                 free_cv.notify_one();
+                note_skip("present_fence_busy");
                 return nullptr;
             }
             continue;
