@@ -294,9 +294,43 @@ static void touch_for_write(void *buffer,uint64_t size) {
         *b=*b;
     }
 }
+/* SotC-only: read into private host memory, then copy to the PS4 guest in
+ * user mode. Host read/pread() writes are performed in kernel context and do
+ * not invoke the guest GPU memory tracker fault handler if a descriptor/texture
+ * buffer page was reprotected since touch_for_write(). An untracked write
+ * leaves a stale GPU resource, even when read() returned a full byte count.
+ * Upstream SotC uses the same 64 MiB/thread bounce mechanism. No change for
+ * GoW3: SOTC_PORT=1 is exported only by the SotC launcher.
+ */
+#define SOTC_FILE_BOUNCE_LIMIT (UINT64_C(64) << 20)
+static _Thread_local unsigned char *sotc_file_bounce;
+static _Thread_local uint64_t sotc_file_bounce_size;
+static unsigned char *sotc_file_bounce_buffer(uint64_t size) {
+    const char *enabled=getenv("SOTC_PORT");
+    if (!enabled || enabled[0]!='1' || size>SOTC_FILE_BOUNCE_LIMIT || size==0)
+        return NULL;
+    if (sotc_file_bounce_size<size) {
+        const uint64_t want=size<(UINT64_C(1)<<20) ? (UINT64_C(1)<<20) : size;
+        unsigned char *next=realloc(sotc_file_bounce,(size_t)want);
+        if (!next) return NULL;
+        sotc_file_bounce=next;
+        sotc_file_bounce_size=want;
+    }
+    return sotc_file_bounce;
+}
 static int64_t do_read(int fd,void *buffer,uint64_t size) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
+    unsigned char *staging=sotc_file_bounce_buffer(size);
+    if (staging) {
+        const ssize_t n=host_read(h,staging,size);
+        if (n<0) return -errno;
+        /* Copies from userspace generate write faults for GPU tracked pages. */
+        memcpy(buffer,staging,(size_t)n);
+        __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED);
+        __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
+        return n;
+    }
     touch_for_write(buffer,size);
     ssize_t n=host_read(h,buffer,size);
     if (n<0) { if (audio_trace()) printf("Audio trace: read(fd %d, %llu) failed, errno %d\n",fd,(unsigned long long)size,errno); return -errno; }
@@ -306,6 +340,15 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
+    unsigned char *staging=sotc_file_bounce_buffer(size);
+    if (staging) {
+        const ssize_t n=pread(h,staging,size,offset);
+        if (n<0) return -errno;
+        memcpy(buffer,staging,(size_t)n);
+        __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED);
+        __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
+        return n;
+    }
     touch_for_write(buffer,size);
     ssize_t n=pread(h,buffer,size,offset);
     if (n<0) { if (audio_trace()) printf("Audio trace: pread(fd %d, %llu @%lld) failed, errno %d\n",fd,(unsigned long long)size,(long long)offset,errno); return -errno; }
