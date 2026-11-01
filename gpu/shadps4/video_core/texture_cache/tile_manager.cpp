@@ -37,7 +37,12 @@ struct TilingInfo {
 
 TileManager::TileManager(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
                          Vulkan::Runtime& runtime_, StreamBuffer& stream_buffer_)
-    : instance{instance_}, scheduler{scheduler_}, runtime{runtime_}, stream_buffer{stream_buffer_} {
+    : instance{instance_}, scheduler{scheduler_}, runtime{runtime_}, stream_buffer{stream_buffer_},
+      uses_push_descriptors{instance_.MaxPushDescriptors() >= 3},
+      desc_heap{instance_, scheduler_.GetWorkSemaphore(), tiling_pool_sizes, 64} {
+    LOG_INFO(Render_Vulkan, "Tiling descriptors: {} (max push descriptors {})",
+             uses_push_descriptors ? "push" : "pooled descriptor sets",
+             instance.MaxPushDescriptors());
     const auto device = instance.GetDevice();
     const std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {{
         {
@@ -61,7 +66,10 @@ TileManager::TileManager(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     }};
 
     const vk::DescriptorSetLayoutCreateInfo desc_layout_ci = {
-        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .flags = uses_push_descriptors
+                     ? vk::DescriptorSetLayoutCreateFlags{
+                           vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR}
+                     : vk::DescriptorSetLayoutCreateFlags{},
         .bindingCount = static_cast<u32>(bindings.size()),
         .pBindings = bindings.data(),
     };
@@ -196,30 +204,66 @@ vk::Pipeline TileManager::GetTilingPipeline(const ImageInfo& info, bool is_tiler
 void TileManager::RecordTilingDispatch(vk::Pipeline pipeline, const vk::DescriptorBufferInfo& tiled,
                                        const vk::DescriptorBufferInfo& linear,
                                        const vk::DescriptorBufferInfo& params, u32 dim_x) {
-    scheduler.Record([pipeline, layout = *pl_layout, tiled, linear, params,
-                      dim_x](vk::CommandBuffer cmdbuf) {
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
-        const std::array<vk::WriteDescriptorSet, 3> set_writes = {{
+    // The public Bachata ARM64 renderer supports PanVK without KHR_push_descriptor.
+    // Our renderer records Vulkan work on a worker thread. Populate and retain the
+    // ordinary descriptor set BEFORE deferring the command-buffer recording, so
+    // the worker never sees pointers to expired stack-local VkDescriptorBufferInfo.
+    vk::DescriptorSet set{};
+    if (!uses_push_descriptors) {
+        set = desc_heap.Commit(*desc_layout);
+        const std::array<vk::WriteDescriptorSet, 3> writes = {{
             {
+                .dstSet = set,
                 .dstBinding = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eStorageBuffer,
                 .pBufferInfo = &tiled,
             },
             {
+                .dstSet = set,
                 .dstBinding = 1,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eStorageBuffer,
                 .pBufferInfo = &linear,
             },
             {
+                .dstSet = set,
                 .dstBinding = 2,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
                 .pBufferInfo = &params,
             },
         }};
-        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, set_writes);
+        instance.GetDevice().updateDescriptorSets(writes, {});
+    }
+    scheduler.Record([pipeline, layout = *pl_layout, tiled, linear, params, dim_x,
+                      push = uses_push_descriptors, set](vk::CommandBuffer cmdbuf) {
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+        if (push) {
+            const std::array<vk::WriteDescriptorSet, 3> writes = {{
+                {
+                    .dstBinding = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .pBufferInfo = &tiled,
+                },
+                {
+                    .dstBinding = 1,
+                    .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .pBufferInfo = &linear,
+                },
+                {
+                    .dstBinding = 2,
+                    .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eUniformBuffer,
+                    .pBufferInfo = &params,
+                },
+            }};
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+        } else {
+            cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, set, {});
+        }
         cmdbuf.dispatch(dim_x, 1, 1);
     });
 }

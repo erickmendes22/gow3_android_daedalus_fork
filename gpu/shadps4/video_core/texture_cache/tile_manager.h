@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <unordered_map>
 #include <utility>
 #include <boost/container_hash/hash.hpp>
@@ -10,6 +11,7 @@
 #include "common/types.h"
 #include "video_core/amdgpu/tiling.h"
 #include "video_core/buffer_cache/buffer.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
 
 namespace Vulkan {
 struct Runtime;
@@ -64,6 +66,14 @@ private:
     Vulkan::Scheduler& scheduler;
     Vulkan::Runtime& runtime;
     StreamBuffer& stream_buffer;
+    // Bachata RELEASE compatibility: PanVK may not advertise KHR_push_descriptor.
+    // These pool sizes must outlive the DescriptorHeap, which stores a span.
+    static constexpr std::array<vk::DescriptorPoolSize, 2> tiling_pool_sizes{{
+        {vk::DescriptorType::eStorageBuffer, 128},
+        {vk::DescriptorType::eUniformBuffer, 64},
+    }};
+    bool uses_push_descriptors{};
+    Vulkan::DescriptorHeap desc_heap;
     vk::UniqueDescriptorSetLayout desc_layout;
     vk::UniquePipelineLayout pl_layout;
     std::unordered_map<TilingKey, vk::UniquePipeline, TilingKey::Hash> tiling_pipelines;
