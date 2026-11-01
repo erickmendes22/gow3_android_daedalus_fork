@@ -274,15 +274,20 @@ inline void CaptureDraw(const Instance& instance, Scheduler& scheduler, Runtime&
     const bool has_depth = depth_enabled && depth && depth->backing;
     // DrawRecord can execute on a separate recording worker.
     static std::atomic<u32> depth_draws{0};
-    static std::atomic<bool> first_color_only{false};
+    static std::atomic<u32> color_only_draws{0};
     u32 number = 0;
     bool take = false;
     if (has_depth) {
         number = depth_draws.fetch_add(1, std::memory_order_relaxed) + 1;
         take = number == 1 || number == 8 || number == 32 ||
                number == 128 || number == 512;
-    } else if (!first_color_only.exchange(true, std::memory_order_relaxed)) {
-        take = true;
+    } else {
+        // GoW3's reported bad frame contained only color passes. A single
+        // snapshot may show loading/UI rather than the scene. Sample the same
+        // bounded sequence when NO depth draw ever arrives.
+        number = color_only_draws.fetch_add(1, std::memory_order_relaxed) + 1;
+        take = number == 1 || number == 8 || number == 32 ||
+               number == 128 || number == 512;
     }
     if (!take) return;
     const char* directory = std::getenv("GOW3_MALI_CAPTURE_DIR");

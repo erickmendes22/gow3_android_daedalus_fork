@@ -47,9 +47,10 @@ class MaliAttachmentCapture(unittest.TestCase):
         self.assertIn("vendorID == 0x13B5", PASS)
         for n in (1, 8, 32, 128, 512):
             self.assertIn(f"number == {n}", PASS)
-        self.assertIn("first_color_only", PASS)
         self.assertIn("std::atomic<u32> depth_draws", PASS)
-        self.assertIn("first_color_only.exchange(true", PASS)
+        self.assertIn("std::atomic<u32> color_only_draws", PASS)
+        self.assertIn("color_only_draws.fetch_add(1", PASS)
+        self.assertIn("depth_draws.fetch_add(1", PASS)
         self.assertIn("32ull << 20", PASS)
         self.assertIn("ci.samples != vk::SampleCountFlagBits::e1", PASS)
         self.assertIn("ci.usage & vk::ImageUsageFlagBits::eTransferSrc", PASS)
