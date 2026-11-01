@@ -672,6 +672,80 @@ bool BufferCache::IsRangeGpuWritten(VAddr address, size_t size) {
     return gpu_written || PendingReadback(address, size);
 }
 
+// The Order's SRT graph can refer to dozens of different GPU-written 4 KiB pages.
+// The single-page helper calls scheduler.Finish() for EVERY page. On mobile
+// Vulkan this serializes the GPU and stalls the command processor repeatedly.
+// Record the exact same dirty-range copies first, then Finish only once.
+bool BufferCache::DownloadSrtSourcePages(std::span<const VAddr> pages) {
+    constexpr u64 PageSize = 4096;
+    struct PendingPage {
+        VAddr page;
+        VAddr arena_base;
+        Vulkan::StagingBufferRef staging;
+        boost::container::small_vector<vk::BufferCopy, 1> copies;
+    };
+    std::vector<PendingPage> pending;
+    pending.reserve(pages.size());
+    bool published = false;
+
+    for (const VAddr page : pages) {
+        if (page & (PageSize - 1)) {
+            continue;
+        }
+        if (!IsRangeGpuWritten(page, PageSize) || !IsRegionGpuModified(page, PageSize)) {
+            continue;
+        }
+        // DeferReadback tracks an older GPU copy in another queue submission.
+        // Retire it before scheduling a new copy of this same guest page.
+        WaitDeferredReadbacks(page, PageSize);
+        if (!IsRangeGpuWritten(page, PageSize)) {
+            published = true;
+            continue;
+        }
+        const auto* arena = GetArena(page >> block_shift, (page + PageSize - 1) >> block_shift);
+        boost::container::small_vector<vk::BufferCopy, 1> copies;
+        u64 bytes = 0;
+        memory_tracker->ForEachDownloadRange<false>(
+            page, PageSize, [&](u64 address, u64 size) {
+                std::scoped_lock lock{gpu_ranges_mutex};
+                gpu_modified_ranges.ForEachInRange(address, size, [&](VAddr start, VAddr end) {
+                    copies.push_back(vk::BufferCopy{
+                        .srcOffset = start - arena->cpu_addr,
+                        .dstOffset = bytes,
+                        .size = end - start,
+                    });
+                    bytes += Common::AlignUp(end - start, 64ULL);
+                });
+                gpu_modified_ranges.Subtract(address, size);
+            });
+        if (copies.empty()) {
+            continue;
+        }
+        auto staging = staging_pool.Request(bytes, VideoCore::MemoryType::HostCached);
+        for (auto& copy : copies) {
+            copy.dstOffset += staging.offset;
+        }
+        runtime.CopyBuffer(arena, staging.buffer, copies);
+        pending.push_back(PendingPage{page, arena->cpu_addr, staging, std::move(copies)});
+    }
+    if (pending.empty()) {
+        return published;
+    }
+
+    // All copies are in order on the GPU command stream: one fence, not N fences.
+    scheduler.Finish();
+    for (auto& item : pending) {
+        item.staging.buffer->Invalidate(item.staging.offset, item.staging.size);
+        for (const auto& copy : item.copies) {
+            auto* dst = std::bit_cast<u8*>(item.arena_base + copy.srcOffset);
+            memory->TryWriteBacking(dst,
+                item.staging.mapped + (copy.dstOffset - item.staging.offset), copy.size);
+        }
+        memory_tracker->UnmarkRegionAsGpuModified(item.page, PageSize);
+    }
+    return true;
+}
+
 bool BufferCache::DownloadSrtSourcePage(VAddr page) {
     constexpr u64 PageSize = 4096;
     if ((page & (PageSize - 1)) || !IsRangeGpuWritten(page, PageSize) ||
