@@ -614,11 +614,19 @@ static ABI int32_t reserve_range(void **inout, uint64_t size, int flags, uint64_
     /* Guest streaming reserves thousands of ranges. No stdout per reservation. */
     static unsigned reserved_logged;
     static int verbose=-1;
-    if (verbose<0) { const char *v=getenv("BB_MEMORY_LOG"); verbose=v && v[0]=='1'; }
-    if (!result && (verbose || reserved_logged<16)) {
-        printf("Runtime: reserved virtual range %p, size=%" PRIu64 "%s\n",
-               *inout,size,++reserved_logged==16 && !verbose
-               ? " (further ones: BB_MEMORY_LOG=1)" : "");
+    int log_all=__atomic_load_n(&verbose,__ATOMIC_ACQUIRE);
+    if (log_all<0) {
+        const char *v=getenv("BB_MEMORY_LOG");
+        log_all=v && v[0]=='1';
+        __atomic_store_n(&verbose,log_all,__ATOMIC_RELEASE);
+    }
+    if (!result) {
+        const unsigned index=__atomic_fetch_add(&reserved_logged,1,__ATOMIC_RELAXED);
+        if (log_all || index<16) {
+            printf("Runtime: reserved virtual range %p, size=%" PRIu64 "%s\n",
+                   *inout,size,index==15 && !log_all
+                   ? " (further ones: BB_MEMORY_LOG=1)" : "");
+        }
     }
     return result;
 }
@@ -877,8 +885,13 @@ static __thread unsigned region_cache_next;
 static __thread CachedRegion sotc_vm_direct[SOTC_VM_DIRECT_SLOTS];
 static int sotc_vm_cache_on(void) {
     static int on=-1;
-    if (on<0) { const char *v=getenv("SOTC_VM_RANGE_CACHE"); on=!(v && v[0]=='0'); }
-    return on;
+    int value=__atomic_load_n(&on,__ATOMIC_ACQUIRE);
+    if (value<0) {
+        const char *env=getenv("SOTC_VM_RANGE_CACHE");
+        value=!(env && env[0]=='0');
+        __atomic_store_n(&on,value,__ATOMIC_RELEASE);
+    }
+    return value;
 }
 static size_t sotc_vm_slot(uintptr_t address) {
     return (address>>14)&(SOTC_VM_DIRECT_SLOTS-1);
@@ -904,19 +917,21 @@ static const CachedRegion *cached_region(uintptr_t address) {
     return NULL;
 }
 /* Under a read lock, remember the complete validated mapping. */
-static void cache_region(size_t i) {
+static void cache_region(size_t i, uintptr_t accessed_address) {
     const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
     if (i==vma_count || (generation & 1)) return;
     const CachedRegion c={generation,vmas[i].start,vmas[i].end,vmas[i].phys,vmas[i].kind};
     region_cache[region_cache_next++ % 8]=c;
-    if (sotc_vm_cache_on()) sotc_vm_direct[sotc_vm_slot(c.start)]=c;
+    // Index by the 16-KiB block actually requested, not by the VMA start:
+    // the game's large direct mappings contain many independently read blocks.
+    if (sotc_vm_cache_on()) sotc_vm_direct[sotc_vm_slot(accessed_address)]=c;
 }
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
     const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
     if (c && c->kind!=KIND_RESERVED && size<=c->end-address) return size;
     read_lock();
-    { size_t i=vma_index(address); if (i<vma_count && vmas[i].start<=address) cache_region(i); }
+    { size_t i=vma_index(address); if (i<vma_count && vmas[i].start<=address) cache_region(i,address); }
     uint64_t length=0;
     for (size_t i=vma_index(address); i<vma_count && length<size; ++i) {
         if (vmas[i].start>address+length || vmas[i].kind==KIND_RESERVED) break;
@@ -933,7 +948,7 @@ int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end, i
     size_t i=vma_index(address);
     int found=i<vma_count;
     if (found && vmas[i].start<=address) {
-        cache_region(i);
+        cache_region(i,address);
         *start=vmas[i].start; *end=vmas[i].end; *mapped=vmas[i].kind!=KIND_RESERVED;
     } else if (found) {
         *start=i ? vmas[i-1].end : 0; *end=vmas[i].start; *mapped=0;
@@ -1011,7 +1026,7 @@ const unsigned char *runtime_memory_backing_pointer(uintptr_t address) {
     size_t i=vma_index(address);
     if (i<vma_count && vmas[i].start<=address && vmas[i].kind!=KIND_RESERVED)
         pointer=backing_base+vmas[i].phys+(address-vmas[i].start);
-    if (i<vma_count && vmas[i].start<=address) cache_region(i);
+    if (i<vma_count && vmas[i].start<=address) cache_region(i,address);
     read_unlock();
     return pointer;
 }

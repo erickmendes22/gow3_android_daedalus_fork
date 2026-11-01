@@ -21,7 +21,6 @@ jobs:
              src/runtime_memory.c
       - name: Assert Android loader still builds same runtime implementation
         run: |
-          grep -Fq 'src/runtime_memory.c' tools/android/bionic/build_runtime.sh || \
-            grep -Fq 'src/runtime_memory.c' tools/android/bionic/build_deps.sh
+          grep -Fq 'src/runtime*.c' tools/android/bionic/build_runtime.sh
           grep -Fq 'SOTC_VM_RANGE_CACHE' src/runtime_memory.c
           grep -Fq 'BB_MEMORY_LOG' src/runtime_memory.c
