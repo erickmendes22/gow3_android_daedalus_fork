@@ -1,0 +1,82 @@
+name: The Order 1886 - Bionic Vulkan renderer build
+
+on:
+  push:
+    branches: [port/the-order-1886-bionic]
+    paths:
+      - ".github/workflows/order1886-bionic-gpu.yml"
+      - "the-order-1886-android/overlay/gpu/**"
+      - "the-order-1886-android/overlay/tools/android/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order1886-bionic-vulkan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-vulkan-renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned Order PC renderer with submodules
+        run: |
+          git clone https://github.com/JulioCacko/The-Order-1886_pc.git order-source
+          git -C order-source checkout c53cd01d032995fe622033623ab64b4cf6b02233
+          git -C order-source submodule update --init --recursive
+          python3 the-order-1886-android/scripts/assemble.py --source order-source --output order-android
+          python3 the-order-1886-android/scripts/smoke.py order-android
+      - name: Setup Android SDK and NDK r29
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;29.0.14206865'
+      - name: Prepare host C++ and shader build tools
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Cache pinned cross-compiled Bionic dependencies
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-prefix
+          key: order1886-bionic-deps-ndkr29-v1
+      - name: Build native Android third-party dependencies
+        shell: bash -el {0}
+        run: |
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export GOW3_JOBS=2
+          bash tools/android/bionic/build_deps.sh
+      - name: Configure and compile Order-specific GPU renderer for Android ARM64
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          PREFIX="$PWD/.local-deps/android/bionic-prefix"
+          HEADERS="$CONDA_PREFIX"
+          export PATH="$HEADERS/bin:$PATH"
+          export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig"
+          export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          unset PKG_CONFIG_SYSROOT_DIR CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH
+          ATOMIC=$("$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)
+          test -f "$ATOMIC"
+          cmake -S order-android/gpu -B out/order1886/gpu -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DORDER1886_PGO=off -DORDER1886_LTO=OFF \
+            -DCMAKE_FIND_ROOT_PATH="$PREFIX" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$ATOMIC" \
+            "-DCMAKE_PREFIX_PATH=$PREFIX;$HEADERS"
+          cmake --build out/order1886/gpu --target ps4gpu --parallel 2
+          file out/order1886/gpu/libps4gpu.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h out/order1886/gpu/libps4gpu.so
+      - name: Publish GPU ARM64 library only when native link passes
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-bionic-vulkan-gpu-arm64
+          path: out/order1886/gpu/libps4gpu.so
+          if-no-files-found: error
