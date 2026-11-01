@@ -275,6 +275,32 @@ bool IsWriteError(void* ctx) {''','Linux ARM64 ESR record')
     std::FILE* f = std::fopen(tmp.c_str(), "wb");
 #endif''',
          'SotC driver cache store')
+    # The Android SotC build must not discard geometry draws if shader/pipeline
+    # compilation is still in flight. This is a backend enforcement: older
+    # launchers can override SOTC_ASYNC_SHADERS=0 after the shell script, and
+    # on a cold Gen8 Turnip cache thousands of pipelines may be missing.
+    # On desktop, the original optional asynchronous behavior is preserved.
+    pipeline_text=swap(pipeline_text,
+        'static bool AsyncShadersEnabled() {\n    static const bool enabled = [] {',
+        'static bool AsyncShadersEnabled() {\n'
+        '#ifdef __ANDROID__\n'
+        '    return false; // SotC: never silently discard an uncompiled draw\n'
+        '#else\n'
+        '    static const bool enabled = [] {',
+        'SotC Android hard-disable drop-on-compile pipeline workers')
+    pipeline_text=swap(pipeline_text,
+        '        const char* v = std::getenv("SOTC_ASYNC_SHADERS");\n'
+        "        return !v || v[0] != '0';\n"
+        '    }();\n'
+        '    return enabled;\n'
+        '}\n',
+        '        const char* v = std::getenv("SOTC_ASYNC_SHADERS");\n'
+        "        return !v || v[0] != '0';\n"
+        '    }();\n'
+        '    return enabled;\n'
+        '#endif\n'
+        '}\n',
+        'SotC Android strict geometry compilation independent of launcher flags')
     pipeline.write_text(pipeline_text)
 
     # The Windows high-resolution waitable timer in the optional FSR3
