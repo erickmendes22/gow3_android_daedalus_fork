@@ -165,7 +165,11 @@ echo "SotC host Vulkan fastpaths: pipeline=$SOTC_PIPELINE_BIND_MEMO vertex=$SOTC
 export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}
 export SOTC_RECORD_THREAD=${SOTC_RECORD_THREAD:-0}
 echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD rb_async=$SOTC_RB_ASYNC (0=conservative)"
-echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
+if [ "$SOTC_ASYNC_SHADERS" = "1" ]; then
+  echo "SotC render completeness: experimental async graphics pipeline build; queued geometry draws can be skipped until ready"
+else
+  echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
+fi
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
 # Old shaders have no matching GS inputs and MUST NOT be reused.
