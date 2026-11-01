@@ -160,8 +160,18 @@ PredicationManager::PredicationManager(const Instance& instance_, Scheduler& sch
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         },
     }};
+    // The optional predicate reduction uses 2 storage descriptors. PanVK may
+    // advertise no push-descriptor extension, so match Bachata's ordinary-set
+    // fallback rather than creating an invalid push-only layout.
+    if (instance.MaxPushDescriptors() < 2) {
+        reduce_heap = std::make_unique<DescriptorHeap>(
+            instance, scheduler.GetWorkSemaphore(), reduce_pool_sizes, 64);
+        LOG_INFO(Render_Vulkan, "Predication: ordinary descriptor fallback enabled");
+    }
     const vk::DescriptorSetLayoutCreateInfo desc_layout_ci = {
-        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .flags = reduce_heap ? vk::DescriptorSetLayoutCreateFlags{}
+                             : vk::DescriptorSetLayoutCreateFlags{
+                                   vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR},
         .bindingCount = static_cast<u32>(bindings.size()),
         .pBindings = bindings.data(),
     };
@@ -624,6 +634,33 @@ void PredicationManager::ReducePredicate(u32 src_index, u32 count,
     const bool combine_on_gpu = selection.combine_on_gpu;
     const std::optional<u32> seed = selection.seed;
 
+    // Allocate/update before scheduler.Record: the Vulkan recorder executes
+    // asynchronously, and VkWriteDescriptorSet must never point into an
+    // expired packet-thread stack frame.
+    const vk::DescriptorSet ordinary_set =
+        reduce_heap ? reduce_heap->Commit(*reduce_desc_layout) : vk::DescriptorSet{};
+    if (ordinary_set) {
+        const vk::DescriptorBufferInfo scratch_info{scratch, 0, VK_WHOLE_SIZE};
+        const vk::DescriptorBufferInfo predicate_info{pred, 0, VK_WHOLE_SIZE};
+        const std::array<vk::WriteDescriptorSet, 2> set_writes = {{
+            {
+                .dstSet = ordinary_set,
+                .dstBinding = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .pBufferInfo = &scratch_info,
+            },
+            {
+                .dstSet = ordinary_set,
+                .dstBinding = 1,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .pBufferInfo = &predicate_info,
+            },
+        }};
+        instance.GetDevice().updateDescriptorSets(set_writes, {});
+    }
+
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         if (seed) {
             cmdbuf.fillBuffer(pred, dst_slot * sizeof(u32), sizeof(u32), *seed);
@@ -672,7 +709,12 @@ void PredicationManager::ReducePredicate(u32 src_index, u32 count,
             },
         }};
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
-        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+        if (ordinary_set) {
+            cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0,
+                                      ordinary_set, {});
+        } else {
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+        }
         const ReducePushConstants push_constants = {
             .src_index = src_index,
             .count = count,

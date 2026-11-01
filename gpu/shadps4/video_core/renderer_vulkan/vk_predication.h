@@ -12,6 +12,7 @@
 
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
 
 namespace VideoCore {
 class BufferCache;
@@ -169,6 +170,12 @@ private:
     VideoCore::Buffer counter_scratch;
     u32 predicate_cursor{};
     u32 scratch_cursor{};
+    // The optional query-reduction shader must not require VK_KHR_push_descriptor
+    // on PanVK. Pool sizes outlive the DescriptorHeap's stored span.
+    static constexpr std::array<vk::DescriptorPoolSize, 1> reduce_pool_sizes{{
+        {vk::DescriptorType::eStorageBuffer, 128},
+    }};
+    std::unique_ptr<DescriptorHeap> reduce_heap;
     vk::UniqueDescriptorSetLayout reduce_desc_layout;
     vk::UniquePipelineLayout reduce_pipeline_layout;
     vk::UniquePipeline reduce_pipeline;

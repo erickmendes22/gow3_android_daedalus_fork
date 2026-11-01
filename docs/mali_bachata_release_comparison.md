@@ -15,6 +15,19 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
   this audit. **Do not claim parity with or a verbatim port of that revision.**
 - The audit below compares source files currently visible in the Bachata
   public core `main` with this Daedalus fork.
+- **V3.2 PanVK provenance established from the actual Daedalus APK**:
+  `PanVK-android-v3.2-universal-2a9358a.zip` declares source revision
+  `2a9358a000fd691dac36d04c170fa3bd4101ff06` from
+  `https://github.com/JICA98/panvk-kbase-android`, branch
+  `bachata/v3-upstream-beta13`. Its `patches/bachata-v3/0007-...patch`
+  implements kbase GPU-tiler heap recycling. The bundled V3.2 `.so` includes
+  the `PANVK_KBASE_SKIP_HEAP_OPS` control.
+- The existing alternate driver `Mesa-PanVK-Android-v26.3.1-795ca7ff.adpkg.zip`
+  is already in the APK. Its binary includes `etc2_encode_bc1_pal`,
+  `etc2_encode_rgb`, `PANVK_BC_RAW`, and `PANVK_BC_AFRC`. It is selected
+  automatically on supported Mali-G615 when available, otherwise V3.2 remains
+  selectable. **A symbol alone does not establish that transcoding was used
+  during a particular game run.**
 
 ## Verified code comparison
 
@@ -26,9 +39,10 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
 | Final image postprocessing descriptors | `src/video_core/renderer_vulkan/host_passes/pp_pass.cpp`: native descriptor-set fallback for composition | `host_passes/pp_pass.cpp` called `pushDescriptorSetKHR` unconditionally | **PORTED** ordinary sampled-image set, owned until the present GPU timeline completes |
 | RectList / QuadList auxiliary shaders | `emit_spirv_quad_rect.cpp` | Same 339-line implementation apart from three declarations naming the fragment runtime type | ALREADY EQUIVALENT; no transplant |
 | Mali detile scratch allocator | Public Bachata uses opt-in ring `BACHATA_MALI_GPU_OPT` | Daedalus already has a reusable, GPU-tick-aware `StagingBufferPool`; mechanisms differ | NEEDS hardware comparison, not blindly copy two allocation models |
-| BCn texture transcode to ETC2 | Announced in RELEASE v0.2.5 | Daedalus packages PanVK v3.2 and optional v26.3.1 with BCn support, but the emulator itself does **not** implement verified equivalent transcoding | **NOT PORTED**; source of RELEASE v0.2.5 conversion not available. Must inspect the actual release binary/source rather than assert equivalence |
-| PanVK GPU tiler heap recycling | Announced in RELEASE v0.2.5 driver | Controlled by separately packaged PanVK driver, not `TileManager` in emulator | **UNVERIFIED** at binary level; don't confuse driver-internal tiler heap with emulator scratch allocation |
-| Depth/stencil, image/view format compatibility | RELEASE notes list more fixes without accessible per-change source | Daedalus has physical-format fallback and RobustImage checks, but black scene persists | **UNRESOLVED**; don't represent current fixes as sufficient |
+| BCn texture transcode to ETC2 | Announced in RELEASE v0.2.5 | **Driver 26.3.1 already bundles the BCn-to-ETC2 implementation**, including encoder symbols; auto-selected on G615 when available. The older V3.2 package is a distinct implementation. | ALREADY PACKAGED IN DRIVER; not an emulator-side source port. Runtime correctness not verified on GoW3 |
+| PanVK GPU tiler heap recycling | Announced in RELEASE v0.2.5 driver | Exact bundled V3.2 PanVK source pin `2a9358a` contains `patches/bachata-v3/0007-...` and `.so` exposes `PANVK_KBASE_SKIP_HEAP_OPS` | ALREADY PRESENT IN DRIVER; no duplicate emulator code required |
+| Depth/stencil format fallback | Bachata public core `vk_instance.cpp::GetSupportedFormat` promotes unsupported D16S8 to D24S8 or D32S8 | Daedalus has the same promotion rules. Its extra image/view and readback implementation is not equivalent | SOURCE-EQUIVALENT PROMOTION; remaining render/readback correctness unresolved |
+| Optional GoW3 GPU accelerated copy and predication | Bachata public core handles copy HLE with `vkCmdCopyBuffer`; it has no matching GoW3 predication reducer | Extra GoW3 multi-copy and predication compute pipelines assumed push descriptors | PORTED GUARD/FALLBACK: use Bachata-compatible copy path without push support and ordinary sets for optional predication |
 
 ## Implemented now
 
@@ -45,12 +59,17 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
   retirement; keep push-descriptor fast path on supported drivers.
 - `vk_presenter.{h,cpp}`: provide `Instance` and present scheduler to the
   pass, and construct it *after* the schedulers so it is destroyed first.
+- `vk_shader_hle.cpp`: preserve the Bachata copy-buffer implementation on
+  devices without 3 push descriptors; skip optional multi-copy compute dispatch.
+- `vk_predication.{h,cpp}`: when the optional GoW3 predication compute reducer
+  is enabled on a non-push device, bind an ordinary, GPU-tick-owned descriptor set.
 - No changes to Adreno's supported push-descriptor path.
 - No automatic render-pass captures or driver substitution.
 
 ## Next release gate
 
-Keep the testing distribution on hold until one **combined** build contains
-all verified source-port fixes; native compilation and one Mali device test
-must still validate runtime behavior. An APK build is not proof of graphics
-correctness and no CI build was requested for this particular comparison.
+Build the remaining source changes once, in a consolidated native CI run.
+Native compilation and one Mali device test are separate requirements.
+Do not claim that the inaccessible Bachata RELEASE 0.2.5 core has been fully
+reproduced or that GPU output is fixed merely because the APK compiles.
+No additional renderer-diagnostic APKs should be issued.

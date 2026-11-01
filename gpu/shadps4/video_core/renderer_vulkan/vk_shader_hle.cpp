@@ -39,6 +39,14 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
     auto& runtime = rasterizer.GetRuntime();
     auto& scheduler = runtime.GetScheduler();
     const auto& instance = runtime.GetInstance();
+    // Bachata's public ARM64 copy HLE uses vkCmdCopyBuffer and works without
+    // VK_KHR_push_descriptor. Our accelerated multi-copy shader is optional,
+    // but its descriptor layout unconditionally uses push descriptors.
+    // With PanVK variants that expose none, retain the original Vulkan copy
+    // path rather than attempting to create an unsupported layout.
+    if (instance.MaxPushDescriptors() < 3) {
+        return false;
+    }
     const u64 align = instance.StorageMinAlignment();
     src_min = Common::AlignDown(src_min, align);
     dst_min = Common::AlignDown(dst_min, align);
