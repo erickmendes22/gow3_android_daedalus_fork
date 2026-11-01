@@ -5,6 +5,9 @@
 #include "../src/runtime_memory.c"
 #include <assert.h>
 #include <stdio.h>
+/* The extracted single-translation-unit host test does not link probe.c. */
+static __thread int32_t test_errno;
+int32_t *runtime_errno(void) { return &test_errno; }
 /* Real independent thread writes many unrelated mapping generations.
  * The reader may use a verified cached mapping or fall back to the lock.
  */
