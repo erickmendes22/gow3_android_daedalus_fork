@@ -1,0 +1,48 @@
+name: SotC v0.1.30 FastBind resource hazard preflight
+on:
+  push:
+    branches: [fix/sotc-v030-fastbind-resource-sync-20261101]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression tests before staging
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_resource_coherence.py
+          python3 -m unittest discover -s tests -p test_sotc_resource_coherence.py -v
+          python3 -m unittest discover -s tests -p test_sotc_render_completeness.py -v
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Stage exact renderer and check both draw and resource guarantees
+        run: |
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
+          s=p.read_text()
+          a=s.index("bool Rasterizer::FastBindEligible(")
+          b=s.index("u64 Rasterizer::FastBindHash(",a)
+          block=s[a:b]
+          assert "#ifdef __ANDROID__" in block
+          for v in ("!stage->images.empty()", "!stage->buffers.empty()",
+                    "!stage->samplers.empty()", "!stage->fmasks.empty()"):
+              assert v in block,v
+          assert "void Rasterizer::ResetBindings(bool is_compute)" in s
+          assert "bound_images.clear();" in s and "bound_buffers.clear();" in s
+          assert "BindTextures(*stage, binding);" in s
+          assert "BindBuffers(*stage, binding, push_data);" in s
+          assert "needs_barrier |= runtime.Transit(" in s
+          pipeline=Path("out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+          assert "async_translate_ok = !RequireCompleteGraphicsDraws()" in pipeline
+          assert "if (queued && liverpool->regs.num_indices > 6 && !RequireCompleteGraphicsDraws())" in pipeline
+          print("PASS: all per-draw resource hazards retained and no graphics draws dropped")
+          PY
