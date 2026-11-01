@@ -204,4 +204,25 @@ uintptr_t runtime_pad_resolve(const char *name) {return RUNTIME_LOOKUP(exports,n
 void runtime_pad_report(void) {
     printf("Runtime: PS4 pad reads=%llu, source=Android PadBridge\n",reads);
 }
+/* Android has no SDL enumeration. Keep the probe's diagnostics compatible
+ * without claiming an attached controller when PadBridge is not configured. */
+int runtime_pad_describe(void) {
+    const char *path = getenv("ORDER1886_PAD_FILE");
+    if (!path || !*path) {
+        puts("Gamepad: none");
+        return 0;
+    }
+    printf("Gamepad: type=android south=cross east=circle west=square north=triangle name=Android PadBridge\n");
+    return 1;
+}
+
+/* --input-options is used by the desktop Go launcher to enumerate SDL inputs.
+ * The Android input bridge instead accepts the fixed state-file tokens above.
+ * Report the actual Android contract instead of advertising unusable SDL keys. */
+void runtime_pad_input_options(void) {
+    puts("{\"version\":1,\"unbinding\":false,\"buttons\":[],"
+         "\"keyboard_sources\":[],\"keyboard_scancodes\":{},"
+         "\"controller_sources\":[],\"android_pad_file\":true}");
+}
+
 #endif /* __ANDROID__ */
