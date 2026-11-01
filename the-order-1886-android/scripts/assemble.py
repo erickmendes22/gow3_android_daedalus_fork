@@ -91,10 +91,10 @@ static bool Order1886OptionalHeadlessWsi(const char*) { return false; }
 
 """
     src = src.replace(marker, headless + marker)
-    old = "    if (func == nullptr)   " + chr(92) + "\\n        return false;"
-    new = ("    if (func == nullptr && !Order1886OptionalHeadlessWsi(#func)) { " + chr(92) +
-           "\\n        fprintf(stderr, \"The Order: ImGui required Vulkan function missing: %s\\\\n\", #func); " + chr(92) +
-           "\\n        return false; " + chr(92) + "\\n    }")
+    old = "    if (func == nullptr)   " + chr(92) + chr(10) + "        return false;"
+    new = ("    if (func == nullptr && !Order1886OptionalHeadlessWsi(#func)) { " + chr(92) + chr(10) +
+           '        fprintf(stderr, "The Order: ImGui required Vulkan function missing: %s\\n", #func); ' + chr(92) + chr(10) +
+           "        return false; " + chr(92) + chr(10) + "    }")
     if src.count(old) != 1:
         raise RuntimeError("Pinned ImGui Vulkan macro changed; refuse patch")
     src = src.replace(old, new)
