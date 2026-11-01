@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026, diag/sotc-real-frame-bottleneck-027]
   workflow_dispatch:
 permissions:
   contents: read
