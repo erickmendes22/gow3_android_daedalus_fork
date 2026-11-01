@@ -28,6 +28,7 @@ gpu=tree/"gpu"
 gpu_checks={
   "Android ImGui headless WSI optional": "Order1886OptionalHeadlessWsi" in (gpu/"third_party/imgui/backends/imgui_impl_vulkan.cpp").read_text(),
   "ARM64 real SRT implementation": 'order1886_arm64_srt.inc' in (gpu/"shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text(),
+  "ARM64 SRT cache serialization": "SrtWalkerCode(walker_func)" in (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text(),
   "ARM64 SRT interpreter": "void RunSrtProgram" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
   "ARM64 The Order ADDR64 ReadConst": "void LowerDynamicReadConstPass" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
   "ARM64 SRT target not stubbed": "unimplemented for target architecture" not in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),

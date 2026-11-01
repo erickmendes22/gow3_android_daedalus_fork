@@ -38,7 +38,7 @@
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
-#include "shader_recompiler/ir/srt_gvn_table.h"
+// The outer The Order compilation unit already includes this unguarded header.
 #include "shader_recompiler/ir/value.h"
 
 #ifdef ARCH_X86_64

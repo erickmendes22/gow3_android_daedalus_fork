@@ -47,6 +47,7 @@ FILES = [
     "gpu/shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc",
     "gpu/shadps4/shader_recompiler/ir/passes/srt.h",
     "gpu/shadps4/shader_recompiler/ir/passes/srt_arm64.h",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",
