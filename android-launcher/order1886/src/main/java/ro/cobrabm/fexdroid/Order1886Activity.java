@@ -23,6 +23,8 @@ import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -79,6 +81,29 @@ public final class Order1886Activity extends Activity {
     };
 
     private android.content.SharedPreferences prefs(){return getSharedPreferences("order1886",MODE_PRIVATE);}
+    // PS4 display fit/fill is separate from the Android immersive-bars policy.
+    private void setGameImmersive(boolean enabled) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(!enabled);
+            WindowInsetsController controller=getWindow().getInsetsController();
+            if (controller!=null) {
+                if (enabled) {
+                    controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    controller.hide(WindowInsets.Type.statusBars()|WindowInsets.Type.navigationBars());
+                } else controller.show(WindowInsets.Type.statusBars()|WindowInsets.Type.navigationBars());
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(enabled
+                ? View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_FULLSCREEN|
+                  View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|
+                  View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                : 0);
+        }
+    }
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (focused && gameOpen) main.post(()->{if(gameOpen)setGameImmersive(true);});
+    }
     private int dp(float d){return (int)(d*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int stroke,int radius){
         GradientDrawable d=new GradientDrawable();
@@ -580,8 +605,7 @@ public final class Order1886Activity extends Activity {
         mainUI.setVisibility(View.GONE);
         gameFrame.setVisibility(View.VISIBLE);
         gameOpen=true;stopped=false;
-        if(prefs().getBoolean("fullscreen",false))
-            getWindow().getDecorView().setSystemUiVisibility(5894|1024|512);
+        setGameImmersive(true);
         setupTouchControls();
         previousFrameCount=0;main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,1000);
         main.postDelayed(()->{
@@ -713,7 +737,7 @@ public final class Order1886Activity extends Activity {
         }
         virtualKeys.clear();main.removeCallbacks(fpsPoll);
         gameOpen=false;gameFrame.setVisibility(View.GONE);mainUI.setVisibility(View.VISIBLE);
-        getWindow().getDecorView().setSystemUiVisibility(0);
+        setGameImmersive(false);
         render();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
@@ -733,6 +757,10 @@ public final class Order1886Activity extends Activity {
         else super.onBackPressed();
     }
     @Override protected void onPause(){super.onPause();if(audio!=null)audio.pause();}
-    @Override protected void onResume(){super.onResume();if(audio!=null)audio.resume();}
+    @Override protected void onResume(){
+        super.onResume();
+        if(audio!=null)audio.resume();
+        if(gameOpen)main.postDelayed(()->{if(gameOpen)setGameImmersive(true);},120);
+    }
     @Override protected void onDestroy(){stopGame();main.removeCallbacksAndMessages(null);super.onDestroy();}
 }
