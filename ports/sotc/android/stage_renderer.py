@@ -280,6 +280,34 @@ bool IsWriteError(void* ctx) {''','Linux ARM64 ESR record')
     std::FILE* f = std::fopen(tmp.c_str(), "wb");
 #endif''',
          'SotC driver cache store')
+    # Only the required cold-cache graphics draw goes synchronous on Android.
+    # Keep background compute/preload workers enabled: no graphics draw may be
+    # discarded just because translation or pipeline compilation is outstanding.
+    pipeline_text=swap(pipeline_text,
+        'static bool AsyncShadersEnabled() {',
+        '''static bool RequireCompleteGraphicsDraws() {
+#ifdef __ANDROID__
+    return true;
+#else
+    const char* env = std::getenv("SOTC_REQUIRE_COMPLETE_DRAWS");
+    return env && env[0] != '0';
+#endif
+}
+
+static bool AsyncShadersEnabled() {''',
+        'SotC Android graphics draw completeness selector')
+    pipeline_text=swap(pipeline_text,
+        '    async_translate_ok = !async_workers.empty() && AsyncTranslateEnabled() &&',
+        '    async_translate_ok = !RequireCompleteGraphicsDraws() && !async_workers.empty() && AsyncTranslateEnabled() &&',
+        'no skipped geometry while async shaders translate')
+    pipeline_text=swap(pipeline_text,
+        '    if (queued && liverpool->regs.num_indices > 6) {',
+        '    if (queued && liverpool->regs.num_indices > 6 && !RequireCompleteGraphicsDraws()) {',
+        'do not skip draw for pending graphics pipeline')
+    pipeline_text=swap(pipeline_text,
+        '        if (!async_workers.empty() && !tiny_draw && eligible && !queued) {',
+        '        if (!RequireCompleteGraphicsDraws() && !async_workers.empty() && !tiny_draw && eligible && !queued) {',
+        'synchronously compile first-use graphics pipeline on Android')
     pipeline.write_text(pipeline_text)
 
     # The Windows high-resolution waitable timer in the optional FSR3
