@@ -44,6 +44,36 @@ jobs:
           "$CC" -std=gnu11 -Wall -Wextra -Werror -pthread -Iorder-android -Iorder-android/src \
              -fsyntax-only order-android/src/probe.c order-android/src/runtime.c \
              order-android/src/runtime_thread.c
+      - name: Initialize pinned FEXCore source
+        run: git submodule update --init --recursive third_party/FEX
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Configure and compile the Android Bionic FEX CPU bridge
+        shell: bash -el {0}
+        run: |
+          NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          cmake -S third_party/FEX -B out/order1886/fex -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/the-order-1886-android/overlay/cpu/fex_project.cmake" \
+            -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_STEAM_SUPPORT=OFF -DBUILD_FEX_LINUX_TESTS=OFF \
+            -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic \
+            -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF
+          cmake --build out/order1886/fex --target order1886cpu --parallel 2
+          file out/order1886/fex/liborder1886cpu.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h out/order1886/fex/liborder1886cpu.so
+      - name: Publish compiled FEX CPU bridge
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-bionic-fexcore-arm64
+          path: out/order1886/fex/liborder1886cpu.so
+          if-no-files-found: error
       - name: Publish source-audit evidence
         if: always()
         uses: actions/upload-artifact@v4
