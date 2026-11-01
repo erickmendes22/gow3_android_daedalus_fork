@@ -45,6 +45,8 @@ FILES = [
     "gpu/shim/window.cpp", "gpu/shim/ps4_write_log.cpp",
     "gpu/shadps4/shader_recompiler/recompiler.cpp",
     "gpu/shadps4/shader_recompiler/info.h",
+    "gpu/shadps4/video_core/buffer_cache/buffer_cache.h",
+    "gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp",
     "gpu/shadps4/shader_recompiler/ir/passes/srt.h",
     "gpu/shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
     "gpu/shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc",
