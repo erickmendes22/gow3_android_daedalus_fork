@@ -60,6 +60,46 @@ FILES = [
     "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886AudioBridge.java",
 ]
 
+
+def patch_headless_imgui(output: Path) -> None:
+    """The Android AHB presenter never creates a VkSurfaceKHR or a VkSwapchainKHR.
+
+    Dear ImGui's generic Vulkan function table nevertheless tries to load WSI
+    helper commands. A direct Turnip HAL cannot return commands for device
+    extensions that were not enabled; they are unnecessary for our renderer.
+    Keep every core command mandatory and diagnose a genuinely missing one.
+    """
+    file = output / "gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp"
+    src = file.read_text(encoding="utf-8")
+    marker = "bool    ImGui_ImplVulkan_LoadFunctions("
+    if src.count(marker) != 1:
+        raise RuntimeError("Pinned ImGui Vulkan function loader changed; refuse patch")
+    headless = """#ifdef __ANDROID__
+static bool Order1886OptionalHeadlessWsi(const char* name)
+{
+    return strcmp(name, "vkCreateSwapchainKHR") == 0 ||
+           strcmp(name, "vkDestroySwapchainKHR") == 0 ||
+           strcmp(name, "vkGetSwapchainImagesKHR") == 0 ||
+           strcmp(name, "vkDestroySurfaceKHR") == 0 ||
+           strcmp(name, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") == 0 ||
+           strcmp(name, "vkGetPhysicalDeviceSurfaceFormatsKHR") == 0 ||
+           strcmp(name, "vkGetPhysicalDeviceSurfacePresentModesKHR") == 0;
+}
+#else
+static bool Order1886OptionalHeadlessWsi(const char*) { return false; }
+#endif
+
+"""
+    src = src.replace(marker, headless + marker)
+    old = "    if (func == nullptr)   " + chr(92) + "\\n        return false;"
+    new = ("    if (func == nullptr && !Order1886OptionalHeadlessWsi(#func)) { " + chr(92) +
+           "\\n        fprintf(stderr, \"The Order: ImGui required Vulkan function missing: %s\\\\n\", #func); " + chr(92) +
+           "\\n        return false; " + chr(92) + "\\n    }")
+    if src.count(old) != 1:
+        raise RuntimeError("Pinned ImGui Vulkan macro changed; refuse patch")
+    src = src.replace(old, new)
+    file.write_text(src, encoding="utf-8")
+
 def run():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True, help="The Order PC checkout")
@@ -86,6 +126,7 @@ def run():
         dest=output/path
         dest.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(overlay/path,dest)
+    patch_headless_imgui(output)
     meta={
         "project":"The Order: 1886 Android Bionic (development only)",
         "upstream_repository":"JulioCacko/The-Order-1886_pc",

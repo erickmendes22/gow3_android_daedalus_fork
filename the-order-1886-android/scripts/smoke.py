@@ -26,6 +26,7 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "Android ImGui headless WSI optional": "Order1886OptionalHeadlessWsi" in (gpu/"third_party/imgui/backends/imgui_impl_vulkan.cpp").read_text(),
   "ARM64 real SRT implementation": 'order1886_arm64_srt.inc' in (gpu/"shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text(),
   "ARM64 SRT interpreter": "void RunSrtProgram" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
   "ARM64 The Order ADDR64 ReadConst": "void LowerDynamicReadConstPass" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
