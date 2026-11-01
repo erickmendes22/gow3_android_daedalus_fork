@@ -525,8 +525,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
     const u32 mali_index = mali_auto ? ++mali_flip_index : 0;
-    const bool first_content = mali_auto &&
-                               mali_capture_first_content.exchange(false, std::memory_order_acq_rel);
+    bool first_content = false;
+#ifdef __ANDROID__
+    if (mali_auto) {
+        first_content = mali_capture_first_content.exchange(false, std::memory_order_acq_rel);
+    }
+#endif
     // Capture immediately, at a few increasingly spaced startup frames,
     // and again after the longer startup/scene transition.
     const bool scheduled = mali_auto &&
