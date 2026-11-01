@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025]
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
@@ -45,6 +45,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_bachata_perf.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_vendor_turnip.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gamehub_dd_import.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_present_fastpath.py' -v
           if test ! -f ports/sotc/android/vendor/turnip_gamehub_dd.zip; then
             echo "::warning::GameHub DD binary not present in this GitHub checkout. APK will not contain the driver; use the exact ZIP via the in-app importer."
           fi
@@ -78,6 +79,8 @@ jobs:
           # source-transformation errors without a long failed job.
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq 'skip_full_blit_clear' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'if (needs_black_clear)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq 'SotcPerf::BindGraphicsPipeline' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'SotcPerf::SetVertexInput' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
@@ -228,10 +231,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.24-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.25-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.24-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.24-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.25-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.25-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
