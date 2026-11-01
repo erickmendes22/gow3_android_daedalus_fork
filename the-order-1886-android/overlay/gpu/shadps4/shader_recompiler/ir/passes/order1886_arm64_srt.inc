@@ -976,44 +976,81 @@ static bool ComputeOffset(SrtProgram& p, PassInfo& pass_info, const IR::Value& o
 
 static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
                          SrtProgram& p) {
-    if (subtree->GetOpcode() == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0 ||
-        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer &&
-            subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0) {
+    if ((subtree->GetOpcode() == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0) ||
+        (subtree->GetOpcode() == IR::Opcode::ReadConstBuffer &&
+         subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0)) {
         return;
     }
     if (!IsCpuSrtOffset(off_dw)) return;
+    // A source offset may depend on an earlier SRT read in this same subtree.
+    // Emit the pointer push only after its dependencies are already flattened.
+    SrtProgram pointer_offset;
     if (off_dw.IsImmediate()) {
-        p.insert(p.end(), {OpPushImm, off_dw.U32()});
+        pointer_offset.insert(pointer_offset.end(), {OpPushImm, off_dw.U32()});
     } else {
-        SrtProgram offset;
-        if (!ComputeOffset(offset, pass_info, off_dw)) {
-            LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
-            return;
-        }
-        p.insert(p.end(), offset.begin(), offset.end());
-        p.push_back(OpPushDyn);
+        if (!ComputeOffset(pointer_offset, pass_info, off_dw)) return;
+        pointer_offset.push_back(OpPushDyn);
     }
+    p.insert(p.end(), pointer_offset.begin(), pointer_offset.end());
+
     auto* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
-    for (auto [src_off_dw, use] : *use_list) {
-        if (!IsCpuSrtOffset(src_off_dw)) continue;
-        if (src_off_dw.IsImmediate()) {
-            p.insert(p.end(), {OpCopyImm, src_off_dw.U32(), pass_info.dst_off_dw});
-        } else {
-            SrtProgram offset;
-            if (!ComputeOffset(offset, pass_info, src_off_dw)) {
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+    // The former single pass processed the map in instruction order. If an
+    // offset used another ReadConst whose flatbuf slot had not yet been
+    // assigned, ComputeOffset failed and the shader permanently lost a source.
+    // A bounded, dependency-aware worklist handles every ready source before
+    // retrying later ones; unresolved GPU-varying reads stay unflattened for
+    // LowerDynamicReadConstPass, never turned into fabricated zero reads here.
+    std::vector<u8> resolved(use_list->size(), 0);
+    for (size_t wave = 0; wave < use_list->size(); ++wave) {
+        bool progressed = false;
+        size_t idx = 0;
+        for (const auto& [src_off_dw, use] : *use_list) {
+            if (resolved[idx] || !IsCpuSrtOffset(src_off_dw)) {
+                ++idx;
                 continue;
             }
-            p.insert(p.end(), offset.begin(), offset.end());
-            p.insert(p.end(), {OpCopyDyn, pass_info.dst_off_dw});
+            auto* canonical = pass_info.DeduplicateInstruction(use);
+            u16 existing = GetFlatbufOffset(canonical);
+            if (!existing) existing = GetFlatbufOffset(use);
+            if (existing) {
+                // GVN duplicates must share the SAME buffer slot. The old
+                // walker set only 'use' while ComputeOffset queried canonical.
+                SetFlatbufOffset(canonical, existing);
+                SetFlatbufOffset(use, existing);
+                resolved[idx] = 1;
+                progressed = true;
+                ++idx;
+                continue;
+            }
+            SrtProgram offset;
+            if (!src_off_dw.IsImmediate() &&
+                !ComputeOffset(offset, pass_info, src_off_dw)) {
+                ++idx; // Dependency not flattened yet; retry on next wave.
+                continue;
+            }
+            if (src_off_dw.IsImmediate()) {
+                p.insert(p.end(), {OpCopyImm, src_off_dw.U32(), pass_info.dst_off_dw});
+            } else {
+                p.insert(p.end(), offset.begin(), offset.end());
+                p.insert(p.end(), {OpCopyDyn, pass_info.dst_off_dw});
+            }
+            SetFlatbufOffset(canonical, pass_info.dst_off_dw);
+            SetFlatbufOffset(use, pass_info.dst_off_dw++);
+            resolved[idx] = 1;
+            progressed = true;
+            ++idx;
         }
-        SetFlatbufOffset(use, pass_info.dst_off_dw++);
+        if (!progressed) break;
     }
-    for (const auto [src_off_dw, use] : *use_list) {
-        if (IsCpuSrtOffset(src_off_dw) && pass_info.GetUsesAsPointer(use)) {
+    // Visit child pointers only when their source actually has a flatbuf slot.
+    // A child with an unflattened dynamic offset must be handled by GPU IR.
+    size_t idx = 0;
+    for (const auto& [src_off_dw, use] : *use_list) {
+        if (resolved[idx] && pass_info.GetUsesAsPointer(use)) {
             VisitPointer(src_off_dw, use, pass_info, p);
         }
+        ++idx;
     }
     p.push_back(OpPop);
 }

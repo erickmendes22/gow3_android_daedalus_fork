@@ -52,10 +52,6 @@ namespace Vulkan {
 static bool IsBachataOrder1886Edition() {
     return Common::ElfInfo::Instance().GameSerial() == "CUSA00785";
 }
-static bool IsBachataOrderNullImageShader(const Shader::Info& info) {
-    return IsBachataOrder1886Edition() &&
-           (info.pgm_hash == 0xa7b66f58ULL || info.pgm_hash == 0xefaaab2bULL);
-}
 static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushData& data) {
     if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
         data.ud_regs[1] = 0x7F80000FU;
@@ -1669,7 +1665,7 @@ bool Rasterizer::IsInactiveOrderImage(const Shader::Info& stage, u32 image_index
 bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
                                           const PreparedStage* prepared) {
     // The mode must be checked on the recording thread after BindBuffers uploads CPU writes.
-    if (UsesOrderImageModeGuard(stage) || IsBachataOrderNullImageShader(stage)) return false;
+    if (UsesOrderImageModeGuard(stage)) return false;
     const u64 generation = texture_cache.RegistryGeneration();
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
         const auto& image_desc = stage.images[image_index];
@@ -2534,12 +2530,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             }
             image_binding_contracts.push_back(contract);
         };
-        // Bachata V5: only the two CUSA00785 shader families with invalid
-        // texture descriptors use the existing null binding.
-        if (IsBachataOrderNullImageShader(stage)) {
-            bind_null();
-            continue;
-        }
         if (IsInactiveOrderImage(stage, image_index)) {
             set_ok = false;
             bind_null();
@@ -2889,7 +2879,7 @@ Rasterizer::BeginSignature Rasterizer::MakeBeginSignature(const GraphicsPipeline
 bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedStage* prepared,
                                      u32 first_image_idx, bool& barrier, TextureSet*& slot) {
     // This scalar mode can change without changing any image descriptor/hash.
-    if (UsesOrderImageModeGuard(stage) || IsBachataOrderNullImageShader(stage)) return false;
+    if (UsesOrderImageModeGuard(stage)) return false;
     const u32 count = static_cast<u32>(stage.images.size());
     if (!prepared || count == 0 || count > TextureSet::MaxImages ||
         Ps4Toggle::Disabled(Ps4Toggle::TextureSetMemo) || FrameCapture::Active()) {

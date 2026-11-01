@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 8
-        versionName = "0.1.7-bachata-render-fixes"
+        versionCode = 9
+        versionName = "0.1.8-srt-texture-fix"
     }
     buildTypes {
         release {
