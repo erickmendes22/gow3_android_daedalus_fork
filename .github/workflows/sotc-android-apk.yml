@@ -44,6 +44,10 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_adreno_lds_integrity.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_bachata_perf.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_vendor_turnip.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gamehub_dd_import.py' -v
+          if test ! -f ports/sotc/android/vendor/turnip_gamehub_dd.zip; then
+            echo "::warning::GameHub DD binary not present in this GitHub checkout. APK will not contain the driver; use the exact ZIP via the in-app importer."
+          fi
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
