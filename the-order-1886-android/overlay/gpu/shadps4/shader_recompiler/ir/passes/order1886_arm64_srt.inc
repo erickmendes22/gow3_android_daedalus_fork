@@ -375,7 +375,7 @@ struct PassInfo {
 
     // map offset to inst
     using PtrUserList =
-        boost::container::flat_map<IR::Value, Shader::IR::Inst*, PointerListCompare>;
+        boost::container::flat_multimap<IR::Value, Shader::IR::Inst*, PointerListCompare>;
 
     Optimization::SrtGvnTable gvn_table;
     // keys are GetUserData, ReadConst or ReadConstBuffer instructions that are used as pointers
@@ -1212,7 +1212,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});
         PassInfo::PtrUserList& user_list = ptr_uses_kv.first->second;
 
-        user_list[inst->Arg(1)] = inst;
+        user_list.emplace(inst->Arg(1), inst);
 
         if (ptr_lo->GetOpcode() == IR::Opcode::GetUserData) {
             IR::ScalarReg ud_reg = ptr_lo->Arg(0).ScalarReg();

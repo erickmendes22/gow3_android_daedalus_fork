@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 7
-        versionName = "0.1.6-bionic-linkfix"
+        versionCode = 8
+        versionName = "0.1.7-bachata-render-fixes"
     }
     buildTypes {
         release {
