@@ -290,6 +290,13 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Mantém limpeza e barreiras quando a imagem não preenche toda a tela. Reinicie para aplicar."
                          else "Preserves clearing and barriers for any partial or letterboxed blit. Restart to apply.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
+                                      else "CPU/GPU frame bottleneck profiling (log)",
+                        (values["sotc_perf_profile"]?:"0")=="1",
+                        {save("sotc_perf_profile",if(it)"1" else "0")})
+                    Text(if(pt) "Desligado por padrão. A cada 5 s registra CPU real das threads de desenho/processamento, tempo em binds, readback, esperas GPU, texturas e comandos. A medição tem custo: desligue ao comparar FPS e reinicie para aplicar."
+                         else "OFF by default. Logs real draw/command CPU time, binds, readbacks, GPU waits, textures and command costs every 5 s. Profiling has overhead: disable for FPS comparisons and restart to apply.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Cache de bind Vulkan (sem pular draws)" else "Vulkan pipeline bind cache (no skipped draws)",
                         (values["sotc_pipeline_bind_memo"]?:"1")=="1",
                         {save("sotc_pipeline_bind_memo",if(it)"1" else "0")})
