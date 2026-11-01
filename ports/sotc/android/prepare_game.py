@@ -50,6 +50,65 @@ def fingerprint(paths):
             digest.update(f.read(65536))
     return digest.hexdigest()
 
+# Guard the *actual* BBPATCH2 output, not just the launcher dropdown.
+# The SotC engine owns display, scene and render-target dimensions. A stale,
+# incomplete or rejected patch may otherwise boot and appear unchanged at 720p.
+RENDER_BASE = 0x400000
+RENDER_DIMENSION_SITES = (
+    # (original instruction guest address, original instruction length, W/H)
+    (0x00495bec, 5, 'H'),   # display/init
+    (0x00495bf7, 5, 'W'),
+    (0x00495c91, 5, 'W'),   # scene size
+    (0x00495c96, 5, 'H'),
+    (0x004a2ae9, 6, 'W'),   # render-target allocation
+    (0x004a2af2, 6, 'H'),
+    (0x0056f2f3, 5, 'W'),   # display width/height getters
+    (0x0056f313, 5, 'H'),
+)
+
+
+def verify_render_patches(patches: Path, render: str) -> None:
+    """Fail before launching a game whose requested guest dimensions were not patched."""
+    if not render or render == '1920x1080':
+        return
+    try:
+        w, h = [int(x) for x in render.split('x')]
+    except (ValueError, TypeError):
+        raise ValueError('Invalid SotC render resolution: '+str(render)) from None
+    data = patches.read_bytes()
+    if len(data) < 24:
+        raise ValueError('SotC render patches missing or truncated')
+    magic, base, count = struct.unpack_from('<8sQQ', data)
+    if magic != b'BBPATCH2' or base != RENDER_BASE or count > 10000:
+        raise ValueError('SotC render patches invalid BBPATCH2 header')
+    pos = 24
+    writes = {}
+    for i in range(count):
+        if pos + 16 > len(data):
+            raise ValueError(f'SotC patch record {i} truncated')
+        offset, size = struct.unpack_from('<QQ', data, pos)
+        pos += 16
+        if size > len(data) - pos:
+            raise ValueError(f'SotC patch record {i} data truncated')
+        # Identical writes are an error: they make the active render size ambiguous.
+        if offset in writes:
+            raise ValueError(f'SotC duplicate patch record: {offset:#x}')
+        writes[offset] = data[pos:pos + size]
+        pos += size
+    if pos != len(data):
+        raise ValueError('SotC patches have trailing unparsed data')
+    for guest_addr, original_length, which in RENDER_DIMENSION_SITES:
+        offset = guest_addr - RENDER_BASE + original_length - 4
+        expected = struct.pack('<I', w if which == 'W' else h)
+        if writes.get(offset) != expected:
+            raise ValueError(
+                f'SotC {render}: incomplete {which} guest render patch at {guest_addr:#x}. '
+                'Refusing to start with stale 720p dimensions.')
+    print(f'SotC guest render patch verified: {w}x{h}, '
+          f'{len(RENDER_DIMENSION_SITES)} display/scene/target sites, '
+          f'{count} total guest writes; Android presentation output remains 1280x720')
+
+
 def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
             render='1280x720',cvars='',force=False,perf_effects=''):
     upstream,game,out=(Path(p).resolve() for p in (upstream,game,out))
@@ -107,6 +166,7 @@ def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
     # verified before appending any Bachata 0.2.7 BBPATCH2 guest writes.
     from bachata_perf import append_bachata_patches
     applied_perf = append_bachata_patches(upstream,eboot,out/'patches.bin',title,perf_effects)
+    verify_render_patches(out/'patches.bin', render)
     for name in OUTPUTS:
         if not (out/name).is_file():
             raise RuntimeError('Upstream output missing: '+name)
@@ -117,6 +177,7 @@ def prepare(upstream,game,out,sys_modules=None,modes='fps60game',
       'cmdline':str(out/'cmdline.bin') if (out/'cmdline.bin').is_file() else None,
       'cached':current and not force,'audio':bool(extras),
       'bachata_perf':applied_perf,
+      'requested_guest_render':render,
       'requires':'SotC-specific Android Bionic/FEX runtime (included in Daedalus)'
     }
 
