@@ -218,6 +218,9 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                         listOf("360p" to "640×360","540p" to "960×540",
                             "720p" to "1280×720","900p" to "1600×900",
                             "1080p" to "1920×1080"),{save("sotc_resolution",it)})
+                    Text(if(pt) "A resolução escolhida é aplicada aos render targets do jogo na próxima inicialização; a saída Android continua em 720p para ampliar a imagem. Para 360p/540p, confira a resolução efetiva no log."
+                         else "This changes the game's render targets on next launch; Android output stays at 720p and upscales the image. Check the effective 360p/540p render size in logs.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcChoice(if(pt) "Modo de FPS" else "FPS mode",
                         values["sotc_fps_mode"]?:"fps60game",
                         listOf("30" to (if(pt) "30 FPS (original)" else "30 FPS (original)"),
