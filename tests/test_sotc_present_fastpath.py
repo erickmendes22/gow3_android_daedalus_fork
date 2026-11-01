@@ -38,7 +38,7 @@ class SotcPresentFastpathTest(unittest.TestCase):
             self.assertIn('env.put("'+env+'",', GAME)
             self.assertIn('save("'+key+'",if(it)"1" else "0")', UI)
             self.assertIn(key+"="+default, PACKAGE)
-        self.assertIn("export BB_READBACKS=2", RUN)
+        self.assertIn("export BB_READBACKS=${BB_READBACKS:-2}", RUN)
         self.assertIn("export SOTC_ASYNC_TRANSLATE=0", RUN)
         self.assertIn("export SOTC_ASYNC_PRELOAD=0", RUN)
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", RUN)
