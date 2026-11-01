@@ -176,7 +176,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     if (!std::getenv("GOW3_ANDROID_PORT")) {
         fsr_pass.Create(device, instance.GetAllocator(), num_images);
     }
-    pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+    pp_pass.Create(instance, present_scheduler, swapchain.GetSurfaceFormat().format);
     Gow3Overlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
 
     const bool binary_cache = EmulatorSettingsImpl::Flag("GOW3_PIPELINE_BINARIES", true) &&

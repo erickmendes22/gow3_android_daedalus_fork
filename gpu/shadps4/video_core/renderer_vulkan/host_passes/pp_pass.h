@@ -3,11 +3,16 @@
 
 #pragma once
 
+#include <array>
+#include <memory>
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
 
 namespace Vulkan {
 class Frame;
+class Instance;
+class Scheduler;
 }
 
 namespace Vulkan::HostPasses {
@@ -20,12 +25,19 @@ public:
         u32 srgb_input = 0;
     };
 
-    void Create(vk::Device device, vk::Format surface_format);
+    void Create(const Instance& instance, Scheduler& present_scheduler, vk::Format surface_format);
 
     void Render(vk::CommandBuffer cmdbuf, vk::ImageView input, vk::Extent2D input_size,
                 Frame& output, Settings settings);
 
 private:
+    vk::Device device{};
+    bool uses_push_descriptors{};
+    // Keep pool data alive until the heap is retired against the present queue.
+    static constexpr std::array<vk::DescriptorPoolSize, 1> pp_pool_sizes{{
+        {vk::DescriptorType::eCombinedImageSampler, 64},
+    }};
+    std::unique_ptr<DescriptorHeap> desc_heap;
     vk::UniquePipeline pipeline{};
     vk::UniquePipelineLayout pipeline_layout{};
     vk::UniqueDescriptorSetLayout desc_set_layout{};

@@ -23,6 +23,7 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
 | Vulkan push descriptors | `src/video_core/texture_cache/tile_manager.cpp`: chooses push descriptors conditionally and binds ordinary descriptor sets via `DescriptorHeap` otherwise | `gpu/shadps4/video_core/texture_cache/tile_manager.cpp`: unconditionally created push-descriptor layouts and called `pushDescriptorSetKHR` | **PORTED** ordinary-set fallback, with command-recording-thread-safe captured handles |
 | Descriptor fallback for graphics pipeline | `vk_instance.cpp` and pipeline cache support unavailable extension | `vk_instance.cpp` already checks optional `VK_KHR_push_descriptor`; `vk_pipeline_cache.cpp` already uses `DescriptorHeap` | ALREADY PRESENT; leave untouched |
 | Color/MSAA/depth blit descriptors | `src/video_core/texture_cache/blit_helper.cpp`: conditional `pushDescriptorSetKHR` or `DescriptorHeap` for both color/depth image operations | `blit_helper.cpp` created push-only layout and used push descriptors twice without fallback | **PORTED** conditional descriptor layout and GPU-tick-safe ordinary set bindings on both paths |
+| Final image postprocessing descriptors | `src/video_core/renderer_vulkan/host_passes/pp_pass.cpp`: native descriptor-set fallback for composition | `host_passes/pp_pass.cpp` called `pushDescriptorSetKHR` unconditionally | **PORTED** ordinary sampled-image set, owned until the present GPU timeline completes |
 | RectList / QuadList auxiliary shaders | `emit_spirv_quad_rect.cpp` | Same 339-line implementation apart from three declarations naming the fragment runtime type | ALREADY EQUIVALENT; no transplant |
 | Mali detile scratch allocator | Public Bachata uses opt-in ring `BACHATA_MALI_GPU_OPT` | Daedalus already has a reusable, GPU-tick-aware `StagingBufferPool`; mechanisms differ | NEEDS hardware comparison, not blindly copy two allocation models |
 | BCn texture transcode to ETC2 | Announced in RELEASE v0.2.5 | Daedalus packages PanVK v3.2 and optional v26.3.1 with BCn support, but the emulator itself does **not** implement verified equivalent transcoding | **NOT PORTED**; source of RELEASE v0.2.5 conversion not available. Must inspect the actual release binary/source rather than assert equivalence |
@@ -39,6 +40,11 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
 - `blit_helper.{h,cpp}`: port the Bachata source's `DescriptorHeap`
   fallback to both color-to-MSAA-depth reinterpretation and MS image copy.
   Keep push descriptors when the extension/capability is present.
+- `host_passes/pp_pass.{h,cpp}`: port the Bachata fallback in final-frame
+  composition, using the **present scheduler** timeline for descriptor pool
+  retirement; keep push-descriptor fast path on supported drivers.
+- `vk_presenter.{h,cpp}`: provide `Instance` and present scheduler to the
+  pass, and construct it *after* the schedulers so it is destroyed first.
 - No changes to Adreno's supported push-descriptor path.
 - No automatic render-pass captures or driver substitution.
 

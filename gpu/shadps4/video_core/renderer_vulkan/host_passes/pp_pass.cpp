@@ -7,6 +7,8 @@
 #include "core/emulator_settings.h"
 #include "video_core/host_shaders/fs_tri_vert.h"
 #include "video_core/host_shaders/post_process_frag.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -15,7 +17,13 @@
 
 namespace Vulkan::HostPasses {
 
-void PostProcessingPass::Create(vk::Device device, const vk::Format surface_format) {
+void PostProcessingPass::Create(const Instance& instance, Scheduler& present_scheduler,
+                                const vk::Format surface_format) {
+    device = instance.GetDevice();
+    uses_push_descriptors = instance.MaxPushDescriptors() >= 1;
+    // This pool must use the PRESENT queue timeline, not the guest draw queue.
+    desc_heap = std::make_unique<DescriptorHeap>(
+        instance, present_scheduler.GetWorkSemaphore(), pp_pool_sizes, 64);
     boost::container::static_vector<vk::DescriptorSetLayoutBinding, 2> bindings{
         {
             .binding = 0,
@@ -26,7 +34,10 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
     };
 
     const vk::DescriptorSetLayoutCreateInfo desc_layout_ci{
-        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .flags = uses_push_descriptors
+                     ? vk::DescriptorSetLayoutCreateFlags{
+                           vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR}
+                     : vk::DescriptorSetLayoutCreateFlags{},
         .bindingCount = static_cast<u32>(bindings.size()),
         .pBindings = bindings.data(),
     };
@@ -250,7 +261,21 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
                              },
                          });
 
-    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, set_writes);
+    if (uses_push_descriptors) {
+        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0,
+                                    set_writes);
+    } else {
+        // Bachata's ordinary-set path for compositing the game on Mali.
+        // The pool uses the present scheduler's GPU tick for safe reuse.
+        const auto set = desc_heap->Commit(*desc_set_layout);
+        auto normal_writes = set_writes;
+        for (auto& write : normal_writes) {
+            write.dstSet = set;
+        }
+        device.updateDescriptorSets(normal_writes, {});
+        cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0,
+                                  set, {});
+    }
     cmdbuf.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(Settings),
                          &settings);
 

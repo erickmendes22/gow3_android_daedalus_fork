@@ -137,12 +137,14 @@ private:
     HostPasses::FsrPass fsr_pass;
     HostPasses::FsrPass::Settings fsr_settings{};
     HostPasses::PostProcessingPass::Settings pp_settings{};
-    HostPasses::PostProcessingPass pp_pass;
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;
     std::deque<u64> recent_frame_ticks; ///< gow3: GOW3_FRAMES_AHEAD bound (PrepareFrame)
     Scheduler present_scheduler;
     Scheduler flip_scheduler;
+    // Destroy the post-process descriptor pool before the present scheduler
+    // (its GPU-tick semaphore must remain alive until pool retirement).
+    HostPasses::PostProcessingPass pp_pass;
 #ifdef __ANDROID__
     Gow3LsfgState::State lsfg_requested{Gow3LsfgState::Initial()};
     Gow3LsfgState::Watcher lsfg_watch{lsfg_requested};
