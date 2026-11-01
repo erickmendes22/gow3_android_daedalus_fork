@@ -138,11 +138,14 @@ echo "SotC render coherence: precise GPU readbacks, synchronous completion"
 # for geometry draws while asynchronous shaders/pipelines are still being
 # compiled (vk_pipeline_cache.cpp). With a cold shader cache this produces
 # missing geometry and transient flicker, not merely poor FPS.
-# The Android port must never silently drop these draws. Shader compilation
-# can stall a frame, but the complete frame will be drawn once compiled.
-export SOTC_ASYNC_SHADERS=0
+# Async graphics pipeline build test (OFF by default). The PC renderer may
+# temporarily skip >6-index draws whose pipeline is still compiling; this
+# can cause missing objects/pop-in, so leave OFF unless testing A/B.
+# Translation and boot preload stay synchronous to isolate this one change.
+export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
+echo "SotC experimental async graphics pipelines: $SOTC_ASYNC_SHADERS (1 may cause temporary missing geometry)"
 # Native A/B for stale descriptor reuse vs Vulkan command recording.
 # Keep Wave32, TAA, texture LOD, shaders and readbacks unchanged.
 # Android host Vulkan command-state memoization only; unlike SOTC_FAST_BIND
