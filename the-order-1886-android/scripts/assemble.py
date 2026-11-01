@@ -37,6 +37,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_ahb_acquire_wait.h",
     "gpu/shadps4/video_core/buffer_cache/region_manager.h",
     "gpu/shadps4/video_core/page_manager.cpp",
+    "gpu/shadps4/common/signal_context.cpp",
     "gpu/shadps4/common/arch.h", "gpu/shim/ps4_threads.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_bind_helper.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_draw_pipe.h",
