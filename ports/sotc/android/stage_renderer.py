@@ -527,6 +527,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Neither the 0.1.28 register-chunk change nor its spin change is ported.
     from stage_sotc_stage_spec_cpu import patch_sotc_stage_spec_cpu
     patch_sotc_stage_spec_cpu(out)
+    # Skip duplicate last-published register snapshots on the CP->draw FIFO.
+    from stage_sotc_reg_snapshot import patch_sotc_reg_snapshot
+    patch_sotc_reg_snapshot(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)

@@ -305,6 +305,10 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                                       else "Zero-copy CP-to-draw SRT snapshot (CPU)",
                         (values["sotc_stage_snapshot_swap"]?:"1")=="1",
                         {save("sotc_stage_snapshot_swap",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Evitar registrar blocos de registradores iguais (CPU)"
+                                      else "Skip unchanged GPU register snapshots (CPU)",
+                        (values["sotc_reg_snapshot_memo"]?:"1")=="1",
+                        {save("sotc_reg_snapshot_memo",if(it)"1" else "0")})
                     Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.29 e reinicie."
                          else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.29, then restart.",
                         color=SotcPalette.secondary,fontSize=11.sp)
@@ -346,7 +350,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.29 boot test",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.30 boot test",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."

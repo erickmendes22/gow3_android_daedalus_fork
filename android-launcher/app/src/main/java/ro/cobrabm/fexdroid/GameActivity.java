@@ -617,6 +617,9 @@ public final class GameActivity extends Activity {
                 // only after the consumer owns the slot; copy fallback on OFF.
                 env.put("SOTC_STAGE_SNAPSHOT_SWAP",
                         "0".equals(setting("sotc_stage_snapshot_swap")) ? "0" : "1");
+                // CP-owned last-published register chunks; ordered draw stream unchanged.
+                env.put("SOTC_REG_SNAPSHOT_MEMO",
+                        "0".equals(setting("sotc_reg_snapshot_memo")) ? "0" : "1");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.
