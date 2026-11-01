@@ -520,13 +520,35 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
                                    int(ps4_font_ttf_end - ps4_font_ttf), 18.0f, &font_config);
 
     const vk::Instance vk_instance = instance.GetInstance();
-    ImGui_ImplVulkan_LoadFunctions(
+    // With a direct Turnip Android Vulkan HAL there are no loader-supplied
+    // trampolines for device commands from vkGetInstanceProcAddr(instance).
+    // Query device commands through vkGetDeviceProcAddr first.
+    struct VkProcContext { VkInstance instance; VkDevice device; };
+    VkProcContext proc_ctx{
+        static_cast<VkInstance>(vk_instance),
+        static_cast<VkDevice>(instance.GetDevice())
+    };
+    const bool loaded = ImGui_ImplVulkan_LoadFunctions(
         instance.ApiVersion(),
-        [](const char* name, void* user) {
-            return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(
-                *static_cast<const vk::Instance*>(user), name);
+        [](const char* name, void* user) -> PFN_vkVoidFunction {
+            const auto* ctx = static_cast<const VkProcContext*>(user);
+            const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
+            if (dispatch.vkGetDeviceProcAddr) {
+                if (auto fn = dispatch.vkGetDeviceProcAddr(ctx->device, name))
+                    return fn;
+            }
+            return dispatch.vkGetInstanceProcAddr
+                       ? dispatch.vkGetInstanceProcAddr(ctx->instance, name)
+                       : nullptr;
         },
-        const_cast<vk::Instance*>(&vk_instance));
+        &proc_ctx);
+    if (!loaded) {
+        std::fprintf(stderr,
+                     "The Order: ImGui Vulkan function table unavailable; "
+                     "overlay disabled rather than calling a null dispatch pointer.\n");
+        ImGui::DestroyContext();
+        return;
+    }
 
     const VkFormat color_format = static_cast<VkFormat>(format);
     ImGui_ImplVulkan_InitInfo info{};

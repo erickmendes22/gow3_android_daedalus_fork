@@ -346,10 +346,14 @@ static void fault(int sig, siginfo_t *info, void *context) {
     /* The process is terminating: dladdr/snprintf are acceptable here. */
     GuestRegs regs;
     const int in_guest = guest_cpu_signal_regs(context, &regs);
-    uintptr_t rip = in_guest == GUEST_CPU_IN_GUEST ? (uintptr_t)regs.rip : guest_cpu_host_pc(context);
+    const uintptr_t host_pc = guest_cpu_host_pc(context);
+    const uintptr_t guest_pc = (uintptr_t)regs.rip;
+    // The FEX host-call fallback can read a zero guest return slot although
+    // the actual signal PC is inside host Vulkan code. Never hide the host PC.
+    uintptr_t rip = in_guest == GUEST_CPU_IN_GUEST ? guest_pc : host_pc;
     char line[512];
     Dl_info where;
-    if (rip - (uintptr_t)image < 0x10000000)
+    if (image && rip >= (uintptr_t)image && rip - (uintptr_t)image < 0x10000000)
         snprintf(line, sizeof(line), "Guest fault (signal %d) at guest offset 0x%lx, address %p\n",
                  sig, (unsigned long)(rip - (uintptr_t)image), info->si_addr);
     else if (dladdr((void *)rip, &where) && where.dli_fname)
@@ -357,6 +361,12 @@ static void fault(int sig, siginfo_t *info, void *context) {
                  (unsigned long)(rip - (uintptr_t)where.dli_fbase), where.dli_sname ? where.dli_sname : "?", info->si_addr);
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
+    { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
+    snprintf(line, sizeof(line),
+             "The Order crash context: host_pc=%p guest_pc=%p guest_state=%d "
+             "signal_code=%d fault_address=%p thread_id=%ld\n",
+             (void*)host_pc, (void*)guest_pc, in_guest, info->si_code,
+             info->si_addr, (long)syscall(SYS_gettid));
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
     if (gpu_enabled) ps4gpu_dump_guest_writes(context);
     /* Host call chain (frames with unwind info; guest frames end it). */
@@ -533,7 +543,10 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc == 2 && !strcmp(argv[1], "--runtime-info")) {
-        puts("{\"runtime_abi\":\"order1886-native-1\",\"title_id\":\"CUSA00076\","
+        puts("{\"runtime_abi\":\"order1886-native-1\","
+             "\"game\":\"The Order: 1886\",\"verified_title_id\":\"CUSA00076\","
+             "\"supported_title_ids\":[\"CUSA00076\",\"CUSA00035\",\"CUSA00070\","
+             "\"CUSA00100\",\"CUSA00670\",\"CUSA00785\"],"
              "\"prepared_format\":\"PS4BOOT5\",\"renderer_profile\":\"native-ps4\"}");
         return 0;
     }

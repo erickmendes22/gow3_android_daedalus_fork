@@ -320,8 +320,17 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
 
     fsr_pass.Create(device, instance.GetAllocator(), num_images);
     ReportUpscalerFallback(Ps4Settings::Get().requested_upscaler, DetectUpscaleProviders(instance));
+#ifdef __ANDROID__
+    std::fprintf(stderr, "The Order: Vulkan startup phase: post-processing\n");
+#endif
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+#ifdef __ANDROID__
+    std::fprintf(stderr, "The Order: Vulkan startup phase: ImGui device functions\n");
+#endif
     Ps4Overlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
+#ifdef __ANDROID__
+    std::fprintf(stderr, "The Order: Vulkan startup phase: ready for pipeline cache\n");
+#endif
 
     const bool binary_cache = EmulatorSettingsImpl::Flag("ORDER1886_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
