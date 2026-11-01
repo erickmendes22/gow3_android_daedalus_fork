@@ -10,9 +10,9 @@ android {
     defaultConfig {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
-        targetSdk = 28
-        versionCode = 1
-        versionName = "0.1.0-bionic-boot-test"
+        targetSdk = 30
+        versionCode = 2
+        versionName = "0.1.1-bionic-installer"
     }
     buildTypes {
         release {
@@ -31,6 +31,7 @@ android {
         getByName("main") {
             java.srcDir("../../the-order-1886-android/overlay/android-launcher/app/src/main/java")
             jniLibs.srcDir("../../out/order1886/apk-jni")
+            assets.srcDir("../../out/order1886/apk-assets")
         }
     }
     packaging {

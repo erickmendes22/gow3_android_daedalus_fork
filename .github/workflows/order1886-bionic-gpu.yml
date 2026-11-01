@@ -136,6 +136,33 @@ jobs:
         run: |
           export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
           bash the-order-1886-android/scripts/build_runtime_android.sh order-android out/order1886
+      - name: Build ARM64 PKG installer (Rust, pinned orbis-pkg-util)
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          mkdir -p out/bionic/bin
+          bash tools/android/bionic/build_pkg.sh
+          test -x out/bionic/bin/orbis-pkg-util
+      - name: Cache ARM64 Python toolchain for Android game preparation
+        id: order-python-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            out/bionic/python
+            .local-deps/android/bionic-build/python-host-isolated-v1
+            .local-deps/android/bionic-build/python-android-isolated-v1
+            .local-deps/android/bionic-src/python-3.13.7
+          key: order1886-python-3.13.7-ndkr29-v1
+      - name: Build Bionic CPython 3.13 for on-device game preparation
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export GOW3_JOBS=3
+          test -f out/bionic/python/lib/libpython3.13.so || bash tools/android/bionic/build_python.sh
+          test -x out/bionic/python/bin/python3.13
+          test -f out/bionic/python/lib/libpython3.13.so
       - name: Stage dedicated The Order Android JNI payload
         shell: bash -el {0}
         run: |
@@ -149,10 +176,105 @@ jobs:
           cp out/order1886/lib/liborder1886cpu.so "$target/"
           cp out/order1886/lib/liborder1886present.so "$target/"
           cp out/order1886/lib/libc++_shared.so "$target/"
+          cp out/bionic/bin/orbis-pkg-util "$target/liborder1886_pkg_util.so"
+          cp out/bionic/python/bin/python3.13 "$target/liborder1886_python.so"
+          cp out/bionic/python/lib/libpython3.13.so "$target/"
           for lib in "$target"/*.so; do
             echo "Native payload: $lib"
             "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$lib" | grep -E 'Class:|Machine:|Type:'
           done
+      - name: Bundle The Order source preparation scripts and ARM64 Python stdlib
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage=out/order1886/toolchain-stage
+          mkdir -p "$stage/python/lib" "$stage/order1886" out/order1886/apk-assets
+          cp -a out/bionic/python/lib/python3.13 "$stage/python/lib/"
+          cp -a order-source/scripts "$stage/order1886/scripts"
+          cp order-source/order1886.py "$stage/order1886/"
+          find "$stage" -type d \( -name '__pycache__' -o -name 'test' -o -name 'tests' -o -name 'idlelib' -o -name 'tkinter' -o -name 'ensurepip' -o -name 'site-packages' -o -name 'turtledemo' \) -prune -exec rm -rf {} +
+          (cd "$stage" && zip -q -r ../apk-assets/order1886-toolchain.zip python order1886)
+          unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^order1886/order1886.py        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build dedicated The Order 1886 Android debug APK
+        working-directory: android-launcher
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
+      - name: Verify The Order APK contents and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -f "$apk"
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886cpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886present.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_pkg_util.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
+          unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
+          echo "Built The Order ARM64 APK: $apk"
+          sha256sum "$apk"
+      - name: Publish The Order Android Bionic boot-test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.1-installer
+          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Publish native game runtime test executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-bionic-native-runtime-arm64
+          path: |
+            out/order1886/bin/order1886-probe
+            out/order1886/lib/liborder1886cpu.so
+            out/order1886/lib/libps4gpu.so
+            out/order1886/lib/liborder1886present.so
+          if-no-files-found: error
+
+          unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^python/lib/python3.13/os.py        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build dedicated The Order 1886 Android debug APK
+        working-directory: android-launcher
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
+      - name: Verify The Order APK contents and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -f "$apk"
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886cpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886present.so'
+          echo "Built The Order ARM64 APK: $apk"
+          sha256sum "$apk"
+      - name: Publish The Order Android Bionic boot-test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.0-boot-test
+          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Publish native game runtime test executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-bionic-native-runtime-arm64
+          path: |
+            out/order1886/bin/order1886-probe
+            out/order1886/lib/liborder1886cpu.so
+            out/order1886/lib/libps4gpu.so
+            out/order1886/lib/liborder1886present.so
+          if-no-files-found: error
+
       - name: Set up Java for dedicated The Order APK
         uses: actions/setup-java@v4
         with:
