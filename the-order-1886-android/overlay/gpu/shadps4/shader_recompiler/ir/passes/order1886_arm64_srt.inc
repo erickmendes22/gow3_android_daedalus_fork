@@ -196,6 +196,25 @@ static NativeSrtCode* CompileNativeSrt(std::span<const u32> program) {
 #endif
 }
 
+#ifdef ARCH_ARM64
+static thread_local std::vector<u64>* srt_source_trace_sink = nullptr;
+static thread_local const u8* srt_source_trace_root = nullptr;
+void SetSrtSourceTrace(std::vector<u64>* sink) {
+    srt_source_trace_sink = sink;
+}
+static void TraceSrtSource(const u8* pointer, u64 offset) {
+    if (!srt_source_trace_sink || !pointer || pointer == srt_source_trace_root) return;
+    const u64 address = reinterpret_cast<u64>(pointer);
+    // PS4 guest is mapped inside 0x1000000000..0xfc00000000.
+    if (address > ~u64{0} - offset) return;
+    const u64 guest = address + offset;
+    if (guest < 0x1000000000ULL || guest >= 0xfc00000000ULL) return;
+    if (srt_source_trace_sink->size() < 8192) srt_source_trace_sink->push_back(guest);
+}
+#else
+static inline void TraceSrtSource(const u8*, u64) {}
+#endif
+
 struct SrtProgram {
     std::vector<u32> words;
     NativeSrtCode* native{};
@@ -208,7 +227,11 @@ const void* SrtProgramCode(const SrtProgram* program) {
 void RunSrtWalker(SrtProgram* stored, const u32* user_data, u32* flat) {
     const auto* program = stored->words.data();
     auto* native = stored->native;
-    if (native && native->enabled.load(std::memory_order_relaxed)) {
+    if (native && native->enabled.load(std::memory_order_relaxed)
+#ifdef ARCH_ARM64
+        && !srt_source_trace_sink
+#endif
+    ) {
         // Use the runtime's existing fault boundary. A fault retries with the interpreter,
         // which zeros just the failing operation and retains the original cache bytecode.
         sigjmp_buf* const previous = runtime_fault_recover;
@@ -259,6 +282,9 @@ void RunSrtProgram(const u32* program, const u32* user_data, u32* flat) {
     u32 values[MaxValues];
     u32 depth = 0, count = 0;
     const u8* pointer = reinterpret_cast<const u8*>(user_data);
+#ifdef ARCH_ARM64
+    srt_source_trace_root = pointer;
+#endif
 
     for (u32 pc = 1;;) {
         u32* const at = &code[pc++];
@@ -267,6 +293,9 @@ void RunSrtProgram(const u32* program, const u32* user_data, u32* flat) {
         const bool zeroed = (word & OpZeroed) != 0;
         switch (op) {
         case OpEnd:
+#ifdef ARCH_ARM64
+            srt_source_trace_root = nullptr;
+#endif
             runtime_fault_recover = previous;
             return;
         case OpPushImm:
@@ -274,6 +303,7 @@ void RunSrtProgram(const u32* program, const u32* user_data, u32* flat) {
             const u32 offset = (op == OpPushImm ? code[pc++] : values[--count]) << 2;
             u64 next = 0;
             if (!zeroed) {
+                TraceSrtSource(pointer, offset);
                 faulted = at;
                 std::memcpy(&next, pointer + offset, sizeof(next));
             }
@@ -289,6 +319,7 @@ void RunSrtProgram(const u32* program, const u32* user_data, u32* flat) {
             const u32 offset = (op == OpCopyImm ? code[pc++] : values[--count]) << 2;
             u32 value = 0;
             if (!zeroed) {
+                TraceSrtSource(pointer, offset);
                 faulted = at;
                 std::memcpy(&value, pointer + offset, sizeof(value));
             }

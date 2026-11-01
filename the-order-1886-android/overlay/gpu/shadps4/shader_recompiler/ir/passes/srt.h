@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <vector>
 #include <boost/container/set.hpp>
 #include <boost/container/small_vector.hpp>
 #include "common/arch.h"
@@ -22,6 +23,11 @@ inline const void* SrtWalkerCode(PFN_SrtWalker walker) {
 #else
 /// Portable cache representation; ARM64 additionally compiles it to native code at load time.
 void RunSrtProgram(const u32* program, const u32* user_data, u32* flat_dst);
+#ifdef ARCH_ARM64
+// Record actual guest-memory addresses dereferenced by the portable SRT
+// walker. This source trace enables the Bachata GPU-written-SRT readback path.
+void SetSrtSourceTrace(std::vector<u64>* guest_read_addresses);
+#endif
 struct SrtProgram;
 const void* SrtProgramCode(const SrtProgram* program);
 void RunSrtWalker(SrtProgram* program, const u32* user_data, u32* flat_dst);
