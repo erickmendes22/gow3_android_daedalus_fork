@@ -3,10 +3,13 @@
 
 #pragma once
 
-#include "gow3_copy.h"
-#include "video_core/buffer_cache/copy_ranges.h"
+#include "ps4_copy.h"
 
+#include <atomic>
 #include <deque>
+#include <map>
+#include <mutex>
+#include <vector>
 #include <boost/container/small_vector.hpp>
 
 #include "common/interval_set.h"
@@ -15,6 +18,7 @@
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/range_set.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
+#include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 
 namespace AmdGpu {
 struct Liverpool;
@@ -39,7 +43,7 @@ class PageManager;
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
-    // gow3: arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
+    // arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
     // Windows driver: 2 GiB); an arena spans up to two pages, so they shrink to half the limit.
     static constexpr u64 MAX_ARENA_PAGE_BITS = 32;
     static constexpr u64 MIN_ARENA_PAGE_BITS = 30;
@@ -47,7 +51,7 @@ class BufferCache {
     static constexpr u64 MIN_BLOCK_SIZE = 16_KB;
 
 public:
-    /// Read-only bindings up to this size are copied into a stream buffer (gow3: public for
+    /// Read-only bindings up to this size are copied into a stream buffer (public for
     /// the draw pipeline's constant ring).
     static constexpr u64 STREAM_THRESHOLD = 16_KB;
 
@@ -84,20 +88,29 @@ public:
     /// Invalidates any buffer in the logical page range.
     void InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks = false);
 
-    /// gow3: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
+    /// a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
     void ExtendWriteFault(VAddr device_addr);
 
     /// Flushes any GPU modified buffer in the logical page range back to CPU memory.
     void ReadMemory(VAddr device_addr, u64 size, bool is_write = false, bool assume_locks = false);
 
     /// Finds a buffer for the specified region.
+    /// See watch_written_buffers.
+    void WatchWrittenBuffers(bool watch) {
+        watch_written_buffers = watch;
+    }
+
+    /// ORDER1886_READBACK_LOG=1: which dispatch wrote the small buffers the CPU reads back.
+    static bool ReadbackLog();
+    void SetCurrentDispatch(u64 hash) {
+        current_dispatch = hash;
+    }
+    /// The compute shader that last wrote a small buffer at `address`, or 0.
+    u64 WriterOf(VAddr address);
+
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,
                                                              bool is_texel_buffer = false);
-
-    /// Synchronizes only the supplied byte intervals within an arena-backed buffer.
-    [[nodiscard]] std::pair<const Buffer*, u64> ObtainBufferRanges(
-        VAddr device_addr, u32 size, std::span<const CopyRange> ranges, bool is_written);
 
     /// Attempts to obtain a buffer without modifying the cache contents.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBufferForImage(VAddr device_addr, u32 size);
@@ -107,10 +120,10 @@ public:
 
     /// Return true when a region is modified from the GPU
     [[nodiscard]] bool IsRegionGpuModified(VAddr addr, size_t size);
-    /// Bachata 0.2.7: detect exact GPU-written SRT sources, avoiding unrelated
-    /// GPU-modified words sharing a 4 KiB page.
-    [[nodiscard]] bool IsRangeGpuWritten(VAddr addr, size_t size) const;
-    [[nodiscard]] bool DownloadSrtSourcePage(VAddr aligned_page);
+    // SRT guest-pointer pages: synchronous, selective GPU publication before shader recompilation.
+    bool IsRangeGpuWritten(VAddr address, size_t size);
+    bool DownloadSrtSourcePage(VAddr page);
+
 
     /// Processes the fault buffer.
     void ProcessFaultBuffer();
@@ -120,6 +133,14 @@ public:
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
+
+    /// Called after each submission (Rasterizer::OnSubmit): writes the deferred readbacks
+    /// whose submission completed to guest memory.
+    void OnSubmitted() {
+        if (has_pending_readbacks.load(std::memory_order_relaxed)) {
+            ApplyDeferredReadbacks();
+        }
+    }
 
 private:
     struct ArenaBinds {
@@ -144,18 +165,19 @@ private:
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
 
-    /// gow3: batched small copies on the copy threads (Gow3Copy::QueueCopy).
-    static void RunGuestCopy(const Gow3Copy::Item& item);
-    void SmallGuestCopy(const Gow3Copy::Item& item);
+    /// batched small copies on the copy threads (Ps4Copy::QueueCopy).
+    static void RunGuestCopy(const Ps4Copy::Item& item);
+    void SmallGuestCopy(const Ps4Copy::Item& item);
 
     const Buffer* UploadCopies(const Buffer* arena, std::span<vk::BufferCopy> copies,
                                size_t total_size_bytes);
 
     bool SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size);
+    bool MaterializeHtile(const Buffer* arena, VAddr device_addr, u32 size);
 
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
-    // gow3: texel buffer ranges known not to alias an image, per image registry generation.
+    // texel buffer ranges known not to alias an image, per image registry generation.
     struct ImageMiss {
         VAddr address = 0;
         u32 size = 0;
@@ -172,6 +194,41 @@ private:
     StreamBuffer stream_buffer;
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
+    std::mutex gpu_ranges_mutex;
+
+    /// Deferred readbacks (from TOport 32efe96, GPL-2.0). A guest write beside (not on)
+    /// GPU-written bytes of a page goes on at once; those bytes are copied to host memory in the
+    /// current submission and written to guest memory once it completes. Until then uploads
+    /// skip them (the arena holds the newest data) and the guest's bytes at the fault are kept
+    /// to spot later CPU writes.
+    struct DeferredItem {
+        VAddr addr;
+        u64 size;
+        u64 staging_offset;
+        u64 snapshot_offset;
+    };
+    struct DeferredBatch {
+        u64 tick{};
+        Vulkan::StagingBufferRef staging{};
+        std::vector<DeferredItem> items;
+        std::vector<u8> snapshot;
+    };
+    bool DeferReadback(const Buffer* arena, VAddr device_addr, u64 size);
+    void ApplyDeferredReadbacks();
+    /// Waits for the deferred readbacks overlapping the range and writes them to guest memory.
+    void WaitDeferredReadbacks(VAddr addr, u64 size);
+    bool PendingReadback(VAddr addr, u64 size);
+    std::mutex deferred_mutex;
+    std::deque<DeferredBatch> deferred_readbacks; ///< oldest first
+    RangeSet pending_readbacks; ///< GPU bytes of deferred_readbacks (guarded by deferred_mutex)
+    std::atomic<bool> has_pending_readbacks{false};
+    bool deferred_readbacks_enabled = true; ///< ORDER1886_DEFER_BUFFER_READBACK=0 turns it off
+    /// Set while binding a dispatch whose small output buffers the CPU reads back: under the
+    /// relaxed policy those buffers alone are fetched on a CPU read (aim autofocus).
+    bool watch_written_buffers = false;
+    u64 current_dispatch = 0;
+    std::mutex writers_mutex;
+    std::map<VAddr, std::pair<u64, u64>> writers; ///< address -> (size, compute shader hash)
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
