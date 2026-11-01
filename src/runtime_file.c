@@ -355,9 +355,33 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
     return n;
 }
+/* SotC loads a save/area on this message. The renderer owns the guest texture
+ * cache; its queued request is consumed during texture cache maintenance.
+ * Without it images from earlier regions may remain mapped over reused
+ * guest pages. This is the pinned upstream SotC callback, gated to SotC:
+ * never alter GoW3's file I/O or renderer.
+ */
+void bbgpu_request_texture_flush(void) __attribute__((weak));
+static void sotc_note_game_load(const void *buffer,uint64_t size) {
+    const char *port=getenv("SOTC_PORT");
+    const char *off=getenv("SOTC_LOAD_FLUSH");
+    if (!port || port[0]!='1' || (off && off[0]=='0') ||
+        !bbgpu_request_texture_flush) return;
+    static const char marker[]="st_gameflow() starting game";
+    const uint64_t len=sizeof(marker)-1;
+    if (!buffer || size<len) return;
+    const unsigned char *data=(const unsigned char *)buffer;
+    for (uint64_t i=0;i+len<=size;++i) {
+        if (data[i]=='s' && !memcmp(data+i,marker,len)) {
+            bbgpu_request_texture_flush();
+            return;
+        }
+    }
+}
 static int64_t do_write(int fd,const void *buffer,uint64_t size) {
     int h=host_fd(fd);
     if (h<0) return -EBADF;
+    if (fd==1 || fd==2) sotc_note_game_load(buffer,size);
     ssize_t n=host_write(h,buffer,size);
     if (n<0) return -errno;
     __atomic_add_fetch(&writes,1,__ATOMIC_RELAXED);
