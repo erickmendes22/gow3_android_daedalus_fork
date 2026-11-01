@@ -15,7 +15,7 @@ checks={
   "FEX imports": "guest_cpu_host_function((void*)resolved)" in p,
   "FEX main": "guest_cpu_call((uintptr_t)(image+entry),2,entry_args)" in p,
   "FEX module initializers": "guest_cpu_call((uintptr_t)(image+modules[m].init),3,init_args)" in p,
-  "FEX signal handler": "guest_cpu_signal_regs(context,&regs)" in p,
+  "FEX signal handler": ("guest_cpu_signal_regs(context,&regs)" in p or "guest_cpu_signal_regs(context, &regs)" in p),
   "FEX TLS": "guest_cpu_set_gs(base)" in thread,
   "FEX thread start": "guest_cpu_call((uintptr_t)t->entry,1,&arg)" in thread,
   "FEX destructors": "guest_cpu_call((uintptr_t)handler.callback.plain,0,NULL)" in runtime,
