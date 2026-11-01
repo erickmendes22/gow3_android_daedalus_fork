@@ -16,6 +16,13 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("no async draw skips", text)
         self.assertLess(text.index("export SOTC_ASYNC_SHADERS=0"), text.index('exec "$@"'))
 
+    def test_android_staging_prevents_pipeline_worker_draw_skips(self):
+        staging = (ROOT / "ports/sotc/android/stage_renderer.py").read_text()
+        self.assertIn("SotC Android hard-disable drop-on-compile pipeline workers", staging)
+        self.assertIn("SotC: never silently discard an uncompiled draw", staging)
+        self.assertIn("SotC Android strict geometry compilation independent of launcher flags", staging)
+        self.assertIn("#ifdef __ANDROID__", staging)
+
     def test_no_zero_filled_texture_placeholders_on_android(self):
         text = LAUNCHER.read_text()
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", text)
