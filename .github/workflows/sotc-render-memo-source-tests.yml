@@ -1,0 +1,53 @@
+name: SotC render-state source checks (no APK)
+on:
+  push:
+    branches:
+      - research/sotc-render-state-memo-safe
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-review:
+    name: Validate pinned SotC renderer transformation only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Android port (research branch)
+        uses: actions/checkout@v4
+      - name: Checkout pinned SotC PC renderer
+        uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Python syntax and source staging regression
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_sotc_rt_memo.py tests/test_sotc_rt_memo.py
+          python3 -m unittest discover -s tests -p test_sotc_rt_memo.py -v
+      - name: Check unchanged guest draw and readback paths
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import importlib.util
+          import shutil
+          import tempfile
+          root=Path.cwd()
+          a=root/"upstream-sotc/gpu/shadps4/video_core/renderer_vulkan"
+          spec=importlib.util.spec_from_file_location("rt_memo",root/"ports/sotc/android/stage_sotc_rt_memo.py")
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          with tempfile.TemporaryDirectory() as d:
+              b=Path(d)/"gpu/shadps4/video_core/renderer_vulkan"
+              b.mkdir(parents=True)
+              for name in ("vk_rasterizer.h","vk_rasterizer.cpp"):
+                  shutil.copy2(a/name,b/name)
+              original=(a/"vk_rasterizer.cpp").read_text()
+              mod.patch_sotc_rt_memo(b.parents[2])
+              patched=(b/"vk_rasterizer.cpp").read_text()
+              core=original.split("RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {",1)[1]
+              assert patched.endswith(core), "Original rendering body or post-rendering functions changed"
+              for piece in ("void Rasterizer::Draw(", "void Rasterizer::DrawIndirect(",
+                            "void Rasterizer::RefreshImageLayouts()", "void Rasterizer::OnSubmit()"):
+                  assert original.count(piece)==1 and patched.count(piece)==1
+          PY
