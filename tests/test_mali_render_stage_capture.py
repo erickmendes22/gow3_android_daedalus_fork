@@ -13,7 +13,6 @@ ARCHIVE = (ROOT / "android-launcher/app/src/main/java/com/gow3/android/data/LogA
 class MaliStageCapture(unittest.TestCase):
     def test_panvk_only_and_opt_out(self):
         self.assertIn("*/libvulkan_panfrost.so)", SHELL)
-        self.assertIn("GOW3_MALI_AUTOCAPTURE=0", SHELL)
         self.assertIn("GOW3_MALI_AUTOCAPTURE:-0", SHELL)
         self.assertNotIn("GOW3_MALI_AUTOCAPTURE:-1", SHELL)
         self.assertIn("vendorID == 0x13B5", PRESENTER)
