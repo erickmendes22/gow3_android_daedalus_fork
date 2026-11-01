@@ -162,6 +162,17 @@ export SOTC_PIPELINE_BIND_MEMO=${SOTC_PIPELINE_BIND_MEMO:-1}
 export SOTC_VERTEX_INPUT_MEMO=${SOTC_VERTEX_INPUT_MEMO:-1}
 export SOTC_DESCRIPTOR_SLOT_REUSE=${SOTC_DESCRIPTOR_SLOT_REUSE:-1}
 echo "SotC host Vulkan fastpaths: pipeline=$SOTC_PIPELINE_BIND_MEMO vertex=$SOTC_VERTEX_INPUT_MEMO descriptor_slots=$SOTC_DESCRIPTOR_SLOT_REUSE"
+# A/B performance *diagnostics*, not a performance tweak. The upstream
+# stats switches are getenv-presence based: setting either one to "0"
+# would STILL activate it. Unset both unless explicitly selected in UI.
+if [ "${SOTC_PERF_PROFILE:-0}" = "1" ]; then
+    export SOTC_FPS=1
+    export SOTC_DRAW_SPLIT=1
+    unset SOTC_CMD_STATS
+    echo "SotC CPU/GPU frame profiling ON: five-second SOTC FPS/FRAMES/DRAW SPLIT counters"
+else
+    unset SOTC_FPS SOTC_DRAW_SPLIT SOTC_CMD_STATS
+fi
 export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}
 export SOTC_RECORD_THREAD=${SOTC_RECORD_THREAD:-0}
 echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD rb_async=$SOTC_RB_ASYNC (0=conservative)"
