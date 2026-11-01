@@ -29,7 +29,7 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
@@ -47,10 +47,14 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fastpaths.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
           # Compile and execute the portable SRT ABI and guest-memory tests
           # before the expensive FEX and Vulkan build.
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_sotc_fastpaths.cpp -o "$RUNNER_TEMP/sotc-fastpaths"
+          "$RUNNER_TEMP/sotc-fastpaths"
           clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
             tests/test_sotc_arm64_srt.cpp -o "$RUNNER_TEMP/sotc-srt-portable"
           "$RUNNER_TEMP/sotc-srt-portable"
@@ -71,6 +75,10 @@ jobs:
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
           grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'SotcPerf::BindGraphicsPipeline' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'SotcPerf::SetVertexInput' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq '++sotc_fastpath_epoch' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp
+          grep -Fq 'std::fill(set_writes.begin(), set_writes.end(), vk::WriteDescriptorSet{});' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'SotcUnusedDesktopVkFunction' out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
           srt=out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes
           grep -Fq 'SotcArm64Srt::Run' "$srt/flatten_extended_userdata_pass.cpp"
@@ -216,10 +224,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.22-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.23-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.22-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.22-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.23-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.23-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -263,6 +271,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fastpaths.py' -v
           python3 ports/sotc/android/repack_verified_native.py \
             --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk \
             --root .
