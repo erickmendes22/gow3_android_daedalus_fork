@@ -71,7 +71,7 @@ final class Order1886Preparation {
     }
 
     void prepare(File game, int fps, String aspect, int renderWidth,
-                 String readback, Progress progress) throws Exception {
+                 String readback, int language, Progress progress) throws Exception {
         if(!new File(game,"eboot.bin").isFile() ||
            !new File(game,"sce_sys/param.sfo").isFile() ||
            !new File(game,"sce_module/libc.prx").isFile() ||
@@ -90,6 +90,7 @@ final class Order1886Preparation {
         argv.add("--aspect-ratio");argv.add(aspect);
         argv.add("--render-width");argv.add(Integer.toString(renderWidth));
         argv.add("--readbacks");argv.add(readback);
+        argv.add("--system-language");argv.add(Integer.toString(language));
         ProcessBuilder builder=new ProcessBuilder(argv).directory(tools).redirectErrorStream(true);
         Map<String,String> env=builder.environment();
         env.put("PYTHONHOME",new File(tools,"python").getAbsolutePath());

@@ -62,6 +62,7 @@ public final class Order1886Activity extends Activity {
     private int page=0, pendingStorage=0;
     private String statusText="Pronto para configurar o jogo.";
     private int leftX=128,leftY=128,rightX=128,rightY=128;
+    private boolean virtualLeftActive,virtualRightActive;
     private final Set<String> virtualKeys=new LinkedHashSet<>();
     private long previousFrameCount;
     private final Runnable fpsPoll=new Runnable(){
@@ -310,7 +311,23 @@ public final class Order1886Activity extends Activity {
             "selective".equals(prefs().getString("readback","relaxed"))?1:0,
             n->{prefs().edit().putString("readback",
                 n==2?"precise":n==1?"selective":"relaxed").apply();selectionChange();});
+        selectSpinner(c,"Filtro de apresentação",new String[]{"FSR 1 espacial","Linear (sem FSR)"},
+            "linear".equals(prefs().getString("filter","fsr1"))?1:0,
+            n->{prefs().edit().putString("filter",n==0?"fsr1":"linear").apply();selectionChange();});
+        selectSpinner(c,"Sharpening RCAS",new String[]{"Desativado","25%","50%","75%","100%"},
+            Math.max(0,Math.min(4,prefs().getInt("sharpness",0)/25)),
+            n->{prefs().edit().putInt("sharpness",n*25).apply();selectionChange();});
+        selectSpinner(c,"Anisotropia",new String[]{"1x","2x","4x","8x","16x"},
+            Integer.numberOfTrailingZeros(prefs().getInt("anisotropy",1)),
+            n->{prefs().edit().putInt("anisotropy",1<<n).apply();selectionChange();});
+        selectSpinner(c,"Frames adiantados",new String[]{"0 (sem limite)","1 (padrão)","2"},
+            prefs().getInt("framesQueued",1),
+            n->{prefs().edit().putInt("framesQueued",n).apply();selectionChange();});
+        selectSpinner(c,"Idioma do jogo",new String[]{"Inglês","Português (Brasil)","Português (Portugal)"},
+            prefs().getInt("language",1)==17?1:prefs().getInt("language",1)==7?2:0,
+            n->{prefs().edit().putInt("language",n==1?17:n==2?7:1).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
+        toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Tela cheia / preencher a tela","fullscreen",false);
         toggle(c,"Controles virtuais","onscreen",true);
         toggle(c,"Aquecimento de shaders em segundo plano (experimental)","warmup",false);
@@ -318,8 +335,9 @@ public final class Order1886Activity extends Activity {
         LinearLayout note=card(body,"Sobre as configurações");
         line(note,"O jogo aplica patches verificados na imagem preparada.",
             "30/60 FPS, proporção e resolução exigem nova preparação. "+
-            "Readback e VSync são passados ao runtime Bionic. "+
-            "Nenhum FPS ou melhoria gráfica é prometido antes de testar no aparelho.");
+            "Readback, RCAS, anisotropia e shaders assíncronos são aplicados no runtime. "+
+            "FSR 1 é espacial (não FSR 3 temporal); sem DLLs Windows. "+
+            "Português BR depende dos arquivos de idioma da edição instalada.");
     }
     private void renderDrivers(){
         LinearLayout c=card(body,"Driver Vulkan");
@@ -487,7 +505,8 @@ public final class Order1886Activity extends Activity {
         if(gameDir==null)throw new IOException("Nenhum jogo selecionado");
         preparer.prepare(gameDir,prefs().getInt("fps",30),
                 prefs().getString("aspect","original"),prefs().getInt("width",1920),
-                prefs().getString("readback","relaxed"),this::show);
+                prefs().getString("readback","relaxed"),
+                prefs().getInt("language",1),this::show);
         if(!prefs().edit().putString("preparedSignature",prepSignature()).commit())
             throw new IOException("Não foi possível salvar perfil preparado");
         show("Jogo preparado no Android. Pronto para tentar iniciar.");
@@ -521,6 +540,10 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_BACKGROUND_WARMUP",prefs().getBoolean("warmup",false)?"1":"0");
         env.put("ORDER1886_DISPLAY_HZ",
             Integer.toString(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
+        if(surface!=null&&surface.getWidth()>=320&&surface.getHeight()>=180) {
+            env.put("ORDER1886_SCREEN_W",Integer.toString(surface.getWidth()));
+            env.put("ORDER1886_SCREEN_H",Integer.toString(surface.getHeight()));
+        }
         env.put("ORDER1886_GAME_PROFILE","order1886");
         Order1886LauncherConfig.environment(this,new File(base,"user"),env);
         drivers.configure(env);return b;
@@ -609,6 +632,7 @@ public final class Order1886Activity extends Activity {
     private void setupTouchControls(){
         touchLayer.removeAllViews();virtualKeys.clear();
         leftX=leftY=rightX=rightY=128;
+        virtualLeftActive=virtualRightActive=false;
         if(!prefs().getBoolean("onscreen",true))return;
         addStick(true,Gravity.BOTTOM|Gravity.LEFT,dp(18),dp(16));
         addStick(false,Gravity.BOTTOM|Gravity.RIGHT,dp(18),dp(16));
@@ -620,6 +644,14 @@ public final class Order1886Activity extends Activity {
         addTouchButton("○","circle",Gravity.RIGHT|Gravity.BOTTOM,dp(26),dp(137));
         addTouchButton("×","cross",Gravity.RIGHT|Gravity.BOTTOM,dp(100),dp(88));
         addTouchButton("□","square",Gravity.RIGHT|Gravity.BOTTOM,dp(178),dp(137));
+        // The Order uses the D-pad for inventory/selection and L3/R3 for
+        // analogue-stick clicks: expose the actual PS4 tokens used by PadBridge.
+        addTouchButton("↑","up",Gravity.LEFT|Gravity.BOTTOM,dp(212),dp(112));
+        addTouchButton("↓","down",Gravity.LEFT|Gravity.BOTTOM,dp(212),dp(13));
+        addTouchButton("←","left",Gravity.LEFT|Gravity.BOTTOM,dp(155),dp(62));
+        addTouchButton("→","right",Gravity.LEFT|Gravity.BOTTOM,dp(270),dp(62));
+        addTouchButton("L3","l3",Gravity.LEFT|Gravity.BOTTOM,dp(58),dp(155));
+        addTouchButton("R3","r3",Gravity.RIGHT|Gravity.BOTTOM,dp(58),dp(155));
         addTouchButton("OPTIONS","options",Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,dp(82),dp(16));
         addTouchButton("TOUCH","touchpad",Gravity.TOP|Gravity.CENTER_HORIZONTAL,dp(82),dp(12));
     }
@@ -637,11 +669,13 @@ public final class Order1886Activity extends Activity {
                     float x=Math.max(-1,Math.min(1,(e.getX()-v.getWidth()/2f)/(v.getWidth()*.4f)));
                     float y=Math.max(-1,Math.min(1,(e.getY()-v.getHeight()/2f)/(v.getHeight()*.4f)));
                     int ax=Math.round(127.5f*(x+1)),ay=Math.round(127.5f*(y+1));
-                    if(left){leftX=ax;leftY=ay;}else{rightX=ax;rightY=ay;}
+                    if(left){leftX=ax;leftY=ay;virtualLeftActive=true;}
+                    else{rightX=ax;rightY=ay;virtualRightActive=true;}
                     sendVirtual();return true;
                 }
                 case MotionEvent.ACTION_CANCEL:case MotionEvent.ACTION_UP:
-                    if(left){leftX=leftY=128;}else{rightX=rightY=128;}
+                    if(left){leftX=leftY=128;virtualLeftActive=false;}
+                    else{rightX=rightY=128;virtualRightActive=false;}
                     sendVirtual();return true;
             }
             return true;
@@ -664,7 +698,8 @@ public final class Order1886Activity extends Activity {
         });
     }
     private void sendVirtual(){
-        if(pad!=null)pad.virtual(new LinkedHashSet<>(virtualKeys),leftX,leftY,rightX,rightY,true,true,0,0);
+        if(pad!=null)pad.virtual(new LinkedHashSet<>(virtualKeys),leftX,leftY,rightX,rightY,
+                virtualLeftActive,virtualRightActive,0,0);
     }
     private void stopGame(){
         stopped=true;
