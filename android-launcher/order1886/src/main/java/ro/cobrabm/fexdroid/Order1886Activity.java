@@ -522,6 +522,7 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_DISPLAY_HZ",
             Integer.toString(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
         env.put("ORDER1886_GAME_PROFILE","order1886");
+        Order1886LauncherConfig.environment(this,new File(base,"user"),env);
         drivers.configure(env);return b;
     }
     private void diagnose(){
@@ -584,6 +585,7 @@ public final class Order1886Activity extends Activity {
             try {
                 audio.start();
                 if(!audio.awaitReady(5000))throw new IOException("AudioBridge indisponível");
+                Order1886LauncherConfig.write(this,new File(base,"user"));
                 Process p=command(image.getAbsolutePath(),"--app0",gameDir.getAbsolutePath(),
                     "--user",new File(base,"user").getAbsolutePath(),"--timeout","0").start();
                 game=p;
