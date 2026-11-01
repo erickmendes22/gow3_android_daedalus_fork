@@ -19,8 +19,9 @@ class MaliStageCapture(unittest.TestCase):
     def test_bounded_stages(self):
         for n in (120, 360, 480, 720):
             self.assertIn(f"mali_index == {n}", PRESENTER)
-        for stage in ('"guest"', '"post"', '"cpu"'):
+        for stage in ('"guest"', '"post"'):
             self.assertIn(stage, PRESENTER)
+        self.assertIn('cpu_%03u_', PRESENTER)
         self.assertIn("max_width = 960, max_height = 540", PRESENTER)
         self.assertIn("mali_capture_frame", HEADER)
         self.assertIn("frame->mali_capture_frame = 0;", PRESENTER)
