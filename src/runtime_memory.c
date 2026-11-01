@@ -926,15 +926,31 @@ static void cache_region(size_t i, uintptr_t accessed_address) {
     // the game's large direct mappings contain many independently read blocks.
     if (sotc_vm_cache_on()) sotc_vm_direct[sotc_vm_slot(accessed_address)]=c;
 }
+/* SotC direct-memory buffers cross adjacent small guest VMAs. Once the
+ * relevant regions have been verified by the dirty-range journal, the GPU
+ * can query up to four contiguous pieces without reacquiring the VMA lock.
+ * This fast path must never claim coverage across a gap or reserved page.
+ */
+static uint64_t sotc_vm_cached_length(uintptr_t address, uint64_t size) {
+    if (!size || size>UINTPTR_MAX-address || (runtime_disabled_optimizations & 1)) return 0;
+    uint64_t done=0;
+    for (unsigned hop=0; hop<4 && done<size; ++hop) {
+        const uintptr_t at=address+done;
+        const CachedRegion *r=cached_region(at);
+        if (!r || r->kind==KIND_RESERVED || r->start>at || r->end<=at) return 0;
+        const uint64_t n=r->end-at;
+        done+=(n>size-done ? size-done : n);
+    }
+    return done==size ? size : 0;
+}
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
-    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
-    if (c && c->kind!=KIND_RESERVED && size<=c->end-address) return size;
+    if (size && sotc_vm_cached_length(address,size)==size) return size;
     read_lock();
-    { size_t i=vma_index(address); if (i<vma_count && vmas[i].start<=address) cache_region(i,address); }
     uint64_t length=0;
     for (size_t i=vma_index(address); i<vma_count && length<size; ++i) {
         if (vmas[i].start>address+length || vmas[i].kind==KIND_RESERVED) break;
+        cache_region(i,address+length);
         length=vmas[i].end-address;
     }
     read_unlock();
@@ -971,10 +987,18 @@ void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int 
 }
 /* Host view of a guest range, for the GPU backend: the range must be mapped. */
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {
-    const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
-    if (c && c->kind!=KIND_RESERVED && size<=c->end-address) return 1;
+    if (size && sotc_vm_cached_length(address,size)==size) return 1;
     read_lock();
-    int result=covered(address,address+size,0);
+    const int result=covered(address,address+size,0);
+    if (result && size && size<=UINTPTR_MAX-address) {
+        uintptr_t at=address;
+        const uintptr_t end=address+size;
+        for (size_t i=vma_index(at); i<vma_count && at<end; ++i) {
+            if (vmas[i].start>at || vmas[i].kind==KIND_RESERVED) break;
+            cache_region(i,at);
+            at=vmas[i].end;
+        }
+    }
     read_unlock();
     return result;
 }

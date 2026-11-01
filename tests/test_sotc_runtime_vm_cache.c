@@ -7,9 +7,9 @@
 #include <stdio.h>
 int main(void) {
     /* An initially mapped region; the backing view is a fixed physical pool. */
-    backing_base=(unsigned char *)calloc(1,4096);
+    backing_base=(unsigned char *)calloc(1,2*PAGE);
     assert(backing_base);
-    vma_capacity=2;
+    vma_capacity=3;
     vmas=(Vma *)calloc(vma_capacity,sizeof(*vmas));
     assert(vmas);
     const uintptr_t first=USER_MIN+0x20000;
@@ -52,7 +52,25 @@ int main(void) {
     }
     assert(cached_region(first)==NULL);
     assert(runtime_memory_is_mapped(first,4096));
-    puts("SotC Bionic VM interval cache: changed/unrelated/overflow/ABI OK");
+    /* Two adjacent 16-KiB guest mappings are contiguous in GPU address space. */
+    write_lock();
+    sotc_vm_mark_dirty(first,first+2*PAGE);
+    vmas[0].end=first+PAGE;
+    vmas[1]=(Vma){first+PAGE,first+2*PAGE,KIND_DIRECT,0x33,0,PAGE};
+    vma_count=2;
+    write_unlock();
+    assert(runtime_memory_clamp(first,2*PAGE)==2*PAGE); /* slow lookup primes both */
+    assert(runtime_memory_clamp(first,2*PAGE)==2*PAGE); /* verified cache path */
+    assert(runtime_memory_is_mapped(first,2*PAGE));
+    assert(sotc_vm_direct[sotc_vm_slot(first+PAGE)].end==first+2*PAGE);
+    /* A hole must immediately invalidate the second piece and never return full coverage. */
+    write_lock();
+    sotc_vm_mark_dirty(first+PAGE,first+2*PAGE);
+    vmas[1].kind=KIND_RESERVED;
+    write_unlock();
+    assert(runtime_memory_clamp(first,2*PAGE)==PAGE);
+    assert(!runtime_memory_is_mapped(first,2*PAGE));
+    puts("SotC Bionic VM interval cache: changed/unrelated/overflow/adjacent/hole OK");
     free(vmas);free(backing_base);
     return 0;
 }
