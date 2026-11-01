@@ -60,11 +60,23 @@ jobs:
         with:
           path: .local-deps/android/bionic-prefix
           key: order1886-bionic-deps-ndkr29-v1
+      - name: Restore native C++ compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: order1886-gpu-ccache-${{ github.sha }}
+          restore-keys: |
+            order1886-gpu-ccache-
       - name: Configure and compile Order-specific GPU renderer for Android ARM64
         shell: bash -el {0}
         run: |
           set -euo pipefail
           NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export CCACHE_DIR="$PWD/.ccache"
+          export CCACHE_BASEDIR="$PWD"
+          export CCACHE_COMPILERCHECK=content
+          export CCACHE_MAXSIZE=1G
           PREFIX="$PWD/.local-deps/android/bionic-prefix"
           HEADERS="$CONDA_PREFIX"
           export PATH="$HEADERS/bin:$PATH"
@@ -74,6 +86,7 @@ jobs:
           ATOMIC=$("$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)
           test -f "$ATOMIC"
           cmake -S order-android/gpu -B out/order1886/gpu -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo -DORDER1886_PGO=off -DORDER1886_LTO=OFF \
@@ -84,6 +97,12 @@ jobs:
           cmake --build out/order1886/gpu --target ps4gpu --parallel 2
           file out/order1886/gpu/libps4gpu.so
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h out/order1886/gpu/libps4gpu.so
+      - name: Save native C++ compiler cache even after source errors
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: order1886-gpu-ccache-${{ github.sha }}
       - name: Publish GPU ARM64 library only when native link passes
         uses: actions/upload-artifact@v4
         with:

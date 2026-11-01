@@ -4,7 +4,8 @@ on:
   push:
     branches: [port/the-order-1886-bionic]
     paths:
-      - "the-order-1886-android/**"
+      - "the-order-1886-android/overlay/src/**"
+      - "the-order-1886-android/overlay/cpu/**"
       - ".github/workflows/order1886-bionic-source.yml"
   workflow_dispatch:
 
