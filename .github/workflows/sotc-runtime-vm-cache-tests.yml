@@ -1,0 +1,27 @@
+name: SotC Bionic VM cache C tests (no APK)
+on:
+  push:
+    branches: [research/sotc-runtime-vma-cache-032]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run real source-level guest memory test
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
+             -pthread tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
+             -o /tmp/sotc-vm-cache
+          /tmp/sotc-vm-cache
+          cc -std=gnu11 -O2 -Wall -Wextra -pthread -fsyntax-only \
+             src/runtime_memory.c
+      - name: Assert Android loader still builds same runtime implementation
+        run: |
+          grep -Fq 'src/runtime_memory.c' tools/android/bionic/build_runtime.sh || \
+            grep -Fq 'src/runtime_memory.c' tools/android/bionic/build_deps.sh
+          grep -Fq 'SOTC_VM_RANGE_CACHE' src/runtime_memory.c
+          grep -Fq 'BB_MEMORY_LOG' src/runtime_memory.c

@@ -67,11 +67,67 @@ static pthread_rwlock_t lock=PTHREAD_RWLOCK_INITIALIZER;
 static __thread unsigned exclusive_depth;
 /* Odd while a writer holds the lock; readers' region caches are valid for one even value. */
 static uint64_t table_generation;
+/* SotC Bionic: track which VMAs a writer actually changed. The original
+ * generation-only cache went stale on every unrelated 16-KiB mapping and
+ * forced the GPU's per-draw region queries through pthread_rwlock_rdlock.
+ * A cached interval is reusable only when NONE of the last 63 committed
+ * writes touched it. Too many writes or an uncertain generation fails closed.
+ */
+#define SOTC_VM_DIRTY_SLOTS 64u
+typedef struct { uint64_t generation; uintptr_t start, end; } SotcVmDirty;
+static SotcVmDirty sotc_vm_dirty[SOTC_VM_DIRTY_SLOTS];
+static uintptr_t sotc_vm_dirty_low, sotc_vm_dirty_high;
+static void sotc_vm_mark_dirty(uintptr_t start, uintptr_t end) {
+    if (start>=end) return;
+    const uintptr_t lo=__atomic_load_n(&sotc_vm_dirty_low,__ATOMIC_RELAXED);
+    const uintptr_t hi=__atomic_load_n(&sotc_vm_dirty_high,__ATOMIC_RELAXED);
+    if (start<lo) __atomic_store_n(&sotc_vm_dirty_low,start,__ATOMIC_SEQ_CST);
+    if (end>hi) __atomic_store_n(&sotc_vm_dirty_high,end,__ATOMIC_SEQ_CST);
+}
 static void write_lock(void) {
-    if (!exclusive_depth++) { pthread_rwlock_wrlock(&lock); __atomic_add_fetch(&table_generation,1,__ATOMIC_ACQ_REL); }
+    if (!exclusive_depth++) {
+        pthread_rwlock_wrlock(&lock);
+        __atomic_store_n(&sotc_vm_dirty_low,UINTPTR_MAX,__ATOMIC_SEQ_CST);
+        __atomic_store_n(&sotc_vm_dirty_high,0,__ATOMIC_SEQ_CST);
+        __atomic_add_fetch(&table_generation,1,__ATOMIC_SEQ_CST);
+    }
 }
 static void write_unlock(void) {
-    if (!--exclusive_depth) { __atomic_add_fetch(&table_generation,1,__ATOMIC_RELEASE); pthread_rwlock_unlock(&lock); }
+    if (!--exclusive_depth) {
+        const uint64_t ended=__atomic_load_n(&table_generation,__ATOMIC_RELAXED)+1;
+        SotcVmDirty *slot=&sotc_vm_dirty[(ended/2)%SOTC_VM_DIRTY_SLOTS];
+        const uintptr_t a=__atomic_load_n(&sotc_vm_dirty_low,__ATOMIC_SEQ_CST);
+        const uintptr_t b=__atomic_load_n(&sotc_vm_dirty_high,__ATOMIC_SEQ_CST);
+        __atomic_store_n(&slot->generation,0,__ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        __atomic_store_n(&slot->start,a<b ? a : 0,__ATOMIC_RELAXED);
+        __atomic_store_n(&slot->end,a<b ? b : 0,__ATOMIC_RELAXED);
+        __atomic_store_n(&slot->generation,ended,__ATOMIC_RELEASE);
+        __atomic_add_fetch(&table_generation,1,__ATOMIC_RELEASE);
+        pthread_rwlock_unlock(&lock);
+    }
+}
+static int sotc_vm_range_unchanged(uintptr_t start, uintptr_t end,
+                                    uint64_t since, uint64_t now) {
+    if (since>now || start>=end) return 0;
+    const uint64_t done=now & ~(uint64_t)1;
+    if (done<since || done-since>2*(SOTC_VM_DIRTY_SLOTS-1)) return 0;
+    for (uint64_t gen=since+2; gen<=done; gen+=2) {
+        SotcVmDirty *d=&sotc_vm_dirty[(gen/2)%SOTC_VM_DIRTY_SLOTS];
+        if (__atomic_load_n(&d->generation,__ATOMIC_ACQUIRE)!=gen) return 0;
+        const uintptr_t a=__atomic_load_n(&d->start,__ATOMIC_RELAXED);
+        const uintptr_t b=__atomic_load_n(&d->end,__ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&d->generation,__ATOMIC_RELAXED)!=gen) return 0;
+        if (a<end && start<b) return 0;
+    }
+    if (now & 1) {
+        const uintptr_t a=__atomic_load_n(&sotc_vm_dirty_low,__ATOMIC_SEQ_CST);
+        const uintptr_t b=__atomic_load_n(&sotc_vm_dirty_high,__ATOMIC_SEQ_CST);
+        if (__atomic_load_n(&table_generation,__ATOMIC_SEQ_CST)!=now) return 0;
+        if (a<end && start<b) return 0;
+    }
+    return 1;
 }
 static void read_lock(void) { if (!exclusive_depth) pthread_rwlock_rdlock(&lock); }
 static void read_unlock(void) { if (!exclusive_depth) pthread_rwlock_unlock(&lock); }
@@ -377,6 +433,7 @@ static int32_t place(void **inout, uint64_t size, int prot, int flags, uint64_t 
         address=find_free(address,size,alignment);
         if (!address) return NO_MEMORY;
     }
+    sotc_vm_mark_dirty(address,address+size); // publish before host mapping changes
     if (host_map(address,size,host_prot(prot),kind==KIND_RESERVED,phys)) return NO_MEMORY;
     void *mapped=(void *)address;
     drop_range(address,address+size);
@@ -456,6 +513,7 @@ static ABI int32_t direct_map_named(void **out, uint64_t size, int prot, int fla
 static int32_t unmap_locked(uintptr_t start, uint64_t size) {
     if (start%PAGE || !size) return INVALID;
     uint64_t end=start+align_up(size,PAGE);
+    sotc_vm_mark_dirty(start,end); // publish before host_unmap and table changes
     for (size_t i=vma_index(start); i<vma_count && vmas[i].start<end; ++i)
         if (vmas[i].kind!=KIND_RESERVED) {
             uintptr_t a=vmas[i].start>start ? vmas[i].start : start, b=vmas[i].end<end ? vmas[i].end : end;
@@ -553,13 +611,22 @@ static ABI int32_t reserve_range(void **inout, uint64_t size, int flags, uint64_
     }
     int32_t result=place(inout,size,0,flags,alignment,KIND_RESERVED,0,0);
     write_unlock();
-    if (!result) printf("Runtime: reserved virtual range %p, size=%" PRIu64 "\n", *inout, size);
+    /* Guest streaming reserves thousands of ranges. No stdout per reservation. */
+    static unsigned reserved_logged;
+    static int verbose=-1;
+    if (verbose<0) { const char *v=getenv("BB_MEMORY_LOG"); verbose=v && v[0]=='1'; }
+    if (!result && (verbose || reserved_logged<16)) {
+        printf("Runtime: reserved virtual range %p, size=%" PRIu64 "%s\n",
+               *inout,size,++reserved_logged==16 && !verbose
+               ? " (further ones: BB_MEMORY_LOG=1)" : "");
+    }
     return result;
 }
 static int32_t protect_locked(uintptr_t start, uint64_t size, int prot, int type) {
     uintptr_t end=start+align_up(size,PAGE);
     start&=~(uintptr_t)(PAGE-1);
     if ((prot & ~0x37) || !covered(start,end,0)) return INVALID;
+    sotc_vm_mark_dirty(start,end); // publish before mprotect and VMA permission edits
     if (host_protect(start,end-start,host_prot(prot))) return INVALID;
     int error; size_t i=carve(start,end,&error);
     if (error) return NO_MEMORY;
@@ -793,25 +860,56 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
     read_unlock();
     return ok;
 }
-/* Per-thread cache of recently found regions for the GPU's per-draw queries:
- * entries hold for as long as the table generation they were read at. */
-typedef struct { uint64_t generation; uintptr_t start, end; int kind; } CachedRegion;
+/* Safe last-seen VMA metadata, never a pointer into the mutable VMA array.
+ * 512 direct-mapped slots improve the GPU's repeated per-draw backing lookups.
+ * Entries survive unrelated VMA writes only when the dirty-log proves that
+ * their FULL region was not changed; uncertain or overlapping writes take
+ * the original pthread rwlock lookup. */
+typedef struct {
+    uint64_t generation;
+    uintptr_t start, end;
+    uint64_t phys;
+    int kind;
+} CachedRegion;
 static __thread CachedRegion region_cache[8];
 static __thread unsigned region_cache_next;
+#define SOTC_VM_DIRECT_SLOTS 512u
+static __thread CachedRegion sotc_vm_direct[SOTC_VM_DIRECT_SLOTS];
+static int sotc_vm_cache_on(void) {
+    static int on=-1;
+    if (on<0) { const char *v=getenv("SOTC_VM_RANGE_CACHE"); on=!(v && v[0]=='0'); }
+    return on;
+}
+static size_t sotc_vm_slot(uintptr_t address) {
+    return (address>>14)&(SOTC_VM_DIRECT_SLOTS-1);
+}
+static int sotc_vm_cached_valid(CachedRegion *c, uint64_t generation) {
+    if (!c->end || !c->start || (generation & 1 && !sotc_vm_cache_on())) return 0;
+    if (c->generation==generation) return 1;
+    if (!sotc_vm_cache_on() || !sotc_vm_range_unchanged(c->start,c->end,c->generation,generation))
+        return 0;
+    if (!(generation & 1)) c->generation=generation;
+    return 1;
+}
 static const CachedRegion *cached_region(uintptr_t address) {
-    uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
-    if (generation & 1) return NULL;
+    const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
+    if (sotc_vm_cache_on()) {
+        CachedRegion *c=&sotc_vm_direct[sotc_vm_slot(address)];
+        if (c->start<=address && address<c->end && sotc_vm_cached_valid(c,generation)) return c;
+    }
     for (unsigned i=0;i<8;++i) {
-        const CachedRegion *c=&region_cache[i];
-        if (c->generation==generation && c->end && c->start<=address && address<c->end) return c;
+        CachedRegion *c=&region_cache[i];
+        if (c->start<=address && address<c->end && sotc_vm_cached_valid(c,generation)) return c;
     }
     return NULL;
 }
-/* Called under the read lock after a lookup of address. */
+/* Under a read lock, remember the complete validated mapping. */
 static void cache_region(size_t i) {
-    uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
+    const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
     if (i==vma_count || (generation & 1)) return;
-    region_cache[region_cache_next++ % 8]=(CachedRegion){generation,vmas[i].start,vmas[i].end,vmas[i].kind};
+    const CachedRegion c={generation,vmas[i].start,vmas[i].end,vmas[i].phys,vmas[i].kind};
+    region_cache[region_cache_next++ % 8]=c;
+    if (sotc_vm_cache_on()) sotc_vm_direct[sotc_vm_slot(c.start)]=c;
 }
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
@@ -902,11 +1000,18 @@ const unsigned char *runtime_memory_backing_view(uint64_t *size) {
 }
 const unsigned char *runtime_memory_backing_pointer(uintptr_t address) {
     if (!backing_base) return NULL;
+    /* GPU backing access used to take the VMA read lock on every draw. */
+    if (!(runtime_disabled_optimizations & 1)) {
+        const CachedRegion *c=cached_region(address);
+        if (c) return c->kind!=KIND_RESERVED
+                     ? backing_base+c->phys+(address-c->start) : NULL;
+    }
     const unsigned char *pointer=NULL;
     read_lock();
     size_t i=vma_index(address);
     if (i<vma_count && vmas[i].start<=address && vmas[i].kind!=KIND_RESERVED)
         pointer=backing_base+vmas[i].phys+(address-vmas[i].start);
+    if (i<vma_count && vmas[i].start<=address) cache_region(i);
     read_unlock();
     return pointer;
 }
