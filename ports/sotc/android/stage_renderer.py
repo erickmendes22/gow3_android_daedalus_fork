@@ -547,6 +547,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Do not suppress real compute writes when a shader also touches metadata.
     from stage_meta_clear_integrity import patch_meta_clear_integrity
     patch_meta_clear_integrity(out)
+    # FAST_BIND on Android must not skip resource tracking or image transitions.
+    from stage_resource_coherence import patch_resource_coherence
+    patch_resource_coherence(out)
     # SotC-only exact Vulkan host-state memos; never reuse guest descriptors.
     from stage_perf_fastpaths import patch_fastpaths
     patch_fastpaths(root, out)
