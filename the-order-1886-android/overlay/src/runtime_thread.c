@@ -292,6 +292,9 @@ static void set_host_name(const char *name) {
  * (docs/verification/2026-10-31-thread-priorities.md). */
 enum { HIGH_GUEST_PRIO = 400 };
 static void set_host_priority(const char *name,int guest_prio) {
+#ifndef _WIN32
+    (void)name;
+#endif
     if (guest_prio>=HIGH_GUEST_PRIO) return;
 #ifdef _WIN32
     if (!SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_ABOVE_NORMAL))
