@@ -39,6 +39,9 @@ jobs:
           environment-file: ci/environment.yml
           cache-environment: true
           init-shell: bash
+      - name: Install host CMake header dependencies
+        shell: bash -el {0}
+        run: bash ci/setup-deps.sh "$CONDA_PREFIX"
       - name: Cache pinned cross-compiled Bionic dependencies
         uses: actions/cache@v4
         with:
@@ -50,6 +53,11 @@ jobs:
           export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
           export GOW3_JOBS=2
           bash tools/android/bionic/build_deps.sh
+      - name: Save successful cross-compiled dependencies before GPU configuration
+        uses: actions/cache/save@v4
+        with:
+          path: .local-deps/android/bionic-prefix
+          key: order1886-bionic-deps-ndkr29-v1
       - name: Configure and compile Order-specific GPU renderer for Android ARM64
         shell: bash -el {0}
         run: |

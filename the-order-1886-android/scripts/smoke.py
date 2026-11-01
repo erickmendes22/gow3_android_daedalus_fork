@@ -35,6 +35,10 @@ gpu_checks={
   "AHB app protocol present": (tree/"tools/android/present/order1886_present_proto.h").is_file(),
   "Native Android frame receiver": (tree/"tools/android/bionic/present/order1886present.c").is_file(),
   "Android Java SurfaceView bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java").is_file(),
+  "Android pad native HLE ABI": "sizeof(PadData)==120" in (tree/"src/runtime_pad_bionic.c").read_text(),
+  "Android PCM-to-FIFO native HLE": "ORDER1886_AUDIO_FIFO" in (tree/"src/runtime_audio_bionic.c").read_text(),
+  "Java Android pad bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886PadBridge.java").is_file(),
+  "Java Android audio bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886AudioBridge.java").is_file(),
   "Order ImGui menu preserved": "Ps4Overlay::Render" not in (gpu/"shim/ps4_overlay.cpp").read_text() or "namespace Ps4Overlay" in (gpu/"shim/ps4_overlay.cpp").read_text(),
 }
 checks.update(gpu_checks)

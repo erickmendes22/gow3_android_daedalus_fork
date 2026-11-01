@@ -15,7 +15,9 @@ UPSTREAM = "c53cd01d032995fe622033623ab64b4cf6b02233"
 DONOR = "b3a7c3d5e916cf8f4622192c0faa9383ebd77c00"
 FILES = [
     "src/probe.c", "src/runtime.c", "src/runtime.h", "src/runtime_thread.c",
-    "src/guest_cpu.h", "src/runtime_cpu.c", "cpu/guest_cpu_fex.cpp",
+    "src/guest_cpu.h", "src/runtime_cpu.c", "src/runtime_audio.c",
+    "src/runtime_audio_bionic.c", "src/runtime_pad.c", "src/runtime_pad_bionic.c",
+    "cpu/guest_cpu_fex.cpp",
     "cpu/host_call_arm64.S", "cpu/bionic_compat.h",
     "cpu/fex_project.cmake", "cpu/order1886cpu.cmake",
     "gpu/CMakeLists.txt",
@@ -40,6 +42,8 @@ FILES = [
     "tools/android/bionic/present/order1886present.c",
     "tools/android/bionic/present/geometry.h",
     "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java",
+    "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886PadBridge.java",
+    "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886AudioBridge.java",
 ]
 
 def run():

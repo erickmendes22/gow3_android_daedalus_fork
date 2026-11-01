@@ -43,7 +43,8 @@ jobs:
           CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
           "$CC" -std=gnu11 -Wall -Wextra -Werror -pthread -Iorder-android -Iorder-android/src \
              -fsyntax-only order-android/src/probe.c order-android/src/runtime.c \
-             order-android/src/runtime_thread.c
+             order-android/src/runtime_thread.c \
+             order-android/src/runtime_audio_bionic.c order-android/src/runtime_pad_bionic.c
       - name: Compile Android screen client, driver loader and AHB receiver
         run: |
           NDK="$ANDROID_HOME/ndk/29.0.14206865"

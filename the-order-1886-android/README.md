@@ -1,6 +1,6 @@
 # The Order: 1886 — Android Bionic staging
 
-**Development status: FEX CPU library built in CI; Android Vulkan/AHardwareBuffer source integration staged, not yet fully linked or gameplay-verified. No usable APK.**
+**Development status: ARM64 FEX CPU and screen receiver successfully compiled; title-specific Vulkan renderer build and runtime/API integration in progress. No usable APK yet.**
 
 This directory is a self-contained CPU-source overlay based on
 [JulioCacko/The-Order-1886_pc](https://github.com/JulioCacko/The-Order-1886_pc)
@@ -50,3 +50,10 @@ CPU proof: [FEXCore Android CI success](https://github.com/erickmendes22/gow3_an
 A passing static smoke check does **not** mean the game boots, renders, or performs well.
 No existing GoW III Android release branch was modified. GPL obligations and third-party
 copyright attribution remain applicable; this work is not affiliated with the rights holder.
+
+
+## SDL-free Android input and audio staged
+
+- `src/runtime_pad_bionic.c` preserves The Order's 120-byte controller state and touchpad location/press support, reads `ORDER1886_PAD_FILE` (same file-token protocol as our other Android ports), and avoids SDL3 in the Bionic build.
+- `src/runtime_audio_bionic.c` uses the proven FEX Android 48-kHz stereo PCM FIFO mixer, selected with `ORDER1886_AUDIO_FIFO`. Desktop SDL implementations are guarded but unchanged.
+- Android-side `Order1886PadBridge.java` and `Order1886AudioBridge.java` are staged for the eventual dedicated launcher. Their interaction with the game activity is **not yet wired or tested**.
