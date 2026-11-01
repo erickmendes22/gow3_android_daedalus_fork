@@ -720,9 +720,13 @@ void PipelineCache::PublishShaders(bool wait) {
                 program->info_template = std::make_unique<Shader::Info>(program->info);
             }
             build->spec.info = &program->info;
-            RegisterShaderMeta(program->info, build->spec.fetch_shader_data, build->spec,
+            auto effective_info = std::make_unique<Shader::Info>(
+                build->initial ? program->info : build->info);
+            RegisterShaderMeta(program->info, *effective_info,
+                               build->spec.fetch_shader_data, build->spec,
                                perm_hash, build->permutation);
-            program->AddPermut(build->module, std::move(build->spec));
+            program->AddPermut(build->module, std::move(build->spec),
+                               std::move(effective_info));
             build->module = nullptr;
             program->pending.reset();
         }
@@ -1388,7 +1392,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto spec = Shader::StageSpecialization(new_program->info, runtime_info, profile, start);
         const auto perm_hash = HashCombine(params.hash, 0);
 
-        RegisterShaderMeta(new_program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+        RegisterShaderMeta(new_program->info, new_program->info,
+                           spec.fetch_shader_data, spec, perm_hash, 0);
         new_program->AddPermut(module, std::move(spec));
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
@@ -1446,9 +1451,10 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
 
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+        RegisterShaderMeta(info, new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         std::unique_lock lk{programs_mutex};
-        program->AddPermut(module, std::move(spec));
+        program->AddPermut(module, std::move(spec),
+                           std::make_unique<Shader::Info>(std::move(new_info)));
     } else {
         info.AddBindings(binding);
         module = it->module;
