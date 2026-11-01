@@ -34,6 +34,8 @@ gpu_checks={
   "Desktop renderer preserved": "#ifndef __ANDROID__" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain.cpp").read_text(),
   "ARM64 portable CPU spin hint": "COMMON_CPU_RELAX()" in (gpu/"shim/ps4_threads.h").read_text(),
   "ARM64 portable Vulkan bind helpers": "Common::FencedRDTSC()" in (gpu/"shadps4/video_core/renderer_vulkan/vk_bind_helper.h").read_text(),
+  "ARM64 portable Vulkan draw pipe": "COMMON_CPU_RELAX()" in (gpu/"shadps4/video_core/renderer_vulkan/vk_draw_pipe.h").read_text(),
+  "ARM64 portable rasterizer timings": "Common::FencedRDTSC()" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "AHB app protocol present": (tree/"tools/android/present/order1886_present_proto.h").is_file(),
   "Native Android frame receiver": (tree/"tools/android/bionic/present/order1886present.c").is_file(),
   "Android Java SurfaceView bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java").is_file(),
