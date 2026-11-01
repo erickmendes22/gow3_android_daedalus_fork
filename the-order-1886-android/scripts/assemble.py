@@ -35,6 +35,8 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_ahb_acquire_wait.h",
+    "gpu/shadps4/common/arch.h", "gpu/shim/ps4_threads.h",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_bind_helper.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_platform.cpp",

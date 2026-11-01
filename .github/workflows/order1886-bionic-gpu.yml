@@ -43,6 +43,7 @@ jobs:
         shell: bash -el {0}
         run: bash ci/setup-deps.sh "$CONDA_PREFIX"
       - name: Cache pinned cross-compiled Bionic dependencies
+        id: bionic-deps-cache
         uses: actions/cache@v4
         with:
           path: .local-deps/android/bionic-prefix
@@ -54,6 +55,7 @@ jobs:
           export GOW3_JOBS=2
           bash tools/android/bionic/build_deps.sh
       - name: Save successful cross-compiled dependencies before GPU configuration
+        if: steps.bionic-deps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .local-deps/android/bionic-prefix

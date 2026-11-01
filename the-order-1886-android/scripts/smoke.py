@@ -32,6 +32,8 @@ gpu_checks={
   "Android Vulkan driver loader": "order1886_vk_get_instance_proc_addr" in (gpu/"shadps4/video_core/renderer_vulkan/vk_platform.cpp").read_text(),
   "Order renderer retained": "Ps4Overlay::OnPresented" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
   "Desktop renderer preserved": "#ifndef __ANDROID__" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain.cpp").read_text(),
+  "ARM64 portable CPU spin hint": "COMMON_CPU_RELAX()" in (gpu/"shim/ps4_threads.h").read_text(),
+  "ARM64 portable Vulkan bind helpers": "Common::FencedRDTSC()" in (gpu/"shadps4/video_core/renderer_vulkan/vk_bind_helper.h").read_text(),
   "AHB app protocol present": (tree/"tools/android/present/order1886_present_proto.h").is_file(),
   "Native Android frame receiver": (tree/"tools/android/bionic/present/order1886present.c").is_file(),
   "Android Java SurfaceView bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java").is_file(),
