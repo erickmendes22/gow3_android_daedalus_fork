@@ -44,6 +44,10 @@ class SotcStageSpecCpuTest(unittest.TestCase):
             self.assertIn('rt.flattened_ud_buf.swap(stage.flat);',l)
             self.assertIn('rt.flattened_ud_buf.assign(stage.flat.begin(), stage.flat.end());',l)
             self.assertIn('sotc_last.flat == info.FlatBuf()',c)
+            # Shader::Gcn::FetchShaderData* is mutable in the pinned renderer.
+            # A const module reference would fail ARM64 native compilation.
+            self.assertIn('auto& matched = program->modules[matched_idx];', c)
+            self.assertNotIn('const auto& matched = program->modules[matched_idx];', c)
             self.assertIn('sotc_last.program_base == info.PgmBase()',c)
             self.assertIn('sotc_last.runtime_info == rt',c)
             self.assertIn('sotc_last.start == binding',c)

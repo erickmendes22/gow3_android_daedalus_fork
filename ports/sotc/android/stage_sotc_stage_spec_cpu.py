@@ -128,7 +128,7 @@ def patch_sotc_stage_spec_cpu(gpu: Path) -> None:
             // descriptor writes or per-draw SRT data; only the module variant.
             const size_t matched_idx = sotc_last.perm;
             info.AddBindings(binding);
-            const auto& matched = program->modules[matched_idx];
+            auto& matched = program->modules[matched_idx];
             // Mirror the original GetProgram() fetch shader installation.
             if (auto& fetch = matched.spec.fetch_shader_data; !fetch.Empty()) {
                 fetch_shader = &fetch;
