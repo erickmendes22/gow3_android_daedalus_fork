@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Gow3Launcher"
 include(":app")
+include(":order1886")
