@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Fail closed if the Android CPU boundary accidentally regresses to x86-only calls."""
+import json
+from pathlib import Path
+import sys
+
+tree=Path(sys.argv[1]) if len(sys.argv)>1 else Path("order-android")
+p=(tree/"src/probe.c").read_text()
+thread=(tree/"src/runtime_thread.c").read_text()
+runtime=(tree/"src/runtime.c").read_text()
+h=(tree/"src/runtime.h").read_text()
+checks={
+  "loader no x86-only hard error": "This prototype requires x86-64" not in p,
+  "FEX loader init": "guest_cpu_init(runtime_low_map)" in p,
+  "FEX imports": "guest_cpu_host_function((void*)resolved)" in p,
+  "FEX main": "guest_cpu_call((uintptr_t)(image+entry),2,entry_args)" in p,
+  "FEX module initializers": "guest_cpu_call((uintptr_t)(image+modules[m].init),3,init_args)" in p,
+  "FEX signal handler": "guest_cpu_signal_regs(context,&regs)" in p,
+  "FEX TLS": "guest_cpu_set_gs(base)" in thread,
+  "FEX thread start": "guest_cpu_call((uintptr_t)t->entry,1,&arg)" in thread,
+  "FEX destructors": "guest_cpu_call((uintptr_t)handler.callback.plain,0,NULL)" in runtime,
+  "ARM64 calling convention": "#define ABI\n#endif" in h,
+  "Order PS4BOOT5 retained": "PS4BOOT5" in p,
+  "Order trophy services retained": "runtime_trophy_configure" in p,
+  "Order-specific renderer retained": "ps4gpu_init(&gpu)" in p,
+}
+for key,ok in checks.items():
+    print(f"{'PASS' if ok else 'FAIL'}: {key}")
+if not all(checks.values()):
+    sys.exit(1)
+meta=json.loads((tree/"ANDROID_PORT_MANIFEST.json").read_text())
+assert meta["build_verified"] is False and not meta["android_gameplay_verified"]
+print(f"Verified: {len(checks)} static CPU boundary conditions; not a gameplay test")
