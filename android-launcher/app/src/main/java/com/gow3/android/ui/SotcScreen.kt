@@ -266,6 +266,18 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de bind Vulkan (sem pular draws)" else "Vulkan pipeline bind cache (no skipped draws)",
+                        (values["sotc_pipeline_bind_memo"]?:"1")=="1",
+                        {save("sotc_pipeline_bind_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de atributos Vertex Input" else "Vertex Input state cache",
+                        (values["sotc_vertex_input_memo"]?:"1")=="1",
+                        {save("sotc_vertex_input_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Reutilizar estruturas de descritores Vulkan" else "Reuse Vulkan descriptor write slots",
+                        (values["sotc_descriptor_slot_reuse"]?:"1")=="1",
+                        {save("sotc_descriptor_slot_reuse",if(it)"1" else "0")})
+                    Text(if(pt) "Otimizações de CPU no renderer: ativas por padrão, não desativam materiais ou sincronização. Reinicie após alterar."
+                         else "Renderer CPU optimizations default ON and do not disable materials or synchronization. Restart after changes.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Reutilização rápida de descritores GPU (teste)" else "GPU fast descriptor reuse (test)",
                         (values["sotc_fast_bind"]?:"0")=="1",
                         {save("sotc_fast_bind",if(it)"1" else "0")})
