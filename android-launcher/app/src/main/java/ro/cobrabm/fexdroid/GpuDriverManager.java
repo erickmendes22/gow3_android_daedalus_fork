@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.*;
 
 /** Launcher selection and launch environment for the Bionic ICD/HAL loader. */
@@ -15,6 +16,33 @@ public final class GpuDriverManager {
     private GpuDriverManager() {}
     public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()) || SotcPaths.isSotc(context); }
     private static File root(Context context) { return new File(context.getFilesDir(),"gpu-drivers"); }
+    // The exact user-supplied experimental GameHub DD Turnip, not any driver
+    // merely claiming this name. No blind binary replacement after import.
+    private static final String GAMEHUB_DD_ARCHIVE_SHA256 =
+        "8255659cc205110e0fa89f2d364292b86fe563a2cedafbc41915bead5a611ecb";
+    private static final String GAMEHUB_DD_ELF_SHA256 =
+        "4f242a453496ab27fc29be950d632edbae494dcc0c9b7d56c37c7ebdffe42df9";
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        try(InputStream in=new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buf=new byte[65536]; int n;
+            while((n=in.read(buf))!=-1) digest.update(buf,0,n);
+        }
+        StringBuilder value=new StringBuilder();
+        for(byte b:digest.digest()) value.append(String.format(Locale.ROOT,"%02x",b&255));
+        return value.toString();
+    }
+    private static DriverArchive.Installed verifiedImportedGameHubDD(Context context) {
+        if (!SotcPaths.isSotc(context) || Build.VERSION.SDK_INT < 34) return null;
+        try {
+            DriverArchive.Installed driver=DriverArchive.read(
+                root(context),GAMEHUB_DD_ARCHIVE_SHA256,Build.VERSION.SDK_INT);
+            return GAMEHUB_DD_ELF_SHA256.equals(sha256(driver.library)) ? driver : null;
+        } catch(Exception ignored) { return null; }
+    }
+    public static boolean hasGameHubDD(Context context) {
+        return hasBundledGameHubDD(context) || verifiedImportedGameHubDD(context)!=null;
+    }
     public static boolean hasBundledGameHubDD(Context context) {
         return SotcPaths.isSotc(context) && Build.VERSION.SDK_INT >= 34 &&
             new File(context.getFilesDir(),"sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so").isFile();
@@ -26,7 +54,7 @@ public final class GpuDriverManager {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
         else if ("gamehub-dd".equals(value)) {
-            if (!hasBundledGameHubDD(context)) throw new IOException("GameHub DD Turnip not bundled");
+            if (!hasGameHubDD(context)) throw new IOException("GameHub DD Turnip ZIP not installed");
         } else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(value)) throw new IOException("Invalid driver selection");
         if (!context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).edit().putString("gpu_driver",value).commit())
             throw new IOException("Cannot save driver selection");
@@ -50,7 +78,10 @@ public final class GpuDriverManager {
                 return new DriverArchive.Metadata(json.getString("name"),json.getString("libraryName"),json.getInt("minApi"));
             });
         }
-        select(context,"custom:"+result.id); return result;
+        // The exact tested ZIP appears as GameHub-DD, not a generic custom hash.
+        select(context,GAMEHUB_DD_ARCHIVE_SHA256.equals(result.id) ?
+            "gamehub-dd" : "custom:"+result.id);
+        return result;
     }
     public static String error(Context context,Exception error) {
         int message=R.string.gpu_driver_invalid;
@@ -72,9 +103,20 @@ public final class GpuDriverManager {
             environment.put("GOW3_CUSTOM_VULKAN_DRIVER",driver.library.getAbsolutePath());
         } else {
             if ("gamehub-dd".equals(selection)) {
-                if (!hasBundledGameHubDD(context)) throw new IOException("GameHub DD Turnip not bundled");
-            } else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(selection)) throw new IOException("Invalid driver selection");
-            environment.put("GOW3_BIONIC_DRIVER",selection);
+                if (hasBundledGameHubDD(context)) {
+                    environment.put("GOW3_BIONIC_DRIVER","gamehub-dd");
+                } else {
+                    DriverArchive.Installed driver=verifiedImportedGameHubDD(context);
+                    if (driver==null) throw new IOException("Verified GameHub DD Turnip ZIP not installed");
+                    // Identical Vulkan HAL loader, using app-private imported driver.
+                    environment.put("GOW3_BIONIC_DRIVER","custom");
+                    environment.put("GOW3_CUSTOM_VULKAN_DRIVER",driver.library.getAbsolutePath());
+                }
+            } else {
+                if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(selection))
+                    throw new IOException("Invalid driver selection");
+                environment.put("GOW3_BIONIC_DRIVER",selection);
+            }
         }
     }
 }
