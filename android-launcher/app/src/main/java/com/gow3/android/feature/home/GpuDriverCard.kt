@@ -53,9 +53,10 @@ internal fun GpuDriverCard() {
         "system" to stringResource(R.string.gpu_driver_system),
         "gen8" to stringResource(R.string.gpu_driver_bundled),
         "adreno7xx" to stringResource(R.string.gpu_driver_adreno7xx),
-    ) + (if (GpuDriverManager.hasBundledGameHubDD(context)) listOf(
+    ) + (if (GpuDriverManager.hasGameHubDD(context)) listOf(
         "gamehub-dd" to "Turnip GameHub 26.3 DD GMEM + PWR_MAX (experimental)"
-    ) else emptyList()) + installed.map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
+    ) else emptyList()) + installed.filterNot { GpuDriverManager.isGameHubDDImportedId(it.id) }
+        .map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
     val label = choices.firstOrNull { it.first == selected }?.second
         ?: stringResource(R.string.gpu_driver_missing)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -95,6 +96,14 @@ internal fun GpuDriverCard() {
             }
         }
         Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
+        if (context.packageName == "com.sotc.android.daedalus" && !GpuDriverManager.hasGameHubDD(context)) {
+            Text(
+                if (java.util.Locale.getDefault().language == "pt")
+                    "Turnip GameHub DD 26.3 não está instalada. Use Importar driver e escolha o ZIP GameHub DD que você já possui; após a validação ele será selecionado automaticamente."
+                else "GameHub DD 26.3 Turnip is not installed. Tap Import driver and choose your GameHub DD ZIP; the exact validated driver will be selected automatically.",
+                color = LauncherColors.textMuted, fontSize = 12.sp
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy, onClick = {
                 try { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
