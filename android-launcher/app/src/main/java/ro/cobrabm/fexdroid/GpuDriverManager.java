@@ -40,6 +40,7 @@ public final class GpuDriverManager {
             return GAMEHUB_DD_ELF_SHA256.equals(sha256(driver.library)) ? driver : null;
         } catch(Exception ignored) { return null; }
     }
+    public static boolean isGameHubDDImportedId(String id) { return GAMEHUB_DD_ARCHIVE_SHA256.equals(id); }
     public static boolean hasGameHubDD(Context context) {
         return hasBundledGameHubDD(context) || verifiedImportedGameHubDD(context)!=null;
     }
