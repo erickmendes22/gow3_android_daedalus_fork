@@ -361,19 +361,26 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
  * guest pages. This is the pinned upstream SotC callback, gated to SotC:
  * never alter GoW3's file I/O or renderer.
  */
-void bbgpu_request_texture_flush(void) __attribute__((weak));
+/* The SotC GPU is dlopen(..., RTLD_LOCAL), so a weak ELF relocation in
+ * the executable would remain unresolved. The bridge supplies the export
+ * after its exact renderer has been opened. */
+static void (*sotc_texture_flush_cb)(void);
+void runtime_file_set_texture_flush(void (*cb)(void)) {
+    __atomic_store_n(&sotc_texture_flush_cb,cb,__ATOMIC_RELEASE);
+}
 static void sotc_note_game_load(const void *buffer,uint64_t size) {
     const char *port=getenv("SOTC_PORT");
     const char *off=getenv("SOTC_LOAD_FLUSH");
-    if (!port || port[0]!='1' || (off && off[0]=='0') ||
-        !bbgpu_request_texture_flush) return;
+    if (!port || port[0]!='1' || (off && off[0]=='0')) return;
+    void (*flush_cb)(void)=__atomic_load_n(&sotc_texture_flush_cb,__ATOMIC_ACQUIRE);
+    if (!flush_cb) return;
     static const char marker[]="st_gameflow() starting game";
     const uint64_t len=sizeof(marker)-1;
     if (!buffer || size<len) return;
     const unsigned char *data=(const unsigned char *)buffer;
     for (uint64_t i=0;i+len<=size;++i) {
         if (data[i]=='s' && !memcmp(data+i,marker,len)) {
-            bbgpu_request_texture_flush();
+            flush_cb();
             return;
         }
     }
