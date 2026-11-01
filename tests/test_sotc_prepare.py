@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import importlib.util
+import sys
 from pathlib import Path
 import struct
 import tempfile
 import unittest
 PATH=Path(__file__).resolve().parents[1]/'ports/sotc/android/prepare_game.py'
+# Standalone unittest imports prepare_game by filename, unlike the packaged
+# launcher which executes it from this script directory. Make its colocated
+# bachata_perf.py available to the real import instead of mocking it.
+sys.path.insert(0, str(PATH.parent))
 spec=importlib.util.spec_from_file_location('sotc_prepare',PATH)
 sp=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sp)
