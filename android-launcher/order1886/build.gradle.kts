@@ -1,0 +1,46 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace = "ro.cobrabm.fexdroid"
+    compileSdk {
+        version = release(37)
+    }
+    defaultConfig {
+        applicationId = "com.daedalus.order1886"
+        minSdk = 30
+        targetSdk = 28
+        versionCode = 1
+        versionName = "0.1.0-bionic-boot-test"
+    }
+    buildTypes {
+        release {
+            optimization { enable = false }
+        }
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            java.srcDir("../../the-order-1886-android/overlay/android-launcher/app/src/main/java")
+            jniLibs.srcDir("../../out/order1886/apk-jni")
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    lint { disable += "ExpiredTargetSdkVersion" }
+}
