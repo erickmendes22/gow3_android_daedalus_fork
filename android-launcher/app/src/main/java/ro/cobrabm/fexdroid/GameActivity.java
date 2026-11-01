@@ -597,6 +597,13 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_bachata_shadows"))) bachataEffects.add("shadows");
                 env.put("SOTC_BACHATA_PERF",String.join(",",bachataEffects));
                 // Controlled native GPU A/B with independent reversible settings.
+                // Exact host Vulkan state reuse; never skip guest uploads or barriers.
+                env.put("SOTC_PIPELINE_BIND_MEMO",
+                        "0".equals(setting("sotc_pipeline_bind_memo")) ? "0" : "1");
+                env.put("SOTC_VERTEX_INPUT_MEMO",
+                        "0".equals(setting("sotc_vertex_input_memo")) ? "0" : "1");
+                env.put("SOTC_DESCRIPTOR_SLOT_REUSE",
+                        "0".equals(setting("sotc_descriptor_slot_reuse")) ? "0" : "1");
                 env.put("SOTC_FAST_BIND",
                         "1".equals(setting("sotc_fast_bind")) ? "1" : "0");
                 env.put("SOTC_RECORD_THREAD",
