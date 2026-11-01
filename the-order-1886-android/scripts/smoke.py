@@ -26,6 +26,11 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "ARM64 real SRT implementation": 'order1886_arm64_srt.inc' in (gpu/"shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text(),
+  "ARM64 SRT interpreter": "void RunSrtProgram" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
+  "ARM64 The Order ADDR64 ReadConst": "void LowerDynamicReadConstPass" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
+  "ARM64 SRT target not stubbed": "unimplemented for target architecture" not in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
+  "ARM64 portable SRT cache": "SrtProgramCode" in (gpu/"shadps4/shader_recompiler/ir/passes/srt.h").read_text(),
   "Android GPU headless window": "WindowSystemType::Headless" in (gpu/"shim/window_android.cpp").read_text(),
   "Android AHardwareBuffer presentation": "AHARDWAREBUFFER" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp").read_text().upper(),
   "Android Vulkan external extensions": "VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME" in (gpu/"shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text(),
