@@ -9,12 +9,15 @@ LAUNCHER = ROOT / "ports/sotc/android/run-sotc-bionic.sh"
 SRT = ROOT / "ports/sotc/android/stage_srt_arm64.py"
 
 class SotcRenderCompletenessTest(unittest.TestCase):
-    def test_android_disables_skipping_draws(self):
+    def test_android_async_graphics_is_off_by_default_and_opt_in(self):
         text = LAUNCHER.read_text()
-        for name in ("SOTC_ASYNC_SHADERS", "SOTC_ASYNC_TRANSLATE", "SOTC_ASYNC_PRELOAD"):
-            self.assertRegex(text, rf"(?m)^export {name}=0$")
-        self.assertIn("no async draw skips", text)
-        self.assertLess(text.index("export SOTC_ASYNC_SHADERS=0"), text.index('exec "$@"'))
+        # Controlled graphics compilation is reversible, while the two
+        # other async mechanisms remain OFF for an isolated comparison.
+        self.assertIn("export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}", text)
+        self.assertIn("export SOTC_ASYNC_TRANSLATE=0", text)
+        self.assertIn("export SOTC_ASYNC_PRELOAD=0", text)
+        self.assertIn("temporary missing geometry", text)
+        self.assertLess(text.index("export SOTC_ASYNC_SHADERS="), text.index('exec "$@"'))
 
     def test_no_zero_filled_texture_placeholders_on_android(self):
         text = LAUNCHER.read_text()

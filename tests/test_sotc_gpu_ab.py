@@ -18,7 +18,7 @@ class ControlledGpuAB(unittest.TestCase):
         self.assertIn("SotC GPU A/B: fast_bind=",RUN)
     def test_keep_other_graphics_invariants(self):
         for line in ("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}","export SOTC_UPLOAD_BUDGET_MB=0",
-                     "export SOTC_ASYNC_SHADERS=0",
+                     "export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}",
                      "export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}",
                      "export SOTC_TAA_OFF=${SOTC_TAA_OFF:-1}"):
             self.assertIn(line,RUN)

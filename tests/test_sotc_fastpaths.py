@@ -34,7 +34,7 @@ class SotcFastpathIntegration(unittest.TestCase):
             self.assertIn(key+"=1", PACKAGE)
         self.assertIn("export SOTC_FAST_BIND=$"+"{SOTC_FAST_BIND:-0}", RUN)
         self.assertIn("export BB_READBACKS=2", RUN)
-        self.assertIn("export SOTC_ASYNC_SHADERS=0", RUN)
+        self.assertIn("export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}", RUN)
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", RUN)
 
     def test_descriptor_slots_are_fully_reset_not_stale_guest_handles(self):

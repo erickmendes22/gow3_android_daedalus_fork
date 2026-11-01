@@ -48,7 +48,7 @@ class MetaClearIntegrity(unittest.TestCase):
         self.assertIn("patch_meta_clear_integrity(out)", renderer)
         for important in ("export BB_READBACKS=2", "export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}",
                           "export SOTC_UPLOAD_BUDGET_MB=0",
-                          "export SOTC_ASYNC_SHADERS=0"):
+                          "export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}"):
             self.assertIn(important, runner)
 
     def test_no_unrelated_auto_fog_capture(self):

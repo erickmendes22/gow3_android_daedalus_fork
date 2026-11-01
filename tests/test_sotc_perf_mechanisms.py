@@ -23,7 +23,7 @@ class ParallelPerformanceAB(unittest.TestCase):
 
     def test_existing_graphical_correctness_remains_conservative(self):
         for fragment in ("export BB_READBACKS=2",
-                         "export SOTC_ASYNC_SHADERS=0",
+                         "export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}",
                          "export SOTC_ASYNC_TRANSLATE=0",
                          "export SOTC_UPLOAD_BUDGET_MB=0",
                          "export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}"):
