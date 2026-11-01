@@ -161,9 +161,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Bachata renderer. It may alias an earlier target after a layout or
       # sample-count change. Prefer correct full image reconstruction on Mali.
       export GOW3_PARTIAL_HEIGHT_VIEWS=0
-      # Bounded previews + pass traces exported with the next logs ZIP.
-      # Applies only to the PanVK safe profile. Use GOW3_MALI_AUTOCAPTURE=0 to disable.
-      export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-1}
+      # Pass captures force GPU render-pass breaks and extra readbacks. They are
+      # for a controlled diagnostic session, never for ordinary Mali gameplay.
+      # Explicit GOW3_MALI_AUTOCAPTURE=1 is still available to the developer.
+      export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-0}
       if [ "$GOW3_MALI_AUTOCAPTURE" = 1 ]; then
         export GOW3_MALI_CAPTURE_DIR="$base/logs/mali-captures"
         export GOW3_CAPTURE_DIR="$GOW3_MALI_CAPTURE_DIR"
