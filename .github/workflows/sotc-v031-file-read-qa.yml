@@ -31,6 +31,14 @@ jobs:
           assert s.count('memcpy(buffer,staging,(size_t)n);') == 2
           assert 'touch_for_write(buffer,size);' in s
           assert 'sotc_file_bounce_size' in s
+          assert 'runtime_file_set_texture_flush' in s
+          assert 'st_gameflow() starting game' in s
+          assert '__atomic_load_n(&sotc_texture_flush_cb,__ATOMIC_ACQUIRE)' in s
+          b=Path('ports/sotc/android/gpu_bridge.c').read_text()
+          assert 'dlsym(handle,"bbgpu_request_texture_flush")' in b
+          assert 'runtime_file_set_texture_flush(api.flush_textures)' in b
+          assert 'RTLD_NOW | RTLD_LOCAL' in b
+
           # Ensure the legacy GoW3 code is still the fallback when SOTC_PORT is unset.
           assert "if (!enabled || enabled[0]!='1'" in s
           print('PASS: SotC guest texture reads use userspace copy; GoW3 fallback preserved')
