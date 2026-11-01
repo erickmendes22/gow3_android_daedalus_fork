@@ -100,14 +100,16 @@ case "$SOTC_TAA_OFF" in
     1) echo "SotC native TAA: temporal history disabled (no old frames)" ;;
     *) echo "SotC native TAA: expected 0/1" >&2; exit 2 ;;
 esac
-# The working Bachata S4+ SotC profile uses precise GPU readbacks (mode 2).
-# PC SotC can run GPU reads asynchronously for lower CPU-thread blocking.
-# The Android path is selectable for controlled tests, but remains OFF by
-# default until verified on the GameHub-DD Turnip that fixed geometry.
-# These are scoped to this SotC process; they do not modify GoW3 or Bachata.
-export BB_READBACKS=2
-# Optional upstream GPU/guest readback synchronization path.
-# The PS4-required BB_READBACKS=2 remains unchanged for correctness.
+# Per-game GPU readback mode: 0 Disabled / 1 Relaxed / 2 Precise.
+# The default 2 preserves the previous behavior.
+export BB_READBACKS=${BB_READBACKS:-2}
+case "$BB_READBACKS" in
+  0) echo "SotC readback: Disabled (experimental, stale graphics possible)" ;;
+  1) echo "SotC readback: Relaxed (experimental, stale data possible)" ;;
+  2) echo "SotC readback: Precise (default)" ;;
+  *) echo "Invalid SotC BB_READBACKS=$BB_READBACKS" >&2; exit 2 ;;
+esac
+# Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
 # and explicitly fills those images with zero texels (black) until a later flip.
@@ -133,7 +135,7 @@ echo "SotC texture integrity: zero-fill upload deferral disabled"
 # Recover dynamic descriptor arrays in material/lighting fragment shaders.
 # The vertex shader array path stays excluded (known upstream GPU hang).
 export SOTC_ANDROID_FRAGMENT_TSHARP=1
-echo "SotC render coherence: precise GPU readbacks, synchronous completion"
+echo "SotC render coherence: mode=$BB_READBACKS async=$SOTC_RB_ASYNC"
 # Rendering correctness first on Android: the PC backend can return nullptr
 # for geometry draws while asynchronous shaders/pipelines are still being
 # compiled (vk_pipeline_cache.cpp). With a cold shader cache this produces
@@ -170,7 +172,7 @@ export SOTC_STAGE_SPEC_MEMO=${SOTC_STAGE_SPEC_MEMO:-1}
 export SOTC_STAGE_SNAPSHOT_SWAP=${SOTC_STAGE_SNAPSHOT_SWAP:-1}
 export SOTC_REG_SNAPSHOT_MEMO=${SOTC_REG_SNAPSHOT_MEMO:-1}
 # Experimental: OFF until validated on real SotC gameplay.
-export SOTC_RT_MEMO=${SOTC_RT_MEMO:-0}
+export SOTC_RT_MEMO=${SOTC_RT_MEMO:-1}
 echo "SotC CPU hot path: shader_spec_exact=$SOTC_STAGE_SPEC_MEMO stage_snapshot_swap=$SOTC_STAGE_SNAPSHOT_SWAP reg_snapshot_memo=$SOTC_REG_SNAPSHOT_MEMO"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"

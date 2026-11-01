@@ -228,6 +228,15 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                             "fps60" to "60 FPS (patch)"),{save("sotc_fps_mode",it)})
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
+                    SotcChoice(if(pt) "Readback da GPU" else "GPU readback mode",
+                        values["sotc_readbacks"]?:"2",
+                        listOf("0" to (if(pt) "0 — Desativado" else "0 — Disabled"),
+                            "1" to (if(pt) "1 — Relaxado" else "1 — Relaxed"),
+                            "2" to (if(pt) "2 — Preciso" else "2 — Precise")),
+                        {save("sotc_readbacks",it)})
+                    Text(if(pt) "2 (padrão) é preciso. 1 pode causar dados e imagens desatualizados; 0 desativa os readbacks e pode quebrar a renderização. Reinicie o jogo após alterar."
+                         else "2 (default) is precise. 1 may cause stale GPU data/images; 0 disables readbacks and may break rendering. Restart the game after changing.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Adreno: compatibilidade Wave32" else "Adreno: Wave32 compatibility",
                         (values["sotc_adreno_wave32"]?:"0")=="1",
                         {save("sotc_adreno_wave32",if(it)"1" else "0")})
@@ -311,7 +320,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                         {save("sotc_reg_snapshot_memo",if(it)"1" else "0")})
                     SotcToggle(if(pt) "Reutilização conservadora de render targets (teste)"
                                       else "Conservative render-state memo (test)",
-                        (values["sotc_rt_memo"]?:"0")=="1",
+                        (values["sotc_rt_memo"]?:"1")=="1",
                         {save("sotc_rt_memo",if(it)"1" else "0")})
                     Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.29 e reinicie."
                          else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.29, then restart.",
@@ -354,7 +363,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.30 boot test",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.31 RT memo/readbacks",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."

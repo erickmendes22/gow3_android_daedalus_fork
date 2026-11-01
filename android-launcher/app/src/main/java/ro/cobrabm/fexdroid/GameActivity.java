@@ -571,6 +571,10 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","0".equals(setting("sotc_vsync")) ? "0" : "1");
+                // Per-game readback level: 0 Disabled, 1 Relaxed, 2 Precise.
+                String rbMode=setting("sotc_readbacks");
+                if(!"0".equals(rbMode) && !"1".equals(rbMode) && !"2".equals(rbMode)) rbMode="2";
+                env.put("BB_READBACKS",rbMode);
                 // Wave32 is experimental; opt-in avoids unexpected visual regressions.
                 env.put("SOTC_ADRENO_WAVE32",
                         "1".equals(setting("sotc_adreno_wave32")) ? "1" : "0");
@@ -622,7 +626,7 @@ public final class GameActivity extends Activity {
                         "0".equals(setting("sotc_reg_snapshot_memo")) ? "0" : "1");
                 // Never enable speculative render-pass reuse by default.
                 env.put("SOTC_RT_MEMO",
-                        "1".equals(setting("sotc_rt_memo")) ? "1" : "0");
+                        "0".equals(setting("sotc_rt_memo")) ? "0" : "1");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.
