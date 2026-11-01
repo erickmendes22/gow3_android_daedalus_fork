@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 5
-        versionName = "0.1.4-bionic-srt"
+        versionCode = 6
+        versionName = "0.1.5-bionic-render-input"
     }
     buildTypes {
         release {

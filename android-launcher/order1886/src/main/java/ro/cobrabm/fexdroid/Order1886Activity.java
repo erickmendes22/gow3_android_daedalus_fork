@@ -81,6 +81,28 @@ public final class Order1886Activity extends Activity {
     };
 
     private android.content.SharedPreferences prefs(){return getSharedPreferences("order1886",MODE_PRIVATE);}
+    // Recompiled shader IR changed in v0.1.5; old cache must not mask the fix.
+    // Touch only derived CUSA shader data, never game PKGs, saves or user settings.
+    private static void deleteShaderCacheTree(File root,File file) throws IOException {
+        File canonicalRoot=root.getCanonicalFile(),canonicalFile=file.getCanonicalFile();
+        if(!canonicalFile.toPath().startsWith(canonicalRoot.toPath()) ||
+           java.nio.file.Files.isSymbolicLink(file.toPath()))
+            throw new IOException("Unsafe shader cache path");
+        File[] children=file.listFiles();
+        if(children!=null)for(File child:children)deleteShaderCacheTree(root,child);
+        if(!file.delete()&&file.exists())throw new IOException("Cannot delete cached shader "+file);
+    }
+    private void invalidateOldSrtShaders() throws IOException {
+        if(prefs().getBoolean("srtGpuLoweringV015",false))return;
+        File root=new File(base,".local/share/shadPS4/cache");
+        File[] folders=root.listFiles();
+        if(folders!=null)for(File f:folders) {
+            if(f.isDirectory()&&f.getName().matches("CUSA[0-9]{5}"))
+                deleteShaderCacheTree(root,f);
+        }
+        if(!prefs().edit().putBoolean("srtGpuLoweringV015",true).commit())
+            throw new IOException("Could not persist shader cache version");
+    }
     // PS4 display fit/fill is separate from the Android immersive-bars policy.
     private void setGameImmersive(boolean enabled) {
         if (Build.VERSION.SDK_INT >= 30) {
@@ -361,7 +383,7 @@ public final class Order1886Activity extends Activity {
             n->{prefs().edit().putInt("language",n==1?17:n==2?7:1).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
-        toggle(c,"Tela cheia / preencher a tela","fullscreen",false);
+        toggle(c,"Preencher tela (OFF = preservar proporção original)","fullscreen",false);
         toggle(c,"Controles virtuais","onscreen",true);
         selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Normal","Grande"},
             Math.max(0,Math.min(2,prefs().getInt("controlSize",0))),
@@ -644,6 +666,7 @@ public final class Order1886Activity extends Activity {
                 audio.start();
                 if(!audio.awaitReady(5000))throw new IOException("AudioBridge indisponível");
                 Order1886LauncherConfig.write(this,new File(base,"user"));
+                invalidateOldSrtShaders();
                 Process p=command(image.getAbsolutePath(),"--app0",gameDir.getAbsolutePath(),
                     "--user",new File(base,"user").getAbsolutePath(),"--timeout","0").start();
                 game=p;
