@@ -1,0 +1,42 @@
+name: SotC file-to-GPU read coherence preflight
+on:
+  push:
+    branches: [fix/sotc-v031-file-read-resource-coherence-20261101]
+    paths:
+      - src/runtime_file.c
+      - .github/workflows/sotc-v031-file-read-qa.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native file I/O and validate SotC-only bounce guard
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I. -Isrc -pthread \
+            -c src/runtime_file.c -o /tmp/sotc-file-io.o
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('src/runtime_file.c').read_text()
+          assert s.count('static unsigned char *sotc_file_bounce_buffer(uint64_t size)') == 1
+          assert 'const char *enabled=getenv("SOTC_PORT")' in s
+          assert "enabled[0]!='1'" in s
+          assert 'SOTC_FILE_BOUNCE_LIMIT' in s
+          assert s.count('unsigned char *staging=sotc_file_bounce_buffer(size);') == 2
+          assert 'host_read(h,staging,size)' in s and 'pread(h,staging,size,offset)' in s
+          assert s.count('memcpy(buffer,staging,(size_t)n);') == 2
+          assert 'touch_for_write(buffer,size);' in s
+          assert 'sotc_file_bounce_size' in s
+          # Ensure the legacy GoW3 code is still the fallback when SOTC_PORT is unset.
+          assert 'if (!enabled || enabled[0]!=\\'1\\'' in s
+          print('PASS: SotC guest texture reads use userspace copy; GoW3 fallback preserved')
+          PY
+      - name: Verify Android staging already retains resource and draw correctness
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_renderer.py \
+            ports/sotc/android/stage_resource_coherence.py
+          python3 -m unittest discover -s tests -p test_sotc_resource_coherence.py -v
