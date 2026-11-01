@@ -5,6 +5,18 @@
 #include "../src/runtime_memory.c"
 #include <assert.h>
 #include <stdio.h>
+/* Real independent thread writes many unrelated mapping generations.
+ * The reader may use a verified cached mapping or fall back to the lock.
+ */
+static void *unrelated_writer(void *arg) {
+    const uintptr_t other=*(const uintptr_t *)arg;
+    for (int i=0;i<4000;++i) {
+        write_lock();
+        sotc_vm_mark_dirty(other,other+PAGE);
+        write_unlock();
+    }
+    return NULL;
+}
 int main(void) {
     /* An initially mapped region; the backing view is a fixed physical pool. */
     backing_base=(unsigned char *)calloc(1,2*PAGE);
@@ -70,7 +82,17 @@ int main(void) {
     write_unlock();
     assert(runtime_memory_clamp(first,2*PAGE)==PAGE);
     assert(!runtime_memory_is_mapped(first,2*PAGE));
-    puts("SotC Bionic VM interval cache: changed/unrelated/overflow/adjacent/hole OK");
+    pthread_t worker;
+    assert(pthread_create(&worker,NULL,unrelated_writer,(void *)&other)==0);
+    for (int i=0;i<10000;++i) {
+        uintptr_t lo=0,hi=0;
+        int mapped=0;
+        assert(runtime_memory_region(first,&lo,&hi,&mapped));
+        assert(mapped && lo==first && hi==first+PAGE);
+        assert(runtime_memory_backing_pointer(first+11)==backing_base+11);
+    }
+    assert(pthread_join(worker,NULL)==0);
+    puts("SotC Bionic VM interval cache: changed/unrelated/overflow/adjacent/hole/concurrent OK");
     free(vmas);free(backing_base);
     return 0;
 }

@@ -17,6 +17,11 @@ jobs:
              -pthread tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
              -o /tmp/sotc-vm-cache
           /tmp/sotc-vm-cache
+          cc -std=gnu11 -O1 -g -Wall -Wextra -ffunction-sections -fdata-sections \
+             -fsanitize=address,undefined -fno-omit-frame-pointer -pthread \
+             tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
+             -fsanitize=address,undefined -o /tmp/sotc-vm-cache-sanitized
+          /tmp/sotc-vm-cache-sanitized
           cc -std=gnu11 -O2 -Wall -Wextra -pthread -fsyntax-only \
              src/runtime_memory.c
       - name: Assert Android loader still builds same runtime implementation
