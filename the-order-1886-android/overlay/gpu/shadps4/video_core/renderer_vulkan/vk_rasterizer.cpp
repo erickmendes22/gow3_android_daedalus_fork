@@ -125,27 +125,35 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
     constexpr unsigned MaxPasses = 4;
     std::unordered_set<VAddr> visited;
     for (unsigned pass = 0; pass < MaxPasses; ++pass) {
-        bool downloaded = false;
-        // Official Bachata 0.2.7: page-level GPU-written SRT source
-        // publication, then recompute the guest pointer graph up to 4 times.
+        // Official Bachata 0.2.7: publish GPU-written guest SRT pages before
+        // re-reading the pointer graph, but do not stall once for EVERY page.
         const auto sources = info.srt_source_addresses;
-        VAddr previous_page = 0;
+        std::vector<VAddr> pages;
+        pages.reserve(sources.size());
         for (const VAddr address : sources) {
             if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
             const VAddr page = address & PageMask;
-            if (page == previous_page) continue;
-            previous_page = page;
             if (visited.contains(page) || !IsMapped(page, PageSize) ||
                 !buffer_cache.IsRegionGpuModified(page, PageSize) ||
                 !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
             visited.insert(page);
-            // GPU command thread only; never block in background shader workers.
-            DrainDrawPipe();
-            texture_cache.ResolveReadbacks(page, PageSize, true,
-                                           VideoCore::ReadbackSource::CpuRead);
-            downloaded |= buffer_cache.DownloadSrtSourcePage(page);
+            pages.push_back(page);
         }
-        if (!downloaded) break;
+        if (pages.empty()) break;
+        // Keep the exact same command ordering as the old per-page path.
+        // Group image readback resolutions for adjacent SRT pages too.
+        DrainDrawPipe();
+        std::sort(pages.begin(), pages.end());
+        for (size_t i = 0; i < pages.size();) {
+            size_t end = i + 1;
+            while (end < pages.size() && pages[end] - pages[end - 1] == PageSize) {
+                ++end;
+            }
+            texture_cache.ResolveReadbacks(pages[i], (end - i) * PageSize, true,
+                                           VideoCore::ReadbackSource::CpuRead);
+            i = end;
+        }
+        if (!buffer_cache.DownloadSrtSourcePages(pages)) break;
         info.RefreshFlatBuf();
     }
 #else
