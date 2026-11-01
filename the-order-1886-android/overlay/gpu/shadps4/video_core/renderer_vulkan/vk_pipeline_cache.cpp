@@ -670,7 +670,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
             PhaseTimer waiting{g_gow3_guest_wait_ns};
             capture_job.Wait();
         }
-        captured = capture_job.Poll();
+        captured = capture_job.Poll().value_or(false);
         if (!captured) {
             capture_error = capture_job.Error();
         }
