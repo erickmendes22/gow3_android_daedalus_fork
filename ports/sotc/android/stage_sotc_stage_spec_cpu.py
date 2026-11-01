@@ -100,8 +100,8 @@ def patch_sotc_stage_spec_cpu(gpu: Path) -> None:
     // Always refresh from real guest memory before memo lookup: CPU writes,
     // GPU readbacks, aliasing sharp tables and SRT walker inputs remain live.
     info.RefreshFlatBuf();
-    const auto sotc_start_bindings = binding;
 #if defined(__aarch64__)
+    const auto sotc_start_bindings = binding;
     static const bool sotc_stage_spec_memo = [] {
         const char* v = std::getenv("SOTC_STAGE_SPEC_MEMO");
         return !v || v[0] != '0';
