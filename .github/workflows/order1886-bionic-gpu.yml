@@ -106,6 +106,19 @@ jobs:
           cmake --build out/order1886/gpu --target ps4gpu --parallel 2 -- -k 0
           file out/order1886/gpu/libps4gpu.so
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h out/order1886/gpu/libps4gpu.so
+          # Catch Android's CANNOT LINK EXECUTABLE before an APK reaches the tester.
+          # The upstream function has a final const std::function<void()>& callback.
+          # A successful shared-library link is insufficient without this ABI check.
+          expected='_ZN6Shader16TranslateProgramERKNSt6__ndk14spanIKjLm18446744073709551615EEERNS_5PoolsERNS_4InfoERNS_11RuntimeInfoERKNS_7ProfileERKNS0_8functionIFvvEEE'
+          nm="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          lib=out/order1886/gpu/libps4gpu.so
+          defined=$("$nm" -D --defined-only "$lib")
+          if ! grep -Fq "$expected" <<< "$defined"; then
+            echo "::error::The Order GPU is missing the required TranslateProgram symbol. Refusing to publish an APK that cannot boot."
+            "$nm" -D --demangle "$lib" | grep -F 'Shader::TranslateProgram' || true
+            exit 1
+          fi
+          echo "PASS: libps4gpu exports exact host-requested TranslateProgram ABI"
       - name: Save native C++ compiler cache even after source errors
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -228,7 +241,7 @@ jobs:
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.5-render-input-immersive
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.6-linkfix
           path: android-launcher/order1886/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
