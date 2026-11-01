@@ -9,6 +9,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <span>
 #include <vector>
 #include <boost/container/small_vector.hpp>
 
@@ -123,6 +124,8 @@ public:
     // SRT guest-pointer pages: synchronous, selective GPU publication before shader recompilation.
     bool IsRangeGpuWritten(VAddr address, size_t size);
     bool DownloadSrtSourcePage(VAddr page);
+    /// Queue exact-page GPU SRT copies before waiting once for all pages in this shader.
+    bool DownloadSrtSourcePages(std::span<const VAddr> pages);
 
 
     /// Processes the fault buffer.
