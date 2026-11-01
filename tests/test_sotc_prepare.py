@@ -42,8 +42,8 @@ class TestSotcPrepare(unittest.TestCase):
             (game/'eboot.bin').write_bytes(b'O\x15=\x1d' + b'\x00'*32)
             (game/'sce_sys/param.sfo').write_bytes(make_sfo('CUSA08809'))
             out=root/'out'
-            self.assertFalse(sp.prepare(upstream,game,out)['cached'])
-            self.assertTrue(sp.prepare(upstream,game,out)['cached'])
+            self.assertFalse(sp.prepare(upstream,game,out,render='1920x1080')['cached'])
+            self.assertTrue(sp.prepare(upstream,game,out,render='1920x1080')['cached'])
             self.assertTrue(all((out/n).is_file() for n in sp.OUTPUTS))
             (game/'sce_sys/param.sfo').write_bytes(make_sfo('UNSUPPORTED'))
             with self.assertRaises(ValueError):
