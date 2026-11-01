@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <boost/container/small_vector.hpp>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -370,9 +372,13 @@ private:
     using RenderTargetInfo = std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc>;
     std::array<RenderTargetInfo, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
     std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc> db_desc;
-    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
+    // Match the Bachata ARM64 image + sampler descriptor capacity. A game
+    // can bind 64 image views and 32 samplers in one stage; a fixed 64-entry
+    // table silently overflows before the extra samplers are described.
+    boost::container::small_vector<vk::DescriptorImageInfo,
+                                   Shader::NUM_IMAGES + Shader::NUM_SAMPLERS> image_infos;
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
-    boost::container::static_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
+    boost::container::small_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
     struct BoundBuffer {
         const VideoCore::Buffer* buffer;
         u64 offset;
@@ -448,7 +454,7 @@ private:
                                                               const Shader::ImageResource& res) {
         return CachedImageDescEntry(sharp, res).desc;
     }
-    boost::container::static_vector<ImageBindingInfo, Shader::NUM_IMAGES> image_bindings;
+    boost::container::small_vector<ImageBindingInfo, Shader::NUM_IMAGES> image_bindings;
     struct VertexBinds {
         VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
         VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;

@@ -37,6 +37,7 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
 | Descriptor fallback for graphics pipeline | `vk_instance.cpp` and pipeline cache support unavailable extension | `vk_instance.cpp` already checks optional `VK_KHR_push_descriptor`; `vk_pipeline_cache.cpp` already uses `DescriptorHeap` | ALREADY PRESENT; leave untouched |
 | Color/MSAA/depth blit descriptors | `src/video_core/texture_cache/blit_helper.cpp`: conditional `pushDescriptorSetKHR` or `DescriptorHeap` for both color/depth image operations | `blit_helper.cpp` created push-only layout and used push descriptors twice without fallback | **PORTED** conditional descriptor layout and GPU-tick-safe ordinary set bindings on both paths |
 | Final image postprocessing descriptors | `src/video_core/renderer_vulkan/host_passes/pp_pass.cpp`: native descriptor-set fallback for composition | `host_passes/pp_pass.cpp` called `pushDescriptorSetKHR` unconditionally | **PORTED** ordinary sampled-image set, owned until the present GPU timeline completes |
+| Shader resource table limits | `src/shader_recompiler/resource.h` uses 32 samplers and growable image/sampler lists; `vk_rasterizer.h` uses image + sampler capacity | Daedalus had 16 samplers, fixed 64-image descriptor table, fixed image bindings | **PORTED** 32 samplers, growable lists, combined 96-entry descriptor-image table |
 | RectList / QuadList auxiliary shaders | `emit_spirv_quad_rect.cpp` | Same 339-line implementation apart from three declarations naming the fragment runtime type | ALREADY EQUIVALENT; no transplant |
 | Mali detile scratch allocator | Public Bachata uses opt-in ring `BACHATA_MALI_GPU_OPT` | Daedalus already has a reusable, GPU-tick-aware `StagingBufferPool`; mechanisms differ | NEEDS hardware comparison, not blindly copy two allocation models |
 | BCn texture transcode to ETC2 | Announced in RELEASE v0.2.5 | **Driver 26.3.1 already bundles the BCn-to-ETC2 implementation**, including encoder symbols; auto-selected on G615 when available. The older V3.2 package is a distinct implementation. | ALREADY PACKAGED IN DRIVER; not an emulator-side source port. Runtime correctness not verified on GoW3 |
@@ -59,6 +60,10 @@ Scope: **Bachata S4 RELEASE**, not Bachata Plus. No test APK is required for thi
   retirement; keep push-descriptor fast path on supported drivers.
 - `vk_presenter.{h,cpp}`: provide `Instance` and present scheduler to the
   pass, and construct it *after* the schedulers so it is destroyed first.
+- `shader_recompiler/resource.h` and `vk_rasterizer.h`: raise sampler
+  table capacity to 32, use growable image/sampler lists and allocate
+  a descriptor-image table for 64 images + 32 samplers, as in public Bachata.
+  This changes real resource binding capacity, not capture/logging.
 - `vk_shader_hle.cpp`: preserve the Bachata copy-buffer implementation on
   devices without 3 push descriptors; skip optional multi-copy compute dispatch.
 - `vk_predication.{h,cpp}`: when the optional GoW3 predication compute reducer

@@ -33,6 +33,9 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_shader_hle.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_predication.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_predication.h'
+      - 'gpu/shadps4/shader_recompiler/resource.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h'
+      - 'tests/test_bachata_release_mali_shader_resources.py'
       - 'tests/test_mali_no_push_predication_and_copy.py'
       - 'gpu/shadps4/video_core/texture_cache/blit_helper.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp'
@@ -101,6 +104,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_bachata_release_mali_blit_descriptors.py' -v
           python -m unittest discover -s tests -p 'test_bachata_release_mali_postprocess_descriptors.py' -v
           python -m unittest discover -s tests -p 'test_mali_no_push_predication_and_copy.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_shader_resources.py' -v
           python -m unittest discover -s tests -p 'test_mali_physical_depth_bridge.py' -v
           python -m unittest discover -s tests -p 'test_launch_env.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
