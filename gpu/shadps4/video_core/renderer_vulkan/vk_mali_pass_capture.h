@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan.hpp>
+#include "video_core/renderer_vulkan/vk_common.h"
 #include <vk_mem_alloc.h>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -223,14 +223,15 @@ inline std::string Queue(const Instance& instance, Scheduler& scheduler, Runtime
     runtime.Transit(&image, vk::ImageLayout::eTransferSrcOptimal,
                     vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead);
     runtime.FlushBarriers();
-    const vk::BufferImageCopy copy{
-        .bufferOffset = 0,
-        .imageSubresource = {.aspectMask = stencil ? vk::ImageAspectFlagBits::eStencil
-                                                 : depth ? vk::ImageAspectFlagBits::eDepth
-                                                         : vk::ImageAspectFlagBits::eColor,
-                             .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-        .imageExtent = {w, h, 1},
-    };
+    vk::BufferImageCopy copy{};
+    copy.bufferOffset = 0;
+    copy.imageSubresource.aspectMask =
+        stencil ? vk::ImageAspectFlagBits::eStencil
+                : depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+    copy.imageSubresource.mipLevel = 0;
+    copy.imageSubresource.baseArrayLayer = 0;
+    copy.imageSubresource.layerCount = 1;
+    copy.imageExtent = vk::Extent3D{w, h, 1};
     scheduler.Record([img = image.GetImage(), dst = vk::Buffer{buffer}, copy](vk::CommandBuffer cb) {
         cb.copyImageToBuffer(img, vk::ImageLayout::eTransferSrcOptimal, dst, copy);
     });

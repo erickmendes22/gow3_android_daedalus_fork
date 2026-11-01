@@ -12,6 +12,13 @@ ARCHIVE = (ROOT/"android-launcher/app/src/main/java/com/gow3/android/data/LogArc
 
 
 class MaliAttachmentCapture(unittest.TestCase):
+    def test_vulkan_hpp_project_configuration_precedes_types(self):
+        # No direct vulkan.hpp inclusion before the project's vk_common macros:
+        # it breaks the whole rasterizer translation unit, not just the capture.
+        self.assertIn('#include "video_core/renderer_vulkan/vk_common.h"', PASS)
+        self.assertNotIn("#include <vulkan/vulkan.hpp>", PASS)
+        self.assertIn("vk::BufferImageCopy copy{};", PASS)
+
     def test_reads_real_attachment_after_draw_both_paths(self):
         self.assertIn('#include "video_core/renderer_vulkan/vk_mali_pass_capture.h"', RASTER)
         self.assertEqual(RASTER.count("MaliPassCapture::CaptureDraw("), 2)
