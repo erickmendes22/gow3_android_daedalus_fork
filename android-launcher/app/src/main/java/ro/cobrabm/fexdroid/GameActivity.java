@@ -596,6 +596,10 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_bachata_fog"))) bachataEffects.add("fog");
                 if("1".equals(setting("sotc_bachata_shadows"))) bachataEffects.add("shadows");
                 env.put("SOTC_BACHATA_PERF",String.join(",",bachataEffects));
+                // Experimental parallel graphics pipeline compilation; OFF by
+                // default because the original PC renderer can skip in-flight draws.
+                env.put("SOTC_ASYNC_SHADERS",
+                        "1".equals(setting("sotc_async_shaders")) ? "1" : "0");
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
                 env.put("SOTC_PIPELINE_BIND_MEMO",
