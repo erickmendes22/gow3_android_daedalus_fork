@@ -56,6 +56,11 @@ def main():
         shutil.copy2(original/'bachata_perf.py',scripts/'bachata_perf.py')
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
                         ignore=shutil.ignore_patterns('__pycache__'))
+        # Patch the real pinned SotC scripts *inside the packaged payload*.
+        # Merely changing the launcher resolution list cannot fix 540p:
+        # the original render_patches() rejects height 540 (modulo 8).
+        from stage_sotc_lowres import patch_sotc_lowres_modes
+        patch_sotc_lowres_modes(scripts/'sotc-upstream/scripts/sotc_modes.py')
         shutil.copy2(upstream/'LICENSE',notices/'LICENSE-ShadowOfTheColossus-PC.txt')
         # Optional, hash-pinned user-provided Android HAL Turnip. Never substitute
         # another binary. The normal Gen8/custom/system choices remain present.
