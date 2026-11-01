@@ -33,9 +33,9 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 16u; // GCN NaN rules and exclusive float atomic fallbacks
-static constexpr u32 ShaderMetaVersion = 10u; // persisted uniform image guard recipes
-static constexpr u32 PipelineKeyVersion = 8u; // explicit inactive/active image specialization state
+static constexpr u32 ShaderBinaryVersion = 17u; // GCN NaN rules and exclusive float atomic fallbacks
+static constexpr u32 ShaderMetaVersion = 11u; // persisted uniform image guard recipes
+static constexpr u32 PipelineKeyVersion = 9u; // explicit inactive/active image specialization state
 } // namespace Serialization
 
 namespace Vulkan {
