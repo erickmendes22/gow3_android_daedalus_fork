@@ -73,6 +73,33 @@ class LaunchEnvReasonTests(unittest.TestCase):
         desktop = self._plan()
         self.assertNotIn('Disable SSAO', desktop['patch_names'])
 
+    def test_mali_panvk_restores_native_shader_and_shadow_passes(self):
+        self.config.write_text(
+            'render_resolution=720p\nengine_fps=120\n'
+            'disable_dynamic_shadows=1\npatch_disable_ssao=1\n'
+            'patch_disable_motion_blur=1\npatch_disable_dof=1\n'
+            'patch_disable_bloom=1\npatch_disable_soft_particles=1\n')
+        env = {'GOW3_ANDROID_PORT': '1',
+               'GOW3_VULKAN_DRIVER': '/tmp/libvulkan_panfrost.so'}
+        # The shadow toggle is hash-gated; the other five are explicit.
+        filtered = self._plan(env)
+        for patch in ['Disable SSAO', 'Disable Motion Blur',
+                      'Disable Depth of Field', 'Disable Bloom',
+                      'Disable Soft Particles']:
+            self.assertNotIn(patch, filtered['patch_names'])
+        self.assertIn('Resolution Patch - 720p', filtered['patch_names'])
+        self.assertIn('Frame Rate Patch - 120 FPS', filtered['patch_names'])
+        self.assertIn('Bug Fix - Startup Black Screen', filtered['patch_names'])
+        self.assertEqual(filtered['updates']['GOW3_MALI_GRAPHICS_PROFILE'],
+                         'native-render-passes-restored')
+        self.assertEqual(filtered['updates']['GOW3_SHADOWS_STATUS'],
+                         'enabled-mali-render-compat')
+        adreno = self._plan({'GOW3_ANDROID_PORT': '1',
+                             'GOW3_VULKAN_DRIVER': '/tmp/libvulkan_freedreno.so'})
+        self.assertIn('Disable SSAO', adreno['patch_names'])
+        mali_optout = self._plan({**env, 'GOW3_MALI_SAFE_MODE': '0'})
+        self.assertIn('Disable SSAO', mali_optout['patch_names'])
+
     def test_player_files_remain_byte_identical(self):
         game = self.dir / 'game'
         (game / 'sce_sys').mkdir(parents=True)

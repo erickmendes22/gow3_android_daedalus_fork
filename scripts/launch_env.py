@@ -50,6 +50,11 @@ def derive(game, config, state_path, env):
             graphics_options.write_keys(config, {'render_resolution': canonical})
     graphics, reverted = graphics_options.prepare(config, state_path)
     android_port = env.get('GOW3_ANDROID_PORT') == '1'
+    mali_panvk_safe = (
+        android_port and
+        str(env.get('GOW3_VULKAN_DRIVER', '')).endswith('/libvulkan_panfrost.so') and
+        env.get('GOW3_MALI_SAFE_MODE', '1') != '0'
+    )
     ini = graphics_options.read_ini(config)
     # Earlier Android builds wrote no frames_queued key and silently used one
     # in-flight frame, forcing the CPU submission thread to wait for the GPU
@@ -157,6 +162,27 @@ def derive(game, config, state_path, env):
                         names.append(patch)
                     elif ini[key] != '1':
                         names = [name for name in names if name != patch]
+                if mali_panvk_safe:
+                    # The known-black G615 trace applied SIX independent
+                    # shader/engine skip patches at once (shadow jobs + post
+                    # effects), removing native render passes. Bachata RELEASE
+                    # renders the unmodified scene on Mali. Restore those
+                    # original code paths for PanVK, preserving the verified
+                    # startup fix, video arena, resolution and FPS patches.
+                    # This changes actual game render execution (not merely
+                    # logging) and never affects Adreno/system Vulkan.
+                    effect_skips = {
+                        'Disable Dynamic Shadows', 'Disable SSAO',
+                        'Disable Motion Blur', 'Disable Depth of Field',
+                        'Disable Bloom', 'Disable Soft Particles',
+                    }
+                    removed = [name for name in names if name in effect_skips]
+                    names = [name for name in names if name not in effect_skips]
+                    updates['GOW3_MALI_GRAPHICS_PROFILE'] = (
+                        'native-render-passes-restored'
+                        if removed else 'native-render-passes-intact')
+                    updates['GOW3_MALI_EFFECT_PATCHES_FILTERED'] = ','.join(removed)
+                    updates['GOW3_SHADOWS_STATUS'] = 'enabled-mali-render-compat'
             expand_arena = graphics['expand_video_arena'] != '0'
             dmem, vblank = patch_requirements(profile[1], names, profile[2],
                                               expand_video_arena=expand_arena)

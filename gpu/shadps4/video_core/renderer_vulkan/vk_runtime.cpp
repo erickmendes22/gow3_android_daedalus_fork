@@ -437,7 +437,23 @@ void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
         .imageOffset = {0, 0, 0},
         .imageExtent = {src->info.size.width, src->info.size.height, src->info.size.depth},
     };
-    const auto copy_size = BufferImageCopySize(buffer_copy, src->info.pixel_format);
+    // Use the *allocated Vulkan format*, not the PS4 descriptor format.
+    // PanVK cannot allocate D16S8 and legitimately backs it with D24S8 or
+    // D32S8; sizing the intermediate transfer using the guest D16S8 format
+    // underestimates the actual Vulkan depth-aspect transfer and can truncate
+    // image data or cause read/write overlap in the staging arena.
+    const vk::Format physical_source_format = src->backing->image.image_ci.format;
+    const auto copy_size = BufferImageCopySize(buffer_copy, physical_source_format);
+    if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        physical_source_format != src->info.pixel_format) {
+        static u32 mali_depth_fallback_copies = 0;
+        if (mali_depth_fallback_copies++ < 8) {
+            LOG_WARNING(Render_Vulkan,
+                        "PanVK image bridge: guest format {} uses physical {} copy size {}",
+                        vk::to_string(src->info.pixel_format),
+                        vk::to_string(physical_source_format), copy_size);
+        }
+    }
 
     scheduler.EndRendering();
 
