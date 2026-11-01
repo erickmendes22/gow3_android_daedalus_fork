@@ -24,6 +24,13 @@ jobs:
           /tmp/sotc-vm-cache-sanitized
           cc -std=gnu11 -O2 -Wall -Wextra -pthread -fsyntax-only \
              src/runtime_memory.c
+      - name: Benchmark cached vs legacy guest-memory region queries (no APK)
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
+            -pthread tests/bench_sotc_runtime_vm.c -Wl,--gc-sections \
+            -o /tmp/sotc-vm-bench
+          SOTC_VM_RANGE_CACHE=0 /tmp/sotc-vm-bench
+          SOTC_VM_RANGE_CACHE=1 /tmp/sotc-vm-bench
       - name: Assert Android loader still builds same runtime implementation
         run: |
           grep -Fq 'src/runtime*.c' tools/android/bionic/build_runtime.sh
