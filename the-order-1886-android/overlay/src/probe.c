@@ -546,8 +546,11 @@ int main(int argc, char **argv) {
 #ifndef _WIN32
     /* Keep host heap objects handed to the guest (thread handles, TLS) in the
        non-PIE brk heap, i.e. below 1 TiB: the guest packs pointers into 40 bits. */
+    /* glibc-only mallopt settings are unavailable under Bionic/Scudo. */
+#ifndef __ANDROID__
     mallopt(M_ARENA_MAX,1);
     mallopt(M_MMAP_THRESHOLD,32*1024*1024);
+#endif
 #endif
     if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
     char missing[128];
