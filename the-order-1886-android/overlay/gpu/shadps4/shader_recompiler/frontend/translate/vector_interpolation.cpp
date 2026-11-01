@@ -54,7 +54,10 @@ void Translator::EmitVectorInterpolation(const GcnInst& inst) {
 // VINTRP
 
 void Translator::V_INTERP_P1_F32(const GcnInst& inst) {
-    if (!profile.needs_manual_interpolation) {
+    // Expand P0/P10/P20 on no-barycentric Adreno triangle pipelines as well.
+    // V_INTERP_P1 and P2 must select the same path as MOV and the auxiliary GS.
+    if (!profile.needs_manual_interpolation &&
+        !Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info)) {
         return;
     }
     const u32 attr_index = inst.control.vintrp.attr;
@@ -82,7 +85,10 @@ void Translator::V_INTERP_P2_F32(const GcnInst& inst) {
         return;
     }
     ASSERT(!attr.is_flat);
-    if (!profile.needs_manual_interpolation) {
+    // Expand P0/P10/P20 on no-barycentric Adreno triangle pipelines as well.
+    // V_INTERP_P1 and P2 must select the same path as MOV and the auxiliary GS.
+    if (!profile.needs_manual_interpolation &&
+        !Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info)) {
         interp = GetInterpolation(vgpr_to_interp[inst.src[0].code]);
         SetDst(inst.dst[0], ir.GetAttribute(attrib, inst.control.vintrp.chan));
         return;
