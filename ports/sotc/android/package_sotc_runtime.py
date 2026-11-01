@@ -93,6 +93,7 @@ sotc_vsync=1
 sotc_af16=0
 sotc_blur_suppression=1
 sotc_fast_bind=0
+sotc_perf_profile=0
 sotc_async_shaders=0
 sotc_async_compute=0
 sotc_present_full_blit=1
