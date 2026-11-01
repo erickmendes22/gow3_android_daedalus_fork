@@ -878,9 +878,7 @@ static void PollAndroidChoiceControls() {
         else if (token == "down") held |= 2;
         else if (token == "cross") held |= 4;
         else if (token == "circle") held |= 8;
-        else if (token.starts_with("ly=")) {
-            try { ly = std::stoi(token.substr(3)); } catch (...) {}
-        }
+        else if (token.rfind("ly=",0)==0) ly = int(std::strtol(token.c_str()+3,nullptr,10));
     }
     if (ly < 70) held |= 1;
     if (ly > 185) held |= 2;
