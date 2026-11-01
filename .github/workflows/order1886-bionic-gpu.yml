@@ -119,6 +119,20 @@ jobs:
             exit 1
           fi
           echo "PASS: libps4gpu exports exact host-requested TranslateProgram ABI"
+          # This previously passed even though Android immediately refused to start.
+          # Validate all eight Vulkan::g_ps4_* counters absent in RC1. The -z defs
+          # linker option also prevents ANY new unresolved non-system native symbols.
+          for counter in compile_ns compiles capture_ns async_ns compile_wait_ns snapshot_ns guest_wait_ns pending_draws; do
+            if ! grep -Fq "g_ps4_${counter}E" <<< "$defined"; then
+              echo "::error::Missing native Vulkan::g_ps4_${counter} in libps4gpu.so"
+              exit 1
+            fi
+          done
+          if "$nm" -D --undefined-only "$lib" | grep -E 'g_ps4_|g_gow3_'; then
+            echo "::error::Unresolved Vulkan performance-counter symbols at APK startup"
+            exit 1
+          fi
+          echo "PASS: all eight Vulkan::g_ps4_* symbols exported with no unresolved counter imports"
       - name: Save native C++ compiler cache even after source errors
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -241,7 +255,7 @@ jobs:
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.8-srt-texture
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.9-linkfix-rc2
           path: android-launcher/order1886/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
