@@ -165,8 +165,8 @@ def patch_sotc_stage_spec_cpu(gpu: Path) -> None:
     # Invalidate even if the same shader input is used after patching a module
     # at runtime; module replacement must not reuse stale type specialization.
     s=exact(s, '                m.module = CompileSPV(spv_code, d);',
-            '                m.module = CompileSPV(spv_code, d);\\n'
-            '                program->sotc_last_safe_spec.valid = false;',
+            '''                m.module = CompileSPV(spv_code, d);
+                program->sotc_last_safe_spec.valid = false;''',
             "invalidate memo on shader replacement")
     cache.write_text(s)
 
