@@ -27,7 +27,9 @@ class FlipRetirementTests(unittest.TestCase):
         self.assertIn("Frame* Presenter::GetRenderFrame(bool from_guest_flip)", cpp)
         self.assertIn("GetRenderFrame(true);", cpp)
         self.assertIn("if (nonblock) {", cpp)
-        self.assertIn("if (!available()) return nullptr;", cpp)
+        self.assertIn("if (!available()) {", cpp)
+        self.assertIn('note_skip("no_free_present_frame")', cpp)
+        self.assertIn("return nullptr;", cpp)
         self.assertIn("1'000'000ull", cpp)
         self.assertIn("free_queue.push(frame);", cpp)
 

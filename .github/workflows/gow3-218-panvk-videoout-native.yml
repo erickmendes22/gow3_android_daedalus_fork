@@ -24,6 +24,7 @@ on:
       - 'tests/test_mali_robust_image_view.py'
       - 'tests/test_mali_cpu_present_source.py'
       - 'tests/test_mali_render_stage_capture.py'
+      - 'tests/test_bionic_videoout_flip_retirement.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
   workflow_dispatch:
 
