@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <map>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -14,6 +17,7 @@
 #include "video_core/renderer_vulkan/vk_object_motion.h"
 #include "video_core/renderer_vulkan/vk_draw_pipe.h"
 #include "video_core/renderer_vulkan/vk_draw_prep.h"
+#include "video_core/renderer_vulkan/vk_mapped_range_snapshot.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -31,13 +35,6 @@ namespace Vulkan {
 
 class GraphicsPipeline;
 class Runtime;
-
-/// gow3: predicate state captured on the packet thread and handed to the recording thread (see
-/// vk_predication.h). The predicate value itself lives on the recording thread (the draw pipe
-/// is its only producer), so only the packet's predicate bit travels with the draw.
-struct DrawPredication {
-    bool predicated{};
-};
 
 class Rasterizer {
 public:
@@ -62,9 +59,10 @@ public:
     }
 
     void Draw(bool is_indexed, u32 index_offset = 0, const PreparedDraw* prepared = nullptr);
+    // GPU-written The Order SRT pointer graphs must be synchronized before specialization.
     void ReadBackGpuWrittenSrtSources(Shader::Info& info);
 
-    /// gow3: draw preparation workers (vk_draw_prep.h), fed and consumed by Liverpool.
+    /// draw preparation workers (vk_draw_prep.h), fed and consumed by Liverpool.
     DrawPreparation& GetDrawPreparation() {
         return *draw_prep;
     }
@@ -100,7 +98,7 @@ public:
         scheduler.WaitHostCopies();
     }
 
-    /// gow3: GPU command thread: waits until the draw recording thread has recorded every
+    /// GPU command thread: waits until the draw recording thread has recorded every
     /// draw handed to it (vk_draw_pipe.h); no-op on other threads.
     /// `line`/`function`: the caller, for the statistics of where stage A waits.
     void DrainDrawPipe(u32 reason = DrawPipe::ReasonRasterizer, u32 line = __builtin_LINE(),
@@ -110,7 +108,7 @@ public:
     using OrderedTask = void (*)(Rasterizer& rasterizer, const u8* data);
     /// Returns true when the task was handed to the recording thread (not run yet).
     bool RunInOrder(OrderedTask task, const void* data, u32 size,
-                    u64 toggle = Gow3Toggle::PipelinedTasks);
+                    u64 toggle = Ps4Toggle::PipelinedTasks);
     /// Stage A: the draw pipe position after the last handed-over packet, and whether the
     /// recording thread has run everything before a position.
     [[nodiscard]] u64 DrawPipeHead() const {
@@ -175,7 +173,7 @@ private:
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
     RenderState BeginRenderingFull(const GraphicsPipeline* pipeline);
-    /// gow3: a draw continuing the open render pass with the same inputs gets the same render
+    /// a draw continuing the open render pass with the same inputs gets the same render
     /// state (RenderStateMemo); nothing can have broken the pass in between (barriers, copies and
     /// dispatches end it).
     struct BeginSignature {
@@ -210,7 +208,7 @@ private:
     void UpdateDynamicState(const GraphicsPipeline* pipeline, bool is_indexed) const;
     void UpdateViewportScissorState() const;
     void UpdateDepthStencilState() const;
-    /// gow3: the squaring pipeline of a scaled MIN/MAX blend when this draw can use it.
+    /// the squaring pipeline of a scaled MIN/MAX blend when this draw can use it.
     vk::Pipeline SquarePass(const GraphicsPipeline& pipeline) const;
     void UpdatePrimitiveState(bool is_indexed) const;
     void UpdateRasterizationState() const;
@@ -220,7 +218,7 @@ private:
     bool FilterDrawPasses() const;
     /// Everything of a direct draw after the pipeline selection (GPU thread or stage B).
     void DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
-                    bool is_indexed, u32 index_offset, const DrawPredication& pred);
+                    bool is_indexed, u32 index_offset);
     static bool DrawPipeWanted();
     bool UseDrawPipe() const;
     bool OnStageA() const;
@@ -233,17 +231,15 @@ private:
     };
     /// Everything of an indirect draw after the pipeline selection (GPU thread or stage B).
     void DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_indexed,
-                            const IndirectDraw& indirect, const DrawPredication& pred);
+                            const IndirectDraw& indirect);
     /// Everything of an indirect dispatch after the pipeline selection.
-    void DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr args, u32 size,
-                                const DrawPredication& pred);
+    void DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr args, u32 size);
     /// Hands a draw (or, with `cs`, a dispatch) to the recording thread.
     void PostDraw(const Pipeline* pipeline, const PreparedDraw* used_prepared, bool is_indexed,
-                  u32 index_offset, const DrawPredication& pred,
-                  const AmdGpu::ComputeProgram* cs = nullptr,
+                  u32 index_offset, const AmdGpu::ComputeProgram* cs = nullptr,
                   const IndirectDraw* indirect = nullptr);
     /// Everything of a direct dispatch after the pipeline selection (GPU thread or stage B).
-    void DispatchRecord(const ComputePipeline* pipeline, const DrawPredication& pred);
+    void DispatchRecord(const ComputePipeline* pipeline);
     /// The compute registers of the dispatch being recorded.
     const AmdGpu::ComputeProgram& CsRegs() const;
     static void RunDrawPacket(void* rasterizer, const u8* packet, u32 size);
@@ -266,7 +262,7 @@ private:
     bool BindResources(const Pipeline* pipeline);
     void BindSamplers(const Shader::Info& stage, const PreparedStage* prepared,
                       Shader::Backend::Bindings& binding, u32& write_index);
-    /// gow3: a stage's resolved textures remembered by its prepared T# hashes
+    /// a stage's resolved textures remembered by its prepared T# hashes
     /// (TextureSetMemo): a hit only redoes the per-draw effects (binding flags, transitions).
     struct TextureSetEntry {
         VideoCore::ImageId id{}; ///< after the depth redirect; null descriptor when invalid
@@ -299,24 +295,29 @@ private:
     /// Whether every texture of `stage` takes the memoized path without refreshing, creating or
     /// redirecting anything that records commands or touches the buffer cache.
     bool TexturesBindableOnHelper(const Shader::Info& stage, const PreparedStage* prepared);
+    bool IsInactiveOrderImage(const Shader::Info& stage, u32 image_index);
+    u64 CountUnalignedWarning(u64 shader, u32 alignment);
+    std::map<std::pair<u64, u32>, u64> unaligned_warning_counts;
     static void RunTextureTask(void* rasterizer);
     static void JoinBindHelper(void* rasterizer);
 
-    /// Display pass: counts the frame (Gow3Stats::gpu_frames) and, with GOW3_BUFFER_STATS, the lag.
+    /// Display pass: counts the frame (Ps4Stats::gpu_frames) and, with ORDER1886_BUFFER_STATS, the lag.
     void NoteFrameStart();
-    /// Without an upscaler: the display buffer of the last NoteFrameStart (HUD draws go there too).
-    VAddr last_display_buffer = 0;
-    /// GOW3_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
+    /// ORDER1886_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
     void MarkPass(const GraphicsPipeline* pipeline, const RenderState& state);
     void BindVertexBuffers(const GraphicsPipeline* pipeline,
                            const PreparedDraw* prepared = nullptr);
-    void BindIndexBuffer(u32 index_offset = 0);
-    /// gow3: BindVertexBuffers/BindIndexBuffer in two halves: obtaining the buffers
+    void BindIndexBuffer(u32 index_offset = 0, bool is_indirect = false);
+    /// BindVertexBuffers/BindIndexBuffer in two halves: obtaining the buffers
     /// (vertex_binds, index_bind) and recording the binds.
     void ResolveVertexBuffers(const GraphicsPipeline* pipeline, const PreparedDraw* prepared);
     void EmitVertexBuffers();
-    void ResolveIndexBuffer(u32 index_offset);
+    void ResolveIndexBuffer(u32 index_offset, bool is_indirect = false);
     void EmitIndexBuffer();
+    /// Copies `count` indexed indirect records into clamped_args with each index count
+    /// bounded by index_bind.count; returns where the draw reads them (the source if not).
+    std::pair<vk::Buffer, u64> ClampIndexedIndirect(const VideoCore::Buffer* args, u64 offset,
+                                                    u32 count, u32 stride);
 
     void ResetBindings(bool is_compute);
 
@@ -335,18 +336,20 @@ private:
     VideoCore::TextureCache texture_cache;
     AmdGpu::Liverpool* liverpool;
     Core::MemoryManager* memory;
+    const u64 mapped_ranges_identity;
+    std::atomic<u64> mapped_ranges_generation{0};
     boost::icl::interval_set<VAddr> mapped_ranges;
     Common::SharedFirstMutex mapped_ranges_mutex;
     PipelineCache pipeline_cache;
     std::unique_ptr<DrawPreparation> draw_prep;
-    std::unique_ptr<CameraMotion> camera_motion; // gow3: motion vectors (docs/upscaler.md)
+    std::unique_ptr<CameraMotion> camera_motion; // motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
     bool scene_started = false;
     std::unique_ptr<ObjectMotion> object_motion;
     bool motion_draw = false;
     u64 motion_geometry{};    ///< vertex-stream identity of the current direct draw
     bool gbuffer_draw = false;
-    std::unique_ptr<TemporalUpscaler> upscaler; // gow3: FSR (docs/upscaler.md)
+    std::unique_ptr<TemporalUpscaler> upscaler; // FSR (docs/upscaler.md)
     std::array<float, 2> draw_jitter{};         ///< viewport offset of the current draw, pixels
     std::array<float, 2> target_scale{1.0f, 1.0f}; ///< pass drawn into the upscaler's output-size images
     const bool host_markers_enabled;
@@ -358,6 +361,12 @@ private:
     boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
     boost::container::static_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
+    /// Frame diagnostics (ORDER1886_DIAG_IMAGES=1, draw pipe off): while a frame capture records, the
+    /// color targets of a pass are written to files when the next pass or dispatch begins.
+    void DiagPassBoundary(bool force);
+    std::array<VAddr, 8> diag_addresses{};
+    boost::container::static_vector<VideoCore::ImageId, 8> diag_targets;
+    u32 diag_pass{};
     struct BoundBuffer {
         const VideoCore::Buffer* buffer;
         u64 offset;
@@ -370,11 +379,11 @@ private:
     Pipeline::DescriptorWrites set_writes;
     Shader::PushData push_data;
 
-    // gow3: bindings point at their description instead of copying it (a hot spot): into
+    // bindings point at their description instead of copying it (a hot spot): into
     // image_desc_cache for memoized lookups (pinned for the current BindTextures call), else
     // into image_desc_storage.
     using ImageBindingInfo = std::pair<VideoCore::ImageId, const VideoCore::TextureCache::ImageDesc*>;
-    // gow3: texture descriptions depend only on the T# and three resource flags; building
+    // texture descriptions depend only on the T# and three resource flags; building
     // them (mip layout sizes) for every binding of every draw was a hot spot.
     struct ImageDescCacheEntry {
         std::array<u64, 4> sharp{};
@@ -397,7 +406,7 @@ private:
     boost::container::static_vector<VideoCore::TextureCache::ImageDesc, Shader::NUM_IMAGES * 2>
         image_desc_storage;
     u64 bind_epoch = 0;
-    // gow3: render/depth target lookups memoized by their raw register bytes while image
+    // render/depth target lookups memoized by their raw register bytes while image
     // registrations are unchanged (the descriptions depend only on those registers).
     struct TargetMemo {
         std::array<u8, 256> key{};
@@ -407,7 +416,7 @@ private:
         VideoCore::TextureCache::ImageDesc desc;
     };
     std::array<TargetMemo, 64> target_memo{};
-    // gow3: consecutive draws mostly keep their targets; the slot's description (cb_descs,
+    // consecutive draws mostly keep their targets; the slot's description (cb_descs,
     // db_desc) is then still the right one and is neither looked up nor copied.
     struct LastTarget {
         std::array<u8, 256> key{};
@@ -447,6 +456,7 @@ private:
         vk::Buffer handle;
         u64 offset;
         vk::IndexType type;
+        u32 count; ///< indices an indirect draw may read (~0: unknown, max_index_size unset)
     } index_bind{};
     /// The direct draw whose vertex/index buffers BindResources may resolve early.
     struct DrawInputs {
@@ -457,7 +467,7 @@ private:
         bool pending;
         bool resolved;
     } draw_inputs{};
-    // gow3: textures of a draw bound on the helper thread while this thread binds buffers.
+    // textures of a draw bound on the helper thread while this thread binds buffers.
     static bool BindHelperWanted();
     BindHelper bind_helper{BindHelperWanted()};
     struct TextureTask {
@@ -472,14 +482,14 @@ private:
         u32 completed = 0; ///< stages the helper bound; the rest are bound after the join
         bool barrier = false;
     } texture_task;
-    /// Draws whose textures the helper bound completely, partly or not at all (GOW3_FRAME_STATS).
+    /// Draws whose textures the helper bound completely, partly or not at all (ORDER1886_FRAME_STATS).
     u64 helper_full = 0, helper_partial = 0, helper_serial = 0;
     /// The memoized cache entry of each image binding (FindImage memo taken), else null.
     boost::container::static_vector<ImageDescCacheEntry*, Shader::NUM_IMAGES> image_binding_entries;
     bool fault_process_pending{};
     bool attachment_feedback_loop{};
     bool needs_barrier{};
-    // gow3: two-stage draw pipeline (stage B state; the thread is the last member so it
+    // two-stage draw pipeline (stage B state; the thread is the last member so it
     // stops first).
     static inline thread_local const AmdGpu::Regs* stage_regs = nullptr;
     static inline thread_local const AmdGpu::ComputeProgram* stage_cs = nullptr;
@@ -503,8 +513,8 @@ private:
     VAddr pending_min = ~VAddr{0}, pending_max = 0; ///< bounds of pending_writes
     u32 pending_checks = 0;
     u64 proxy_samples = 0; ///< texture bindings that read a scene proxy (statistics)
-    float sampler_lod_bias = 0.0f; ///< gow3: extra bias of this draw's samplers
-    bool scene_debug_frame = false; ///< GOW3_SCENE_DEBUG: this frame's passes are printed
+    float sampler_lod_bias = 0.0f; ///< extra bias of this draw's samplers
+    bool scene_debug_frame = false; ///< ORDER1886_SCENE_DEBUG: this frame's passes are printed
     bool PendingWriteOverlaps(VAddr address, u64 size);
     /// Stage B: the ring bindings of the stages of the packet being recorded.
     struct RingStage {
@@ -528,6 +538,16 @@ private:
         return nullptr;
     }
     std::unique_ptr<ConstantRing> constant_ring;
+    /// Indexed indirect arguments with clamped index counts (ClampIndexedIndirect), a ring.
+    std::unique_ptr<VideoCore::Buffer> clamped_args;
+    u64 clamped_args_size = 0;
+    u64 clamped_args_head = 0;
+    struct ClampPipeline {
+        vk::UniqueDescriptorSetLayout set_layout;
+        vk::UniquePipelineLayout layout;
+        vk::UniquePipeline pipeline;
+    } clamp_pipe; ///< created on first use
+
     /// Submissions (prepared draws) kept alive until stage B reaches the position.
     std::deque<std::pair<u64, std::shared_ptr<const void>>> pipe_keepalive;
     std::unique_ptr<DrawPipe> draw_pipe;
