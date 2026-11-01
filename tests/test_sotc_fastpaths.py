@@ -41,8 +41,8 @@ class SotcFastpathIntegration(unittest.TestCase):
         self.assertIn("std::fill(set_writes.begin(), set_writes.end(), vk::WriteDescriptorSet{});", STAGE)
         self.assertIn("if (!reuse_descriptor_slots) set_writes.clear();", STAGE)
         self.assertIn("if (!reuse_descriptor_slots) {", STAGE)
-        self.assertIn("BindBuffers(*stage, binding, push_data)", STAGE)
-        self.assertIn("BindTextures(*stage, binding)", STAGE)
+        self.assertIn("every resource lookup/barrier/push-constant operation still takes place", STAGE)
+        self.assertIn("set_writes.resize(count);", STAGE)
         self.assertNotIn("SOTC_FAST_BIND=1", RUN)
 
 
