@@ -621,7 +621,7 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
                     "Unimplemented depth overlap copy: src_depth={} dst_depth={} "
                     "src_samples={} dst_samples={} guest_dst_samples={} "
                     "src_format={} dst_format={}",
-                    src->info.props.is_depth, dst->info.props.is_depth,
+                    bool(src->info.props.is_depth), bool(dst->info.props.is_depth),
                     src->info.num_samples, dst->info.num_samples, dst->info.guest_samples,
                     vk::to_string(src->info.pixel_format), vk::to_string(dst->info.pixel_format));
     }
