@@ -44,6 +44,30 @@ jobs:
           "$CC" -std=gnu11 -Wall -Wextra -Werror -pthread -Iorder-android -Iorder-android/src \
              -fsyntax-only order-android/src/probe.c order-android/src/runtime.c \
              order-android/src/runtime_thread.c
+      - name: Compile Android screen client, driver loader and AHB receiver
+        run: |
+          NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
+          CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang++"
+          for source in window_android.cpp order1886_present_client.cpp vk_driver_loader.cpp; do
+            "$CXX" -std=c++23 -fsyntax-only -Iorder-android/gpu/shim \
+              -Iorder-android/gpu/shadps4 -Iorder-android/tools/android/present \
+              "order-android/gpu/shim/$source"
+          done
+          mkdir -p out/order1886/bridge
+          "$CC" -std=gnu11 -O2 -fPIC -shared \
+            -Iorder-android/tools/android/present \
+            -Iorder-android/tools/android/bionic/present \
+            order-android/tools/android/bionic/present/order1886present.c \
+            -lnativewindow -landroid -llog -ldl \
+            -o out/order1886/bridge/liborder1886present.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h out/order1886/bridge/liborder1886present.so
+      - name: Publish Android frame receiver
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-android-presentation-arm64
+          path: out/order1886/bridge/liborder1886present.so
+          if-no-files-found: error
       - name: Initialize pinned FEXCore source
         run: git submodule update --init --recursive third_party/FEX
       - uses: mamba-org/setup-micromamba@v2

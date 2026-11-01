@@ -36,6 +36,10 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_platform.cpp",
     "tools/android/present/order1886_present_proto.h",
+    "gpu/shim/ps4_overlay.cpp",
+    "tools/android/bionic/present/order1886present.c",
+    "tools/android/bionic/present/geometry.h",
+    "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java",
 ]
 
 def run():

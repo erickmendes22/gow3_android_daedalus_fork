@@ -128,7 +128,12 @@ static void attach(GuestThread *t) {
     memset(block,0,total);
     if (tls_filesz) memcpy(block,tls_template,tls_filesz);
     uint64_t *tcb=(uint64_t *)(block+offset);
+#ifdef __ANDROID__
+    uint64_t *dtv=runtime_low_map(4096,PROT_READ|PROT_WRITE);
+    if (!dtv) { fputs("Cannot allocate guest DTV below 1 TiB\n",stderr); exit(1); }
+#else
     static uint64_t dtv[3];
+#endif
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
     tcb[1]=(uint64_t)(uintptr_t)dtv;         /* tcb_dtv (static module only) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */

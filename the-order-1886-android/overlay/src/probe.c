@@ -918,7 +918,18 @@ int main(int argc, char **argv) {
     enter_on_stack(image+entry,&params,(void *)guest_exit,stack+MAIN_STACK-64);
 #else
     guest_cpu_thread_stack(stack+MAIN_STACK-64,MAIN_STACK-64);
-    const uint64_t entry_args[2]={(uint64_t)(uintptr_t)&params,guest_cpu_host_function((void*)guest_exit)};
+    /* FEX guest pointers must be in the low guest address range; the PIE host's static
+     * params and string literals may be outside the game's 40-bit pointer encoding. */
+    struct GuestMainArgs { uint64_t argc; const char *argv[2]; };
+    struct GuestMainArgs *guest_params=runtime_low_map(4096,PROT_READ|PROT_WRITE);
+    if (!guest_params) fail("cannot allocate low memory for guest argv");
+    const char guest_program[]="/app0/eboot.bin";
+    char *guest_path=(char*)(guest_params+1);
+    memcpy(guest_path,guest_program,sizeof(guest_program));
+    guest_params->argc=1;
+    guest_params->argv[0]=guest_path;
+    guest_params->argv[1]=NULL;
+    const uint64_t entry_args[2]={(uint64_t)(uintptr_t)guest_params,guest_cpu_host_function((void*)guest_exit)};
     guest_cpu_call((uintptr_t)(image+entry),2,entry_args);
 #endif
 #endif

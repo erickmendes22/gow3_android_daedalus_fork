@@ -33,6 +33,9 @@ gpu_checks={
   "Order renderer retained": "Ps4Overlay::OnPresented" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
   "Desktop renderer preserved": "#ifndef __ANDROID__" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain.cpp").read_text(),
   "AHB app protocol present": (tree/"tools/android/present/order1886_present_proto.h").is_file(),
+  "Native Android frame receiver": (tree/"tools/android/bionic/present/order1886present.c").is_file(),
+  "Android Java SurfaceView bridge": (tree/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/Order1886Present.java").is_file(),
+  "Order ImGui menu preserved": "Ps4Overlay::Render" not in (gpu/"shim/ps4_overlay.cpp").read_text() or "namespace Ps4Overlay" in (gpu/"shim/ps4_overlay.cpp").read_text(),
 }
 checks.update(gpu_checks)
 for key,ok in checks.items():
