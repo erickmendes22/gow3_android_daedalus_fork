@@ -121,6 +121,11 @@ endif()""",'exclude desktop-only DXGI source')
     return __builtin_ia32_rdtsc();
 #endif""",'SotC CPU cycle counter')
     stats.write_text(stats_text)
+    # Android's upstream sotc_stats.cpp returns 0 for GPU thread CPU times
+    # and page faults, even when SOTC_DRAW_SPLIT is enabled. Fix counters
+    # without changing the runtime behavior or Vulkan synchronization.
+    from stage_sotc_perf_profile import patch_profile
+    patch_profile(out)
     tex=out/'shadps4/video_core/texture_cache/texture_cache.h'
     tex_text=tex.read_text()
     tex_text=swap(tex_text,'            __builtin_ia32_pause();',
