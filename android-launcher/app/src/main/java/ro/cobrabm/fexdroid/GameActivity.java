@@ -609,6 +609,11 @@ public final class GameActivity extends Activity {
                 // blit; partial/letterbox blits always retain both operations.
                 env.put("SOTC_PRESENT_FULL_BLIT",
                         "0".equals(setting("sotc_present_full_blit")) ? "0" : "1");
+                // Existing, native SotC frame-split profiler (not an FPS boost).
+                // The Bionic launcher script unsets getenv-presence switches
+                // when this diagnostic setting is disabled.
+                env.put("SOTC_PERF_PROFILE",
+                        "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
                 env.put("SOTC_PIPELINE_BIND_MEMO",
