@@ -47,6 +47,7 @@ FILES = [
     "gpu/shim/gow3_copy.cpp",
     "gpu/shim/gow3_toggles.h",
     "gpu/shim/gow3_threads.h",
+    "gpu/shadps4/video_core/buffer_cache/copy_ranges.h",
     "gpu/shadps4/video_core/renderer_vulkan/driver_cache_file.h",
     "gpu/shadps4/shader_recompiler/profile.h",
     "gpu/shadps4/shader_recompiler/runtime_info.h",
