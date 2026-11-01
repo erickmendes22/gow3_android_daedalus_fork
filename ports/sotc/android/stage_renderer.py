@@ -514,6 +514,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Do not suppress real compute writes when a shader also touches metadata.
     from stage_meta_clear_integrity import patch_meta_clear_integrity
     patch_meta_clear_integrity(out)
+    # SotC-only exact Vulkan host-state memos; never reuse guest descriptors.
+    from stage_perf_fastpaths import patch_fastpaths
+    patch_fastpaths(root, out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
