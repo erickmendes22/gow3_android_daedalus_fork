@@ -162,6 +162,13 @@ export SOTC_PIPELINE_BIND_MEMO=${SOTC_PIPELINE_BIND_MEMO:-1}
 export SOTC_VERTEX_INPUT_MEMO=${SOTC_VERTEX_INPUT_MEMO:-1}
 export SOTC_DESCRIPTOR_SLOT_REUSE=${SOTC_DESCRIPTOR_SLOT_REUSE:-1}
 echo "SotC host Vulkan fastpaths: pipeline=$SOTC_PIPELINE_BIND_MEMO vertex=$SOTC_VERTEX_INPUT_MEMO descriptor_slots=$SOTC_DESCRIPTOR_SLOT_REUSE"
+# Real CPU bottleneck optimization. The CP still refreshes flattened SRTs
+# from live guest memory, validates exact shader specialization inputs and
+# chooses the same module; draw receives an exact per-op snapshot via swap.
+# OFF restores the 0.1.27 path with the original full data copies.
+export SOTC_STAGE_SPEC_MEMO=${SOTC_STAGE_SPEC_MEMO:-1}
+export SOTC_STAGE_SNAPSHOT_SWAP=${SOTC_STAGE_SNAPSHOT_SWAP:-1}
+echo "SotC 0.1.29 CPU hot path: shader_spec_exact=$SOTC_STAGE_SPEC_MEMO stage_snapshot_swap=$SOTC_STAGE_SNAPSHOT_SWAP"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"
 # would STILL activate it. Unset both unless explicitly selected in UI.
