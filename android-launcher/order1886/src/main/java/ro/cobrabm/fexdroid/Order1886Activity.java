@@ -81,7 +81,7 @@ public final class Order1886Activity extends Activity {
     };
 
     private android.content.SharedPreferences prefs(){return getSharedPreferences("order1886",MODE_PRIVATE);}
-    // Recompiled shader IR changed in v0.1.5; old cache must not mask the fix.
+    // Bachata V11 duplicate SRT rewrite changes shader metadata in v0.1.7; rebuild derived cache.
     // Touch only derived CUSA shader data, never game PKGs, saves or user settings.
     private static void deleteShaderCacheTree(File root,File file) throws IOException {
         File canonicalRoot=root.getCanonicalFile(),canonicalFile=file.getCanonicalFile();
@@ -93,14 +93,14 @@ public final class Order1886Activity extends Activity {
         if(!file.delete()&&file.exists())throw new IOException("Cannot delete cached shader "+file);
     }
     private void invalidateOldSrtShaders() throws IOException {
-        if(prefs().getBoolean("srtGpuLoweringV015",false))return;
+        if(prefs().getBoolean("bachataSrtV11CacheV017",false))return;
         File root=new File(base,".local/share/shadPS4/cache");
         File[] folders=root.listFiles();
         if(folders!=null)for(File f:folders) {
             if(f.isDirectory()&&f.getName().matches("CUSA[0-9]{5}"))
                 deleteShaderCacheTree(root,f);
         }
-        if(!prefs().edit().putBoolean("srtGpuLoweringV015",true).commit())
+        if(!prefs().edit().putBoolean("bachataSrtV11CacheV017",true).commit())
             throw new IOException("Could not persist shader cache version");
     }
     // PS4 display fit/fill is separate from the Android immersive-bars policy.
