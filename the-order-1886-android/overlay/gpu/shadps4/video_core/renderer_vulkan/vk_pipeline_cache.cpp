@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -622,36 +623,67 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     }
     build->pool_cache = &compiler_pools;
     snapshot.Stop();
-    AsyncJob<bool> capture_job;
-    if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-        PhaseTimer capture{g_gow3_capture_ns};
-        auto [pools, reused] = compiler_pools.Acquire();
-        build->pools = std::move(pools);
-        if (reused) {
-            ++g_gow3_pool_reuses;
+    bool captured = false;
+    std::string capture_error;
+    if (srt_sync) {
+        // The Order's SRT source addresses are discovered partway through IR translation.
+        // On this (GPU-command) thread we can publish GPU-written guest pages before
+        // ResourcePatchingPass and LowerDynamicReadConstPass consume those addresses.
+        // Keep the expensive SPIR-V/Vulkan compile on the asynchronous worker below.
+        try {
+            PhaseTimer capture{g_gow3_capture_ns};
+            auto [pools, reused] = compiler_pools.Acquire();
+            build->pools = std::move(pools);
+            if (reused) {
+                ++g_gow3_pool_reuses;
+            }
+            build->ir.emplace(Shader::TranslateProgram(
+                build->code, *build->pools, build->info, build->runtime, profile,
+                [this, build] { srt_sync(build->info); }));
+            build->spec =
+                Shader::StageSpecialization(build->info, build->runtime, profile, binding);
+            build->fetch.Capture(build->info);
+            captured = true;
+        } catch (const std::exception& ex) {
+            capture_error = ex.what();
         }
-        // gow3: the GPU thread waits until all guest reads and specialization are captured.
-        build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
-                                                   build->runtime, profile));
-        build->spec = Shader::StageSpecialization(build->info, build->runtime, profile, binding);
-        build->fetch.Capture(build->info);
-        return true;
-    })) {
-        return false;
+    } else {
+        // Non-SRT ports retain the original threaded guest-read capture.
+        AsyncJob<bool> capture_job;
+        if (!capture_job.Start(*capture_compiler, [this, build, binding] {
+            PhaseTimer capture{g_gow3_capture_ns};
+            auto [pools, reused] = compiler_pools.Acquire();
+            build->pools = std::move(pools);
+            if (reused) {
+                ++g_gow3_pool_reuses;
+            }
+            build->ir.emplace(Shader::TranslateProgram(
+                build->code, *build->pools, build->info, build->runtime, profile));
+            build->spec =
+                Shader::StageSpecialization(build->info, build->runtime, profile, binding);
+            build->fetch.Capture(build->info);
+            return true;
+        })) {
+            return false;
+        }
+        {
+            PhaseTimer waiting{g_gow3_guest_wait_ns};
+            capture_job.Wait();
+        }
+        captured = capture_job.Poll();
+        if (!captured) {
+            capture_error = capture_job.Error();
+        }
     }
-    {
-        PhaseTimer waiting{g_gow3_guest_wait_ns};
-        capture_job.Wait();
-    }
-    if (!capture_job.Poll()) {
+    if (!captured) {
         if (initial) {
             program.compilation_failed = true;
-        } else {
+        } else if (specialization) {
             specialization->info = &program.info;
             program.failed_permutations.push_back(std::move(*specialization));
         }
-        LOG_ERROR(Render_Vulkan, "gow3: shader {:#x}/{} capture failed: {}", params.hash,
-                  permutation, capture_job.Error());
+        LOG_ERROR(Render_Vulkan, "order1886: shader {:#x}/{} capture failed: {}", params.hash,
+                  permutation, capture_error);
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
