@@ -145,6 +145,13 @@ echo "SotC render coherence: precise GPU readbacks, synchronous completion"
 export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
+# Separate compute deferral. With recording thread + graphics workers this
+# would otherwise default ON and silently alter the shader-only A/B test.
+export SOTC_ASYNC_COMPUTE=${SOTC_ASYNC_COMPUTE:-0}
+# Safe AHB fullscreen transfer optimization; defaults ON only when the blit
+# overwrites the entire output surface; letterbox retains clear+barrier.
+export SOTC_PRESENT_FULL_BLIT=${SOTC_PRESENT_FULL_BLIT:-1}
+echo "SotC Vulkan compute async=$SOTC_ASYNC_COMPUTE present fullscreen blit=$SOTC_PRESENT_FULL_BLIT"
 echo "SotC experimental async graphics pipelines: $SOTC_ASYNC_SHADERS (1 may cause temporary missing geometry)"
 # Native A/B for stale descriptor reuse vs Vulkan command recording.
 # Keep Wave32, TAA, texture LOD, shaders and readbacks unchanged.
