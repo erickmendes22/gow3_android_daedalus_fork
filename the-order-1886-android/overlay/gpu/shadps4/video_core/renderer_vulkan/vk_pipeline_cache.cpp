@@ -1289,7 +1289,12 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
     CompileTimer timer;
 
-    const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    // The guest SRT pointer graph is discovered by FlattenExtendedUserdataPass.
+    // Synchronize GPU-written pages at guest_reads_done BEFORE resource patching and
+    // dynamic ReadConst lowering produce irreversible SPIR-V constants.
+    const auto ir_program = Shader::TranslateProgram(
+        code, pools, info, runtime_info, profile,
+        [this, &info] { if (srt_sync) srt_sync(info); });
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
