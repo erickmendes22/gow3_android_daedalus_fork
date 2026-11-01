@@ -27,6 +27,15 @@ on:
       - 'tests/test_bionic_videoout_flip_retirement.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/tile_manager.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/tile_manager.h'
+      - 'gpu/shadps4/video_core/texture_cache/blit_helper.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/blit_helper.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.h'
+      - 'tests/test_bachata_release_mali_tiling_descriptors.py'
+      - 'tests/test_bachata_release_mali_blit_descriptors.py'
+      - 'tests/test_bachata_release_mali_postprocess_descriptors.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp'
       - 'scripts/launch_env.py'
       - 'tests/test_launch_env.py'
@@ -84,6 +93,9 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v
           python -m unittest discover -s tests -p 'test_mali_pass_attachment_capture.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_tiling_descriptors.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_blit_descriptors.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_postprocess_descriptors.py' -v
           python -m unittest discover -s tests -p 'test_mali_physical_depth_bridge.py' -v
           python -m unittest discover -s tests -p 'test_launch_env.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
