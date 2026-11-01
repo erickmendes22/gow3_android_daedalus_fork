@@ -1,0 +1,74 @@
+name: Bachata 0.2.7 reference binary analysis (no APK build)
+on:
+  push:
+    branches: [analysis/bachata-order-compare-20261101]
+    paths:
+      - '.github/workflows/order1886-bachata-binary-compare.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Fetch official published Bachata S4+ v0.2.7 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 20 --max-time 1000 \
+            "https://github.com/erickmendes22/Bachata-S4-Plus/releases/download/0.2.7/Bachata-S4-Plus-v0.2.7.apk" \
+            -o bachata-027.apk
+          echo "35c6fad39430e54aba561877953323e03b322a589a44442931317450e0b952d8  bachata-027.apk" | sha256sum -c -
+      - name: Extract exact native emulation cores and release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reference
+          python3 - <<'PY'
+          import zipfile, pathlib, re, subprocess, hashlib
+          ref=pathlib.Path('reference')
+          with zipfile.ZipFile('bachata-027.apk') as apk:
+              files=apk.infolist()
+              entries=sorted((f.filename,f.file_size) for f in files if
+                 f.filename.endswith('.so') or any(x in f.filename.lower() for x in
+                 ('shadps4','native-runtime.json','turnip','gpu','renderer')))
+              with (ref/'inventory.txt').open('w') as out:
+                  for name,size in entries: out.write(f'{size:12d} {name}\n')
+              cores=[f for f in files if (
+                  f.filename.endswith('/libbachata_native_runtime.so')
+                  or f.filename.endswith('/shadps4-arm64-fex')
+                  or f.filename.endswith('/libshadps4.so')
+                  or (f.filename.endswith('.so') and
+                      any(x in f.filename.lower() for x in ('shadps4','bachata_native_runtime')))
+                  or f.filename.endswith('/native-runtime.json'))]
+              with (ref/'selected.txt').open('w') as out:
+                  for i,f in enumerate(cores):
+                      name='reference-'+str(i)+'-'+pathlib.Path(f.filename).name
+                      payload=apk.read(f)
+                      (ref/name).write_bytes(payload)
+                      out.write(f'{f.filename} => {name} ({len(payload)} bytes) sha256 {hashlib.sha256(payload).hexdigest()}\n')
+          PY
+          find reference -maxdepth 1 -type f -printf '%f %s bytes\n'
+      - name: Produce strings and ELF symbol inventory for reference cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          for core in reference/reference-*; do
+             test -f "$core" || continue
+             if file "$core" | grep -q 'ELF'; then
+                 file "$core" >> reference/elf-summary.txt
+                 readelf -h "$core" >> reference/elf-summary.txt
+                 readelf -d "$core" >> reference/elf-summary.txt || true
+                 readelf -Ws "$core" > "${core}.symbols.txt" || true
+                 strings -a "$core" | grep -Eai 'aux.?gs|auxiliary shader|per.vertex|barycentric|fragment.shader|geometry.shader|CopyColorAndDepth|overlap copy|SetBackingSamples|SRT walker|readback|read.const|srt|CUSA00785|ReinterpretColor|MSAA|shader' \
+                    | head -n 25000 > "${core}.filtered-strings.txt" || true
+             fi
+          done
+      - name: Upload reference native core binaries and analyses
+        uses: actions/upload-artifact@v4
+        with:
+          name: bachata-027-reference-elf-and-inventory
+          path: reference/
+          retention-days: 1
+          compression-level: 3
