@@ -273,6 +273,20 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "OFF por padrão. Compila pipelines gráficos em paralelo, mas pode causar objetos ausentes ou piscadas enquanto compila. Desative e reinicie para restaurar a renderização completa. Não altera readback, thread Vulkan nem FAST_BIND."
                          else "OFF by default. Builds graphics pipelines in parallel, but may cause missing geometry or flicker while compiling. Turn OFF and restart to restore complete rendering. Does not change readback, Vulkan thread, or FAST_BIND.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Compilação assíncrona compute (experimental)"
+                                      else "Asynchronous compute pipeline compilation (experimental)",
+                        (values["sotc_async_compute"]?:"0")=="1",
+                        {save("sotc_async_compute",if(it)"1" else "0")})
+                    Text(if(pt) "OFF por padrão. Só atua com shaders assíncronos e thread Vulkan ligados. Preserva a espera pelos resultados compute; pode aumentar uso de CPU."
+                         else "OFF by default. Requires asynchronous shaders and Vulkan recording thread. Compute results remain synchronized; may raise CPU load.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Blit de tela cheia sem limpeza redundante"
+                                      else "Skip redundant fullscreen blit clear",
+                        (values["sotc_present_full_blit"]?:"1")=="1",
+                        {save("sotc_present_full_blit",if(it)"1" else "0")})
+                    Text(if(pt) "Mantém limpeza e barreiras quando a imagem não preenche toda a tela. Reinicie para aplicar."
+                         else "Preserves clearing and barriers for any partial or letterboxed blit. Restart to apply.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Cache de bind Vulkan (sem pular draws)" else "Vulkan pipeline bind cache (no skipped draws)",
                         (values["sotc_pipeline_bind_memo"]?:"1")=="1",
                         {save("sotc_pipeline_bind_memo",if(it)"1" else "0")})
