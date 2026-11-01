@@ -57,3 +57,15 @@ copyright attribution remain applicable; this work is not affiliated with the ri
 - `src/runtime_pad_bionic.c` preserves The Order's 120-byte controller state and touchpad location/press support, reads `ORDER1886_PAD_FILE` (same file-token protocol as our other Android ports), and avoids SDL3 in the Bionic build.
 - `src/runtime_audio_bionic.c` uses the proven FEX Android 48-kHz stereo PCM FIFO mixer, selected with `ORDER1886_AUDIO_FIFO`. Desktop SDL implementations are guarded but unchanged.
 - Android-side `Order1886PadBridge.java` and `Order1886AudioBridge.java` are staged for the eventual dedicated launcher. Their interaction with the game activity is **not yet wired or tested**.
+
+## Compile the native runtime after the GPU and FEX builds pass
+
+```sh
+GOW3_NDK=/path/to/ndk/29.0.14206865 \\
+  bash the-order-1886-android/scripts/build_runtime_android.sh order-android out/order1886
+```
+
+This links `order1886-probe`, `libps4gpu.so`, `liborder1886cpu.so`, and the native
+AHardwareBuffer receiver. The original standalone Vulkan WSI smoke test is not applicable
+to the headless Android driver path, so it reports unsupported rather than a false PASS.
+A linked executable alone does not imply that the game's PS4 image boots or renders correctly.

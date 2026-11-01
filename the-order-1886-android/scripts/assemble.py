@@ -17,6 +17,7 @@ FILES = [
     "src/probe.c", "src/runtime.c", "src/runtime.h", "src/runtime_thread.c",
     "src/guest_cpu.h", "src/runtime_cpu.c", "src/runtime_audio.c",
     "src/runtime_audio_bionic.c", "src/runtime_pad.c", "src/runtime_pad_bionic.c",
+    "src/vulkan_smoke.c",
     "cpu/guest_cpu_fex.cpp",
     "cpu/host_call_arm64.S", "cpu/bionic_compat.h",
     "cpu/fex_project.cmake", "cpu/order1886cpu.cmake",

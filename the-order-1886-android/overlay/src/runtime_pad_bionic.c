@@ -64,7 +64,7 @@ typedef struct {
     int touch_down, touch_click;
     uint16_t touch_x,touch_y;
 } PadState;
-static PadState state={{0},{128,128,128,128},0,0,0,0,960,471};
+static PadState state={0,{128,128,128,128},0,0,0,0,960,471};
 static uint64_t last_check;
 static struct timespec last_mod;
 static off_t last_size=-1;
@@ -89,7 +89,7 @@ static void read_pad_file(void) {
     last_check=now;
     struct stat st;
     if(stat(path,&st)!=0) {
-        state=(PadState){{0},{128,128,128,128},0,0,0,0,960,471};
+        state=(PadState){0,{128,128,128,128},0,0,0,0,960,471};
         return;
     }
     if(st.st_mtim.tv_sec==last_mod.tv_sec &&
@@ -97,7 +97,7 @@ static void read_pad_file(void) {
        st.st_size==last_size) return;
     FILE *f=fopen(path,"r");
     if(!f)return;
-    PadState next={{0},{128,128,128,128},0,0,0,0,960,471};
+    PadState next={0,{128,128,128,128},0,0,0,0,960,471};
     char token[96];
     while(fscanf(f,"%95s",token)==1) {
         for(size_t i=0;i<sizeof(keymap)/sizeof(keymap[0]);++i)
