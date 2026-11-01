@@ -45,6 +45,8 @@ internal fun GpuDriverCard() {
     val scope = rememberCoroutineScope()
     var installed by remember { mutableStateOf(GpuDriverManager.installed(context)) }
     var selected by remember { mutableStateOf(GpuDriverManager.selected(context)) }
+    // The 14 MB imported ELF is checked once, not on every Compose recomposition.
+    var hasGameHub by remember { mutableStateOf(GpuDriverManager.hasGameHubDD(context)) }
     var expanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -53,7 +55,7 @@ internal fun GpuDriverCard() {
         "system" to stringResource(R.string.gpu_driver_system),
         "gen8" to stringResource(R.string.gpu_driver_bundled),
         "adreno7xx" to stringResource(R.string.gpu_driver_adreno7xx),
-    ) + (if (GpuDriverManager.hasGameHubDD(context)) listOf(
+    ) + (if (hasGameHub) listOf(
         "gamehub-dd" to "Turnip GameHub 26.3 DD GMEM + PWR_MAX (experimental)"
     ) else emptyList()) + installed.filterNot { GpuDriverManager.isGameHubDDImportedId(it.id) }
         .map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
@@ -67,6 +69,7 @@ internal fun GpuDriverCard() {
                     withContext(Dispatchers.IO) { GpuDriverManager.importDriver(context, uri) }
                     installed = GpuDriverManager.installed(context)
                     selected = GpuDriverManager.selected(context)
+                    hasGameHub = withContext(Dispatchers.IO) { GpuDriverManager.hasGameHubDD(context) }
                 } catch (ex: Exception) {
                     error = GpuDriverManager.error(context, ex)
                 } finally { busy = false }
@@ -96,7 +99,7 @@ internal fun GpuDriverCard() {
             }
         }
         Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
-        if (context.packageName == "com.sotc.android.daedalus" && !GpuDriverManager.hasGameHubDD(context)) {
+        if (context.packageName == "com.sotc.android.daedalus" && !hasGameHub) {
             Text(
                 if (java.util.Locale.getDefault().language == "pt")
                     "Turnip GameHub DD 26.3 não está instalada. Use Importar driver e escolha o ZIP GameHub DD que você já possui; após a validação ele será selecionado automaticamente."
