@@ -161,7 +161,23 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Bachata renderer. It may alias an earlier target after a layout or
       # sample-count change. Prefer correct full image reconstruction on Mali.
       export GOW3_PARTIAL_HEIGHT_VIEWS=0
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off"
+      # Bounded previews + pass traces exported with the next logs ZIP.
+      # Applies only to the PanVK safe profile. Use GOW3_MALI_AUTOCAPTURE=0 to disable.
+      export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-1}
+      if [ "$GOW3_MALI_AUTOCAPTURE" = 1 ]; then
+        export GOW3_MALI_CAPTURE_DIR="$base/logs/mali-captures"
+        export GOW3_CAPTURE_DIR="$GOW3_MALI_CAPTURE_DIR"
+        mkdir -p "$GOW3_MALI_CAPTURE_DIR"
+        rm -f "$GOW3_MALI_CAPTURE_DIR"/guest_*.bmp "$GOW3_MALI_CAPTURE_DIR"/post_*.bmp \
+              "$GOW3_MALI_CAPTURE_DIR"/cpu_*.bmp "$GOW3_MALI_CAPTURE_DIR"/frame_*.txt
+        printf '%s\n' \
+          'PanVK capture stages: guest = PS4 VideoOut, post = host Vulkan output, cpu = readback before Android AHB.' \
+          'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.' \
+          'Previews: guest flips 120 360 480 720, maximum size 960x540 BMP.' \
+          'See GOW3_MALI_CAPTURE markers in logs/android-game.log for any missing stage.' \
+          > "$GOW3_MALI_CAPTURE_DIR/README.txt"
+      fi
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE"
     fi
     ;;
 esac

@@ -375,10 +375,58 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
     return {};
 }
 
+// Bounded BMP preview; the ZIP log exporter compresses these images.
+static bool WriteMaliCaptureBmp(const std::string& filename, const u8* pixels, u32 w, u32 h,
+                                vk::Format format) {
+    if (!pixels || !w || !h || w > 4096 || h > 4096) return false;
+    bool bgra = false;
+    switch (format) {
+    case vk::Format::eR8G8B8A8Unorm:
+    case vk::Format::eR8G8B8A8Srgb: bgra = false; break;
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb: bgra = true; break;
+    default: return false; // Packed HDR must never be misread as 8-bit RGB.
+    }
+    constexpr u32 max_width = 960, max_height = 540;
+    const u32 dw = std::min(w, max_width), dh = std::min(h, max_height);
+    const u32 stride = (dw * 3 + 3) & ~u32{3};
+    const u32 byte_count = stride * dh;
+    std::array<u8, 54> header{};
+    header[0] = 'B'; header[1] = 'M';
+    const auto put16 = [&](size_t pos, u32 value) {
+        header[pos] = u8(value); header[pos + 1] = u8(value >> 8);
+    };
+    const auto put32 = [&](size_t pos, u32 value) {
+        for (int i = 0; i < 4; ++i) header[pos + i] = u8(value >> (8 * i));
+    };
+    put32(2, 54 + byte_count); put32(10, 54); put32(14, 40);
+    put32(18, dw); put32(22, dh); put16(26, 1); put16(28, 24); put32(34, byte_count);
+    FILE* f = std::fopen(filename.c_str(), "wb");
+    if (!f) return false;
+    bool ok = std::fwrite(header.data(), 1, header.size(), f) == header.size();
+    std::vector<u8> row(stride);
+    for (u32 y = 0; ok && y < dh; ++y) {
+        std::fill(row.begin(), row.end(), u8{0});
+        const u32 sy = u32((u64(dh - y - 1) * h) / dh);
+        for (u32 x = 0; x < dw; ++x) {
+            const u32 sx = u32((u64(x) * w) / dw);
+            const u8* in = pixels + (size_t(sy) * w + sx) * 4;
+            u8* out = row.data() + size_t(x) * 3;
+            out[0] = bgra ? in[0] : in[2];
+            out[1] = in[1];
+            out[2] = bgra ? in[2] : in[0];
+        }
+        ok = std::fwrite(row.data(), 1, row.size(), f) == row.size();
+    }
+    if (std::fclose(f) != 0) ok = false;
+    return ok;
+}
+
 // gow3: raw copy of an image for GOW3_FRAME_DUMP_TRIGGER, written once the GPU is done.
 static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                     vk::Image image, vk::ImageLayout layout, u32 w, u32 h, const char* name,
-                    int index) {
+                    int index, bool bitmap = false,
+                    vk::Format physical_format = vk::Format::eR8G8B8A8Unorm) {
     const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                        .size = VkDeviceSize(w) * h * 4,
                                        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
@@ -395,17 +443,29 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     cmdbuf.copyImageToBuffer(image, layout, buffer,
                              vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                                  .imageExtent = {w, h, 1}});
-    const char* dir = std::getenv("GOW3_DUMP_DIR");
+    const char* dir = std::getenv(bitmap ? "GOW3_MALI_CAPTURE_DIR" : "GOW3_DUMP_DIR");
     char path[512];
-    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
-                  index, w, h);
+    std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.%s",
+                  dir && *dir ? dir : "out/dump", name, index, w, h, bitmap ? "bmp" : "raw");
     scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
-                                      size = buffer_ci.size, file = std::string{path}] {
-        vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
-        if (FILE* f = std::fopen(file.c_str(), "wb")) {
-            std::fwrite(info.pMappedData, 1, size, f);
-            std::fclose(f);
+                                      size = buffer_ci.size, file = std::string{path},
+                                      bitmap, physical_format, w, h, stage = std::string{name}] {
+        const VkResult invalidated = vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+        bool ok = invalidated == VK_SUCCESS;
+        if (ok && bitmap) {
+            ok = WriteMaliCaptureBmp(file, static_cast<const u8*>(info.pMappedData), w, h,
+                                     physical_format);
+            std::printf("GOW3_MALI_CAPTURE stage=%s size=%ux%u path=%s ok=%d format=%s\n",
+                        stage.c_str(), w, h, file.c_str(), int(ok),
+                        vk::to_string(physical_format).c_str());
+        } else if (ok) {
+            if (FILE* f = std::fopen(file.c_str(), "wb")) {
+                ok = std::fwrite(info.pMappedData, 1, size, f) == size;
+                if (std::fclose(f) != 0) ok = false;
+            } else ok = false;
         }
+        if (!ok) std::printf("GOW3_MALI_CAPTURE error stage=%s file=%s\n",
+                             stage.c_str(), file.c_str());
         vmaDestroyBuffer(allocator, buffer, allocation);
     });
 }
@@ -417,7 +477,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
     static const char* frame_dump_trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
-    const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
+    static u32 mali_flip_index = 0;
+    const bool manual_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
+    const char* capture_setting = std::getenv("GOW3_MALI_AUTOCAPTURE");
+    const bool mali_auto = capture_setting && capture_setting[0] == '1' &&
+                           instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    const u32 mali_index = mali_auto ? ++mali_flip_index : 0;
+    const bool image_capture = mali_auto &&
+                               (mali_index == 120 || mali_index == 360 ||
+                                mali_index == 480 || mali_index == 720);
+    const bool frame_dump = manual_dump || image_capture;
+    const int selected_dump_index = image_capture ? int(mali_index) : frame_dump_index;
     // The actual guest flip, not arbitrary draws into any of the game's
     // registered display targets, defines the GSR2 camera/depth frame.
     // This is a no-op for Native AA, desktop and other upscalers.
@@ -447,6 +517,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 
     Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
+    frame->mali_capture_frame = image_capture ? mali_index : 0;
+    if (image_capture) {
+        std::printf("GOW3_MALI_CAPTURE scheduled frame=%u guest=%#llx\n",
+                    mali_index, static_cast<unsigned long long>(cpu_address));
+    }
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -518,7 +593,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             runtime.FlushBarriers();
             DumpRaw(instance, draw_scheduler, cmdbuf, image.GetImage(),
                     vk::ImageLayout::eTransferSrcOptimal, image.info.size.width,
-                    image.info.size.height, "display", frame_dump_index);
+                    image.info.size.height, image_capture ? "guest" : "display",
+                    selected_dump_index, image_capture,
+                    image.backing->image.image_ci.format);
         }
         image_view = *image.FindView(view_info).image_view;
         image_size = vk::Extent2D{image.info.size.width, image.info.size.height};
@@ -563,8 +640,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                                       .dstAccessMask = vk::AccessFlagBits2::eTransferRead};
         cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &done});
         DumpRaw(instance, draw_scheduler, cmdbuf, frame->image, vk::ImageLayout::eGeneral,
-                frame->width, frame->height, "output", frame_dump_index);
-        ++frame_dump_index;
+                frame->width, frame->height, image_capture ? "post" : "output",
+                selected_dump_index, image_capture, swapchain.GetSurfaceFormat().format);
+        if (manual_dump) ++frame_dump_index;
     }
 
     // Flush frame creation commands.
@@ -918,6 +996,17 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                         "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
                         probe_count, frame->width, frame->height, nonblack, sampled,
                         alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
+        }
+        if (frame->mali_capture_frame) {
+            const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/cpu_%03u_%ux%u.bmp",
+                          dir && *dir ? dir : "out/dump", frame->mali_capture_frame,
+                          frame->width, frame->height);
+            const bool ok = WriteMaliCaptureBmp(path, pixels, frame->width, frame->height,
+                                                swapchain.GetSurfaceFormat().format);
+            std::printf("GOW3_MALI_CAPTURE stage=cpu frame=%u path=%s ok=%d\n",
+                        frame->mali_capture_frame, path, int(ok));
         }
         swapchain.PresentCpuPixels(pixels, frame->width, frame->height);
         free_frame();
@@ -1481,6 +1570,7 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
         }
     }
 
+    frame->mali_capture_frame = 0;
     if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
         frame->is_hdr != swapchain.GetHDR()) {
         RecreateFrame(frame, expected_frame_width, expected_frame_height);

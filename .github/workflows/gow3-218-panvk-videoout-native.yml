@@ -23,6 +23,8 @@ on:
       - 'gpu/shadps4/video_core/texture_cache/robust_image_view.h'
       - 'tests/test_mali_robust_image_view.py'
       - 'tests/test_mali_cpu_present_source.py'
+      - 'tests/test_mali_render_stage_capture.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
   workflow_dispatch:
 
 permissions:
@@ -72,6 +74,7 @@ jobs:
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
+          python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
           python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
           python -m unittest discover -s tests -p 'test_bionic_eboot_source.py' -v

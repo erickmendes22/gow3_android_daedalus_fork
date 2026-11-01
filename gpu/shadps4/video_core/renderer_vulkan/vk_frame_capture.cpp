@@ -154,12 +154,17 @@ void Write(VAddr presented) {
 
 void FrameCapture::OnFlip(VAddr presented_address) {
     last_presented.store(presented_address, std::memory_order_relaxed);
-    flips.fetch_add(1, std::memory_order_release);
+    const u64 flip_index = flips.fetch_add(1, std::memory_order_release) + 1;
     static const char* trigger = std::getenv("GOW3_CAPTURE_TRIGGER");
+    static const char* mali_auto = std::getenv("GOW3_MALI_AUTOCAPTURE");
     if (state.load(std::memory_order_relaxed) != Idle) {
         return;
     }
     bool arm = requested.exchange(false, std::memory_order_acq_rel);
+    // Correlate one early and one late scene-pass graph with the BMP stages.
+    // This writes target/depth/shader metadata, not guessed scene pixels.
+    if (!arm && mali_auto && mali_auto[0] == '1' &&
+        (flip_index == 119 || flip_index == 479)) arm = true;
     if (!arm && trigger && std::filesystem::exists(trigger)) {
         std::error_code ec;
         std::filesystem::remove(trigger, ec);

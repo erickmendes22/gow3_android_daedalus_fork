@@ -41,6 +41,7 @@ struct Frame {
     vk::Semaphore ready_semaphore;
     u64 ready_tick;
     bool is_hdr{false};
+    u32 mali_capture_frame{}; ///< Correlates guest/post/CPU snapshots on PanVK.
     u8 id{};
 
 };
