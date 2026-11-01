@@ -55,6 +55,7 @@ FILES = [
     "gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_per_vertex.h",
     "gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
     "gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_draw_prep.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp",
     "gpu/shadps4/shader_recompiler/recompiler.cpp",
     "gpu/shadps4/shader_recompiler/info.h",
