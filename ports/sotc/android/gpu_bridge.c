@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* Installed only after libbbgpu.so has passed all required export checks. */
+extern void runtime_file_set_texture_flush(void (*cb)(void));
 
 typedef struct {
     void *handle;
@@ -17,6 +19,7 @@ typedef struct {
     int (*handle_fault)(void *, void *);
     void (*dump_writes)(void *);
     unsigned (*symbol_count)(void);
+    void (*flush_textures)(void);
 } SotcGpuApi;
 
 static SotcGpuApi gpu;
@@ -40,12 +43,18 @@ int sotc_gpu_load(int required) {
     api.handle_fault=(int (*)(void *,void *))dlsym(handle,"bbgpu_handle_fault");
     api.dump_writes=(void (*)(void *))dlsym(handle,"bbgpu_dump_guest_writes");
     api.symbol_count=(unsigned (*)(void))dlsym(handle,"bbgpu_symbol_count");
-    if (!api.register_kernel || !api.init || !api.resolve || !api.handle_fault || !api.symbol_count) {
+    api.flush_textures=(void (*)(void))dlsym(handle,"bbgpu_request_texture_flush");
+    if (!api.register_kernel || !api.init || !api.resolve || !api.handle_fault ||
+        !api.symbol_count || !api.flush_textures) {
         fprintf(stderr,"SotC Vulkan: incompatible bbgpu exports in %s\n",path);
         dlclose(handle);
         return -1;
     }
     gpu=api;
+    /* The renderer is intentionally RTLD_LOCAL. A weak linker reference to
+     * its export would never resolve; explicitly hand the resolved callback
+     * to file I/O for the actual st_gameflow() area-load event. */
+    runtime_file_set_texture_flush(api.flush_textures);
     fprintf(stderr,"SotC Vulkan: loaded original bbgpu exports from %s\n",path);
     return 0;
 }
