@@ -190,6 +190,7 @@ case ${1:-game} in
     game) ;;
     *) echo "Unknown SotC launcher mode" >&2; exit 2 ;;
 esac
+echo "SotC requested guest render: ${SOTC_RENDER:-1280x720}; Android output: ${SOTC_SCREEN_W}x${SOTC_SCREEN_H} (output remains 720p)"
 set -- "$python" "$prepare" --upstream "$upstream" --game-dir "$game" \
     --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-fps60game}" \
     --cvars "${SOTC_CVARS:-doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0}" \
