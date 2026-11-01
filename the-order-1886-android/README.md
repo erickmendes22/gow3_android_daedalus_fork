@@ -1,6 +1,6 @@
 # The Order: 1886 — Android Bionic staging
 
-**Development status: CPU/FEX boundary port in progress; no working APK or Android gameplay claim.**
+**Development status: FEX CPU library built in CI; Android Vulkan/AHardwareBuffer source integration staged, not yet fully linked or gameplay-verified. No usable APK.**
 
 This directory is a self-contained CPU-source overlay based on
 [JulioCacko/The-Order-1886_pc](https://github.com/JulioCacko/The-Order-1886_pc)
@@ -29,11 +29,21 @@ python3 the-order-1886-android/scripts/smoke.py order-android
 Never run the assembler on a game dump or in the upstream checkout; it only works with source code.
 No game files, PKG, BIOS, proprietary drivers or decrypted saves are included.
 
+## GPU source integration — staged, not yet confirmed working
+
+The overlay preserves Order's own Vulkan renderer, presentation effects and shader logic while
+introducing a Bionic headless window, Turnip/system loader, AHardwareBuffer-backed swapchain,
+external semaphore sync-fd support and the Android Unix socket protocol. The Order-specific
+presenter was adapted to use queue-family ownership transfers instead of desktop WSI
+`ePresentSrcKHR`. These changes are source-level and require a real Android GPU build.
+
+CPU proof: [FEXCore Android CI success](https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/41298404574).
+
 ## Not done / blocks to first APK
 
-1. Native ARM64 syntax, link and FEX runtime tests; build settings for `order1886cpu`.
-2. Compile The Order renderer with the Android toolchain and remove desktop SDL/X11 assumptions without losing the Order renderer fixes.
-3. Integrate Android Vulkan ICD/Turnip, AHardwareBuffer presentation and Android window/input/audio bridges.
+1. CPU-to-renderer linkage, guest memory and native startup tests (only FEX CPU library compiled).
+2. **Compile** The Order renderer with NDK and remove remaining SDL/X11/desktop-only code without discarding Order-specific rendering fixes.
+3. Connect the staged Android Vulkan loader/AHardwareBuffer protocol to the actual Java game activity and verify frame-fence ownership on hardware.
 4. Port Order's Python preparation, launcher, PKG install, saves/logs and test on a real device.
 5. Repair any x86-only runtime paths revealed by actual builds and instrumented boots.
 

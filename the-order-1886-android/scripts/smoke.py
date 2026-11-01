@@ -24,6 +24,17 @@ checks={
   "Order trophy services retained": "runtime_trophy_configure" in p,
   "Order-specific renderer retained": "ps4gpu_init(&gpu)" in p,
 }
+gpu=tree/"gpu"
+gpu_checks={
+  "Android GPU headless window": "WindowSystemType::Headless" in (gpu/"shim/window_android.cpp").read_text(),
+  "Android AHardwareBuffer presentation": "AHARDWAREBUFFER" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp").read_text().upper(),
+  "Android Vulkan external extensions": "VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME" in (gpu/"shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text(),
+  "Android Vulkan driver loader": "order1886_vk_get_instance_proc_addr" in (gpu/"shadps4/video_core/renderer_vulkan/vk_platform.cpp").read_text(),
+  "Order renderer retained": "Ps4Overlay::OnPresented" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
+  "Desktop renderer preserved": "#ifndef __ANDROID__" in (gpu/"shadps4/video_core/renderer_vulkan/vk_swapchain.cpp").read_text(),
+  "AHB app protocol present": (tree/"tools/android/present/order1886_present_proto.h").is_file(),
+}
+checks.update(gpu_checks)
 for key,ok in checks.items():
     print(f"{'PASS' if ok else 'FAIL'}: {key}")
 if not all(checks.values()):

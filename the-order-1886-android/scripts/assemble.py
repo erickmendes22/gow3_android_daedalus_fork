@@ -18,6 +18,24 @@ FILES = [
     "src/guest_cpu.h", "src/runtime_cpu.c", "cpu/guest_cpu_fex.cpp",
     "cpu/host_call_arm64.S", "cpu/bionic_compat.h",
     "cpu/fex_project.cmake", "cpu/order1886cpu.cmake",
+    "gpu/CMakeLists.txt",
+    "gpu/shim/sdl_window.h",
+    "gpu/shim/ps4gpu.cpp",
+    "gpu/shim/window_android.cpp",
+    "gpu/shim/order1886_present_client.cpp",
+    "gpu/shim/order1886_present_client.h",
+    "gpu/shim/vk_driver_loader.cpp",
+    "gpu/shim/vk_driver_loader.h",
+    "gpu/shim/vk_forwarders.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.h",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_ahb_acquire_wait.h",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_platform.cpp",
+    "tools/android/present/order1886_present_proto.h",
 ]
 
 def run():
@@ -57,7 +75,7 @@ def run():
         "android_gameplay_verified":False,
     }
     (output/"ANDROID_PORT_MANIFEST.json").write_text(json.dumps(meta,indent=2)+"\n",encoding="utf-8")
-    print(f"Assembled {output}; {len(FILES)} modified/additional files. GPU/Android presentation not migrated yet.")
+    print(f"Assembled {output}; {len(FILES)} CPU/Vulkan overlay files. GPU linking and presentation need device validation.")
 
 if __name__=="__main__":
     run()
