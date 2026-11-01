@@ -88,6 +88,7 @@ sotc_vsync=1
 sotc_af16=0
 sotc_blur_suppression=1
 sotc_fast_bind=0
+sotc_async_shaders=0
 sotc_pipeline_bind_memo=1
 sotc_vertex_input_memo=1
 sotc_descriptor_slot_reuse=1
