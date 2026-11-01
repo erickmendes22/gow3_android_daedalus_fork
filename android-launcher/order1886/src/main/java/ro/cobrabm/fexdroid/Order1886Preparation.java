@@ -14,7 +14,7 @@ final class Order1886Preparation {
     private final Context context;
     private final File tools, state;
     Order1886Preparation(Context c, File state) {
-        context=c; this.state=state; tools=new File(c.getFilesDir(),"order1886-toolchain-v1");
+        context=c; this.state=state; tools=new File(c.getFilesDir(),"order1886-toolchain-v2");
     }
     File image(){return new File(state,"prepared/boot-linked.bin");}
     private File interpreter(){
@@ -99,6 +99,10 @@ final class Order1886Preparation {
         env.put("HOME",tools.getAbsolutePath());
         env.put("TMPDIR",context.getCacheDir().getAbsolutePath());
         env.put("LD_LIBRARY_PATH",context.getApplicationInfo().nativeLibraryDir);
+        // Android /data/user/0 and /storage/emulated can be OS-managed symlink aliases.
+        // Trust only these launcher-chosen prefixes; script still rejects links beneath them.
+        env.put("ORDER1886_ANDROID_TRUSTED_GAME_ROOT",game.getAbsolutePath());
+        env.put("ORDER1886_ANDROID_TRUSTED_STATE_ROOT",state.getAbsolutePath());
         progress.update("Preparando boot-linked.bin no Android (pode consumir memória)...");
         Process process=builder.start();
         StringBuilder last=new StringBuilder();

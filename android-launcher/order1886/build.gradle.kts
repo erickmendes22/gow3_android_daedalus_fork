@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 2
-        versionName = "0.1.1-bionic-installer"
+        versionCode = 3
+        versionName = "0.1.2-bionic-pathfix"
     }
     buildTypes {
         release {

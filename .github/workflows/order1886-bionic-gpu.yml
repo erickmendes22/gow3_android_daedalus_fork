@@ -34,6 +34,9 @@ jobs:
           git -C order-source submodule update --init --recursive
           python3 the-order-1886-android/scripts/assemble.py --source order-source --output order-android
           python3 the-order-1886-android/scripts/smoke.py order-android
+          # Patch only the packaged Android Python toolchain, not the PC port.
+          python3 the-order-1886-android/scripts/patch_android_preparation.py order-source/scripts/order1886_mods.py
+          python3 the-order-1886-android/scripts/test_android_paths.py order-source/scripts/order1886_mods.py
       - name: Setup Android SDK and NDK r29
         uses: android-actions/setup-android@v3
         with:
@@ -225,7 +228,7 @@ jobs:
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.1-installer
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.2-pathfix
           path: android-launcher/order1886/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
