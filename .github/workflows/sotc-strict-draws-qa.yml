@@ -1,0 +1,49 @@
+name: SotC strict draw completeness preflight
+
+on:
+  push:
+    branches:
+      - fix/sotc-strict-no-dropped-draws-20261101
+    paths:
+      - ports/sotc/android/stage_renderer.py
+      - tests/test_sotc_render_completeness.py
+      - .github/workflows/sotc-strict-draws-qa.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-staged-sotc-renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python syntax and root regression test
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_renderer.py
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+      - name: Retrieve exact SotC renderer from Android release
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/AjncSystem/ShadowOfTheColossus-PC.git upstream-sotc
+          git -C upstream-sotc fetch --depth 1 origin 27f376d602cefad357299295fa51edad587272d5
+          git -C upstream-sotc checkout --detach FETCH_HEAD
+          git -C upstream-sotc submodule update --init --recursive --depth 1
+      - name: Stage and verify renderer cannot drop cold-cache geometry
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/stage_renderer.py \
+            --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+          start=s.index("static bool AsyncShadersEnabled()")
+          end=s.index("static bool AsyncTranslateEnabled()",start)
+          block=s[start:end]
+          assert "#ifdef __ANDROID__\n    return false;" in block
+          assert "#else" in block and "#endif" in block
+          assert "SotC: never silently discard an uncompiled draw" in block
+          assert 'SOTC_ASYNC_SHADERS' in block
+          print("Verified compiled Android code path disables missing-pipeline draw skips.")
+          PY
