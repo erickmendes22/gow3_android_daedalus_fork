@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <array>
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
 
 namespace Vulkan {
 class Instance;
@@ -48,6 +50,13 @@ private:
 private:
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
+    // Bachata public ARM64 path: color/depth blits work without push descriptors.
+    // DescriptorHeap stores a span, so static pool sizes must outlive the heap.
+    static constexpr std::array<vk::DescriptorPoolSize, 1> blit_pool_sizes{{
+        {vk::DescriptorType::eSampledImage, 64},
+    }};
+    bool uses_push_descriptors{};
+    Vulkan::DescriptorHeap desc_heap;
     vk::UniqueDescriptorSetLayout single_texture_descriptor_set_layout;
     vk::UniquePipelineLayout single_texture_pl_layout;
     vk::ShaderModule fs_tri_vertex;

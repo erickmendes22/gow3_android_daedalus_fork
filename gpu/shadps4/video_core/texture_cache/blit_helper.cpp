@@ -32,7 +32,12 @@ static vk::SampleCountFlagBits ToSampleCount(u32 num_samples) {
 }
 
 BlitHelper::BlitHelper(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_)
-    : instance{instance_}, scheduler{scheduler_} {
+    : instance{instance_}, scheduler{scheduler_},
+      uses_push_descriptors{instance_.MaxPushDescriptors() >= 1},
+      desc_heap{instance_, scheduler_.GetWorkSemaphore(), blit_pool_sizes, 64} {
+    LOG_INFO(Render_Vulkan, "Blit descriptors: {} (max push {})",
+             uses_push_descriptors ? "push" : "pooled descriptor sets",
+             instance.MaxPushDescriptors());
     CreateShaders();
     CreatePipelineLayouts();
 }
@@ -114,8 +119,20 @@ void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_sample
         .descriptorType = vk::DescriptorType::eSampledImage,
         .pImageInfo = &image_info,
     };
-    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *single_texture_pl_layout, 0U,
-                                texture_write);
+    if (uses_push_descriptors) {
+        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics,
+                                    *single_texture_pl_layout, 0U, texture_write);
+    } else {
+        // Bachata ARM64: no VK_KHR_push_descriptor on some Mali/Immortalis ICDs.
+        // The graphics recorder is synchronized by CommandBuffer() above; the
+        // descriptor's image view is retired through the scheduler GPU tick.
+        const auto set = desc_heap.Commit(*single_texture_descriptor_set_layout);
+        vk::WriteDescriptorSet ordinary = texture_write;
+        ordinary.dstSet = set;
+        instance.GetDevice().updateDescriptorSets(ordinary, {});
+        cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                  *single_texture_pl_layout, 0U, set, {});
+    }
 
     const MsPipelineKey key{num_samples, dst_pixel_format, false};
     auto it = std::ranges::find(color_to_ms_depth_pl, key, &MsPipeline::first);
@@ -215,8 +232,20 @@ void BlitHelper::CopyBetweenMsImages(u32 width, u32 height, u32 num_samples,
         .descriptorType = vk::DescriptorType::eSampledImage,
         .pImageInfo = &image_info,
     };
-    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, *single_texture_pl_layout, 0U,
-                                texture_write);
+    if (uses_push_descriptors) {
+        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics,
+                                    *single_texture_pl_layout, 0U, texture_write);
+    } else {
+        // Bachata ARM64: no VK_KHR_push_descriptor on some Mali/Immortalis ICDs.
+        // The graphics recorder is synchronized by CommandBuffer() above; the
+        // descriptor's image view is retired through the scheduler GPU tick.
+        const auto set = desc_heap.Commit(*single_texture_descriptor_set_layout);
+        vk::WriteDescriptorSet ordinary = texture_write;
+        ordinary.dstSet = set;
+        instance.GetDevice().updateDescriptorSets(ordinary, {});
+        cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                  *single_texture_pl_layout, 0U, set, {});
+    }
 
     const MsPipelineKey key{num_samples, pixel_format, src_msaa};
     auto it = std::ranges::find(ms_image_copy_pl, key, &MsPipeline::first);
@@ -264,7 +293,10 @@ void BlitHelper::CreatePipelineLayouts() {
         .stageFlags = vk::ShaderStageFlagBits::eFragment,
     };
     const vk::DescriptorSetLayoutCreateInfo desc_layout_ci = {
-        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .flags = uses_push_descriptors
+                     ? vk::DescriptorSetLayoutCreateFlags{
+                           vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR}
+                     : vk::DescriptorSetLayoutCreateFlags{},
         .bindingCount = 1U,
         .pBindings = &texture_binding,
     };
