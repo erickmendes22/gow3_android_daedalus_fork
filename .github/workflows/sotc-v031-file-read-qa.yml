@@ -32,7 +32,7 @@ jobs:
           assert 'touch_for_write(buffer,size);' in s
           assert 'sotc_file_bounce_size' in s
           # Ensure the legacy GoW3 code is still the fallback when SOTC_PORT is unset.
-          assert 'if (!enabled || enabled[0]!=\\'1\\'' in s
+          assert "if (!enabled || enabled[0]!='1'" in s
           print('PASS: SotC guest texture reads use userspace copy; GoW3 fallback preserved')
           PY
       - name: Verify Android staging already retains resource and draw correctness
