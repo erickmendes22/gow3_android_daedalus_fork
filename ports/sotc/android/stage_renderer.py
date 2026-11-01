@@ -126,6 +126,11 @@ endif()""",'exclude desktop-only DXGI source')
     # without changing the runtime behavior or Vulkan synchronization.
     from stage_sotc_perf_profile import patch_profile
     patch_profile(out)
+    # The Android log shows PM4 command parsing ~35-40ms/frame and the
+    # CP/draw ring reaching all 512 slots: optimize full-fidelity register
+    # snapshots and avoid an empty ARM64 busy-spin while the queue is full.
+    from stage_cp_draw_queue import patch_cp_draw_queue
+    patch_cp_draw_queue(out)
     tex=out/'shadps4/video_core/texture_cache/texture_cache.h'
     tex_text=tex.read_text()
     tex_text=swap(tex_text,'            __builtin_ia32_pause();',
