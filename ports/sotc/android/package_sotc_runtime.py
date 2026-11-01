@@ -61,6 +61,13 @@ def main():
         # another binary. The normal Gen8/custom/system choices remain present.
         vendor_zip=Path(os.environ.get('SOTC_GAMEHUB_TURNIP_ZIP', str(ROOT/ARCHIVE_RELATIVE)))
         driver_included=embed_verified_turnip(stage,vendor_zip)
+        # Never label an APK as containing the experimental GameHub DD binary
+        # if the exact user-provided archive was not present during packaging.
+        if os.environ.get("SOTC_REQUIRE_GAMEHUB_DD") == "1" and not driver_included:
+            raise SystemExit(
+                "SotC GameHub DD Turnip required but missing. Put the exact ZIP at "
+                +str(ROOT/ARCHIVE_RELATIVE)
+            )
         # No GoW3 game patches, cheats, launcher, or resolution config in SotC.
         # Existing FEX and native ABI libraries remain because the BBPROBE5
         # executable still links against their shared low-level interfaces.
