@@ -75,6 +75,18 @@ def patch_sotc_stage_spec_cpu(gpu: Path) -> None:
     } sotc_last_safe_spec{};
     /// sotc: permutations being translated by a pipeline worker'''
     s=exact(s,old,new,"per-program exact specialization cache")
+    # Async translation installs new variants and shader debug tools may
+    # replace an existing variant in place, without changing vector size.
+    s=exact(s,
+            "        modules.emplace_back(module, std::move(spec));",
+            "        modules.emplace_back(module, std::move(spec));\n"
+            "        sotc_last_safe_spec.valid = false;",
+            "invalidate memo after new permutation")
+    s=exact(s,
+            "        modules[perm_idx] = {module, std::move(spec)};",
+            "        modules[perm_idx] = {module, std::move(spec)};\n"
+            "        sotc_last_safe_spec.valid = false;",
+            "invalidate memo on async variant insertion")
     header.write_text(s)
 
     cache=gpu/'shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
