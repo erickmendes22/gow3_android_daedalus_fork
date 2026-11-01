@@ -26,6 +26,9 @@ on:
       - 'tests/test_mali_render_stage_capture.py'
       - 'tests/test_bionic_videoout_flip_retirement.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_pass_capture.h'
+      - 'tests/test_mali_pass_attachment_capture.py'
   workflow_dispatch:
 
 permissions:
@@ -76,6 +79,7 @@ jobs:
           python -m pip install unicorn==2.1.4
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v
+          python -m unittest discover -s tests -p 'test_mali_pass_attachment_capture.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
           python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
           python -m unittest discover -s tests -p 'test_bionic_eboot_source.py' -v

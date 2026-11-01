@@ -10,6 +10,7 @@
 #include "gow3_toggles.h"
 #include "gow3_settings.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
+#include "video_core/renderer_vulkan/vk_mali_pass_capture.h"
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -1297,6 +1298,27 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     DebugState.IncDrawCall();
 
+    // Collect ACTUAL pass attachment pixels, not just shader hashes or VideoOut.
+    // This is strictly opt-in on PanVK. Each copy ends the render pass,
+    // uses Runtime's tracked transition, and restores it at the next draw.
+    if (MaliPassCapture::Enabled(instance)) {
+        std::array<VideoCore::Image*, 3> colors{};
+        for (u32 cb = 0; cb < colors.size() && cb < state.num_color_attachments; ++cb) {
+            if (cb_descs[cb].first && state.color_attachments[cb].image_view)
+                colors[cb] = &texture_cache.GetImage(cb_descs[cb].first);
+        }
+        VideoCore::Image* depth = db_desc.first && state.depth_stencil_attachment.has_depth
+            ? &texture_cache.GetImage(db_desc.first) : nullptr;
+        const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+        MaliPassCapture::CaptureDraw(
+            instance, scheduler, runtime, colors, depth,
+            bool(regs.depth_control.depth_enable),
+            bool(regs.depth_control.depth_write_enable),
+            u32(pipeline->GetGraphicsKey().mrt_mask),
+            u32(pipeline->GetGraphicsKey().num_samples),
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
+            ps ? ps->pgm_hash : 0, state.width, state.height);
+    }
     ResetBindings(false);
     scheduler.KickRecording();
 }
@@ -1434,6 +1456,27 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     });
     DebugState.IncDrawCall();
 
+    // Collect ACTUAL pass attachment pixels, not just shader hashes or VideoOut.
+    // This is strictly opt-in on PanVK. Each copy ends the render pass,
+    // uses Runtime's tracked transition, and restores it at the next draw.
+    if (MaliPassCapture::Enabled(instance)) {
+        std::array<VideoCore::Image*, 3> colors{};
+        for (u32 cb = 0; cb < colors.size() && cb < state.num_color_attachments; ++cb) {
+            if (cb_descs[cb].first && state.color_attachments[cb].image_view)
+                colors[cb] = &texture_cache.GetImage(cb_descs[cb].first);
+        }
+        VideoCore::Image* depth = db_desc.first && state.depth_stencil_attachment.has_depth
+            ? &texture_cache.GetImage(db_desc.first) : nullptr;
+        const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+        MaliPassCapture::CaptureDraw(
+            instance, scheduler, runtime, colors, depth,
+            bool(regs.depth_control.depth_enable),
+            bool(regs.depth_control.depth_write_enable),
+            u32(pipeline->GetGraphicsKey().mrt_mask),
+            u32(pipeline->GetGraphicsKey().num_samples),
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
+            ps ? ps->pgm_hash : 0, state.width, state.height);
+    }
     ResetBindings(false);
     scheduler.KickRecording();
 }
