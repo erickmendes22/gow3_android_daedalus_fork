@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024]
   workflow_dispatch:
 permissions:
   contents: read
@@ -228,10 +228,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.23-boot-test
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.24-boot-test
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.23-boot-test-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.23-boot-test-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.24-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.24-boot-test-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
