@@ -1351,7 +1351,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         info.AddBindings(binding);
         const size_t perm_idx = std::distance(program->modules.begin(), it);
         worker.stages.push_back(
-            {program, &info, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
+            {program, it->info.get(), params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
         return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
                                HashCombine(params.hash, perm_idx));
     }
