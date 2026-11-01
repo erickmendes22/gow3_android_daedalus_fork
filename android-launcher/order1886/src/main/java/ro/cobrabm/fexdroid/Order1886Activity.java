@@ -223,8 +223,16 @@ public final class Order1886Activity extends Activity {
         gameFrame.addView(gameHud,hp);
         Button back=button("☰  MENU",false,v->new AlertDialog.Builder(this)
             .setTitle("The Order: 1886")
-            .setItems(new String[]{"Voltar ao launcher (parar jogo)","Retomar","Exportar log"},
-                      (dlg,i)->{if(i==0)stopGame();else if(i==2)exportLog();})
+            .setItems(new String[]{"Retomar","Mostrar/ocultar controles","Voltar ao launcher","Exportar log"},
+                      (dlg,i)->{
+                          if(i==1){
+                              boolean enabled=!prefs().getBoolean("onscreen",true);
+                              prefs().edit().putBoolean("onscreen",enabled).apply();
+                              setupTouchControls();
+                          }else if(i==2)stopGame();
+                          else if(i==3)exportLog();
+                          if(gameOpen)setGameImmersive(true);
+                      })
             .show());
         FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(dp(117),dp(43),Gravity.TOP|Gravity.LEFT);
         bp.setMargins(dp(13),dp(10),0,0);gameFrame.addView(back,bp);
@@ -355,6 +363,9 @@ public final class Order1886Activity extends Activity {
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Tela cheia / preencher a tela","fullscreen",false);
         toggle(c,"Controles virtuais","onscreen",true);
+        selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Normal","Grande"},
+            Math.max(0,Math.min(2,prefs().getInt("controlSize",0))),
+            n->{prefs().edit().putInt("controlSize",n).apply();selectionChange();});
         toggle(c,"Aquecimento de shaders em segundo plano (experimental)","warmup",false);
         actions(c,button("Aplicar e preparar jogo",true,v->prepareGame()));
         LinearLayout note=card(body,"Sobre as configurações");
@@ -653,72 +664,110 @@ public final class Order1886Activity extends Activity {
             }
         },"order1886-runtime").start();
     }
+    private int controlSize(int dpSize) {
+        int selected=prefs().getInt("controlSize",0);
+        float scale=selected==1?1.15f:selected==2?1.30f:1.0f;
+        return dp(dpSize*scale);
+    }
+    // Compact PS4 layout with unobstructed central gameplay and menu buttons.
     private void setupTouchControls(){
-        touchLayer.removeAllViews();virtualKeys.clear();
+        touchLayer.removeAllViews();
+        virtualKeys.clear();
         leftX=leftY=rightX=rightY=128;
         virtualLeftActive=virtualRightActive=false;
+        sendVirtual();
         if(!prefs().getBoolean("onscreen",true))return;
-        addStick(true,Gravity.BOTTOM|Gravity.LEFT,dp(18),dp(16));
-        addStick(false,Gravity.BOTTOM|Gravity.RIGHT,dp(18),dp(16));
-        addTouchButton("L2","l2",Gravity.LEFT|Gravity.TOP,dp(18),dp(100));
-        addTouchButton("L1","l1",Gravity.LEFT|Gravity.TOP,dp(88),dp(100));
-        addTouchButton("R1","r1",Gravity.RIGHT|Gravity.TOP,dp(88),dp(100));
-        addTouchButton("R2","r2",Gravity.RIGHT|Gravity.TOP,dp(18),dp(100));
-        addTouchButton("△","triangle",Gravity.RIGHT|Gravity.BOTTOM,dp(100),dp(185));
-        addTouchButton("○","circle",Gravity.RIGHT|Gravity.BOTTOM,dp(26),dp(137));
-        addTouchButton("×","cross",Gravity.RIGHT|Gravity.BOTTOM,dp(100),dp(88));
-        addTouchButton("□","square",Gravity.RIGHT|Gravity.BOTTOM,dp(178),dp(137));
-        // The Order uses the D-pad for inventory/selection and L3/R3 for
-        // analogue-stick clicks: expose the actual PS4 tokens used by PadBridge.
-        addTouchButton("↑","up",Gravity.LEFT|Gravity.BOTTOM,dp(212),dp(112));
-        addTouchButton("↓","down",Gravity.LEFT|Gravity.BOTTOM,dp(212),dp(13));
-        addTouchButton("←","left",Gravity.LEFT|Gravity.BOTTOM,dp(155),dp(62));
-        addTouchButton("→","right",Gravity.LEFT|Gravity.BOTTOM,dp(270),dp(62));
-        addTouchButton("L3","l3",Gravity.LEFT|Gravity.BOTTOM,dp(58),dp(155));
-        addTouchButton("R3","r3",Gravity.RIGHT|Gravity.BOTTOM,dp(58),dp(155));
-        addTouchButton("OPTIONS","options",Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,dp(82),dp(16));
-        addTouchButton("TOUCH","touchpad",Gravity.TOP|Gravity.CENTER_HORIZONTAL,dp(82),dp(12));
+        addStick(true,Gravity.BOTTOM|Gravity.LEFT,dp(17),dp(16));
+        addStick(false,Gravity.BOTTOM|Gravity.RIGHT,dp(17),dp(16));
+        addTouchButton("L2","l2",Gravity.LEFT|Gravity.TOP,dp(16),dp(60));
+        addTouchButton("L1","l1",Gravity.LEFT|Gravity.TOP,dp(62),dp(60));
+        addTouchButton("R1","r1",Gravity.RIGHT|Gravity.TOP,dp(62),dp(60));
+        addTouchButton("R2","r2",Gravity.RIGHT|Gravity.TOP,dp(16),dp(60));
+        addTouchButton("△","triangle",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(127));
+        addTouchButton("○","circle",Gravity.RIGHT|Gravity.BOTTOM,dp(115),dp(86));
+        addTouchButton("×","cross",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(45));
+        addTouchButton("□","square",Gravity.RIGHT|Gravity.BOTTOM,dp(205),dp(86));
+        addTouchButton("↑","up",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(123));
+        addTouchButton("↓","down",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(41));
+        addTouchButton("←","left",Gravity.LEFT|Gravity.BOTTOM,dp(123),dp(82));
+        addTouchButton("→","right",Gravity.LEFT|Gravity.BOTTOM,dp(205),dp(82));
+        addTouchButton("L3","l3",Gravity.LEFT|Gravity.BOTTOM,dp(107),dp(14));
+        addTouchButton("R3","r3",Gravity.RIGHT|Gravity.BOTTOM,dp(107),dp(14));
+        addTouchButton("OPTIONS","options",Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,0,dp(13));
+        addTouchButton("TOUCH","touchpad",Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,dp(12));
     }
     private void addStick(boolean left,int gravity,int marginX,int marginY){
-        TextView padView=label(left?"L":"R",22,0xffddc58c,true);
-        padView.setGravity(Gravity.CENTER);
-        padView.setBackground(shape(0x774b5360,0x779da4ad,100));
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(132),dp(132),gravity);
-        if((gravity&Gravity.RIGHT)==Gravity.RIGHT)p.rightMargin=marginX;else p.leftMargin=marginX;
+        TextView stick=label(left?"L":"R",16,0xffe0c58b,true);
+        stick.setGravity(Gravity.CENTER);
+        stick.setBackground(shape(0x66374049,0x999fa5ad,99));
+        stick.setAlpha(0.57f);
+        int diameter=controlSize(76);
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(diameter,diameter,gravity);
+        if(left)p.leftMargin=marginX;else p.rightMargin=marginX;
         p.bottomMargin=marginY;
-        touchLayer.addView(padView,p);
-        padView.setOnTouchListener((v,e)->{
-            switch(e.getActionMasked()){
-                case MotionEvent.ACTION_DOWN:case MotionEvent.ACTION_MOVE:{
-                    float x=Math.max(-1,Math.min(1,(e.getX()-v.getWidth()/2f)/(v.getWidth()*.4f)));
-                    float y=Math.max(-1,Math.min(1,(e.getY()-v.getHeight()/2f)/(v.getHeight()*.4f)));
-                    int ax=Math.round(127.5f*(x+1)),ay=Math.round(127.5f*(y+1));
+        touchLayer.addView(stick,p);
+        stick.setOnTouchListener((view,event)->{
+            switch(event.getActionMasked()){
+                case MotionEvent.ACTION_DOWN:
+                    view.setAlpha(0.90f);
+                case MotionEvent.ACTION_MOVE: {
+                    float x=Math.max(-1f,Math.min(1f,(event.getX()-view.getWidth()/2f)/(view.getWidth()*.37f)));
+                    float y=Math.max(-1f,Math.min(1f,(event.getY()-view.getHeight()/2f)/(view.getHeight()*.37f)));
+                    int ax=Math.round((x+1f)*127.5f),ay=Math.round((y+1f)*127.5f);
                     if(left){leftX=ax;leftY=ay;virtualLeftActive=true;}
                     else{rightX=ax;rightY=ay;virtualRightActive=true;}
-                    sendVirtual();return true;
+                    sendVirtual();
+                    return true;
                 }
-                case MotionEvent.ACTION_CANCEL:case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_UP:
+                    view.setAlpha(0.57f);
                     if(left){leftX=leftY=128;virtualLeftActive=false;}
                     else{rightX=rightY=128;virtualRightActive=false;}
-                    sendVirtual();return true;
+                    sendVirtual();
+                    return true;
             }
             return true;
         });
     }
     private void addTouchButton(String text,String token,int gravity,int marginX,int marginY){
-        TextView v=label(text,text.length()>3?10:18,WHITE,true);v.setGravity(Gravity.CENTER);
-        v.setBackground(shape(0x99545966,0xaa9fa5ad,40));
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(dp(text.length()>3?76:53),dp(49),gravity);
+        boolean wide=text.length()>3;
+        int width=controlSize(wide?56:38);
+        if(text.equals("L3")||text.equals("R3"))width=controlSize(32);
+        TextView view=label(text,wide?10:15,WHITE,true);
+        view.setGravity(Gravity.CENTER);
+        view.setBackground(shape(0x77404956,0x999fa5ad,40));
+        view.setAlpha(0.65f);
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,controlSize(38),gravity);
         if((gravity&Gravity.RIGHT)==Gravity.RIGHT)p.rightMargin=marginX;
         else if((gravity&Gravity.LEFT)==Gravity.LEFT)p.leftMargin=marginX;
         if((gravity&Gravity.BOTTOM)==Gravity.BOTTOM)p.bottomMargin=marginY;
         else p.topMargin=marginY;
-        touchLayer.addView(v,p);
-        v.setOnTouchListener((view,event)->{
+        touchLayer.addView(view,p);
+        final long[] pressedAt={0};
+        final int[] generation={0};
+        view.setOnTouchListener((v,event)->{
             int action=event.getActionMasked();
-            if(action==MotionEvent.ACTION_DOWN)virtualKeys.add(token);
-            else if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)virtualKeys.remove(token);
-            sendVirtual();return true;
+            if(action==MotionEvent.ACTION_DOWN){
+                generation[0]++;
+                pressedAt[0]=android.os.SystemClock.uptimeMillis();
+                v.setAlpha(0.95f);
+                virtualKeys.add(token);
+                sendVirtual();
+            }else if(action==MotionEvent.ACTION_UP){
+                v.setAlpha(0.65f);
+                final int sequence=generation[0];
+                long held=android.os.SystemClock.uptimeMillis()-pressedAt[0];
+                main.postDelayed(()->{
+                    if(generation[0]==sequence){virtualKeys.remove(token);sendVirtual();}
+                },Math.max(0,90-held));
+            }else if(action==MotionEvent.ACTION_CANCEL){
+                generation[0]++;
+                v.setAlpha(0.65f);
+                virtualKeys.remove(token);
+                sendVirtual();
+            }
+            return true;
         });
     }
     private void sendVirtual(){
