@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <xxhash.h>
+#include <unordered_set>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "ps4_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -79,6 +80,9 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
       pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift()},
       host_markers_enabled{EmulatorSettings.IsVkHostMarkersEnabled()},
       guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
+    pipeline_cache.SetSrtSync([this](Shader::Info& info) {
+        ReadBackGpuWrittenSrtSources(info);
+    });
     // Before the rasterizer is bound: Liverpool enqueues buffers only once it sees it.
     draw_prep = std::make_unique<DrawPreparation>(pipeline_cache);
     scene_targets = std::make_unique<SceneTargets>(instance, scheduler, runtime, texture_cache);
@@ -111,6 +115,42 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 Rasterizer::~Rasterizer() {
     draw_pipe.reset();
     scheduler.SetDrawPipeDrain({}); // the drain captured this rasterizer
+}
+
+void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
+#ifdef ARCH_ARM64
+    if (info.srt_source_addresses.empty()) return;
+    constexpr VAddr PageMask = ~VAddr{4095};
+    constexpr u64 PageSize = 4096;
+    constexpr unsigned MaxPasses = 4;
+    std::unordered_set<VAddr> visited;
+    for (unsigned pass = 0; pass < MaxPasses; ++pass) {
+        bool downloaded = false;
+        // Official Bachata 0.2.7: page-level GPU-written SRT source
+        // publication, then recompute the guest pointer graph up to 4 times.
+        const auto sources = info.srt_source_addresses;
+        VAddr previous_page = 0;
+        for (const VAddr address : sources) {
+            if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
+            const VAddr page = address & PageMask;
+            if (page == previous_page) continue;
+            previous_page = page;
+            if (visited.contains(page) || !IsMapped(page, PageSize) ||
+                !buffer_cache.IsRegionGpuModified(page, PageSize) ||
+                !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
+            visited.insert(page);
+            // GPU command thread only; never block in background shader workers.
+            DrainDrawPipe();
+            texture_cache.ResolveReadbacks(page, PageSize, true,
+                                           VideoCore::ReadbackSource::CpuRead);
+            downloaded |= buffer_cache.DownloadSrtSourcePage(page);
+        }
+        if (!downloaded) break;
+        info.RefreshFlatBuf();
+    }
+#else
+    (void)info;
+#endif
 }
 
 inline const AmdGpu::Regs& Rasterizer::Regs() const {
