@@ -561,13 +561,13 @@ PipelineCache::~PipelineCache() {
     SaveDriverCache();
 }
 
-// gow3: shader/pipeline compile time on the GPU thread, reported by GOW3_FRAME_STATS.
-std::atomic<u64> g_gow3_compile_ns;
-std::atomic<u32> g_gow3_compiles;
-std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
-std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
+// Original The Order renderer ABI: shared compiler statistics must keep the g_ps4_* names.\n// Other translation units (draw scheduling, stats) bind these exact exported symbols.
+std::atomic<u64> g_ps4_compile_ns;
+std::atomic<u32> g_ps4_compiles;
+std::atomic<u64> g_ps4_capture_ns, g_ps4_async_ns, g_ps4_compile_wait_ns;
+std::atomic<u64> g_ps4_snapshot_ns, g_ps4_guest_wait_ns;
 std::atomic<u32> g_gow3_pool_reuses;
-std::atomic<u32> g_gow3_pending_draws;
+std::atomic<u32> g_ps4_pending_draws;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -586,10 +586,10 @@ struct PhaseTimer {
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_gow3_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        g_ps4_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count());
-        ++g_gow3_compiles;
+        ++g_ps4_compiles;
     }
 };
 } // namespace
@@ -603,7 +603,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     if (!compiler->HasCapacity()) {
         return false;
     }
-    PhaseTimer snapshot{g_gow3_snapshot_ns};
+    PhaseTimer snapshot{g_ps4_snapshot_ns};
     auto build = std::make_shared<AsyncShaderCompilation>();
     build->device = instance.GetDevice();
     build->code.assign(params.code.begin(), params.code.end());
@@ -631,7 +631,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         // ResourcePatchingPass and LowerDynamicReadConstPass consume those addresses.
         // Keep the expensive SPIR-V/Vulkan compile on the asynchronous worker below.
         try {
-            PhaseTimer capture{g_gow3_capture_ns};
+            PhaseTimer capture{g_ps4_capture_ns};
             auto [pools, reused] = compiler_pools.Acquire();
             build->pools = std::move(pools);
             if (reused) {
@@ -651,7 +651,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         // Non-SRT ports retain the original threaded guest-read capture.
         AsyncJob<bool> capture_job;
         if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-            PhaseTimer capture{g_gow3_capture_ns};
+            PhaseTimer capture{g_ps4_capture_ns};
             auto [pools, reused] = compiler_pools.Acquire();
             build->pools = std::move(pools);
             if (reused) {
@@ -667,7 +667,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
             return false;
         }
         {
-            PhaseTimer waiting{g_gow3_guest_wait_ns};
+            PhaseTimer waiting{g_ps4_guest_wait_ns};
             capture_job.Wait();
         }
         captured = capture_job.Poll().value_or(false);
@@ -687,7 +687,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
-        PhaseTimer compile{g_gow3_async_ns};
+        PhaseTimer compile{g_ps4_async_ns};
         Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch};
         auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, build->runtime, *build->ir,
                                                     build->binding);
@@ -895,7 +895,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     sel.draw_indirect_params = params;
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
-            ++g_gow3_pending_draws;
+            ++g_ps4_pending_draws;
         }
         return nullptr;
     }
@@ -905,7 +905,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             return found->second.get();
         }
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
-            PhaseTimer capture{g_gow3_snapshot_ns};
+            PhaseTimer capture{g_ps4_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
             build->selection.regs = nullptr;
@@ -922,7 +922,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
-                PhaseTimer compile{g_gow3_async_ns};
+                PhaseTimer compile{g_ps4_async_ns};
                 auto& s = build->selection;
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
@@ -934,7 +934,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_gow3_pending_draws;
+        ++g_ps4_pending_draws;
         return nullptr;
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
@@ -1403,7 +1403,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                !EmulatorSettings.IsShaderCollect();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
-            PhaseTimer waiting{g_gow3_compile_wait_ns};
+            PhaseTimer waiting{g_ps4_compile_wait_ns};
             it_pgm->second->pending->job.Wait();
         }
         PublishShaders();
