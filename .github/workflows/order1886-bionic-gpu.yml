@@ -2,7 +2,7 @@ name: The Order 1886 - Bionic Vulkan renderer build
 
 on:
   push:
-    branches: [port/the-order-1886-bionic]
+    branches: [port/the-order-1886-bionic, fix/order1886-adreno830-pervertex-interpolation]
     paths:
       - ".github/workflows/order1886-bionic-gpu.yml"
       - "the-order-1886-android/overlay/gpu/**"
