@@ -1,0 +1,55 @@
+name: The Order 1886 - Android Bionic source and ARM64 audit
+
+on:
+  push:
+    branches: [port/the-order-1886-bionic]
+    paths:
+      - "the-order-1886-android/**"
+      - ".github/workflows/order1886-bionic-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order1886-bionic-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Bionic donor staging branch
+        uses: actions/checkout@v4
+      - name: Assemble exact upstream revision with Android CPU overlay
+        run: |
+          git clone --filter=blob:none https://github.com/JulioCacko/The-Order-1886_pc.git order-source
+          git -C order-source checkout c53cd01d032995fe622033623ab64b4cf6b02233
+          python3 the-order-1886-android/scripts/assemble.py --source order-source --output order-android
+          python3 the-order-1886-android/scripts/smoke.py order-android
+      - name: Verify native x86-64 source syntax after port overlay
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -pthread -Iorder-android -Iorder-android/src \
+             -fsyntax-only order-android/src/probe.c order-android/src/runtime.c \
+             order-android/src/runtime_thread.c order-android/src/runtime_cpu.c
+      - name: Prepare Android NDK r29
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;29.0.14206865'
+      - name: Cross-compile syntax validation for Bionic ARM64
+        run: |
+          NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
+          "$CC" -std=gnu11 -Wall -Wextra -Werror -pthread -Iorder-android -Iorder-android/src \
+             -fsyntax-only order-android/src/probe.c order-android/src/runtime.c \
+             order-android/src/runtime_thread.c
+      - name: Publish source-audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-android-source-audit
+          path: |
+            order-android/ANDROID_PORT_MANIFEST.json
+            the-order-1886-android/README.md
+          if-no-files-found: ignore
