@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <mutex>
 #include <vector>
 
@@ -80,6 +82,10 @@ std::string choice_title;
 std::vector<std::string> choice_items;
 int choice_index = 0;
 std::atomic<int> choice_result{-1}; // -1 open, -2 cancelled, else the chosen index
+#ifdef __ANDROID__
+bool android_choice_armed=false;
+unsigned android_choice_previous=0;
+#endif
 // Save pictures: decoded by BeginChoice, made textures on the present thread (null = none).
 // Closed lists' textures wait in choice_retired until the backend has destroyed them.
 std::vector<Ps4Png::Image> choice_pictures;
@@ -846,9 +852,61 @@ void BeginChoice(const std::string& title, const std::vector<std::string>& items
     choice_index = focus >= 0 && focus < int(items.size()) ? focus : 0;
     choice_result = -1;
     choice_active = true;
+#ifdef __ANDROID__
+    android_choice_armed = false;
+#endif
 }
 
+#ifdef __ANDROID__
+// Android has no SDL event pump. A PS4 SaveDataDialog must receive real
+// button transitions from the shared Android pad file, without faking OK.
+static void PollAndroidChoiceControls() {
+    if (!choice_active) return;
+    static auto previous_check = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - previous_check < std::chrono::milliseconds(12)) return;
+    previous_check = now;
+    const char* path = std::getenv("ORDER1886_PAD_FILE");
+    if (!path || !*path) return;
+    std::ifstream file{path};
+    if (!file) return;
+    unsigned held = 0;
+    std::string token;
+    int ly=128;
+    while (file >> token) {
+        if (token == "up") held |= 1;
+        else if (token == "down") held |= 2;
+        else if (token == "cross") held |= 4;
+        else if (token == "circle") held |= 8;
+        else if (token.starts_with("ly=")) {
+            try { ly = std::stoi(token.substr(3)); } catch (...) {}
+        }
+    }
+    if (ly < 70) held |= 1;
+    if (ly > 185) held |= 2;
+    if (!android_choice_armed) {
+        android_choice_previous = held;
+        android_choice_armed = true;
+        return;
+    }
+    const unsigned pressed = held & ~android_choice_previous;
+    android_choice_previous = held;
+    if (pressed & (4 | 8)) {
+        choice_result = (pressed & 4) && !choice_items.empty() ? choice_index : -2;
+        choice_active = false;
+        RetireChoiceTextures();
+        android_choice_armed = false;
+    } else if (pressed & (1 | 2)) {
+        const int count = int(choice_items.size());
+        if (count) choice_index = (choice_index + ((pressed & 1) ? -1 : 1) + count) % count;
+    }
+}
+#endif
+
 int PollChoice() {
+#ifdef __ANDROID__
+    { std::scoped_lock lock{imgui_mutex}; PollAndroidChoiceControls(); }
+#endif
     return choice_result;
 }
 

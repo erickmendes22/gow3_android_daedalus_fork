@@ -907,6 +907,20 @@ using SrtProgram = std::vector<u32>;
         return false;                                                                              \
     }
 
+// GPU-varying ReadLane/Phi and unsupported arithmetic must not execute on the host.
+static bool IsCpuSrtOffset(const IR::Value& value, u32 depth = 0) {
+    if (value.IsImmediate()) return true;
+    const IR::Inst* inst = value.TryInst();
+    if (!inst || depth >= 32) return false;
+    const auto op = inst->GetOpcode();
+    if (op == IR::Opcode::GetUserData || op == IR::Opcode::ReadConst ||
+        op == IR::Opcode::ReadConstBuffer) return true;
+    if (!IsAllowedOffsetInstruction(inst)) return false;
+    for (u32 i=0; i<inst->NumArgs(); ++i) {
+        if (!IsCpuSrtOffset(inst->Arg(i), depth+1)) return false;
+    }
+    return true;
+}
 static bool ComputeOffset(SrtProgram& p, PassInfo& pass_info, const IR::Value& off_dw);
 
 static bool EmitOperand(SrtProgram& p, PassInfo& pass_info, const IR::Value& value) {
@@ -967,6 +981,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
             subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0) {
         return;
     }
+    if (!IsCpuSrtOffset(off_dw)) return;
     if (off_dw.IsImmediate()) {
         p.insert(p.end(), {OpPushImm, off_dw.U32()});
     } else {
@@ -981,6 +996,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     auto* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
     for (auto [src_off_dw, use] : *use_list) {
+        if (!IsCpuSrtOffset(src_off_dw)) continue;
         if (src_off_dw.IsImmediate()) {
             p.insert(p.end(), {OpCopyImm, src_off_dw.U32(), pass_info.dst_off_dw});
         } else {
@@ -995,7 +1011,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         SetFlatbufOffset(use, pass_info.dst_off_dw++);
     }
     for (const auto [src_off_dw, use] : *use_list) {
-        if (pass_info.GetUsesAsPointer(use)) {
+        if (IsCpuSrtOffset(src_off_dw) && pass_info.GetUsesAsPointer(use)) {
             VisitPointer(src_off_dw, use, pass_info, p);
         }
     }
@@ -1174,7 +1190,9 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
             continue;
         }
 
-        IR::Inst* base = inst->Arg(0).Inst();
+        if (!IsCpuSrtOffset(inst->Arg(1))) continue;
+        IR::Inst* base = inst->Arg(0).TryInst();
+        if (!base || base->GetOpcode() != IR::Opcode::CompositeConstructU32x2) continue;
         if (auto* inst = base->Arg(0).TryInst();
             inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
             continue;
@@ -1186,8 +1204,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
             // lowered to bounded GPU buffers by LowerDynamicReadConstPass.
             continue;
         }
-        ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
-        ASSERT_MSG(IsReadConstSource(base->Arg(1)), "ReadConst base high not from constant memory");
+        if (!IsReadConstSource(base->Arg(0)) || !IsReadConstSource(base->Arg(1))) continue;
 
         IR::Inst* ptr_lo = base->Arg(0).Inst();
         ptr_lo = pass_info.DeduplicateInstruction(ptr_lo);
@@ -1317,14 +1334,15 @@ void LowerDynamicReadConstPass(IR::Program& program) {
             SharpFetch<AmdGpu::Buffer> fetch{};
             const bool addr64 = IR::IsReadConstAddr64(&inst);
             auto span = ReadConstByteSpan(inst.Arg(1));
-            if (!span && addr64) {
+            if (!span) {
+                // Dynamic ReadLane/Phi indices also require bounded GPU storage reads.
                 // The V# of an ADDR64 load has no bound (num_records ~0), so the lane offset is
                 // unbounded too. Bind this much of the pointer's mapping; BindBuffers clamps it to
                 // the VMA and robustBufferAccess2 reads zero beyond it, as the null bind did.
                 // ponytail: fixed cap, raise if a game indexes further from one pointer.
                 span = Addr64ReadConstBytes;
             }
-            if (!span || !ReadConstPointerFetch(inst.Arg(0), fetch)) {
+            if (!ReadConstPointerFetch(inst.Arg(0), fetch)) {
                 if (addr64 && !EmulatorSettings.IsDirectMemoryAccessEnabled()) {
                     LOG_ERROR(Render_Recompiler,
                               "Shader {:#x}: ADDR64 load base is not uniform constant memory, "
