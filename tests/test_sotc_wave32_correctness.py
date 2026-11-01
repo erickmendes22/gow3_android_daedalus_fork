@@ -26,11 +26,11 @@ class Wave32Policy(unittest.TestCase):
         self.assertEqual(script.count('if (UseAdrenoWave32()) return 32u;'), 1)
         self.assertIn('requiredSubgroupSizeStages & stage', script)
 
-    def test_bachata_precise_readback_parity_without_wave32_regression(self):
+    def test_precise_readback_default_without_wave32_regression(self):
         run = RUN.read_text()
         self.assertIn('export BB_READBACKS=${BB_READBACKS:-2}', run)
         self.assertIn('export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}', run)
-        self.assertIn('synchronous completion', run)
+        self.assertIn('SotC render coherence: mode=$BB_READBACKS async=$SOTC_RB_ASYNC', run)
         self.assertNotIn('export SOTC_ADRENO_WAVE32=0', run)
 
     def test_user_toggle_and_cache_variants_remain(self):
