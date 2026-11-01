@@ -609,6 +609,14 @@ public final class GameActivity extends Activity {
                 // blit; partial/letterbox blits always retain both operations.
                 env.put("SOTC_PRESENT_FULL_BLIT",
                         "0".equals(setting("sotc_present_full_blit")) ? "0" : "1");
+                // Exact, cache-safe CP-side FS/CS module specialization reuse.
+                // Never skips live guest SRT refreshes, draw or Vulkan work.
+                env.put("SOTC_STAGE_SPEC_MEMO",
+                        "0".equals(setting("sotc_stage_spec_memo")) ? "0" : "1");
+                // Per-draw SRT vector ownership crosses the CP->draw ring
+                // only after the consumer owns the slot; copy fallback on OFF.
+                env.put("SOTC_STAGE_SNAPSHOT_SWAP",
+                        "0".equals(setting("sotc_stage_snapshot_swap")) ? "0" : "1");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.
