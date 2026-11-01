@@ -82,7 +82,7 @@ class SotcStageSpecCpuTest(unittest.TestCase):
             self.assertIn('save("'+setting+'",if(it)"1" else "0")',ui)
             self.assertIn(setting+'=1',pack)
         self.assertIn('patch_sotc_stage_spec_cpu(out)',RENDERER.read_text())
-        self.assertIn('export BB_READBACKS=2',run)
+        self.assertIn('export BB_READBACKS=${BB_READBACKS:-2}',run)
         self.assertIn('export SOTC_ASYNC_TRANSLATE=0',run)
         # Existing deterministic strict-sync flags must not be force-enabled.
         self.assertIn('export SOTC_RB_ASYNC=',run)

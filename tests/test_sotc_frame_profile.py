@@ -81,7 +81,7 @@ class SotcFrameProfileTest(unittest.TestCase):
         self.assertIn('env.put("SOTC_PERF_PROFILE",',java)
         self.assertIn('save("sotc_perf_profile",if(it)"1" else "0")',ui)
         self.assertIn("sotc_perf_profile=0",pkg)
-        for keep in ('export BB_READBACKS=2',
+        for keep in ('export BB_READBACKS=${BB_READBACKS:-2}',
                      'export SOTC_UPLOAD_BUDGET_MB=0',
                      'export SOTC_ASYNC_TRANSLATE=0'):
             self.assertIn(keep,shell)

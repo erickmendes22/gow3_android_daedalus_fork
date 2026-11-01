@@ -19,7 +19,7 @@ class SotcRtMemo(unittest.TestCase):
         java=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java").read_text()
         ui=(ROOT/"android-launcher/app/src/main/java/com/gow3/android/ui/SotcScreen.kt").read_text()
         stage=(ROOT/"ports/sotc/android/stage_renderer.py").read_text()
-        self.assertIn("export SOTC_RT_MEMO=$"+"{SOTC_RT_MEMO:-0}",run)
+        self.assertIn("export SOTC_RT_MEMO=$"+"{SOTC_RT_MEMO:-1}",run)
         self.assertIn('env.put("SOTC_RT_MEMO",',java)
         self.assertIn('save("sotc_rt_memo",if(it)"1" else "0")',ui)
         self.assertIn("patch_sotc_rt_memo(out)",stage)

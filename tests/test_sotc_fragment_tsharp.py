@@ -30,7 +30,7 @@ class SotcFragmentTsharpTest(unittest.TestCase):
         self.assertIn("gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos", run)
         self.assertIn("profile=$sotc_gpu_profile", run)
         self.assertNotIn("gpu-user-srt-phi2-", run)
-        self.assertIn("export BB_READBACKS=2", run)
+        self.assertIn("export BB_READBACKS=${BB_READBACKS:-2}", run)
         self.assertIn("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}", run)
 
 if __name__ == "__main__":
