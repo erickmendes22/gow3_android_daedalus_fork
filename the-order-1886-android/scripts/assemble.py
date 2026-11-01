@@ -43,6 +43,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_draw_pipe.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp",
     "gpu/shim/window.cpp", "gpu/shim/ps4_write_log.cpp",
+    "gpu/shadps4/shader_recompiler/profile.h",
     "gpu/shadps4/shader_recompiler/runtime_info.h",
     "gpu/shadps4/shader_recompiler/frontend/translate/vector_interpolation.cpp",
     "gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_per_vertex.cpp",
