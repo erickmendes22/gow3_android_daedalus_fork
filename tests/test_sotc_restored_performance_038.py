@@ -9,7 +9,7 @@ SH=(ROOT/"ports/sotc/android/run-sotc-bionic.sh").read_text()
 REPACK=(ROOT/"ports/sotc/android/repack_restored_038.py").read_text()
 class Restored(unittest.TestCase):
     def test_full_native_fastpaths_default_on(self):
-        self.assertIn('values["sotc_perf_mode"]?:"performance"',UI)
+        self.assertIn('values["sotc_perf_mode"]?.takeUnless { it == "stable" } ?: "performance"',UI)
         self.assertIn('if (!"compat".equals(perfMode))',JAVA)
         for flag in ["SOTC_RB_EARLY","SOTC_HEAP_FAST","SOTC_DMA_MERGE","SOTC_DMA_INCR","SOTC_COPY_BATCH","SOTC_EVICT_ASYNC","SOTC_DEPTH_TWIN","SOTC_TC_SKIP_EMPTY","SOTC_SAMPLER_MEMO","SOTC_FIND_MEMO","SOTC_MEMO_ADDR_GEN","SOTC_PIPE_MEMO","SOTC_RT_FAST","SOTC_POP_FAST","SOTC_INDIRECT_DIRECT","SOTC_CP_YIELD","SOTC_DRIVER_CACHE"]:
             self.assertIn('env.put("'+flag+'","1");',JAVA,flag)
