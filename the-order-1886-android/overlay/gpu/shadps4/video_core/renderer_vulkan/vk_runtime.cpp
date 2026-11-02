@@ -568,10 +568,28 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
             src->info.props.is_depth == dst->info.props.is_depth) {
             CopyImage(src, dst);
         } else {
-            // Perform depth from/to color copy using the intermediate copy buffer.
-            static constexpr size_t COPY_BUFFER_SIZE = 128_MB;
-            const auto copy_ref =
-                staging_pool.Request(COPY_BUFFER_SIZE, VideoCore::MemoryType::DeviceLocal);
+            // When maintenance8 is absent (Turnip), reinterpret depth and
+            // color through an intermediate GPU buffer. The old unconditional
+            // 128 MiB allocation multiplied mobile GPU memory pressure even
+            // for an ordinary 1080p render target. Use the exact Vulkan copy
+            // footprint of BOTH source and destination formats.
+            const u32 layers = std::min(src->info.resources.layers, dst->info.resources.layers);
+            vk::BufferImageCopy region{
+                .imageSubresource{
+                    .aspectMask = src->aspect_mask & ~vk::ImageAspectFlagBits::eStencil,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = layers,
+                },
+                .imageExtent = {src->info.size.width, src->info.size.height,
+                                src->info.size.depth},
+            };
+            const u64 source_bytes = BufferImageCopySize(region, src->info.pixel_format);
+            region.imageSubresource.aspectMask =
+                dst->aspect_mask & ~vk::ImageAspectFlagBits::eStencil;
+            const u64 dest_bytes = BufferImageCopySize(region, dst->info.pixel_format);
+            const u64 bytes = std::max(source_bytes, dest_bytes);
+            const auto copy_ref = staging_pool.Request(bytes, VideoCore::MemoryType::DeviceLocal);
             CopyImageWithBuffer(src, dst, copy_ref.buffer, copy_ref.offset);
         }
     } else if (src->info.num_samples == 1 && (dst->info.num_samples > 1 || guest_ms_depth) &&
