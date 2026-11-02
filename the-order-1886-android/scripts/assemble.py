@@ -81,6 +81,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",
+    "gpu/shadps4/core/libraries/videoout/driver.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_platform.cpp",
     "tools/android/present/order1886_present_proto.h",
     "gpu/shim/ps4_overlay.cpp",
