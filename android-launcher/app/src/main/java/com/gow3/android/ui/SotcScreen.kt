@@ -362,6 +362,112 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Teste A/B: gravação Vulkan e readback assíncrono independentes e desligados por padrão. Ative um de cada vez; Readbacks 2 permanece ativo. Reinicie a cada mudança."
                          else "A/B test: Vulkan recording and async readback are independent and default OFF. Enable one at a time; required readbacks remain mode 2. Restart after changing.",
                          color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "LABORATÓRIO DE DESEMPENHO — SOTC" else "SOTC PERFORMANCE LAB",
+                        color=SotcPalette.text,fontWeight=FontWeight.Bold,fontSize=17.sp)
+                    Text(if(pt) "26 controles independentes. Altere um de cada vez e reinicie o jogo. Os valores padrão mantêm o desempenho da 0.1.34."
+                         else "26 individual controls. Change one at a time and restart. Defaults retain 0.1.34 performance.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "READBACK E SUBMISSÃO VULKAN" else "GPU READBACK AND SUBMISSION",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcToggle(if(pt) "Readback antecipado independente (experimental)" else "Ahead-of-queue GPU readback (experimental)",
+                        (values["sotc_rb_ahead"]?:"0")=="1",
+                        {save("sotc_rb_ahead",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Enviar comandos antes dos readbacks" else "Submit GPU commands before readbacks",
+                        (values["sotc_rb_early"]?:"1")=="1",
+                        {save("sotc_rb_early",if(it)"1" else "0")})
+                    SotcChoice(if(pt) "Janela básica de readback" else "Base readback window",
+                        values["sotc_rb_narrow"]?:"64",
+                        listOf("0" to "512 KiB (original)", "64" to "64 KiB", "128" to "128 KiB", "256" to "256 KiB", "512" to "512 KiB"),
+                        {save("sotc_rb_narrow",it)})
+                    SotcChoice(if(pt) "Janela máxima de readback sequencial" else "Max sequential readback",
+                        values["sotc_rb_stream_max_kb"]?:"512",
+                        listOf("128" to "128 KiB", "256" to "256 KiB", "512" to "512 KiB", "1024" to "1 MiB", "2048" to "2 MiB", "4096" to "4 MiB"),
+                        {save("sotc_rb_stream_max_kb",it)})
+                    SotcChoice(if(pt) "Enviar comandos Vulkan por intervalo" else "Periodic Vulkan submission",
+                        values["sotc_flush_us"]?:"0",
+                        listOf("0" to "OFF", "500" to "0,5 ms", "1000" to "1 ms", "2000" to "2 ms"),
+                        {save("sotc_flush_us",it)})
+                    Text(if(pt) "Readback antecipado e envio periódico estavam desligados no Adreno. São experimentais: teste um por vez. O aumento das janelas pode usar mais memória e não garante FPS." else "Ahead readbacks and periodic submits were OFF on Adreno. Experimental; test one at a time. Larger windows can increase memory use without improving FPS.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "DMA E MEMÓRIA" else "DMA AND MEMORY",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcToggle(if(pt) "Reusar guardas de heap já validadas" else "Reuse validated heap guards",
+                        (values["sotc_heap_fast"]?:"1")=="1",
+                        {save("sotc_heap_fast",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Agrupar transferências DMA vizinhas" else "Merge adjacent DMA transfers",
+                        (values["sotc_dma_merge"]?:"1")=="1",
+                        {save("sotc_dma_merge",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Varrer apenas páginas DMA modificadas" else "Incremental DMA page sweep",
+                        (values["sotc_dma_incr"]?:"1")=="1",
+                        {save("sotc_dma_incr",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Copiar buffers grandes em paralelo" else "Parallel large-buffer copies",
+                        (values["sotc_copy_batch"]?:"1")=="1",
+                        {save("sotc_copy_batch",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Liberar arenas assincronamente" else "Asynchronous memory arena eviction",
+                        (values["sotc_evict_async"]?:"1")=="1",
+                        {save("sotc_evict_async",if(it)"1" else "0")})
+                    SotcChoice(if(pt) "Páginas CPU pré-marcadas" else "CPU write-ahead pages",
+                        values["sotc_write_ahead_pages"]?:"15",
+                        listOf("0" to "OFF", "8" to "8 páginas", "15" to "15 páginas", "31" to "31 páginas"),
+                        {save("sotc_write_ahead_pages",it)})
+                    SotcChoice(if(pt) "Limite por lote DMA" else "DMA merge limit",
+                        values["sotc_dma_merge_max"]?:"16",
+                        listOf("8" to "8 MiB", "16" to "16 MiB", "32" to "32 MiB", "64" to "64 MiB"),
+                        {save("sotc_dma_merge_max",it)})
+                    SotcChoice(if(pt) "Páginas por grupo de arena" else "Vulkan arena grouping",
+                        values["sotc_arena_group"]?:"4",
+                        listOf("1" to "1 página", "2" to "2 páginas", "4" to "4 páginas", "8" to "8 páginas"),
+                        {save("sotc_arena_group",it)})
+                    Text(if(pt) "DMA incremental depende de DMA agrupado; cópias paralelas dependem do runtime. Os padrões da 0.1.34 são preservados." else "Incremental DMA depends on DMA merge; parallel copies require runtime support. 0.1.34 defaults preserved.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "CPU, TEXTURAS E PIPELINES" else "CPU, TEXTURE AND PIPELINE CACHES",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcToggle(if(pt) "Reutilizar imagens de profundidade" else "Reuse depth-image twins",
+                        (values["sotc_depth_twin"]?:"1")=="1",
+                        {save("sotc_depth_twin",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Evitar locks em páginas sem imagens" else "Skip locks on image-free pages",
+                        (values["sotc_tc_skip_empty"]?:"1")=="1",
+                        {save("sotc_tc_skip_empty",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de samplers Vulkan" else "Vulkan sampler cache",
+                        (values["sotc_sampler_memo"]?:"1")=="1",
+                        {save("sotc_sampler_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de busca de texturas" else "Texture lookup cache",
+                        (values["sotc_find_memo"]?:"1")=="1",
+                        {save("sotc_find_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Invalidar caches só no endereço alterado" else "Address-local cache invalidation",
+                        (values["sotc_memo_addr_gen"]?:"1")=="1",
+                        {save("sotc_memo_addr_gen",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache exato de pipelines" else "Exact pipeline-key cache",
+                        (values["sotc_pipe_memo"]?:"1")=="1",
+                        {save("sotc_pipe_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Busca rápida de render targets" else "Fast render target lookup",
+                        (values["sotc_rt_fast"]?:"1")=="1",
+                        {save("sotc_rt_fast",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Evitar locks Vulkan redundantes" else "Avoid redundant Vulkan pending-op locks",
+                        (values["sotc_pop_fast"]?:"1")=="1",
+                        {save("sotc_pop_fast",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Draw direto quando argumentos estão na CPU" else "Direct draw for CPU-resident arguments",
+                        (values["sotc_indirect_direct"]?:"1")=="1",
+                        {save("sotc_indirect_direct",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Ceder CPU durante esperas" else "Yield CPU during command waits",
+                        (values["sotc_cp_yield"]?:"1")=="1",
+                        {save("sotc_cp_yield",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de pipelines do driver" else "Persistent driver pipeline cache",
+                        (values["sotc_driver_cache"]?:"1")=="1",
+                        {save("sotc_driver_cache",if(it)"1" else "0")})
+                    SotcChoice(if(pt) "Threads de compilação assíncrona" else "Async shader workers",
+                        values["sotc_pipeline_workers"]?:"auto",
+                        listOf("auto" to "Auto", "2" to "2", "4" to "4", "6" to "6", "8" to "8"),
+                        {save("sotc_pipeline_workers",it)})
+                    Text(if(pt) "Já estavam ligados no núcleo da 0.1.34. Os controles servem para comparação individual; desligá-los pode reduzir FPS." else "Already enabled in 0.1.34 native code. These are individual comparison switches; disabling them may reduce FPS.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "EXPERIMENTAL — MUDANÇA VISUAL" else "EXPERIMENTAL VISUAL CHANGE",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcToggle(if(pt) "Sombras distantes intercaladas (visual experimental)" else "Stagger distant shadows (visual experimental)",
+                        (values["sotc_shadow_stagger"]?:"0")=="1",
+                        {save("sotc_shadow_stagger",if(it)"1" else "0")})
+                    Text(if(pt) "Desligada por padrão. Alterna cascatas distantes e pode atrasar sombras em movimento um quadro." else "OFF by default. Alternates far shadow cascades and can lag moving shadows by one frame.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
                         {save("sotc_taa_history",if(it)"1" else "0")})
@@ -376,7 +482,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.34 readback stream",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.35 performance lab",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
