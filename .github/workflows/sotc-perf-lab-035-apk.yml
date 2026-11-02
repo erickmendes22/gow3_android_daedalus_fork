@@ -1,0 +1,93 @@
+name: SotC 0.1.35 — independent performance lab Android APK
+on:
+  push:
+    branches: [perf/sotc-perf-lab-035]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-perf-lab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Verify 26 separate settings, actual native mechanisms and readback safety
+        run: |
+          python3 -m unittest discover -s tests -p test_sotc_perf_lab_035.py -v
+          python3 -m unittest discover -s tests -p test_sotc_readback_stream.py -v
+          python3 -m py_compile ports/sotc/android/repack_perf_lab_035.py
+          python3 -m py_compile ports/sotc/android/package_sotc_runtime.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android release signing tools
+        run: sdkmanager 'build-tools;35.0.0'
+      - name: Download signed 0.1.34 APK and verify SHA256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh run download 41440907025 --repo "$GITHUB_REPOSITORY" \
+            --name Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.34-sequential-readback --dir original
+          (cd original && sha256sum -c Shadow-of-the-Colossus-Daedalus-Android-0.1.34-sequential-readback-arm64.apk.sha256)
+      - name: Repackage original verified native SotC runtime and build 0.1.35 launcher
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/repack_perf_lab_035.py \
+            --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.34-sequential-readback-arm64.apk --root .
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - name: Verify signed 0.1.35 APK contains all 26 settings and unchanged renderer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import io,tarfile,hashlib,json
+          apk=Path('out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.35-performance-lab-arm64.apk')
+          assert apk.is_file() and apk.stat().st_size>40_000_000
+          o=json.loads(Path('ports/sotc/android/sotc_perf_lab_035.json').read_text())
+          report=json.loads(Path('out/release/sotc-native-preserved-0.1.35.json').read_text())
+          assert report['controls']==26
+          with ZipFile(apk) as z:
+              payload=z.read('assets/runtime.payload')
+              assert hashlib.sha256(payload).hexdigest()==z.read('assets/runtime.sha256').decode().strip()
+              with tarfile.open(fileobj=io.BytesIO(payload),mode='r:gz') as tar:
+                  script=tar.extractfile('sotcport/run-sotc-bionic.sh').read().decode()
+                  ini=tar.extractfile('sotcport/sotc.ini').read().decode()
+                  assert json.load(tar.extractfile('runtime-manifest.json'))['version']=='0.1.35-boot-test'
+                  for flag in o['toggles']+o['choices']:
+                      assert flag['key']+'='+flag['def'] in ini
+                      if flag['type']=='toggle':
+                          assert 'export '+flag['env']+'=' in script
+                  for name,digest in report['native_elf_sha256_unchanged'].items():
+                      assert hashlib.sha256(tar.extractfile(name).read()).hexdigest()==digest
+          print('PASS: 0.1.35 signed APK; 26 independent native settings; identical SotC native ELF hashes')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.35-performance-lab
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.35-performance-lab-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.35-performance-lab-arm64.apk.sha256
+            out/release/sotc-native-preserved-0.1.35.json
+          retention-days: 14
+          if-no-files-found: error
