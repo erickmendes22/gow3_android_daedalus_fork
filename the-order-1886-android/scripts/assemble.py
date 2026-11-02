@@ -77,6 +77,7 @@ FILES = [
     "gpu/shadps4/video_core/texture_cache/blit_helper.cpp",
     "gpu/shadps4/video_core/texture_cache/blit_helper.h",
     "gpu/shadps4/video_core/host_shaders/ms_depth_to_color.frag",
+    "gpu/shadps4/video_core/host_shaders/color_ms_to_ms_depth.frag",
     "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp",

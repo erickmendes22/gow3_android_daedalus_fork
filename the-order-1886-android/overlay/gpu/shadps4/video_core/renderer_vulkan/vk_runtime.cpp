@@ -609,6 +609,27 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
         blit_helper->ReinterpretColorAsMsDepth(
             dst->info.size.width, dst->info.size.height, dst->info.num_samples,
             src->info.pixel_format, dst->info.pixel_format, src->GetImage(), dst->GetImage());
+    } else if (!src->info.props.is_depth && dst->info.props.is_depth &&
+               src->info.num_samples == dst->info.num_samples &&
+               (src->info.num_samples == 2 || src->info.num_samples == 4) &&
+               src->info.pixel_format == vk::Format::eR32Sfloat &&
+               dst->info.pixel_format == vk::Format::eD32Sfloat) {
+        // Preserve each MSAA sample in this unsupported color-to-depth alias.
+        scheduler.EndRendering();
+        bool needs_flush = Transit(src, vk::ImageLayout::eShaderReadOnlyOptimal,
+                                   vk::PipelineStageFlagBits2::eFragmentShader,
+                                   vk::AccessFlagBits2::eShaderRead);
+        needs_flush |= Transit(dst, vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                               vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                                   vk::PipelineStageFlagBits2::eLateFragmentTests,
+                               vk::AccessFlagBits2::eDepthStencilAttachmentWrite);
+        if (needs_flush) FlushBarriers();
+        blit_helper->ReinterpretColorAsMsDepth(
+            dst->info.size.width, dst->info.size.height, dst->info.num_samples,
+            src->info.pixel_format, dst->info.pixel_format, src->GetImage(),
+            dst->GetImage(), true);
+        dst->flags |= (src->flags & VideoCore::ImageFlagBits::GpuModified);
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
     } else if (src->info.props.is_depth && !dst->info.props.is_depth &&
                src->info.num_samples > 1 && src->info.num_samples <= 4 &&
                dst->info.num_samples == 1) {

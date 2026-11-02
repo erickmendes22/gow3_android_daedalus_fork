@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 12
-        versionName = "0.1.10-render-syncguard"
+        versionCode = 13
+        versionName = "0.1.11-msaa-depth-alias"
     }
     buildTypes {
         release {
