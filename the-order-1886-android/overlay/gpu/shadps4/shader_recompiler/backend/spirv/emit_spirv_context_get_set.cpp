@@ -151,8 +151,13 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             // Smooth I/J emitted by the auxiliary geometry shader. No AMD/KHR extension needed.
             return ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32,
                                   ctx.bary_coord_smooth, ctx.ConstU32(comp)));
-        } else {
+        } else if (ctx.profile.supports_fragment_shader_barycentric) {
             return ctx.OpCompositeExtract(ctx.F32[1], ctx.OpLoad(ctx.F32[3], ctx.bary_coord), comp);
+        } else {
+            // The physical GPU cannot supply native barycentrics and the aux GS
+            // was rejected (unsupported geometry stage or interface limits).
+            // Never dereference an uninitialized SPIR-V input ID on Turnip.
+            return ctx.f32_zero_value;
         }
     case IR::Attribute::BaryCoordSmoothCentroid:
         if (ctx.profile.supports_amd_shader_explicit_vertex_parameter) {
@@ -162,9 +167,11 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         } else if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
             return ctx.OpCompositeExtract(ctx.F32[1],
                 ctx.OpInterpolateAtCentroid(ctx.F32[2], ctx.bary_coord_smooth), comp);
-        } else {
+        } else if (ctx.profile.supports_fragment_shader_barycentric) {
             return ctx.OpCompositeExtract(
                 ctx.F32[1], ctx.OpInterpolateAtCentroid(ctx.F32[3], ctx.bary_coord), comp);
+        } else {
+            return ctx.f32_zero_value;
         }
     case IR::Attribute::BaryCoordSmoothSample:
         if (ctx.profile.supports_amd_shader_explicit_vertex_parameter) {
@@ -175,14 +182,21 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             return ctx.OpCompositeExtract(ctx.F32[1],
                 ctx.OpInterpolateAtSample(ctx.F32[2], ctx.bary_coord_smooth,
                                           ctx.OpLoad(ctx.U32[1], ctx.sample_index)), comp);
-        } else {
+        } else if (ctx.profile.supports_fragment_shader_barycentric) {
             return ctx.OpCompositeExtract(
                 ctx.F32[1],
                 ctx.OpInterpolateAtSample(ctx.F32[3], ctx.bary_coord,
                                           ctx.OpLoad(ctx.U32[1], ctx.sample_index)),
                 comp);
+        } else {
+            return ctx.f32_zero_value;
         }
     case IR::Attribute::BaryCoordNoPersp:
+        if (!ctx.profile.supports_amd_shader_explicit_vertex_parameter &&
+            !ctx.profile.supports_fragment_shader_barycentric &&
+            !CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
+            return ctx.f32_zero_value;
+        }
         return ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_nopersp,
                                                         ctx.ConstU32(comp)));
     case IR::Attribute::BaryCoordNoPerspSample:
@@ -190,6 +204,10 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             return ctx.OpCompositeExtract(ctx.F32[1],
                 ctx.OpInterpolateAtSample(ctx.F32[2], ctx.bary_coord_nopersp,
                                           ctx.OpLoad(ctx.U32[1], ctx.sample_index)), comp);
+        }
+        if (!ctx.profile.supports_amd_shader_explicit_vertex_parameter &&
+            !ctx.profile.supports_fragment_shader_barycentric) {
+            return ctx.f32_zero_value;
         }
         return ctx.OpLoad(
             ctx.F32[1],
@@ -210,6 +228,10 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.frag_coord, ctx.ConstU32(3U)));
         if (comp == 2) {
             return inv_w;
+        }
+        if (!CanPerVertexInterp(ctx.profile, ctx.runtime_info) &&
+            !ctx.profile.supports_fragment_shader_barycentric) {
+            return ctx.f32_zero_value;
         }
         const Id ij = CanPerVertexInterp(ctx.profile, ctx.runtime_info)
             ? ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_smooth,

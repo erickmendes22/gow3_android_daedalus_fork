@@ -60,7 +60,7 @@ struct Profile {
     bool supports_shader_stencil_export{};
     // Deliberately changes the persisted profile schema, forcing the Android cache to
     // discard SPIR-V compiled before the per-vertex interpolation fallback.
-    u32 order1886_interpolation_cache_revision{4u};
+    u32 order1886_interpolation_cache_revision{5u};
 
     bool operator==(const Profile&) const = default;
 };
