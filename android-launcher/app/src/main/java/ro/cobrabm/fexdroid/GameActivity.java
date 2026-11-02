@@ -631,6 +631,10 @@ public final class GameActivity extends Activity {
                 // to the original Bionic pthread RW lock on any uncertainty.
                 env.put("SOTC_VM_RANGE_CACHE",
                         "0".equals(setting("sotc_vm_range_cache")) ? "0" : "1");
+                // Experimental fast writes into guest backing during GPU readback.
+                // Disabled by default, independent from BB_READBACKS 0/1/2.
+                env.put("SOTC_WRITE_FAST",
+                        "1".equals(setting("sotc_write_fast")) ? "1" : "0");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.

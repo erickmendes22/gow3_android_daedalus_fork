@@ -326,8 +326,12 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                                       else "Safe guest-memory region cache (CPU)",
                         (values["sotc_vm_range_cache"]?:"1")=="1",
                         {save("sotc_vm_range_cache",if(it)"1" else "0")})
-                    Text(if(pt) "O cache de regiões evita consultas repetidas ao lock da memória enquanto os mapeamentos continuarem válidos. Não modifica texturas, readback ou shaders. OFF restaura o cache anterior; reinicie após alterar."
-                         else "Region cache avoids repeated guest-memory locks while mappings remain valid. Does not change textures, readbacks, or shaders. OFF restores the previous cache; restart to apply.",
+                    SotcToggle(if(pt) "Escrita rápida de readback GPU (experimental)"
+                                      else "Fast GPU readback writeback (experimental)",
+                        (values["sotc_write_fast"]?:"0")=="1",
+                        {save("sotc_write_fast",if(it)"1" else "0")})
+                    Text(if(pt) "O cache de regiões da 0.1.32 permanece ligado. A escrita rápida de readback usa até 4 regiões e 256 KiB com bloqueio seguro de remapeamentos; desligada por padrão por ganhos mistos no benchmark. Reinicie para aplicar."
+                         else "The 0.1.32 region cache remains ON. Fast GPU readback writes use up to 4 regions / 256 KiB with a guarded remap barrier. OFF by default after mixed synthetic results. Restart to apply.",
                         color=SotcPalette.secondary,fontSize=11.sp)
                     Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.29 e reinicie."
                          else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.29, then restart.",
@@ -370,7 +374,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.32 Bionic VM cache",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.33 guarded writeback",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."

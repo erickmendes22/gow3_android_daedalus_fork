@@ -176,12 +176,19 @@ export SOTC_RT_MEMO=${SOTC_RT_MEMO:-1}
 # Native Bionic guest-memory region cache (64 writes journal, 512 direct slots).
 # 0 restores generation-only eight-entry cache and all old lock checks.
 export SOTC_VM_RANGE_CACHE=${SOTC_VM_RANGE_CACHE:-1}
+# Fast GPU readback writes: OFF by default; enabled only when user opts in.
+# Atomic mapping gate prevents races with VMA remaps; fallback retains pthread.
+export SOTC_WRITE_FAST=${SOTC_WRITE_FAST:-0}
+case "$SOTC_WRITE_FAST" in
+  0|1) ;;
+  *) echo "Invalid SOTC_WRITE_FAST (expected 0/1)" >&2; exit 2 ;;
+esac
 case "$SOTC_VM_RANGE_CACHE" in
   0|1) ;;
   *) echo "Invalid SOTC_VM_RANGE_CACHE (expected 0/1)" >&2; exit 2 ;;
 esac
 echo "SotC CPU hot path: shader_spec_exact=$SOTC_STAGE_SPEC_MEMO stage_snapshot_swap=$SOTC_STAGE_SNAPSHOT_SWAP reg_snapshot_memo=$SOTC_REG_SNAPSHOT_MEMO"
-echo "SotC Bionic VM: interval cache=$SOTC_VM_RANGE_CACHE; reserve logging capped to 16 (BB_MEMORY_LOG=1 overrides)"
+echo "SotC Bionic VM: interval cache=$SOTC_VM_RANGE_CACHE guarded_writeback=$SOTC_WRITE_FAST; reserve logging capped to 16"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"
 # would STILL activate it. Unset both unless explicitly selected in UI.

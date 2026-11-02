@@ -1,7 +1,7 @@
 name: SotC Android ARM64 Bionic boot-test APK
 on:
   push:
-    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026, diag/sotc-real-frame-bottleneck-027, perf/sotc-stage-spec-cpu-029, perf/sotc-cp-register-snapshot-030, feat/sotc-rt-memo-readbacks-031, perf/sotc-bionic-vma-cache-032]
+    branches: [sotc-apk-integration, fix/sotc-turnip-nomultipos-20261031, fix/sotc-texture-integrity-20261031, fix/sotc-gs-texture-validated-20261031, fix/sotc-real-lod-and-blur-20261031, diag/sotc-gpu-ab-20261031, fix/sotc-adreno-tess-barycentric-20261031, diag/sotc-real-gpu-pass-capture-20261031, fix/sotc-meta-clear-output-integrity-20261031, feat/sotc-turnip-bachata-022, feat/sotc-perf-controls-022, feat/sotc-fastpaths-gamehub-driver-023, feat/sotc-async-shader-test-gamehub-024, feat/sotc-present-copy-async-compute-025, fix/sotc-540p-360p-render-026, diag/sotc-real-frame-bottleneck-027, perf/sotc-stage-spec-cpu-029, perf/sotc-cp-register-snapshot-030, feat/sotc-rt-memo-readbacks-031, perf/sotc-bionic-vma-cache-032, feat/sotc-guarded-writeback-033]
   workflow_dispatch:
 permissions:
   contents: read
@@ -61,6 +61,10 @@ jobs:
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread -fsyntax-only \
             src/runtime_memory.c
           grep -Fq 'SOTC_VM_RANGE_CACHE' src/runtime_memory.c
+          grep -Fq 'SOTC_WRITE_FAST' src/runtime_memory.c
+          grep -Fq 'sotc_wb_writer_begin();' src/runtime_memory.c
+          grep -Fq 'sotc_wb_writer_end();' src/runtime_memory.c
+          python3 -m unittest discover -s tests -p 'test_sotc_writeback_mode.py' -v
           grep -Fq 'sotc_vm_mark_dirty(address,address+size)' src/runtime_memory.c
           grep -Fq 'sotc_vm_mark_dirty(start,end)' src/runtime_memory.c
           clang++ -std=c++20 -O2 -Wall -Wextra -Werror tests/test_sotc_stage_spec_cpu.cpp -o "$RUNNER_TEMP/sotc-stage-spec-cpu"
@@ -271,10 +275,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.32-bionic-vma-cache
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.33-guarded-writeback
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.32-bionic-vma-cache-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.32-bionic-vma-cache-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.33-guarded-writeback-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.33-guarded-writeback-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
