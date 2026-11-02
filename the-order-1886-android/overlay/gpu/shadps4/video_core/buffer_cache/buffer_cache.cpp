@@ -429,6 +429,43 @@ void BufferCache::WaitDeferredReadbacks(VAddr addr, u64 size) {
     ApplyDeferredReadbacks();
 }
 
+// A shader can trace many different GPU-written SRT pages. The old path
+// waited for a deferred timeline tick separately for *every* page, potentially
+// issuing multiple queue flushes while shader translation held the GPU thread.
+// The pages come from ReadBackGpuWrittenSrtSources in sorted order.
+bool BufferCache::WaitDeferredSrtPages(std::span<const VAddr> sorted_pages) {
+    if (sorted_pages.empty() || !has_pending_readbacks.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    constexpr VAddr PageMask = ~VAddr{4095};
+    u64 needed = 0;
+    {
+        std::scoped_lock lock{deferred_mutex};
+        for (const auto& batch : deferred_readbacks) {
+            for (const auto& item : batch.items) {
+                const VAddr first_page = item.addr & PageMask;
+                const auto it = std::lower_bound(sorted_pages.begin(), sorted_pages.end(),
+                                                 first_page);
+                if (it != sorted_pages.end() && *it < item.addr + item.size) {
+                    needed = std::max(needed, batch.tick);
+                }
+            }
+        }
+    }
+    if (!needed) {
+        return false;
+    }
+    if (!scheduler.IsFree(needed)) {
+        if (needed >= scheduler.CurrentTick()) {
+            scheduler.Finish();
+        } else {
+            scheduler.Wait(needed);
+        }
+    }
+    ApplyDeferredReadbacks();
+    return true;
+}
+
 bool BufferCache::PendingReadback(VAddr addr, u64 size) {
     if (!has_pending_readbacks.load(std::memory_order_relaxed)) {
         return false;
@@ -686,7 +723,10 @@ bool BufferCache::DownloadSrtSourcePages(std::span<const VAddr> pages) {
     };
     std::vector<PendingPage> pending;
     pending.reserve(pages.size());
-    bool published = false;
+    // Publish older GPU snapshots once before examining any of these pages.
+    // An already-finished deferred snapshot also counts as newly published data
+    // and requires the guest SRT pointer graph to be refreshed.
+    bool published = WaitDeferredSrtPages(pages);
 
     for (const VAddr page : pages) {
         if (page & (PageSize - 1)) {
@@ -695,13 +735,8 @@ bool BufferCache::DownloadSrtSourcePages(std::span<const VAddr> pages) {
         if (!IsRangeGpuWritten(page, PageSize) || !IsRegionGpuModified(page, PageSize)) {
             continue;
         }
-        // DeferReadback tracks an older GPU copy in another queue submission.
-        // Retire it before scheduling a new copy of this same guest page.
-        WaitDeferredReadbacks(page, PageSize);
-        if (!IsRangeGpuWritten(page, PageSize)) {
-            published = true;
-            continue;
-        }
+        // Earlier deferred pages were published above as one group. Do not
+        // wait again per page, or this shader can repeatedly stall the GPU.
         const auto* arena = GetArena(page >> block_shift, (page + PageSize - 1) >> block_shift);
         boost::container::small_vector<vk::BufferCopy, 1> copies;
         u64 bytes = 0;

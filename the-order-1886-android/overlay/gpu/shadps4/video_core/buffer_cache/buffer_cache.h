@@ -220,6 +220,7 @@ private:
     void ApplyDeferredReadbacks();
     /// Waits for the deferred readbacks overlapping the range and writes them to guest memory.
     void WaitDeferredReadbacks(VAddr addr, u64 size);
+    bool WaitDeferredSrtPages(std::span<const VAddr> sorted_pages);
     bool PendingReadback(VAddr addr, u64 size);
     std::mutex deferred_mutex;
     std::deque<DeferredBatch> deferred_readbacks; ///< oldest first
