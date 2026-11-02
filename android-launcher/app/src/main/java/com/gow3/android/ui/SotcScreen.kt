@@ -164,6 +164,8 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
     val ctx=LocalContext.current
     val config=remember { File(ctx.filesDir,"sotcport/sotc.ini") }
     var values by remember { mutableStateOf(Gow3Ini.read(config)) }
+    // Only a small stable menu is visible until explicitly expanded.
+    var advancedOptionsVisible by remember { mutableStateOf(false) }
     var gameDir by remember(pkgGeneration) { mutableStateOf(
         ctx.getSharedPreferences(SotcPaths.prefsName(ctx),Context.MODE_PRIVATE).getString("game_dir",null)) }
     // Reopening a tab refreshes the selected game folder after a SAF picker.
@@ -228,6 +230,15 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                             "fps60" to "60 FPS (patch)"),{save("sotc_fps_mode",it)})
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
+                    SotcChoice(if(pt) "Perfil de desempenho" else "Performance profile",
+                        values["sotc_perf_mode"]?:"stable",
+                        listOf("stable" to (if(pt) "Estável (0.1.34)" else "Stable (0.1.34)"),
+                            "ahead" to (if(pt) "Teste — readback antecipado" else "Test — ahead GPU readback"),
+                            "submit" to (if(pt) "Teste — envio Vulkan 1 ms" else "Test — Vulkan submit 1 ms")),
+                        {save("sotc_perf_mode",it)})
+                    Text(if(pt) "Estável mantém exatamente os ajustes nativos da 0.1.34. Os outros perfis são experimentais e ainda não têm ganho de FPS comprovado. Reinicie após mudar."
+                         else "Stable preserves the exact 0.1.34 native settings. Other modes are experimental and not proven to increase FPS. Restart after switching.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcChoice(if(pt) "Readback da GPU" else "GPU readback mode",
                         values["sotc_readbacks"]?:"2",
                         listOf("0" to (if(pt) "0 — Desativado" else "0 — Disabled"),
@@ -278,6 +289,9 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Mostrar opções técnicas avançadas" else "Show advanced technical options",
+                        advancedOptionsVisible,{advancedOptionsVisible=it})
+                    if (advancedOptionsVisible) {
                     SotcToggle(if(pt) "Compilação assíncrona de shaders (experimental)"
                                       else "Asynchronous shader compilation (experimental)",
                         (values["sotc_async_shaders"]?:"0")=="1",
@@ -362,6 +376,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Teste A/B: gravação Vulkan e readback assíncrono independentes e desligados por padrão. Ative um de cada vez; Readbacks 2 permanece ativo. Reinicie a cada mudança."
                          else "A/B test: Vulkan recording and async readback are independent and default OFF. Enable one at a time; required readbacks remain mode 2. Restart after changing.",
                          color=SotcPalette.secondary,fontSize=11.sp)
+                    }
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
                         {save("sotc_taa_history",if(it)"1" else "0")})
@@ -376,7 +391,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.34 readback stream",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.36 stable/simple",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."

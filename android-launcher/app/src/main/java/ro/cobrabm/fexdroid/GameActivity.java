@@ -655,6 +655,15 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_RB_STREAM",
                         "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
                 env.put("SOTC_RB_STREAM_MAX_KB","512");
+                // 0.1.36: stable must have exactly the 0.1.34 environment.
+                // Crucially, do not export native default flags or FLUSH_EVERY=0.
+                // Old 0.1.35 lab preferences are deliberately ignored.
+                String perfMode=setting("sotc_perf_mode");
+                if ("ahead".equals(perfMode)) {
+                    env.put("SOTC_RB_AHEAD","1");
+                } else if ("submit".equals(perfMode)) {
+                    env.put("SOTC_FLUSH_US","1000");
+                }
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();
