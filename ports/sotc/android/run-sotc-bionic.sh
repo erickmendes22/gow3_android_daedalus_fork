@@ -114,7 +114,7 @@ esac
 export SOTC_RB_STREAM=${SOTC_RB_STREAM:-1}
 export SOTC_RB_STREAM_MAX_KB=${SOTC_RB_STREAM_MAX_KB:-512}
 case "$SOTC_RB_STREAM" in 0|1) ;; *) echo "Invalid SOTC_RB_STREAM" >&2; exit 2 ;; esac
-case "$SOTC_RB_STREAM_MAX_KB" in 512) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
+case "$SOTC_RB_STREAM_MAX_KB" in 512|1024) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
 if [ "$BB_READBACKS" != "2" ]; then export SOTC_RB_STREAM=0; fi
 echo "SotC readback streaming: enabled=$SOTC_RB_STREAM max_kib=$SOTC_RB_STREAM_MAX_KB mode=$BB_READBACKS"
 # Independent asynchronous GPU readback execution toggle.
