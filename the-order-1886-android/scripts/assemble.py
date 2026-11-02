@@ -72,6 +72,7 @@ FILES = [
     "gpu/shadps4/shader_recompiler/ir/passes/srt.h",
     "gpu/shadps4/shader_recompiler/ir/passes/srt_arm64.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
+    "gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp",
     "gpu/shadps4/video_core/texture_cache/blit_helper.cpp",
     "gpu/shadps4/video_core/texture_cache/blit_helper.h",
