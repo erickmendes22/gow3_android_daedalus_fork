@@ -44,6 +44,9 @@ struct Profile {
     bool supports_amd_shader_explicit_vertex_parameter{};
     bool supports_fragment_shader_barycentric{};
     bool supports_geometry_stage{};
+    u32 max_fragment_input_components{};
+    u32 max_geometry_output_components{};
+    u32 max_geometry_total_output_components{};
     bool supports_shader_subgroup_clock{};
     bool has_broken_spirv_clamp{};
     bool lower_left_origin_mode{};
@@ -57,7 +60,7 @@ struct Profile {
     bool supports_shader_stencil_export{};
     // Deliberately changes the persisted profile schema, forcing the Android cache to
     // discard SPIR-V compiled before the per-vertex interpolation fallback.
-    u32 order1886_interpolation_cache_revision{1u};
+    u32 order1886_interpolation_cache_revision{3u};
 
     bool operator==(const Profile&) const = default;
 };

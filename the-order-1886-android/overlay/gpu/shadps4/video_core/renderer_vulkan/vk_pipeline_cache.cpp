@@ -481,6 +481,12 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
             instance_.IsAmdShaderExplicitVertexParameterSupported(),
         .supports_fragment_shader_barycentric = instance_.IsFragmentShaderBarycentricSupported(),
         .supports_geometry_stage = instance_.IsGeometryStageSupported(),
+        .max_fragment_input_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxFragmentInputComponents,
+        .max_geometry_output_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxGeometryOutputComponents,
+        .max_geometry_total_output_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxGeometryTotalOutputComponents,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,

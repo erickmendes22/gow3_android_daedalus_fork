@@ -16,13 +16,27 @@ constexpr u32 SPIRV_VERSION_1_5 = 0x00010500;
 
 bool CanPerVertexInterp(const Profile& profile, const RuntimeInfo& runtime_info) {
     const auto& fs_info = runtime_info.hw.fs;
-    // The generated GS must be supported by this *physical device*; generating it
-    // merely because AMD/KHR barycentrics are absent can hang drivers with GS disabled.
-    // Clip-distance emulation reserves a location the aux GS cannot pass through.
-    return profile.supports_geometry_stage && fs_info.is_vs_direct &&
-           fs_info.prim_type == AmdGpu::PrimitiveType::TriangleList &&
-           !profile.supports_amd_shader_explicit_vertex_parameter &&
-           !profile.supports_fragment_shader_barycentric && !fs_info.clip_distance_emulation;
+    // Reject an aux GS that would exceed the *device's actual interface limits*.
+    // The shader translation and GS creation must make this decision identically,
+    // otherwise the FS expects 3 flat locations for an attribute with no producer.
+    if (!profile.supports_geometry_stage || !fs_info.is_vs_direct ||
+        fs_info.prim_type != AmdGpu::PrimitiveType::TriangleList ||
+        profile.supports_amd_shader_explicit_vertex_parameter ||
+        profile.supports_fragment_shader_barycentric ||
+        fs_info.clip_distance_emulation) {
+        return false;
+    }
+    // Conservative bound: every live input could be expanded to three vec4s.
+    // Each GS vertex also emits built-in Position and potentially two vec2 bary
+    // bases; include safety headroom for PointSize and driver accounting.
+    u32 live_inputs = 0;
+    for (u32 i = 0; i < fs_info.num_inputs; ++i) {
+        live_inputs += !fs_info.inputs[i].IsDefault();
+    }
+    const u64 output_components = u64(live_inputs) * 12u + 12u;
+    return output_components <= profile.max_fragment_input_components &&
+           output_components <= profile.max_geometry_output_components &&
+           3u * output_components <= profile.max_geometry_total_output_components;
 }
 
 bool NeedsPerVertexAuxGS(const Profile& profile, const Info& info, const RuntimeInfo& runtime_info) {
