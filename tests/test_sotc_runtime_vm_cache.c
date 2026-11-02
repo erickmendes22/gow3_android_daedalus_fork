@@ -136,6 +136,11 @@ int main(void) {
     assert(runtime_memory_write_backing(first+PAGE+32,replacement,sizeof(replacement))==1);
     assert(sotc_write_fast_hits==fast_before); // read-locked fallback
     assert(memcmp(backing_base+32,replacement,sizeof(replacement))==0);
+    // The fallback must seed the thread-local mapping cache. A second
+    // identical guest-GPU write then takes the fast path with the NEW phys.
+    assert(runtime_memory_write_backing(first+PAGE+32,replacement,sizeof(replacement))==1);
+    assert(sotc_write_fast_hits==fast_before+1);
+    assert(memcmp(backing_base+32,replacement,sizeof(replacement))==0);
 
     /* Reserved page must return failure; original fallback may write the
      * earlier mapped part, matching its previous partial-write semantics. */

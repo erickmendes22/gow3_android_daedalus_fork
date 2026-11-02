@@ -900,15 +900,21 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
 }
 /* Validate the whole readback range with the cache before writing anything. */
 static int sotc_write_backing_fast(uintptr_t address, const void *data, uint64_t size);
+static void cache_region(size_t i, uintptr_t accessed_address);
 /* Original guest backing write is retained as the complete fallback. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size) {
     if (sotc_write_backing_fast(address,data,size)) return 1;
     read_lock();
     int ok=1;
+    // Populate per-thread cache on a miss, so the NEXT write of the same
+    // guest region can use the verified short-copy path. Only prime when
+    // explicitly opted in; the 0.1.32 behavior stays unchanged otherwise.
+    const int prime_cache=sotc_wb_enabled();
     for (uintptr_t at=address, end=address+size; at<end && ok;) {
         size_t i=vma_index(at);
         if (i==vma_count || vmas[i].start>at || vmas[i].kind==KIND_RESERVED) { ok=0; break; }
-        uint64_t n=(vmas[i].end<end ? vmas[i].end : end)-at;
+        const uint64_t n=(vmas[i].end<end ? vmas[i].end : end)-at;
+        if (prime_cache) cache_region(i,at); // under the original read lock
         memcpy(backing_base+vmas[i].phys+(at-vmas[i].start),(const unsigned char *)data+(at-address),n);
         at+=n;
     }
