@@ -1,0 +1,391 @@
+{
+  "base": "0.1.34",
+  "version": "0.1.35",
+  "toggles": [
+    {
+      "key": "sotc_rb_ahead",
+      "env": "SOTC_RB_AHEAD",
+      "def": "0",
+      "group": "rb",
+      "pt": "Readback antecipado independente (experimental)",
+      "en": "Ahead-of-queue GPU readback (experimental)",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_rb_early",
+      "env": "SOTC_RB_EARLY",
+      "def": "1",
+      "group": "rb",
+      "pt": "Enviar comandos antes dos readbacks",
+      "en": "Submit GPU commands before readbacks",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_heap_fast",
+      "env": "SOTC_HEAP_FAST",
+      "def": "1",
+      "group": "memory",
+      "pt": "Reusar guardas de heap já validadas",
+      "en": "Reuse validated heap guards",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_dma_merge",
+      "env": "SOTC_DMA_MERGE",
+      "def": "1",
+      "group": "memory",
+      "pt": "Agrupar transferências DMA vizinhas",
+      "en": "Merge adjacent DMA transfers",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_dma_incr",
+      "env": "SOTC_DMA_INCR",
+      "def": "1",
+      "group": "memory",
+      "pt": "Varrer apenas páginas DMA modificadas",
+      "en": "Incremental DMA page sweep",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_copy_batch",
+      "env": "SOTC_COPY_BATCH",
+      "def": "1",
+      "group": "memory",
+      "pt": "Copiar buffers grandes em paralelo",
+      "en": "Parallel large-buffer copies",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_evict_async",
+      "env": "SOTC_EVICT_ASYNC",
+      "def": "1",
+      "group": "memory",
+      "pt": "Liberar arenas assincronamente",
+      "en": "Asynchronous memory arena eviction",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_depth_twin",
+      "env": "SOTC_DEPTH_TWIN",
+      "def": "1",
+      "group": "cache",
+      "pt": "Reutilizar imagens de profundidade",
+      "en": "Reuse depth-image twins",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_tc_skip_empty",
+      "env": "SOTC_TC_SKIP_EMPTY",
+      "def": "1",
+      "group": "cache",
+      "pt": "Evitar locks em páginas sem imagens",
+      "en": "Skip locks on image-free pages",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_sampler_memo",
+      "env": "SOTC_SAMPLER_MEMO",
+      "def": "1",
+      "group": "cache",
+      "pt": "Cache de samplers Vulkan",
+      "en": "Vulkan sampler cache",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_find_memo",
+      "env": "SOTC_FIND_MEMO",
+      "def": "1",
+      "group": "cache",
+      "pt": "Cache de busca de texturas",
+      "en": "Texture lookup cache",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_memo_addr_gen",
+      "env": "SOTC_MEMO_ADDR_GEN",
+      "def": "1",
+      "group": "cache",
+      "pt": "Invalidar caches só no endereço alterado",
+      "en": "Address-local cache invalidation",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_pipe_memo",
+      "env": "SOTC_PIPE_MEMO",
+      "def": "1",
+      "group": "cache",
+      "pt": "Cache exato de pipelines",
+      "en": "Exact pipeline-key cache",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_rt_fast",
+      "env": "SOTC_RT_FAST",
+      "def": "1",
+      "group": "cache",
+      "pt": "Busca rápida de render targets",
+      "en": "Fast render target lookup",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_pop_fast",
+      "env": "SOTC_POP_FAST",
+      "def": "1",
+      "group": "cache",
+      "pt": "Evitar locks Vulkan redundantes",
+      "en": "Avoid redundant Vulkan pending-op locks",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_indirect_direct",
+      "env": "SOTC_INDIRECT_DIRECT",
+      "def": "1",
+      "group": "cache",
+      "pt": "Draw direto quando argumentos estão na CPU",
+      "en": "Direct draw for CPU-resident arguments",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_cp_yield",
+      "env": "SOTC_CP_YIELD",
+      "def": "1",
+      "group": "cache",
+      "pt": "Ceder CPU durante esperas",
+      "en": "Yield CPU during command waits",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_driver_cache",
+      "env": "SOTC_DRIVER_CACHE",
+      "def": "1",
+      "group": "cache",
+      "pt": "Cache de pipelines do driver",
+      "en": "Persistent driver pipeline cache",
+      "type": "toggle"
+    },
+    {
+      "key": "sotc_shadow_stagger",
+      "env": "SOTC_SHADOW_STAGGER",
+      "def": "0",
+      "group": "visual",
+      "pt": "Sombras distantes intercaladas (visual experimental)",
+      "en": "Stagger distant shadows (visual experimental)",
+      "type": "toggle"
+    }
+  ],
+  "choices": [
+    {
+      "key": "sotc_rb_narrow",
+      "env": "SOTC_RB_NARROW",
+      "def": "64",
+      "group": "rb",
+      "pt": "Janela básica de readback",
+      "en": "Base readback window",
+      "type": "choice",
+      "options": [
+        [
+          "0",
+          "512 KiB (original)"
+        ],
+        [
+          "64",
+          "64 KiB"
+        ],
+        [
+          "128",
+          "128 KiB"
+        ],
+        [
+          "256",
+          "256 KiB"
+        ],
+        [
+          "512",
+          "512 KiB"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_rb_stream_max_kb",
+      "env": "SOTC_RB_STREAM_MAX_KB",
+      "def": "512",
+      "group": "rb",
+      "pt": "Janela máxima de readback sequencial",
+      "en": "Max sequential readback",
+      "type": "choice",
+      "options": [
+        [
+          "128",
+          "128 KiB"
+        ],
+        [
+          "256",
+          "256 KiB"
+        ],
+        [
+          "512",
+          "512 KiB"
+        ],
+        [
+          "1024",
+          "1 MiB"
+        ],
+        [
+          "2048",
+          "2 MiB"
+        ],
+        [
+          "4096",
+          "4 MiB"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_flush_us",
+      "env": "SOTC_FLUSH_US",
+      "def": "0",
+      "group": "rb",
+      "pt": "Enviar comandos Vulkan por intervalo",
+      "en": "Periodic Vulkan submission",
+      "type": "choice",
+      "options": [
+        [
+          "0",
+          "OFF"
+        ],
+        [
+          "500",
+          "0,5 ms"
+        ],
+        [
+          "1000",
+          "1 ms"
+        ],
+        [
+          "2000",
+          "2 ms"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_write_ahead_pages",
+      "env": "SOTC_WRITE_AHEAD_PAGES",
+      "def": "15",
+      "group": "memory",
+      "pt": "Páginas CPU pré-marcadas",
+      "en": "CPU write-ahead pages",
+      "type": "choice",
+      "options": [
+        [
+          "0",
+          "OFF"
+        ],
+        [
+          "8",
+          "8 páginas"
+        ],
+        [
+          "15",
+          "15 páginas"
+        ],
+        [
+          "31",
+          "31 páginas"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_dma_merge_max",
+      "env": "SOTC_DMA_MERGE_MAX",
+      "def": "16",
+      "group": "memory",
+      "pt": "Limite por lote DMA",
+      "en": "DMA merge limit",
+      "type": "choice",
+      "options": [
+        [
+          "8",
+          "8 MiB"
+        ],
+        [
+          "16",
+          "16 MiB"
+        ],
+        [
+          "32",
+          "32 MiB"
+        ],
+        [
+          "64",
+          "64 MiB"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_arena_group",
+      "env": "SOTC_ARENA_GROUP",
+      "def": "4",
+      "group": "memory",
+      "pt": "Páginas por grupo de arena",
+      "en": "Vulkan arena grouping",
+      "type": "choice",
+      "options": [
+        [
+          "1",
+          "1 página"
+        ],
+        [
+          "2",
+          "2 páginas"
+        ],
+        [
+          "4",
+          "4 páginas"
+        ],
+        [
+          "8",
+          "8 páginas"
+        ]
+      ]
+    },
+    {
+      "key": "sotc_pipeline_workers",
+      "env": "SOTC_PIPELINE_WORKERS",
+      "def": "auto",
+      "group": "cache",
+      "pt": "Threads de compilação assíncrona",
+      "en": "Async shader workers",
+      "type": "choice",
+      "options": [
+        [
+          "auto",
+          "Auto"
+        ],
+        [
+          "2",
+          "2"
+        ],
+        [
+          "4",
+          "4"
+        ],
+        [
+          "6",
+          "6"
+        ],
+        [
+          "8",
+          "8"
+        ]
+      ]
+    }
+  ],
+  "exclusions": [
+    "SOTC_RB_HOT",
+    "SOTC_DMA_SYNC_SKIP",
+    "SOTC_CP_FREE_TASKS",
+    "SOTC_UPLOAD_BUDGET_MB>0",
+    "SOTC_SHADOW_REUSE"
+  ]
+}
