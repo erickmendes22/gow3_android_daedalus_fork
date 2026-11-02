@@ -1,0 +1,23 @@
+name: SotC precise readback batching source checks (no APK)
+on:
+  push:
+    branches: [research/sotc-readback-stream-034]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Compile original SotC ReadbackWindow and test bounded streaming
+        run: |
+          python3 -m unittest discover -s tests -p test_sotc_readback_stream.py -v
+          bash -n ports/sotc/android/run-sotc-bionic.sh
