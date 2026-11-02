@@ -1,0 +1,25 @@
+name: SotC 0.1.35 native performance controls tests
+on:
+  push:
+    branches: [research/sotc-perf-lab-035]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Validate every Android option against the existing native source
+        run: |
+          python3 -m unittest discover -s tests -p test_sotc_perf_lab_035.py -v
+          python3 -m unittest discover -s tests -p test_sotc_readback_stream.py -v
+          python3 -m py_compile ports/sotc/android/package_sotc_runtime.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
