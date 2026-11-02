@@ -19,12 +19,12 @@ OPTIONS=[
 ]
 def github_blob_sha(text):
     raw=text.encode("utf-8")
-    return hashlib.sha1(("blob "+str(len(raw))+"\\0").encode()+raw).hexdigest()
+    return hashlib.sha1(("blob "+str(len(raw))+"\0").encode()+raw).hexdigest()
 
 class RestoreOriginalMenu(unittest.TestCase):
     def test_original_034_java_byte_for_byte_preserved(self):
         start=JAVA.index("                // 0.1.40: the ORIGINAL 0.1.34 options")
-        end=JAVA.index('            }\\n            env.put("GOW3_DISPLAY_HZ"',start)
+        end=JAVA.index('            }\n            env.put("GOW3_DISPLAY_HZ"',start)
         reconstructed=JAVA[:start]+JAVA[end:]
         self.assertEqual(github_blob_sha(reconstructed),"4b1662e5f83eb3547c6aa1201420edf2a45254a4",
                          "The 0.1.34 launcher logic must be byte-for-byte original")
