@@ -26,14 +26,17 @@ bool CanPerVertexInterp(const Profile& profile, const RuntimeInfo& runtime_info)
         fs_info.clip_distance_emulation) {
         return false;
     }
-    // Conservative bound: every live input could be expanded to three vec4s.
-    // Each GS vertex also emits built-in Position and potentially two vec2 bary
-    // bases; include safety headroom for PointSize and driver accounting.
-    u32 live_inputs = 0;
+    // Only MOV-selected attributes expand to 3 vec4 locations; regular P1/P2
+    // attributes retain a single vec4. Include Position + optional bary bases
+    // and conservative PointSize headroom in the geometry output budget.
+    u32 output_locations = 0;
     for (u32 i = 0; i < fs_info.num_inputs; ++i) {
-        live_inputs += !fs_info.inputs[i].IsDefault();
+        if (fs_info.inputs[i].IsDefault()) {
+            continue;
+        }
+        output_locations += fs_info.needs_per_vertex_slot[i] ? 3u : 1u;
     }
-    const u64 output_components = u64(live_inputs) * 12u + 12u;
+    const u64 output_components = u64(output_locations) * 4u + 12u;
     return output_components <= profile.max_fragment_input_components &&
            output_components <= profile.max_geometry_output_components &&
            3u * output_components <= profile.max_geometry_total_output_components;

@@ -224,6 +224,8 @@ struct HwFragmentRuntimeInfo {
     AmdGpu::PsInput addr_flags;
     u32 num_inputs;
     std::array<PsInput, 32> inputs;
+    // Only attributes with V_INTERP_MOV require per-vertex GS expansion.
+    std::array<bool, 32> needs_per_vertex_slot{};
     std::array<PsColorBuffer, MaxColorBuffers> color_buffers;
     AmdGpu::ShaderExportFormat z_export_format;
     u8 num_samples{1};
@@ -247,6 +249,10 @@ struct HwFragmentRuntimeInfo {
                clip_distance_emulation == other.clip_distance_emulation &&
                motion_vectors == other.motion_vectors &&
                is_vs_direct == other.is_vs_direct && prim_type == other.prim_type &&
+               std::ranges::equal(needs_per_vertex_slot.begin(),
+                                  needs_per_vertex_slot.begin() + num_inputs,
+                                  other.needs_per_vertex_slot.begin(),
+                                  other.needs_per_vertex_slot.begin() + num_inputs) &&
                std::ranges::equal(inputs.begin(), inputs.begin() + num_inputs, other.inputs.begin(),
                                   other.inputs.begin() + num_inputs);
     }

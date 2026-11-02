@@ -99,6 +99,9 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
                 }
             }
         }
+        // Match the translator's actual MOV attribute list when enforcing
+        // physical GS/FS output limits, not a pessimistic all-expanded count.
+        runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
     }
 
     // Clear any previous pooled data.
