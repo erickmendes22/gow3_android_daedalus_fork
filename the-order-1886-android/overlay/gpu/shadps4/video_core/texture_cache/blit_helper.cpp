@@ -60,7 +60,7 @@ void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_sample
     const vk::ImageViewCreateInfo color_view_ci = {
         .pNext = &color_usage_ci,
         .image = source,
-        .viewType = src_msaa ? vk::ImageViewType::e2DMS : vk::ImageViewType::e2D,
+        .viewType = vk::ImageViewType::e2D, // 2DMS is a shader type, not a Vulkan image view type
         .format = src_pixel_format,
         .subresourceRange{
             .aspectMask = vk::ImageAspectFlagBits::eColor,
