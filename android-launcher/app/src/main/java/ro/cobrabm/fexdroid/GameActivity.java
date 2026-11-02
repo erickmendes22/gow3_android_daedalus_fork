@@ -651,6 +651,10 @@ public final class GameActivity extends Activity {
                 // Asynchronous GPU readback is a reversible SotC-only setting.
                 env.put("SOTC_RB_ASYNC",
                         "1".equals(setting("sotc_rb_async")) ? "1" : "0");
+                // Exact native SotC sequential GPU readbacks with bounded prefetch.
+                env.put("SOTC_RB_STREAM",
+                        "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
+                env.put("SOTC_RB_STREAM_MAX_KB","512");
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();

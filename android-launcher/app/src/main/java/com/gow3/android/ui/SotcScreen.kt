@@ -353,6 +353,12 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Readback assíncrono da GPU (teste)" else "Asynchronous GPU readback (test)",
                         (values["sotc_rb_async"]?:"0")=="1",
                         {save("sotc_rb_async",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Agrupar readbacks sequenciais da GPU" else "Batch sequential GPU readbacks",
+                        (values["sotc_rb_stream"]?:"1")=="1",
+                        {save("sotc_rb_stream",if(it)"1" else "0")})
+                    Text(if(pt) "Readback preciso 2: antecipa páginas ainda modificadas pela GPU em janelas de até 512 KiB para diminuir esperas repetidas. Desligue para o comportamento da 0.1.32. Reinicie."
+                         else "Precise readback 2: prefetches GPU-modified pages in windows up to 512 KiB to reduce sequential waits. Disable to restore 0.1.32 behavior. Restart.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
                     Text(if(pt) "Teste A/B: gravação Vulkan e readback assíncrono independentes e desligados por padrão. Ative um de cada vez; Readbacks 2 permanece ativo. Reinicie a cada mudança."
                          else "A/B test: Vulkan recording and async readback are independent and default OFF. Enable one at a time; required readbacks remain mode 2. Restart after changing.",
                          color=SotcPalette.secondary,fontSize=11.sp)
@@ -370,7 +376,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.32 Bionic VM cache",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.34 readback stream",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
