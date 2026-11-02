@@ -83,7 +83,8 @@ def repack(base_apk: Path, root: Path) -> None:
         s = t.extractfile("sotcport/run-sotc-bionic.sh").read()
         assert b"export SOTC_LOD_LINGER=" in s
         assert b"export SOTC_UPLOAD_BUDGET_MB=0" in s
-        assert b"gpu-user-srt-phi6-gs-position" in s
+        assert b"SOTC_VM_RANGE_CACHE=" in s
+        assert b"SOTC_RB_STREAM_MAX_KB=" in s
         assert b"sotc_blur_suppression=1" in t.extractfile("sotcport/sotc.ini").read()
         assert b"sotc_fast_bind=0" in t.extractfile("sotcport/sotc.ini").read()
         assert b"sotc_rb_stream=1" in t.extractfile("sotcport/sotc.ini").read()
