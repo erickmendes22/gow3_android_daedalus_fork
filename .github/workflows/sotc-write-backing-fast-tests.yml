@@ -24,6 +24,13 @@ jobs:
           /tmp/sotc-writeback-asan
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
             -fsyntax-only src/runtime_memory.c
+      - name: Benchmark original vs guarded GPU backing writes
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
+            -pthread tests/bench_sotc_write_backing.c -Wl,--gc-sections \
+            -o /tmp/sotc-wb-bench
+          SOTC_WRITE_FAST=0 /tmp/sotc-wb-bench
+          SOTC_WRITE_FAST=1 /tmp/sotc-wb-bench
       - name: Verify guest VMA writer gate and legacy fallback
         run: |
           grep -Fq 'SOTC_WRITE_FAST' src/runtime_memory.c
