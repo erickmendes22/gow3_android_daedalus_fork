@@ -1,0 +1,34 @@
+name: SotC readback backing fastpath C regression (no APK)
+on:
+  push:
+    branches: [research/sotc-write-backing-fast-safe-033]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  writeback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test actual guest memory with concurrent VMA writes
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
+            -pthread tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
+            -o /tmp/sotc-writeback
+          /tmp/sotc-writeback
+          cc -std=gnu11 -O1 -g -Wall -Wextra -ffunction-sections -fdata-sections \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -pthread \
+            tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
+            -fsanitize=address,undefined -o /tmp/sotc-writeback-asan
+          /tmp/sotc-writeback-asan
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
+            -fsyntax-only src/runtime_memory.c
+      - name: Verify guest VMA writer gate and legacy fallback
+        run: |
+          grep -Fq 'SOTC_WRITE_FAST' src/runtime_memory.c
+          grep -Fq 'sotc_wb_writer_begin();' src/runtime_memory.c
+          grep -Fq 'sotc_wb_writer_end();' src/runtime_memory.c
+          grep -Fq 'if (sotc_write_backing_fast(address,data,size)) return 1;' src/runtime_memory.c
+          grep -Fq 'size>(256u<<10)' src/runtime_memory.c
+          grep -Fq 'pthread_rwlock_wrlock(&lock)' src/runtime_memory.c

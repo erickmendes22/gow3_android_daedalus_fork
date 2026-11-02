@@ -14,6 +14,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <pthread.h>
+#include <sched.h>
 #include <time.h>
 #include <errno.h>
 #ifdef _WIN32
@@ -67,6 +68,47 @@ static pthread_rwlock_t lock=PTHREAD_RWLOCK_INITIALIZER;
 static __thread unsigned exclusive_depth;
 /* Odd while a writer holds the lock; readers' region caches are valid for one even value. */
 static uint64_t table_generation;
+/* SotC: readback memcpy lifetime gate. The dirty journal validates past
+ * mapping changes but cannot stop a concurrent unmap. A short atomic reader
+ * ticket excludes VMA writers for the actual copy. When a writer is waiting,
+ * the copy falls back to the original pthread read-locked path.
+ * Bit 31 blocks new fast copies; lower 31 bits count active short copies.
+ */
+#define SOTC_WB_GATE_WRITER UINT32_C(0x80000000)
+static uint32_t sotc_wb_gate;
+static int sotc_wb_enabled(void) {
+    static int on=-1;
+    int v=__atomic_load_n(&on,__ATOMIC_ACQUIRE);
+    if (v<0) {
+        const char *e=getenv("SOTC_WRITE_FAST");
+        v=!(e && e[0]=='0');
+        __atomic_store_n(&on,v,__ATOMIC_RELEASE);
+    }
+    return v;
+}
+static int sotc_wb_copy_enter(void) {
+    uint32_t state=__atomic_load_n(&sotc_wb_gate,__ATOMIC_ACQUIRE);
+    for (unsigned tries=0; tries<4; ++tries) {
+        if (state & SOTC_WB_GATE_WRITER) return 0;
+        if (__atomic_compare_exchange_n(&sotc_wb_gate,&state,state+1,0,
+                                        __ATOMIC_ACQUIRE,__ATOMIC_RELAXED))
+            return 1;
+    }
+    return 0;
+}
+static void sotc_wb_copy_leave(void) {
+    __atomic_fetch_sub(&sotc_wb_gate,1,__ATOMIC_RELEASE);
+}
+static void sotc_wb_writer_begin(void) {
+    if (!sotc_wb_enabled()) return;
+    __atomic_fetch_or(&sotc_wb_gate,SOTC_WB_GATE_WRITER,__ATOMIC_ACQ_REL);
+    while (__atomic_load_n(&sotc_wb_gate,__ATOMIC_ACQUIRE) &
+           ~SOTC_WB_GATE_WRITER) sched_yield();
+}
+static void sotc_wb_writer_end(void) {
+    if (sotc_wb_enabled())
+        __atomic_fetch_and(&sotc_wb_gate,~SOTC_WB_GATE_WRITER,__ATOMIC_RELEASE);
+}
 /* SotC Bionic: track which VMAs a writer actually changed. The original
  * generation-only cache went stale on every unrelated 16-KiB mapping and
  * forced the GPU's per-draw region queries through pthread_rwlock_rdlock.
@@ -87,6 +129,7 @@ static void sotc_vm_mark_dirty(uintptr_t start, uintptr_t end) {
 static void write_lock(void) {
     if (!exclusive_depth++) {
         pthread_rwlock_wrlock(&lock);
+        sotc_wb_writer_begin(); // before any guest map/unmap/protect change
         __atomic_store_n(&sotc_vm_dirty_low,UINTPTR_MAX,__ATOMIC_SEQ_CST);
         __atomic_store_n(&sotc_vm_dirty_high,0,__ATOMIC_SEQ_CST);
         __atomic_add_fetch(&table_generation,1,__ATOMIC_SEQ_CST);
@@ -104,6 +147,7 @@ static void write_unlock(void) {
         __atomic_store_n(&slot->end,a<b ? b : 0,__ATOMIC_RELAXED);
         __atomic_store_n(&slot->generation,ended,__ATOMIC_RELEASE);
         __atomic_add_fetch(&table_generation,1,__ATOMIC_RELEASE);
+        sotc_wb_writer_end(); // after publishing all map and journal writes
         pthread_rwlock_unlock(&lock);
     }
 }
@@ -854,8 +898,11 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
     write_unlock();
     flush_hooks();
 }
-/* Writes through the backing view; 0 when part of the range has no backing. */
+/* Validate the whole readback range with the cache before writing anything. */
+static int sotc_write_backing_fast(uintptr_t address, const void *data, uint64_t size);
+/* Original guest backing write is retained as the complete fallback. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size) {
+    if (sotc_write_backing_fast(address,data,size)) return 1;
     read_lock();
     int ok=1;
     for (uintptr_t at=address, end=address+size; at<end && ok;) {
@@ -926,6 +973,50 @@ static void cache_region(size_t i, uintptr_t accessed_address) {
     // the game's large direct mappings contain many independently read blocks.
     if (sotc_vm_cache_on()) sotc_vm_direct[sotc_vm_slot(accessed_address)]=c;
 }
+
+#ifdef SOTC_VM_FAST_TEST
+static __thread uint64_t sotc_write_fast_hits;
+#endif
+/* Fast path for small GPU readbacks: at most 256 KiB and four VMAs. The copy
+ * ticket prevents a concurrent writer from remapping any of the cached
+ * backing aliases. Validate ALL segments before the first memcpy. */
+static int sotc_write_backing_fast(uintptr_t address, const void *data, uint64_t size) {
+    if (!sotc_wb_enabled() || !sotc_vm_cache_on() || exclusive_depth ||
+        (runtime_disabled_optimizations & 1) || !backing_base || !data ||
+        !size || size>(256u<<10) || size>UINTPTR_MAX-address)
+        return 0;
+    if (!sotc_wb_copy_enter()) return 0;
+    unsigned char *dest[4];
+    uint64_t lengths[4];
+    unsigned parts=0;
+    uintptr_t at=address;
+    const uintptr_t end=address+size;
+    while (at<end && parts<4) {
+        const CachedRegion *reg=cached_region(at);
+        if (!reg || reg->kind==KIND_RESERVED ||
+            reg->start>at || reg->end<=at) break;
+        const uintptr_t next=reg->end<end ? reg->end : end;
+        dest[parts]=backing_base+reg->phys+(at-reg->start);
+        lengths[parts]=next-at;
+        at=next;
+        ++parts;
+    }
+    if (at!=end) {
+        sotc_wb_copy_leave();
+        return 0;
+    }
+    const unsigned char *bytes=(const unsigned char *)data;
+    for (unsigned i=0;i<parts;++i) {
+        memcpy(dest[i],bytes,(size_t)lengths[i]);
+        bytes+=lengths[i];
+    }
+#ifdef SOTC_VM_FAST_TEST
+    ++sotc_write_fast_hits;
+#endif
+    sotc_wb_copy_leave();
+    return 1;
+}
+
 /* SotC direct-memory buffers cross adjacent small guest VMAs. Once the
  * relevant regions have been verified by the dirty-range journal, the GPU
  * can query up to four contiguous pieces without reacquiring the VMA lock.
