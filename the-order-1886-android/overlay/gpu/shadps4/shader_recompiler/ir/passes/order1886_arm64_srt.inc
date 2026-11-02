@@ -340,7 +340,10 @@ void RunSrtProgram(const u32* program, const u32* user_data, u32* flat) {
             const u32 bits = values[--count];
             const u32 offset = values[--count];
             u32& base = values[count - 1];
-            base = (base >> (offset & 31)) & ((1u << (bits & 31)) - 1);
+            // A 32-bit extraction must preserve every bit. Masking the width
+            // with 31 made width=32 silently produce a zero mask.
+            const u32 mask = bits >= 32 ? ~u32{0} : (bits == 0 ? 0u : (1u << bits) - 1u);
+            base = (base >> (offset & 31)) & mask;
             break;
         }
         default: {
