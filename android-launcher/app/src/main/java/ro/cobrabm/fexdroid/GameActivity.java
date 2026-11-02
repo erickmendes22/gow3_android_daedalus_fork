@@ -623,10 +623,36 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_RB_ASYNC","0");
                 env.put("SOTC_RB_STREAM","1");
                 env.put("SOTC_RB_STREAM_MAX_KB","512");
-                // 0.1.37: only the selected experimental profile may differ from 0.1.34.
-                // Crucially, do not export native default flags or FLUSH_EVERY=0.
-                // Old 0.1.35 lab preferences are deliberately ignored.
+                // Restores prior cache, DMA, texture and pipeline fastpaths
+                // in the default 0.1.38 profile. Previous "stable" preferences
+                // migrate to performance, while "compat" is opt-in.
                 String perfMode=setting("sotc_perf_mode");
+                if (!"compat".equals(perfMode)) {
+                    env.put("SOTC_RB_EARLY","1");
+                    env.put("SOTC_HEAP_FAST","1");
+                    env.put("SOTC_DMA_MERGE","1");
+                    env.put("SOTC_DMA_INCR","1");
+                    env.put("SOTC_COPY_BATCH","1");
+                    env.put("SOTC_EVICT_ASYNC","1");
+                    env.put("SOTC_DEPTH_TWIN","1");
+                    env.put("SOTC_TC_SKIP_EMPTY","1");
+                    env.put("SOTC_SAMPLER_MEMO","1");
+                    env.put("SOTC_FIND_MEMO","1");
+                    env.put("SOTC_MEMO_ADDR_GEN","1");
+                    env.put("SOTC_PIPE_MEMO","1");
+                    env.put("SOTC_RT_FAST","1");
+                    env.put("SOTC_POP_FAST","1");
+                    env.put("SOTC_INDIRECT_DIRECT","1");
+                    env.put("SOTC_CP_YIELD","1");
+                    env.put("SOTC_DRIVER_CACHE","1");
+                    env.put("SOTC_RB_NARROW","0");
+                    env.put("SOTC_RB_STREAM_MAX_KB","512");
+                    env.put("SOTC_WRITE_AHEAD_PAGES","15");
+                    env.put("SOTC_DMA_MERGE_MAX","16");
+                    env.put("SOTC_ARENA_GROUP","4");
+                    // Do not export SOTC_FLUSH_EVERY=0 (presence sensitive).
+                    // 0 means the original 512KiB base readback window.
+                }
                 if ("ahead".equals(perfMode)) {
                     env.put("SOTC_RB_AHEAD","1");
                 } else if ("submit".equals(perfMode)) {

@@ -230,13 +230,14 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
                     SotcChoice(if(pt) "Perfil de desempenho" else "Performance profile",
-                        values["sotc_perf_mode"]?:"stable",
-                        listOf("stable" to (if(pt) "Estável (0.1.34)" else "Stable (0.1.34)"),
+                        values["sotc_perf_mode"]?:"performance",
+                        listOf("performance" to (if(pt) "Desempenho — padrão otimizado" else "Performance — optimized default"),
+                            "compat" to (if(pt) "Compatibilidade — base 0.1.34" else "Compatibility — 0.1.34 baseline"),
                             "ahead" to (if(pt) "Teste — readback antecipado" else "Test — ahead GPU readback"),
                             "submit" to (if(pt) "Teste — envio Vulkan 1 ms" else "Test — Vulkan submit 1 ms")),
                         {save("sotc_perf_mode",it)})
-                    Text(if(pt) "Estável mantém exatamente os ajustes nativos da 0.1.34. Os outros perfis são experimentais e ainda não têm ganho de FPS comprovado. Reinicie após mudar."
-                         else "Stable preserves the exact 0.1.34 native settings. Other modes are experimental and not proven to increase FPS. Restart after switching.",
+                    Text(if(pt) "Desempenho mantém as otimizações anteriores de cache, DMA, texturas, pipelines e readback. Readback 2 e correções gráficas continuam. Sem a janela de 64 KiB imposta pela 0.1.35. Reinicie para aplicar."
+                        else "Performance preserves earlier cache, DMA, texture, pipeline and readback fastpaths. Readback 2 and graphics fixes remain. No 0.1.35 forced 64KiB window. Restart to apply.",
                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcChoice(if(pt) "Readback da GPU" else "GPU readback mode",
                         values["sotc_readbacks"]?:"2",
@@ -288,8 +289,8 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
-                    Text(if(pt) "Perfil estável: ajustes de CPU/GPU da 0.1.34 fixos, mesmo após instalar sobre a 0.1.35. Apenas os dois perfis de teste mudam um parâmetro por vez."
-                        else "Stable: 0.1.34 CPU/GPU defaults are fixed, including after an upgrade from 0.1.35. Only the two test profiles change one variable at a time.",
+                    Text(if(pt) "Perfil Desempenho mantém as otimizações anteriores mesmo com preferências salvas. Compatibilidade preserva os padrões nativos da 0.1.34."
+                        else "Performance preserves earlier fastpaths even with saved preferences. Compatibility keeps the native 0.1.34 defaults.",
                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
@@ -305,7 +306,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.37 clean stable",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.38 restored performance",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
