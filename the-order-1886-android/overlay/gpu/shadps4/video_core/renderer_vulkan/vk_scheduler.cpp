@@ -248,9 +248,22 @@ void Scheduler::WaitDeferredSignals() {
     }
     Ps4Stats::WaitTimer timer{Ps4Stats::host_copies_wait_ns};
     KickRecording(true);
+    u64 last_done = deferred_signals_done->load(std::memory_order_acquire);
+    auto last_progress = std::chrono::steady_clock::now();
     for (unsigned spins = 0; deferred_signals_done->load(std::memory_order_acquire) < issued;) {
         // Helps the copy threads the signals wait for.
         Ps4Copy::WaitAsync();
+        const u64 done = deferred_signals_done->load(std::memory_order_acquire);
+        if (done > last_done) {
+            last_done = done;
+            last_progress = std::chrono::steady_clock::now();
+        } else if (std::chrono::steady_clock::now() - last_progress >
+                   std::chrono::seconds(20)) {
+            LOG_CRITICAL(Render_Vulkan,
+                         "ORDER1886_DEFERRED_SIGNAL_HANG: completed={} issued={}",
+                         done, issued);
+            std::abort();
+        }
         Ps4Threads::Backoff(spins);
     }
 }
@@ -260,8 +273,22 @@ void Scheduler::WaitHostCopies() {
         Ps4Stats::WaitTimer timer{Ps4Stats::host_copies_wait_ns};
         Ps4Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
+        const u64 issued = host_copies_issued;
+        u64 last_done = host_copies_done.load(std::memory_order_acquire);
+        auto last_progress = std::chrono::steady_clock::now();
         for (unsigned spins = 0;
-             host_copies_done.load(std::memory_order_acquire) < host_copies_issued;) {
+             host_copies_done.load(std::memory_order_acquire) < issued;) {
+            const u64 done = host_copies_done.load(std::memory_order_acquire);
+            if (done > last_done) {
+                last_done = done;
+                last_progress = std::chrono::steady_clock::now();
+            } else if (std::chrono::steady_clock::now() - last_progress >
+                       std::chrono::seconds(20)) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_HOST_COPY_HANG: completed={} issued={}",
+                             done, issued);
+                std::abort();
+            }
             Ps4Threads::Backoff(spins);
         }
     }
@@ -311,7 +338,14 @@ void Scheduler::SyncRecording() {
     KickRecording(true);
     Ps4Stats::WaitTimer timer{Ps4Stats::sync_recording_ns};
     std::unique_lock lk{recorder_mutex};
-    recorder_idle_cv.wait(lk, [this] { return recorder_queue.empty() && !recorder_busy; });
+    if (!recorder_idle_cv.wait_for(lk, std::chrono::seconds(30), [this] {
+            return recorder_queue.empty() && !recorder_busy;
+        })) {
+        LOG_CRITICAL(Render_Vulkan,
+                     "ORDER1886_RECORDER_HANG: queued={} busy={}",
+                     recorder_queue.size(), recorder_busy);
+        std::abort();
+    }
 }
 
 void Scheduler::RecorderThread(std::stop_token stoken) {

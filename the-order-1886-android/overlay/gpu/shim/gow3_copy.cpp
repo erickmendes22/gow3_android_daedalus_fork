@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
@@ -75,23 +77,42 @@ public:
     }
 
     void WaitAll() {
-        // The waiting thread helps instead of only spinning.
+        // Run queued copies on the caller; detect a worker/epoch that has stopped
+        // retiring jobs. Progress refreshes the deadline (large streaming bursts
+        // are not mistaken for a hang).
+        auto last_progress = std::chrono::steady_clock::now();
+        u64 last_pending = ~u64{0};
+        unsigned spins = 0;
         while (true) {
             Task task;
+            u64 pending_now;
             {
                 std::scoped_lock lk{mutex};
                 if (pending == 0 && epochs.size() == 1 && !draining) {
                     return;
                 }
+                pending_now = pending;
                 if (!async_tasks.empty()) {
                     task = std::move(async_tasks.front());
                     async_tasks.pop_front();
                 }
             }
+            if (pending_now < last_pending) {
+                last_progress = std::chrono::steady_clock::now();
+            }
+            last_pending = pending_now;
             if (task.run) {
                 RunAsync(task);
             } else {
                 std::this_thread::yield();
+                if ((++spins & 4095u) == 0 &&
+                    std::chrono::steady_clock::now() - last_progress >
+                        std::chrono::seconds(20)) {
+                    std::fprintf(stderr,
+                                 "ORDER1886_COPY_WAIT_HANG: no async copy progress, pending=%llu\n",
+                                 static_cast<unsigned long long>(pending_now));
+                    std::abort();
+                }
             }
         }
     }
@@ -108,7 +129,23 @@ public:
         cv.notify_all();
         Work(*job);
         // Workers only call the task for indices below count, all done before this returns.
-        while (job->done.load(std::memory_order_acquire) < count) {
+        std::size_t last_done = job->done.load(std::memory_order_acquire);
+        auto last_progress = std::chrono::steady_clock::now();
+        for (unsigned spins = 0; job->done.load(std::memory_order_acquire) < count;
+             ++spins) {
+            const std::size_t done = job->done.load(std::memory_order_acquire);
+            if (done != last_done) {
+                last_done = done;
+                last_progress = std::chrono::steady_clock::now();
+            }
+            if ((spins & 4095u) == 0 &&
+                std::chrono::steady_clock::now() - last_progress >
+                    std::chrono::seconds(20)) {
+                std::fprintf(stderr,
+                             "ORDER1886_COPY_PARALLEL_HANG: completed=%zu total=%zu\n",
+                             done, count);
+                std::abort();
+            }
             std::this_thread::yield();
         }
         std::scoped_lock lk{mutex};

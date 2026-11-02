@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 11
-        versionName = "0.1.9-adreno-linkfix-rc2"
+        versionCode = 12
+        versionName = "0.1.10-render-syncguard"
     }
     buildTypes {
         release {
