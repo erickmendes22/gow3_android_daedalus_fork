@@ -159,6 +159,10 @@ struct Info : InfoPersistent {
     bool translation_failed{};
 
     std::array<Interpolation, IR::NumParams> fs_interpolation{};
+    // Filled by scanning the decoded GCN instructions before translation.
+    // Only a raw vertex-selector V_INTERP_MOV requires expansion into P0/P1/P2.
+    // Ordinary P1/P2 pairs interpolate natively and should not spawn a GS.
+    std::array<bool, IR::NumParams> fs_requires_per_vertex{};
 
     Info() = default;
     Info(HwStage stage_, SwStage l_stage_, ShaderParams params)

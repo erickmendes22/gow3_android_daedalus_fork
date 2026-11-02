@@ -54,13 +54,16 @@ void Translator::EmitVectorInterpolation(const GcnInst& inst) {
 // VINTRP
 
 void Translator::V_INTERP_P1_F32(const GcnInst& inst) {
-    // Expand P0/P10/P20 on no-barycentric Adreno triangle pipelines as well.
-    // V_INTERP_P1 and P2 must select the same path as MOV and the auxiliary GS.
+    // P1/P2 can use Vulkan's native varying interpolation for the majority
+    // of guest attributes. Only an attribute with V_INTERP_MOV (raw P0/P1/P2)
+    // must use the auxiliary geometry shader's per-vertex expansion.
+    const u32 attr_index = inst.control.vintrp.attr;
+    const bool needs_vertex = info.fs_requires_per_vertex[attr_index];
     if (!profile.needs_manual_interpolation &&
-        !Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info)) {
+        !(needs_vertex &&
+          Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info))) {
         return;
     }
-    const u32 attr_index = inst.control.vintrp.attr;
     const auto& attr = runtime_info.hw.fs.inputs[attr_index];
     if (attr.IsDefault()) {
         return;
@@ -85,10 +88,12 @@ void Translator::V_INTERP_P2_F32(const GcnInst& inst) {
         return;
     }
     ASSERT(!attr.is_flat);
-    // Expand P0/P10/P20 on no-barycentric Adreno triangle pipelines as well.
-    // V_INTERP_P1 and P2 must select the same path as MOV and the auxiliary GS.
+    // Native varying interpolation is correct for regular P1/P2. Match
+    // P1's per-attribute decision to avoid mixed native/manual semantics.
+    const bool needs_vertex = info.fs_requires_per_vertex[attr_index];
     if (!profile.needs_manual_interpolation &&
-        !Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info)) {
+        !(needs_vertex &&
+          Shader::Backend::SPIRV::CanPerVertexInterp(profile, runtime_info))) {
         interp = GetInterpolation(vgpr_to_interp[inst.src[0].code]);
         SetDst(inst.dst[0], ir.GetAttribute(attrib, inst.control.vintrp.chan));
         return;
