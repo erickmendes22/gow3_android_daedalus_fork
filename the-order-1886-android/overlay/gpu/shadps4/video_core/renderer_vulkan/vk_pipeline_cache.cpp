@@ -1208,6 +1208,13 @@ bool PipelineCache::RefreshGraphicsStages(PipelineSelection& sel) {
             sel.compilation_pending = true;
             return false;
         }
+        if (stage_out == SwStage::Fragment) {
+            // The pipeline's runtime_info is constructed again from registers.
+            // Carry the decoded MOV mask from its actual shader Info, otherwise
+            // GS/FS compilation can disagree on expanded input locations.
+            sel.runtime_infos[stage_out_idx].hw.fs.needs_per_vertex_slot =
+                sel.infos[stage_out_idx]->fs_requires_per_vertex;
+        }
         if (fetch_shader_) {
             sel.fetch_shader = fetch_shader_;
         }
@@ -1389,6 +1396,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         }
         runtime_fault_recover = &recover;
         info.RefreshFlatBuf();
+        if (sw_stage == SwStage::Fragment) {
+            runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
+        }
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
         const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
@@ -1467,6 +1477,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     info.user_data = params.user_data;
     info.RefreshFlatBuf();
     if (srt_sync) srt_sync(info);
+    if (sw_stage == SwStage::Fragment) {
+        runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
+    }
     auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
 
     size_t perm_idx = program->modules.size();
