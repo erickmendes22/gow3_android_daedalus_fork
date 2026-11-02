@@ -600,62 +600,30 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_bachata_fog"))) bachataEffects.add("fog");
                 if("1".equals(setting("sotc_bachata_shadows"))) bachataEffects.add("shadows");
                 env.put("SOTC_BACHATA_PERF",String.join(",",bachataEffects));
-                // Experimental parallel graphics pipeline compilation; OFF by
-                // default because the original PC renderer can skip in-flight draws.
-                env.put("SOTC_ASYNC_SHADERS",
-                        "1".equals(setting("sotc_async_shaders")) ? "1" : "0");
-                // This previously defaulted to ON *implicitly* whenever
-                // pipeline workers and Vulkan recording thread were active.
-                // It is now explicit, independent, and OFF by default.
-                env.put("SOTC_ASYNC_COMPUTE",
-                        "1".equals(setting("sotc_async_compute")) ? "1" : "0");
-                // Skip only redundant clear/barrier before a full-coverage AHB
-                // blit; partial/letterbox blits always retain both operations.
-                env.put("SOTC_PRESENT_FULL_BLIT",
-                        "0".equals(setting("sotc_present_full_blit")) ? "0" : "1");
-                // Exact, cache-safe CP-side FS/CS module specialization reuse.
-                // Never skips live guest SRT refreshes, draw or Vulkan work.
-                env.put("SOTC_STAGE_SPEC_MEMO",
-                        "0".equals(setting("sotc_stage_spec_memo")) ? "0" : "1");
-                // Per-draw SRT vector ownership crosses the CP->draw ring
-                // only after the consumer owns the slot; copy fallback on OFF.
-                env.put("SOTC_STAGE_SNAPSHOT_SWAP",
-                        "0".equals(setting("sotc_stage_snapshot_swap")) ? "0" : "1");
-                // CP-owned last-published register chunks; ordered draw stream unchanged.
-                env.put("SOTC_REG_SNAPSHOT_MEMO",
-                        "0".equals(setting("sotc_reg_snapshot_memo")) ? "0" : "1");
-                // Never enable speculative render-pass reuse by default.
-                env.put("SOTC_RT_MEMO",
-                        "0".equals(setting("sotc_rt_memo")) ? "0" : "1");
-                // SotC-only VM journal and 512-slot direct cache, fail-closed
-                // to the original Bionic pthread RW lock on any uncertainty.
-                env.put("SOTC_VM_RANGE_CACHE",
-                        "0".equals(setting("sotc_vm_range_cache")) ? "0" : "1");
-                // Existing, native SotC frame-split profiler (not an FPS boost).
-                // The Bionic launcher script unsets getenv-presence switches
-                // when this diagnostic setting is disabled.
-                env.put("SOTC_PERF_PROFILE",
-                        "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
-                // Controlled native GPU A/B with independent reversible settings.
-                // Exact host Vulkan state reuse; never skip guest uploads or barriers.
-                env.put("SOTC_PIPELINE_BIND_MEMO",
-                        "0".equals(setting("sotc_pipeline_bind_memo")) ? "0" : "1");
-                env.put("SOTC_VERTEX_INPUT_MEMO",
-                        "0".equals(setting("sotc_vertex_input_memo")) ? "0" : "1");
-                env.put("SOTC_DESCRIPTOR_SLOT_REUSE",
-                        "0".equals(setting("sotc_descriptor_slot_reuse")) ? "0" : "1");
-                env.put("SOTC_FAST_BIND",
-                        "1".equals(setting("sotc_fast_bind")) ? "1" : "0");
-                env.put("SOTC_RECORD_THREAD",
-                        "1".equals(setting("sotc_record_thread")) ? "1" : "0");
-                // Asynchronous GPU readback is a reversible SotC-only setting.
-                env.put("SOTC_RB_ASYNC",
-                        "1".equals(setting("sotc_rb_async")) ? "1" : "0");
-                // Exact native SotC sequential GPU readbacks with bounded prefetch.
-                env.put("SOTC_RB_STREAM",
-                        "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
+                // SotC 0.1.37: reset to the original 0.1.34 effective GPU/CPU
+                // defaults on every launch. The previous 0.1.35 laboratory
+                // persisted values in sotc.ini, and 0.1.36 still read those
+                // settings. Do NOT let stale lab preferences contaminate
+                // stable or single-variable A/B profiles. Preserve user saves,
+                // game folder, graphics patches, resolution and readback choice.
+                env.put("SOTC_ASYNC_SHADERS","0");
+                env.put("SOTC_ASYNC_COMPUTE","0");
+                env.put("SOTC_PRESENT_FULL_BLIT","1");
+                env.put("SOTC_STAGE_SPEC_MEMO","1");
+                env.put("SOTC_STAGE_SNAPSHOT_SWAP","1");
+                env.put("SOTC_REG_SNAPSHOT_MEMO","1");
+                env.put("SOTC_RT_MEMO","1");
+                env.put("SOTC_VM_RANGE_CACHE","1");
+                env.put("SOTC_PERF_PROFILE","0");
+                env.put("SOTC_PIPELINE_BIND_MEMO","1");
+                env.put("SOTC_VERTEX_INPUT_MEMO","1");
+                env.put("SOTC_DESCRIPTOR_SLOT_REUSE","1");
+                env.put("SOTC_FAST_BIND","0");
+                env.put("SOTC_RECORD_THREAD","0");
+                env.put("SOTC_RB_ASYNC","0");
+                env.put("SOTC_RB_STREAM","1");
                 env.put("SOTC_RB_STREAM_MAX_KB","512");
-                // 0.1.36: stable must have exactly the 0.1.34 environment.
+                // 0.1.37: only the selected experimental profile may differ from 0.1.34.
                 // Crucially, do not export native default flags or FLUSH_EVERY=0.
                 // Old 0.1.35 lab preferences are deliberately ignored.
                 String perfMode=setting("sotc_perf_mode");
