@@ -379,6 +379,26 @@ void EmitContext::DefineInputs() {
             sample_mask_in = DefineVariable(TypeArray(U32[1], u32_one_value),
                                             spv::BuiltIn::SampleMask, spv::StorageClass::Input);
         }
+        if (can_expand) {
+            const auto& af = runtime_info.hw.fs.addr_flags;
+            if (af.persp_center_ena || af.persp_centroid_ena || af.persp_sample_ena ||
+                af.persp_pull_model_ena) {
+                bary_coord_smooth = DefineInput(F32[2], per_vertex_locs.bary_coord_loc);
+            }
+            if (af.linear_center_ena || af.linear_centroid_ena || af.linear_sample_ena) {
+                bary_coord_nopersp = DefineInput(F32[2], per_vertex_locs.linear_coord_loc);
+                Decorate(bary_coord_nopersp, spv::Decoration::NoPerspective);
+            }
+            if ((af.persp_sample_ena || af.linear_sample_ena) && !ValidId(sample_index)) {
+                sample_index = DefineVariable(U32[1], spv::BuiltIn::SampleId,
+                                              spv::StorageClass::Input);
+                Decorate(sample_index, spv::Decoration::Flat);
+            }
+            if (af.persp_centroid_ena || af.persp_sample_ena ||
+                af.linear_centroid_ena || af.linear_sample_ena) {
+                AddCapability(spv::Capability::InterpolationFunction);
+            }
+        }
         if (info.loads.GetAny(IR::Attribute::BaryCoordSmooth)) {
             if (profile.supports_amd_shader_explicit_vertex_parameter) {
                 bary_coord_smooth = DefineVariable(F32[2], spv::BuiltIn::BaryCoordSmoothAMD,
@@ -386,8 +406,6 @@ void EmitContext::DefineInputs() {
             } else if (profile.supports_fragment_shader_barycentric && !ValidId(bary_coord)) {
                 bary_coord =
                     DefineVariable(F32[3], spv::BuiltIn::BaryCoordKHR, spv::StorageClass::Input);
-            } else if (can_expand) {
-                bary_coord_smooth = DefineInput(F32[2], per_vertex_locs.bary_coord_loc);
             }
         }
         if (info.loads.GetAny(IR::Attribute::BaryCoordPullModel)) {

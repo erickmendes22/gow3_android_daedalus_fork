@@ -159,6 +159,9 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             return ctx.OpLoad(ctx.F32[1],
                               ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_smooth_centroid,
                                                 ctx.ConstU32(comp)));
+        } else if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
+            return ctx.OpCompositeExtract(ctx.F32[1],
+                ctx.OpInterpolateAtCentroid(ctx.F32[2], ctx.bary_coord_smooth), comp);
         } else {
             return ctx.OpCompositeExtract(
                 ctx.F32[1], ctx.OpInterpolateAtCentroid(ctx.F32[3], ctx.bary_coord), comp);
@@ -168,6 +171,10 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
             return ctx.OpLoad(
                 ctx.F32[1],
                 ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_smooth_sample, ctx.ConstU32(comp)));
+        } else if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
+            return ctx.OpCompositeExtract(ctx.F32[1],
+                ctx.OpInterpolateAtSample(ctx.F32[2], ctx.bary_coord_smooth,
+                                          ctx.OpLoad(ctx.U32[1], ctx.sample_index)), comp);
         } else {
             return ctx.OpCompositeExtract(
                 ctx.F32[1],
@@ -179,6 +186,11 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         return ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_nopersp,
                                                         ctx.ConstU32(comp)));
     case IR::Attribute::BaryCoordNoPerspSample:
+        if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
+            return ctx.OpCompositeExtract(ctx.F32[1],
+                ctx.OpInterpolateAtSample(ctx.F32[2], ctx.bary_coord_nopersp,
+                                          ctx.OpLoad(ctx.U32[1], ctx.sample_index)), comp);
+        }
         return ctx.OpLoad(
             ctx.F32[1],
             ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_nopersp_sample, ctx.ConstU32(comp)));
@@ -199,8 +211,11 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         if (comp == 2) {
             return inv_w;
         }
-        const Id ij =
-            ctx.OpCompositeExtract(ctx.F32[1], ctx.OpLoad(ctx.F32[3], ctx.bary_coord), comp + 1);
+        const Id ij = CanPerVertexInterp(ctx.profile, ctx.runtime_info)
+            ? ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_smooth,
+                                                       ctx.ConstU32(comp)))
+            : ctx.OpCompositeExtract(ctx.F32[1], ctx.OpLoad(ctx.F32[3], ctx.bary_coord),
+                                     comp + 1);
         return ctx.OpFMul(ctx.F32[1], ij, inv_w);
     }
     default:

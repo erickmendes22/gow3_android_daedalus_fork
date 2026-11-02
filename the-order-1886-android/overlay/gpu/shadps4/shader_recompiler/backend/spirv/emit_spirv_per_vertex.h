@@ -26,27 +26,20 @@ struct PerVertexLocations {
     std::array<u32, 32> slot_loc{};
     // Location of the injected smooth barycentric-coordinate attribute (vec2, I/J).
     u32 bary_coord_loc = 0;
+    // Following location for screen-space linear (NoPerspective) barycentrics.
+    u32 linear_coord_loc = 0;
 };
 
 // Whether the per-vertex interpolation fallback is eligible for this fragment shader:
-// direct VS->FS triangle pipeline, no AMD explicit vertex parameter nor KHR barycentric, and no
-// unsupported barycentric variant (only persp_center is covered). Shared by the translation side
+// direct VS->FS triangle pipeline with geometry-stage support, no AMD explicit vertex parameter
+// nor KHR barycentric. All center, centroid, sample, linear, and pull-model modes use
+// injected smooth/noperspective triangle coordinates. Shared by the translation side
 // (restoring per-vertex instead of degrading to flat) and the FS compile side (aux GS generation).
 [[nodiscard]] bool CanPerVertexInterp(const Shader::Profile& profile,
                                       const Shader::RuntimeInfo& runtime_info);
 
-// Whether the fragment shader requests a barycentric variant the fallback cannot reproduce
-// (anything other than persp_center: sample/centroid/pull-model/linear). Shared by the translation
-// side (boundary warning) and the FS compile side (CanPerVertexInterp gate).
-[[nodiscard]] bool HasUnsupportedBarycentricVariant(const Shader::RuntimeInfo& runtime_info);
-
-// Bitmask of the unsupported barycentric variants the shader requests, so the fallback warning can
-// report which variant (rather than a single bool): bit0=persp_sample, bit1=persp_centroid,
-// bit2=persp_pull_model, bit3=linear_sample, bit4=linear_center, bit5=linear_centroid.
-[[nodiscard]] u32 UnsupportedBarycentricMask(const Shader::RuntimeInfo& runtime_info);
-
 // Whether an auxiliary geometry shader must be generated for this fragment shader: the fallback
-// is eligible and the shader either reads a per-vertex attribute or the persp-center barycentric.
+// is eligible and the shader reads a per-vertex attribute or ANY barycentric variant.
 [[nodiscard]] bool NeedsPerVertexAuxGS(const Shader::Profile& profile, const Shader::Info& info,
                                        const Shader::RuntimeInfo& runtime_info);
 

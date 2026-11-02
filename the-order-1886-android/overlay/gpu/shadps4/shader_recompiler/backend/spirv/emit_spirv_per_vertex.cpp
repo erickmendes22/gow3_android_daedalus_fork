@@ -14,47 +14,15 @@ using Sirit::Id;
 
 constexpr u32 SPIRV_VERSION_1_5 = 0x00010500;
 
-u32 UnsupportedBarycentricMask(const RuntimeInfo& runtime_info) {
-    const auto& af = runtime_info.hw.fs.addr_flags;
-    u32 mask = 0;
-    if (af.persp_sample_ena) {
-        mask |= 1u << 0;
-    }
-    if (af.persp_centroid_ena) {
-        mask |= 1u << 1;
-    }
-    if (af.persp_pull_model_ena) {
-        mask |= 1u << 2;
-    }
-    if (af.linear_sample_ena) {
-        mask |= 1u << 3;
-    }
-    if (af.linear_center_ena) {
-        mask |= 1u << 4;
-    }
-    if (af.linear_centroid_ena) {
-        mask |= 1u << 5;
-    }
-    return mask;
-}
-
-bool HasUnsupportedBarycentricVariant(const RuntimeInfo& runtime_info) {
-    return UnsupportedBarycentricMask(runtime_info) != 0;
-}
-
 bool CanPerVertexInterp(const Profile& profile, const RuntimeInfo& runtime_info) {
     const auto& fs_info = runtime_info.hw.fs;
-    // Only GPUs without per-vertex interpolation support (neither AMD explicit vertex parameter
-    // nor KHR barycentric) on a
-    // direct VS->FS triangle pipeline with no unsupported barycentric variant and no clip-distance
-    // emulation can use the per-vertex expansion fallback. All other barycentric variants
-    // (sample/centroid/nopersp/pull) are not covered by the fallback and degrade to the existing
-    // flat path. Clip-distance emulation occupies input location 0, which the auxiliary GS does not
-    // pass through, so such pipelines must also keep the legacy flat path.
-    return fs_info.is_vs_direct && fs_info.prim_type == AmdGpu::PrimitiveType::TriangleList &&
+    // The generated GS must be supported by this *physical device*; generating it
+    // merely because AMD/KHR barycentrics are absent can hang drivers with GS disabled.
+    // Clip-distance emulation reserves a location the aux GS cannot pass through.
+    return profile.supports_geometry_stage && fs_info.is_vs_direct &&
+           fs_info.prim_type == AmdGpu::PrimitiveType::TriangleList &&
            !profile.supports_amd_shader_explicit_vertex_parameter &&
-           !profile.supports_fragment_shader_barycentric &&
-           !HasUnsupportedBarycentricVariant(runtime_info) && !fs_info.clip_distance_emulation;
+           !profile.supports_fragment_shader_barycentric && !fs_info.clip_distance_emulation;
 }
 
 bool NeedsPerVertexAuxGS(const Profile& profile, const Info& info, const RuntimeInfo& runtime_info) {
@@ -62,9 +30,12 @@ bool NeedsPerVertexAuxGS(const Profile& profile, const Info& info, const Runtime
         return false;
     }
     const auto& fs_info = runtime_info.hw.fs;
-    // The aux GS is needed if the FS reads the persp-center barycentric, or any per-vertex
-    // attribute (restored to PerVertex during translation).
-    if (fs_info.addr_flags.persp_center_ena) {
+    // Any mode requires the generated smooth/noperspective basis; all six
+    // barycentric variants previously rejected the fallback and left missing inputs.
+    const auto& af = fs_info.addr_flags;
+    if (af.persp_center_ena || af.persp_centroid_ena || af.persp_sample_ena ||
+        af.persp_pull_model_ena || af.linear_center_ena || af.linear_centroid_ena ||
+        af.linear_sample_ena) {
         return true;
     }
     for (u32 i = 0; i < fs_info.num_inputs; i++) {
@@ -93,6 +64,7 @@ PerVertexLocations ComputePerVertexLocations(const Profile& profile, const Info&
         loc += (per_vertex && can_expand) ? 3 : 1;
     }
     locs.bary_coord_loc = loc;
+    locs.linear_coord_loc = loc + 1;
     return locs;
 }
 
@@ -107,7 +79,11 @@ u64 ComputePerVertexAuxGSSignature(const Info& info, const RuntimeInfo& runtime_
     // the GS input locations (param_index) and the output counter layout (order + per-vertex).
     u64 signature = 0x9e3779b97f4a7c15ULL;
     signature = HashCombine(signature, u64(has_clip));
-    signature = HashCombine(signature, u64(fs_info.addr_flags.persp_center_ena));
+    const auto& af = fs_info.addr_flags;
+    signature = HashCombine(signature, u64(af.persp_center_ena) |
+        (u64(af.persp_centroid_ena) << 1) | (u64(af.persp_sample_ena) << 2) |
+        (u64(af.persp_pull_model_ena) << 3) | (u64(af.linear_center_ena) << 4) |
+        (u64(af.linear_centroid_ena) << 5) | (u64(af.linear_sample_ena) << 6));
     for (u32 i = 0; i < num_inputs; i++) {
         const auto& input = fs_info.inputs[i];
         if (input.IsDefault()) {
@@ -155,7 +131,11 @@ public:
                 per_vertex[i] = info.fs_interpolation[i].primary == Qualifier::PerVertex;
             }
         }
-        has_bary_coord = fs_info.addr_flags.persp_center_ena != 0;
+        const auto& af = fs_info.addr_flags;
+        has_bary_coord = af.persp_center_ena || af.persp_centroid_ena ||
+                         af.persp_sample_ena || af.persp_pull_model_ena;
+        has_linear_coord = af.linear_center_ena || af.linear_centroid_ena ||
+                           af.linear_sample_ena;
     }
 
     void Emit() {
@@ -238,6 +218,11 @@ private:
             bary_coord = AddOutput(vec2_id);
             Decorate(bary_coord, spv::Decoration::Location, locs.bary_coord_loc);
         }
+        if (has_linear_coord) {
+            linear_coord = AddOutput(vec2_id);
+            Decorate(linear_coord, spv::Decoration::Location, locs.linear_coord_loc);
+            Decorate(linear_coord, spv::Decoration::NoPerspective);
+        }
     }
 
     void EmitMain() {
@@ -260,7 +245,7 @@ private:
 
         // Barycentric coordinate constants: vertex 0 -> (0,0), 1 -> (1,0), 2 -> (0,1).
         std::array<Id, 3> bary_value;
-        if (has_bary_coord) {
+        if (has_bary_coord || has_linear_coord) {
             bary_value[0] =
                 ConstantComposite(vec2_id, Constant(float_id, 0.0f), Constant(float_id, 0.0f));
             bary_value[1] =
@@ -285,6 +270,9 @@ private:
             if (has_bary_coord) {
                 OpStore(bary_coord, bary_value[v]);
             }
+            if (has_linear_coord) {
+                OpStore(linear_coord, bary_value[v]);
+            }
             OpEmitVertex();
         }
         OpEndPrimitive();
@@ -300,6 +288,7 @@ private:
     bool has_clip{};
     u32 num_inputs{};
     bool has_bary_coord{};
+    bool has_linear_coord{};
     std::vector<u32> input_slots;
     std::array<bool, 32> per_vertex{};
     std::vector<Id> input_ids;
@@ -317,6 +306,7 @@ private:
     Id gl_in;
     Id gl_out;
     Id bary_coord;
+    Id linear_coord;
     std::vector<Id> interfaces;
 };
 
