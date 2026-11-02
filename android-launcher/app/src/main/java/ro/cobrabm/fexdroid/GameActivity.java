@@ -654,7 +654,61 @@ public final class GameActivity extends Activity {
                 // Exact native SotC sequential GPU readbacks with bounded prefetch.
                 env.put("SOTC_RB_STREAM",
                         "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
-                env.put("SOTC_RB_STREAM_MAX_KB","512");
+                // SotC 0.1.35: all switches below map to real native source flags.
+                // 0.1.34 defaults are preserved. No speculative bypass is enabled.
+                env.put("SOTC_RB_AHEAD",
+                        "1".equals(setting("sotc_rb_ahead")) ? "1" : "0");
+                env.put("SOTC_RB_EARLY",
+                        "0".equals(setting("sotc_rb_early")) ? "0" : "1");
+                env.put("SOTC_HEAP_FAST",
+                        "0".equals(setting("sotc_heap_fast")) ? "0" : "1");
+                env.put("SOTC_DMA_MERGE",
+                        "0".equals(setting("sotc_dma_merge")) ? "0" : "1");
+                env.put("SOTC_DMA_INCR",
+                        "0".equals(setting("sotc_dma_incr")) ? "0" : "1");
+                env.put("SOTC_COPY_BATCH",
+                        "0".equals(setting("sotc_copy_batch")) ? "0" : "1");
+                env.put("SOTC_EVICT_ASYNC",
+                        "0".equals(setting("sotc_evict_async")) ? "0" : "1");
+                env.put("SOTC_DEPTH_TWIN",
+                        "0".equals(setting("sotc_depth_twin")) ? "0" : "1");
+                env.put("SOTC_TC_SKIP_EMPTY",
+                        "0".equals(setting("sotc_tc_skip_empty")) ? "0" : "1");
+                env.put("SOTC_SAMPLER_MEMO",
+                        "0".equals(setting("sotc_sampler_memo")) ? "0" : "1");
+                env.put("SOTC_FIND_MEMO",
+                        "0".equals(setting("sotc_find_memo")) ? "0" : "1");
+                env.put("SOTC_MEMO_ADDR_GEN",
+                        "0".equals(setting("sotc_memo_addr_gen")) ? "0" : "1");
+                env.put("SOTC_PIPE_MEMO",
+                        "0".equals(setting("sotc_pipe_memo")) ? "0" : "1");
+                env.put("SOTC_RT_FAST",
+                        "0".equals(setting("sotc_rt_fast")) ? "0" : "1");
+                env.put("SOTC_POP_FAST",
+                        "0".equals(setting("sotc_pop_fast")) ? "0" : "1");
+                env.put("SOTC_INDIRECT_DIRECT",
+                        "0".equals(setting("sotc_indirect_direct")) ? "0" : "1");
+                env.put("SOTC_CP_YIELD",
+                        "0".equals(setting("sotc_cp_yield")) ? "0" : "1");
+                env.put("SOTC_DRIVER_CACHE",
+                        "0".equals(setting("sotc_driver_cache")) ? "0" : "1");
+                env.put("SOTC_SHADOW_STAGGER",
+                        "1".equals(setting("sotc_shadow_stagger")) ? "1" : "0");
+                String cfg_sotc_rb_narrow=setting("sotc_rb_narrow");
+                env.put("SOTC_RB_NARROW", java.util.Arrays.asList("0","64","128","256","512").contains(cfg_sotc_rb_narrow) ? cfg_sotc_rb_narrow : "64");
+                String cfg_sotc_rb_stream_max_kb=setting("sotc_rb_stream_max_kb");
+                env.put("SOTC_RB_STREAM_MAX_KB", java.util.Arrays.asList("128","256","512","1024","2048","4096").contains(cfg_sotc_rb_stream_max_kb) ? cfg_sotc_rb_stream_max_kb : "512");
+                String cfg_sotc_flush_us=setting("sotc_flush_us");
+                env.put("SOTC_FLUSH_US", java.util.Arrays.asList("0","500","1000","2000").contains(cfg_sotc_flush_us) ? cfg_sotc_flush_us : "0");
+                String cfg_sotc_write_ahead_pages=setting("sotc_write_ahead_pages");
+                env.put("SOTC_WRITE_AHEAD_PAGES", java.util.Arrays.asList("0","8","15","31").contains(cfg_sotc_write_ahead_pages) ? cfg_sotc_write_ahead_pages : "15");
+                String cfg_sotc_dma_merge_max=setting("sotc_dma_merge_max");
+                env.put("SOTC_DMA_MERGE_MAX", java.util.Arrays.asList("8","16","32","64").contains(cfg_sotc_dma_merge_max) ? cfg_sotc_dma_merge_max : "16");
+                String cfg_sotc_arena_group=setting("sotc_arena_group");
+                env.put("SOTC_ARENA_GROUP", java.util.Arrays.asList("1","2","4","8").contains(cfg_sotc_arena_group) ? cfg_sotc_arena_group : "4");
+                String cfg_sotc_pipeline_workers=setting("sotc_pipeline_workers");
+                if(java.util.Arrays.asList("2","4","6","8").contains(cfg_sotc_pipeline_workers))
+                    env.put("SOTC_PIPELINE_WORKERS", cfg_sotc_pipeline_workers);
             }
             env.put("GOW3_DISPLAY_HZ",String.valueOf(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
             return b.start();
