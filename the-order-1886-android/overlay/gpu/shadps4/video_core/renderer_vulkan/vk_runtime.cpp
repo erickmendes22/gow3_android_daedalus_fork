@@ -609,6 +609,11 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
         blit_helper->ReinterpretColorAsMsDepth(
             dst->info.size.width, dst->info.size.height, dst->info.num_samples,
             src->info.pixel_format, dst->info.pixel_format, src->GetImage(), dst->GetImage());
+        // The depth target now contains GPU-produced content. Keep its cache
+        // state consistent with the other CopyColorAndDepth branches: without
+        // this, later alias handling can treat a completed copy as still dirty.
+        dst->flags |= (src->flags & VideoCore::ImageFlagBits::GpuModified);
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
     } else if (!src->info.props.is_depth && dst->info.props.is_depth &&
                src->info.num_samples == dst->info.num_samples &&
                (src->info.num_samples == 2 || src->info.num_samples == 4) &&
