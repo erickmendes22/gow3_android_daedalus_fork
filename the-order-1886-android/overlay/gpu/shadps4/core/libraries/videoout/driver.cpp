@@ -302,6 +302,16 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 }
 
 void VideoOutDriver::Flip(const Request& req) {
+    if (req.deferred) {
+        // The render-frame pool or present fence was still busy. Retrying
+        // from the present/vblank cycle keeps the GPU command thread free to
+        // submit the commands that will eventually signal that fence.
+        liverpool->SendCommand([this, port = req.port, index = req.index,
+                                flip_arg = req.flip_arg, is_eop = req.eop] {
+            SubmitFlipInternal(port, index, flip_arg, is_eop);
+        });
+        return;
+    }
     // Capture work identity before enqueueing presentation; later GPU work must not
     // make a repeated guest buffer look newly rendered when the swap thread catches up.
     const auto render_serial = Ps4Stats::draws.load(std::memory_order_relaxed) +
@@ -658,15 +668,6 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         const auto& group = port->groups[buffer.group_index];
         frame = presenter->PrepareFrame(group, buffer.address_left);
     }
-    if (!frame) {
-        // The GPU command thread must not block on a present fence:
-        // requeue this EOP/regular flip for a later command-processing pass.
-        liverpool->SendCommand([=, this] {
-            SubmitFlipInternal(port, index, flip_arg, is_eop);
-        });
-        return;
-    }
-
     {
         std::scoped_lock lock{mutex};
         requests.push({
@@ -675,6 +676,9 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
             .flip_arg = flip_arg,
             .index = index,
             .eop = is_eop,
+            // A pending frame is retried by the vblank thread once per
+            // present slot instead of spinning the GPU command queue.
+            .deferred = frame == nullptr,
         });
     }
     request_cv.notify_one();
