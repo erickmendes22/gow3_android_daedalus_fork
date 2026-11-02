@@ -230,7 +230,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
                     SotcChoice(if(pt) "Perfil de desempenho" else "Performance profile",
-                        values["sotc_perf_mode"]?:"performance",
+                        values["sotc_perf_mode"]?.takeUnless { it == "stable" } ?: "performance",
                         listOf("performance" to (if(pt) "Desempenho — padrão otimizado" else "Performance — optimized default"),
                             "compat" to (if(pt) "Compatibilidade — base 0.1.34" else "Compatibility — 0.1.34 baseline"),
                             "ahead" to (if(pt) "Teste — readback antecipado" else "Test — ahead GPU readback"),
