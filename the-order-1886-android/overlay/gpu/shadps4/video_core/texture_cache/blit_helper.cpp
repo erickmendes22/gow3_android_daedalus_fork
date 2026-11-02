@@ -103,7 +103,10 @@ void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, u32 num_sample
     state.height = height;
     state.num_layers = 1;
     state.depth_stencil_attachment.image_view = depth_view;
-    state.depth_stencil_attachment.image_layout = vk::ImageLayout::eDepthAttachmentOptimal;
+    // Runtime::CopyColorAndDepth transitions the target to this precise layout.
+    // Using eDepthAttachmentOptimal here after eDepthStencilAttachmentOptimal in
+    // the barrier violates the dynamic-rendering image-layout requirement.
+    state.depth_stencil_attachment.image_layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
     state.depth_stencil_attachment.has_depth = true;
     state.depth_stencil_attachment.depth_clear = true;
     scheduler.BeginRendering(state);
