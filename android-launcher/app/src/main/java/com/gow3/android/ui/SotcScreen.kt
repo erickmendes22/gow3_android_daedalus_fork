@@ -164,7 +164,6 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
     val ctx=LocalContext.current
     val config=remember { File(ctx.filesDir,"sotcport/sotc.ini") }
     var values by remember { mutableStateOf(Gow3Ini.read(config)) }
-    // Only a small stable menu is visible until explicitly expanded.
     var gameDir by remember(pkgGeneration) { mutableStateOf(
         ctx.getSharedPreferences(SotcPaths.prefsName(ctx),Context.MODE_PRIVATE).getString("game_dir",null)) }
     // Reopening a tab refreshes the selected game folder after a SAF picker.
@@ -229,28 +228,6 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                             "fps60" to "60 FPS (patch)"),{save("sotc_fps_mode",it)})
                     SotcToggle("VSync",(values["sotc_vsync"]?:"1")=="1",
                         {save("sotc_vsync",if(it)"1" else "0")})
-                    Text(if(pt) "PADRÃO 0.1.34 — OTIMIZAÇÕES ANTERIORES PRESERVADAS" else "0.1.34 DEFAULT — PREVIOUS OPTIMIZATIONS PRESERVED",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                    Text(if(pt) "Cache de memória da 0.1.32, readbacks sequenciais da 0.1.34, caches CPU/Vulkan e correções gráficas continuam ativos." 
-                        else "0.1.32 memory cache, 0.1.34 sequential readbacks, existing CPU/Vulkan caches and graphics fixes remain enabled.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    Text(if(pt) "TESTES 0.1.35 — OPCIONAIS, TODOS DESLIGADOS" else "0.1.35 TESTS — OPTIONAL, ALL OFF",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                    SotcToggle(if(pt) "Janela readback: 1 MiB" else "Readback window: 1 MiB",
-                        (values["sotc_trial039_readback_1m"]?:"0")=="1",
-                        {save("sotc_trial039_readback_1m",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "DMA: lotes de 32 MiB" else "DMA: 32 MiB batches",
-                        (values["sotc_trial039_dma_32m"]?:"0")=="1",
-                        {save("sotc_trial039_dma_32m",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Memória: antecipar 31 páginas" else "Memory: 31-page write ahead",
-                        (values["sotc_trial039_cpu_31p"]?:"0")=="1",
-                        {save("sotc_trial039_cpu_31p",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Vulkan: arenas de 8 páginas" else "Vulkan: 8-page arenas",
-                        (values["sotc_trial039_arena_8p"]?:"0")=="1",
-                        {save("sotc_trial039_arena_8p",if(it)"1" else "0")})
-                    Text(if(pt) "Ative no máximo um teste por vez e reinicie. Os perfis problemáticos de readback antecipado e envio Vulkan foram retirados."
-                        else "Enable at most one experiment at a time and restart. Problematic ahead-readback and timed Vulkan-submit profiles were removed.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcChoice(if(pt) "Readback da GPU" else "GPU readback mode",
                         values["sotc_readbacks"]?:"2",
                         listOf("0" to (if(pt) "0 — Desativado" else "0 — Disabled"),
@@ -301,6 +278,115 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Compilação assíncrona de shaders (experimental)"
+                                      else "Asynchronous shader compilation (experimental)",
+                        (values["sotc_async_shaders"]?:"0")=="1",
+                        {save("sotc_async_shaders",if(it)"1" else "0")})
+                    Text(if(pt) "OFF por padrão. Compila pipelines gráficos em paralelo, mas pode causar objetos ausentes ou piscadas enquanto compila. Desative e reinicie para restaurar a renderização completa. Não altera readback, thread Vulkan nem FAST_BIND."
+                         else "OFF by default. Builds graphics pipelines in parallel, but may cause missing geometry or flicker while compiling. Turn OFF and restart to restore complete rendering. Does not change readback, Vulkan thread, or FAST_BIND.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Compilação assíncrona compute (experimental)"
+                                      else "Asynchronous compute pipeline compilation (experimental)",
+                        (values["sotc_async_compute"]?:"0")=="1",
+                        {save("sotc_async_compute",if(it)"1" else "0")})
+                    Text(if(pt) "OFF por padrão. Só atua com shaders assíncronos e thread Vulkan ligados. Preserva a espera pelos resultados compute; pode aumentar uso de CPU."
+                         else "OFF by default. Requires asynchronous shaders and Vulkan recording thread. Compute results remain synchronized; may raise CPU load.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Blit de tela cheia sem limpeza redundante"
+                                      else "Skip redundant fullscreen blit clear",
+                        (values["sotc_present_full_blit"]?:"1")=="1",
+                        {save("sotc_present_full_blit",if(it)"1" else "0")})
+                    Text(if(pt) "Mantém limpeza e barreiras quando a imagem não preenche toda a tela. Reinicie para aplicar."
+                         else "Preserves clearing and barriers for any partial or letterboxed blit. Restart to apply.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
+                                      else "CPU/GPU frame bottleneck profiling (log)",
+                        (values["sotc_perf_profile"]?:"0")=="1",
+                        {save("sotc_perf_profile",if(it)"1" else "0")})
+                    Text(if(pt) "Desligado por padrão. A cada 5 s registra CPU real das threads de desenho/processamento, tempo em binds, readback, esperas GPU, texturas e comandos. A medição tem custo: desligue ao comparar FPS e reinicie para aplicar."
+                         else "OFF by default. Logs real draw/command CPU time, binds, readbacks, GPU waits, textures and command costs every 5 s. Profiling has overhead: disable for FPS comparisons and restart to apply.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Reuso exato de especializações FS/CS (CPU)"
+                                      else "Exact FS/CS shader specialization reuse (CPU)",
+                        (values["sotc_stage_spec_memo"]?:"1")=="1",
+                        {save("sotc_stage_spec_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Transferir dados SRT sem copiar (CPU)"
+                                      else "Zero-copy CP-to-draw SRT snapshot (CPU)",
+                        (values["sotc_stage_snapshot_swap"]?:"1")=="1",
+                        {save("sotc_stage_snapshot_swap",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Evitar registrar blocos de registradores iguais (CPU)"
+                                      else "Skip unchanged GPU register snapshots (CPU)",
+                        (values["sotc_reg_snapshot_memo"]?:"1")=="1",
+                        {save("sotc_reg_snapshot_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Reutilização conservadora de render targets (teste)"
+                                      else "Conservative render-state memo (test)",
+                        (values["sotc_rt_memo"]?:"1")=="1",
+                        {save("sotc_rt_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache seguro de regiões de memória (CPU)"
+                                      else "Safe guest-memory region cache (CPU)",
+                        (values["sotc_vm_range_cache"]?:"1")=="1",
+                        {save("sotc_vm_range_cache",if(it)"1" else "0")})
+                    Text(if(pt) "O cache de regiões evita consultas repetidas ao lock da memória enquanto os mapeamentos continuarem válidos. Não modifica texturas, readback ou shaders. OFF restaura o cache anterior; reinicie após alterar."
+                         else "Region cache avoids repeated guest-memory locks while mappings remain valid. Does not change textures, readbacks, or shaders. OFF restores the previous cache; restart to apply.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "Ambas ligadas por padrão. O reuso só ocorre se os dados reais do shader forem idênticos; a transferência preserva os dados de cada draw. Desative individualmente para comparar com o 0.1.29 e reinicie."
+                         else "Both ON by default. Reuse requires exactly matching live shader data; the transfer preserves each draw's snapshot. Turn either OFF to compare with 0.1.29, then restart.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Cache de bind Vulkan (sem pular draws)" else "Vulkan pipeline bind cache (no skipped draws)",
+                        (values["sotc_pipeline_bind_memo"]?:"1")=="1",
+                        {save("sotc_pipeline_bind_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Cache de atributos Vertex Input" else "Vertex Input state cache",
+                        (values["sotc_vertex_input_memo"]?:"1")=="1",
+                        {save("sotc_vertex_input_memo",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Reutilizar estruturas de descritores Vulkan" else "Reuse Vulkan descriptor write slots",
+                        (values["sotc_descriptor_slot_reuse"]?:"1")=="1",
+                        {save("sotc_descriptor_slot_reuse",if(it)"1" else "0")})
+                    Text(if(pt) "Otimizações de CPU no renderer: ativas por padrão, não desativam materiais ou sincronização. Reinicie após alterar."
+                         else "Renderer CPU optimizations default ON and do not disable materials or synchronization. Restart after changes.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Reutilização rápida de descritores GPU (teste)" else "GPU fast descriptor reuse (test)",
+                        (values["sotc_fast_bind"]?:"0")=="1",
+                        {save("sotc_fast_bind",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Thread separada de comandos Vulkan (teste)" else "Separate Vulkan recording thread (test)",
+                        (values["sotc_record_thread"]?:"0")=="1",
+                        {save("sotc_record_thread",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Readback assíncrono da GPU (teste)" else "Asynchronous GPU readback (test)",
+                        (values["sotc_rb_async"]?:"0")=="1",
+                        {save("sotc_rb_async",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Agrupar readbacks sequenciais da GPU" else "Batch sequential GPU readbacks",
+                        (values["sotc_rb_stream"]?:"1")=="1",
+                        {save("sotc_rb_stream",if(it)"1" else "0")})
+                    Text(if(pt) "Readback preciso 2: antecipa páginas ainda modificadas pela GPU em janelas de até 512 KiB para diminuir esperas repetidas. Desligue para o comportamento da 0.1.32. Reinicie."
+                         else "Precise readback 2: prefetches GPU-modified pages in windows up to 512 KiB to reduce sequential waits. Disable to restore 0.1.32 behavior. Restart.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "Teste A/B: gravação Vulkan e readback assíncrono independentes e desligados por padrão. Ative um de cada vez; Readbacks 2 permanece ativo. Reinicie a cada mudança."
+                         else "A/B test: Vulkan recording and async readback are independent and default OFF. Enable one at a time; required readbacks remain mode 2. Restart after changing.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
+                    Text(if(pt) "0.1.35 — QUATRO TESTES ADICIONAIS (DESATIVADOS)"
+                         else "0.1.35 — FOUR OPTIONAL TESTS (DEFAULT OFF)",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    Text(if(pt) "Todos os controles originais da 0.1.34 acima permanecem disponíveis e continuam respeitando suas configurações salvas."
+                         else "All original 0.1.34 controls above remain available and preserve your existing saved settings.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Janela sequencial de readback 1 MiB (teste)"
+                                      else "1 MiB sequential readback window (test)",
+                        (values["sotc_trial039_readback_1m"]?:"0")=="1",
+                        {save("sotc_trial039_readback_1m",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Lote DMA máximo de 32 MiB (teste)"
+                                      else "32 MiB maximum DMA batch (test)",
+                        (values["sotc_trial039_dma_32m"]?:"0")=="1",
+                        {save("sotc_trial039_dma_32m",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Antecipar 31 páginas de memória (teste)"
+                                      else "Write-ahead 31 guest-memory pages (test)",
+                        (values["sotc_trial039_cpu_31p"]?:"0")=="1",
+                        {save("sotc_trial039_cpu_31p",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Agrupar 8 páginas de arena Vulkan (teste)"
+                                      else "Group 8 Vulkan arena pages (test)",
+                        (values["sotc_trial039_arena_8p"]?:"0")=="1",
+                        {save("sotc_trial039_arena_8p",if(it)"1" else "0")})
+                    Text(if(pt) "São só quatro testes novos. Padrão 0.1.34 intacto com todos desligados; não inclui perfis de 0.1.35 que reduziram FPS. Teste uma opção por vez e reinicie."
+                         else "Only four new optional tests. Original 0.1.34 behavior when all are OFF. Rejected 0.1.35 performance profiles were removed. Test one at a time and restart.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
                         (values["sotc_taa_history"]?:"0")=="1",
                         {save("sotc_taa_history",if(it)"1" else "0")})
@@ -315,7 +401,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.39 0.1.34 + 4 testes",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.34 readback stream",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
