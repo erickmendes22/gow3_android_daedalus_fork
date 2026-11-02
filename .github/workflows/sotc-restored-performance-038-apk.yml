@@ -1,7 +1,7 @@
 name: SotC 0.1.38 restored performance — Android APK
 on:
   push:
-    branches: [fix/sotc-restored-performance-037]
+    branches: [fix/sotc-restored-performance-038]
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,7 +30,7 @@ jobs:
           packages: 'platform-tools'
       - name: Install Android SDK build tools
         run: sdkmanager 'build-tools;35.0.0'
-      - name: Download signed 0.1.34 APK and verify original SHA256
+      - name: Download signed 0.1.37 APK and verify original SHA256
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -70,7 +70,7 @@ jobs:
                   sh=archive.extractfile('sotcport/run-sotc-bionic.sh').read()
                   assert b'SOTC_FLUSH_EVERY' not in sh
                   assert b'SOTC_VM_RANGE_CACHE=${SOTC_VM_RANGE_CACHE:-1}' in sh
-          print('PASS: exact 0.1.34 runtime; no performance lab defaults; signed 0.1.38 APK')
+          print('PASS: exact 0.1.34 runtime; restored default performance fastpaths in Android launcher; signed 0.1.38 APK')
           PY
       - uses: actions/upload-artifact@v4
         with:
