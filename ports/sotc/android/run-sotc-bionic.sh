@@ -114,7 +114,7 @@ esac
 export SOTC_RB_STREAM=${SOTC_RB_STREAM:-1}
 export SOTC_RB_STREAM_MAX_KB=${SOTC_RB_STREAM_MAX_KB:-512}
 case "$SOTC_RB_STREAM" in 0|1) ;; *) echo "Invalid SOTC_RB_STREAM" >&2; exit 2 ;; esac
-case "$SOTC_RB_STREAM_MAX_KB" in 512) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
+case "$SOTC_RB_STREAM_MAX_KB" in 128|256|512|1024|2048|4096) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
 if [ "$BB_READBACKS" != "2" ]; then export SOTC_RB_STREAM=0; fi
 echo "SotC readback streaming: enabled=$SOTC_RB_STREAM max_kib=$SOTC_RB_STREAM_MAX_KB mode=$BB_READBACKS"
 # Independent asynchronous GPU readback execution toggle.
@@ -209,6 +209,61 @@ if [ "$SOTC_ASYNC_SHADERS" = "1" ]; then
 else
   echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
 fi
+# SotC performance lab 0.1.35: all flags below exist in the pinned SotC PC renderer.
+# Defaults preserve 0.1.34. Disable or tune independently; no renderer changes.
+export SOTC_RB_AHEAD=${SOTC_RB_AHEAD:-0}
+case "$SOTC_RB_AHEAD" in 0|1) ;; *) echo "Invalid SOTC_RB_AHEAD" >&2; exit 2 ;; esac
+export SOTC_RB_EARLY=${SOTC_RB_EARLY:-1}
+case "$SOTC_RB_EARLY" in 0|1) ;; *) echo "Invalid SOTC_RB_EARLY" >&2; exit 2 ;; esac
+export SOTC_HEAP_FAST=${SOTC_HEAP_FAST:-1}
+case "$SOTC_HEAP_FAST" in 0|1) ;; *) echo "Invalid SOTC_HEAP_FAST" >&2; exit 2 ;; esac
+export SOTC_DMA_MERGE=${SOTC_DMA_MERGE:-1}
+case "$SOTC_DMA_MERGE" in 0|1) ;; *) echo "Invalid SOTC_DMA_MERGE" >&2; exit 2 ;; esac
+export SOTC_DMA_INCR=${SOTC_DMA_INCR:-1}
+case "$SOTC_DMA_INCR" in 0|1) ;; *) echo "Invalid SOTC_DMA_INCR" >&2; exit 2 ;; esac
+export SOTC_COPY_BATCH=${SOTC_COPY_BATCH:-1}
+case "$SOTC_COPY_BATCH" in 0|1) ;; *) echo "Invalid SOTC_COPY_BATCH" >&2; exit 2 ;; esac
+export SOTC_EVICT_ASYNC=${SOTC_EVICT_ASYNC:-1}
+case "$SOTC_EVICT_ASYNC" in 0|1) ;; *) echo "Invalid SOTC_EVICT_ASYNC" >&2; exit 2 ;; esac
+export SOTC_DEPTH_TWIN=${SOTC_DEPTH_TWIN:-1}
+case "$SOTC_DEPTH_TWIN" in 0|1) ;; *) echo "Invalid SOTC_DEPTH_TWIN" >&2; exit 2 ;; esac
+export SOTC_TC_SKIP_EMPTY=${SOTC_TC_SKIP_EMPTY:-1}
+case "$SOTC_TC_SKIP_EMPTY" in 0|1) ;; *) echo "Invalid SOTC_TC_SKIP_EMPTY" >&2; exit 2 ;; esac
+export SOTC_SAMPLER_MEMO=${SOTC_SAMPLER_MEMO:-1}
+case "$SOTC_SAMPLER_MEMO" in 0|1) ;; *) echo "Invalid SOTC_SAMPLER_MEMO" >&2; exit 2 ;; esac
+export SOTC_FIND_MEMO=${SOTC_FIND_MEMO:-1}
+case "$SOTC_FIND_MEMO" in 0|1) ;; *) echo "Invalid SOTC_FIND_MEMO" >&2; exit 2 ;; esac
+export SOTC_MEMO_ADDR_GEN=${SOTC_MEMO_ADDR_GEN:-1}
+case "$SOTC_MEMO_ADDR_GEN" in 0|1) ;; *) echo "Invalid SOTC_MEMO_ADDR_GEN" >&2; exit 2 ;; esac
+export SOTC_PIPE_MEMO=${SOTC_PIPE_MEMO:-1}
+case "$SOTC_PIPE_MEMO" in 0|1) ;; *) echo "Invalid SOTC_PIPE_MEMO" >&2; exit 2 ;; esac
+export SOTC_RT_FAST=${SOTC_RT_FAST:-1}
+case "$SOTC_RT_FAST" in 0|1) ;; *) echo "Invalid SOTC_RT_FAST" >&2; exit 2 ;; esac
+export SOTC_POP_FAST=${SOTC_POP_FAST:-1}
+case "$SOTC_POP_FAST" in 0|1) ;; *) echo "Invalid SOTC_POP_FAST" >&2; exit 2 ;; esac
+export SOTC_INDIRECT_DIRECT=${SOTC_INDIRECT_DIRECT:-1}
+case "$SOTC_INDIRECT_DIRECT" in 0|1) ;; *) echo "Invalid SOTC_INDIRECT_DIRECT" >&2; exit 2 ;; esac
+export SOTC_CP_YIELD=${SOTC_CP_YIELD:-1}
+case "$SOTC_CP_YIELD" in 0|1) ;; *) echo "Invalid SOTC_CP_YIELD" >&2; exit 2 ;; esac
+export SOTC_DRIVER_CACHE=${SOTC_DRIVER_CACHE:-1}
+case "$SOTC_DRIVER_CACHE" in 0|1) ;; *) echo "Invalid SOTC_DRIVER_CACHE" >&2; exit 2 ;; esac
+export SOTC_SHADOW_STAGGER=${SOTC_SHADOW_STAGGER:-0}
+case "$SOTC_SHADOW_STAGGER" in 0|1) ;; *) echo "Invalid SOTC_SHADOW_STAGGER" >&2; exit 2 ;; esac
+export SOTC_RB_NARROW=${SOTC_RB_NARROW:-64}
+case "$SOTC_RB_NARROW" in 0|64|128|256|512) ;; *) echo "Invalid SOTC_RB_NARROW" >&2; exit 2 ;; esac
+export SOTC_FLUSH_US=${SOTC_FLUSH_US:-0}
+case "$SOTC_FLUSH_US" in 0|500|1000|2000) ;; *) echo "Invalid SOTC_FLUSH_US" >&2; exit 2 ;; esac
+export SOTC_WRITE_AHEAD_PAGES=${SOTC_WRITE_AHEAD_PAGES:-15}
+case "$SOTC_WRITE_AHEAD_PAGES" in 0|8|15|31) ;; *) echo "Invalid SOTC_WRITE_AHEAD_PAGES" >&2; exit 2 ;; esac
+export SOTC_DMA_MERGE_MAX=${SOTC_DMA_MERGE_MAX:-16}
+case "$SOTC_DMA_MERGE_MAX" in 8|16|32|64) ;; *) echo "Invalid SOTC_DMA_MERGE_MAX" >&2; exit 2 ;; esac
+export SOTC_ARENA_GROUP=${SOTC_ARENA_GROUP:-4}
+case "$SOTC_ARENA_GROUP" in 1|2|4|8) ;; *) echo "Invalid SOTC_ARENA_GROUP" >&2; exit 2 ;; esac
+# An explicit periodic submit is opt-in on Adreno; 0 restores 0.1.34.
+if [ "$SOTC_FLUSH_US" = "0" ]; then export SOTC_FLUSH_EVERY=0; else export SOTC_FLUSH_EVERY=256; fi
+case "${SOTC_PIPELINE_WORKERS:-auto}" in auto) unset SOTC_PIPELINE_WORKERS ;; 2|4|6|8) export SOTC_PIPELINE_WORKERS ;; *) echo "Invalid SOTC_PIPELINE_WORKERS" >&2; exit 2 ;; esac
+echo "SotC advanced GPU: ahead=$SOTC_RB_AHEAD early=$SOTC_RB_EARLY window=$SOTC_RB_NARROW stream_cap=$SOTC_RB_STREAM_MAX_KB periodic_us=$SOTC_FLUSH_US"
+echo "SotC advanced memory: dma_merge=$SOTC_DMA_MERGE dma_incr=$SOTC_DMA_INCR copy_batch=$SOTC_COPY_BATCH arena_group=$SOTC_ARENA_GROUP"
 # Fragment barycentric interpolation now selects a capability-gated
 # auxiliary GS on Adreno where both native extensions are missing.
 # Old shaders have no matching GS inputs and MUST NOT be reused.
