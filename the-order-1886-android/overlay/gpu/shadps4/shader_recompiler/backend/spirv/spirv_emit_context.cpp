@@ -380,22 +380,28 @@ void EmitContext::DefineInputs() {
                                             spv::BuiltIn::SampleMask, spv::StorageClass::Input);
         }
         if (can_expand) {
-            const auto& af = runtime_info.hw.fs.addr_flags;
-            if (af.persp_center_ena || af.persp_centroid_ena || af.persp_sample_ena ||
-                af.persp_pull_model_ena) {
+            const bool persp = info.loads.GetAny(IR::Attribute::BaryCoordSmooth) ||
+                               info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid) ||
+                               info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
+                               info.loads.GetAny(IR::Attribute::BaryCoordPullModel);
+            const bool linear = info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
+                                info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
+            const bool sampled = info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
+                                 info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
+            const bool centroid = info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid);
+            if (persp) {
                 bary_coord_smooth = DefineInput(F32[2], per_vertex_locs.bary_coord_loc);
             }
-            if (af.linear_center_ena || af.linear_centroid_ena || af.linear_sample_ena) {
+            if (linear) {
                 bary_coord_nopersp = DefineInput(F32[2], per_vertex_locs.linear_coord_loc);
                 Decorate(bary_coord_nopersp, spv::Decoration::NoPerspective);
             }
-            if ((af.persp_sample_ena || af.linear_sample_ena) && !ValidId(sample_index)) {
+            if (sampled && !ValidId(sample_index)) {
                 sample_index = DefineVariable(U32[1], spv::BuiltIn::SampleId,
                                               spv::StorageClass::Input);
                 Decorate(sample_index, spv::Decoration::Flat);
             }
-            if (af.persp_centroid_ena || af.persp_sample_ena ||
-                af.linear_centroid_ena || af.linear_sample_ena) {
+            if (sampled || centroid) {
                 AddCapability(spv::Capability::InterpolationFunction);
             }
         }

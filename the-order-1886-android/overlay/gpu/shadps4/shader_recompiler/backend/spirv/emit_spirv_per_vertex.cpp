@@ -44,12 +44,15 @@ bool NeedsPerVertexAuxGS(const Profile& profile, const Info& info, const Runtime
         return false;
     }
     const auto& fs_info = runtime_info.hw.fs;
-    // Any mode requires the generated smooth/noperspective basis; all six
-    // barycentric variants previously rejected the fallback and left missing inputs.
-    const auto& af = fs_info.addr_flags;
-    if (af.persp_center_ena || af.persp_centroid_ena || af.persp_sample_ena ||
-        af.persp_pull_model_ena || af.linear_center_ena || af.linear_centroid_ena ||
-        af.linear_sample_ena) {
+    // Registers enable *available* barycentric channels, not necessarily channels
+    // read by this PS. Never inject a geometry shader for an unused channel.
+    // Otherwise almost every triangle creates a costly GS pipeline on Adreno.
+    if (info.loads.GetAny(IR::Attribute::BaryCoordSmooth) ||
+        info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid) ||
+        info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
+        info.loads.GetAny(IR::Attribute::BaryCoordPullModel) ||
+        info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
+        info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample)) {
         return true;
     }
     for (u32 i = 0; i < fs_info.num_inputs; i++) {
@@ -93,11 +96,14 @@ u64 ComputePerVertexAuxGSSignature(const Info& info, const RuntimeInfo& runtime_
     // the GS input locations (param_index) and the output counter layout (order + per-vertex).
     u64 signature = 0x9e3779b97f4a7c15ULL;
     signature = HashCombine(signature, u64(has_clip));
-    const auto& af = fs_info.addr_flags;
-    signature = HashCombine(signature, u64(af.persp_center_ena) |
-        (u64(af.persp_centroid_ena) << 1) | (u64(af.persp_sample_ena) << 2) |
-        (u64(af.persp_pull_model_ena) << 3) | (u64(af.linear_center_ena) << 4) |
-        (u64(af.linear_centroid_ena) << 5) | (u64(af.linear_sample_ena) << 6));
+    // Cache key reflects emitted interfaces, not the guest's enabled-but-unused flags.
+    const u64 bary_flags = u64(info.loads.GetAny(IR::Attribute::BaryCoordSmooth)) |
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid)) << 1) |
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample)) << 2) |
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordPullModel)) << 3) |
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPersp)) << 4) |
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample)) << 5);
+    signature = HashCombine(signature, bary_flags);
     for (u32 i = 0; i < num_inputs; i++) {
         const auto& input = fs_info.inputs[i];
         if (input.IsDefault()) {
@@ -145,11 +151,12 @@ public:
                 per_vertex[i] = info.fs_interpolation[i].primary == Qualifier::PerVertex;
             }
         }
-        const auto& af = fs_info.addr_flags;
-        has_bary_coord = af.persp_center_ena || af.persp_centroid_ena ||
-                         af.persp_sample_ena || af.persp_pull_model_ena;
-        has_linear_coord = af.linear_center_ena || af.linear_centroid_ena ||
-                           af.linear_sample_ena;
+        has_bary_coord = info.loads.GetAny(IR::Attribute::BaryCoordSmooth) ||
+                         info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid) ||
+                         info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
+                         info.loads.GetAny(IR::Attribute::BaryCoordPullModel);
+        has_linear_coord = info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
+                           info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
     }
 
     void Emit() {
