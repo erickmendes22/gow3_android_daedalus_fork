@@ -1,0 +1,85 @@
+name: SotC 0.1.34 APK — verified native readback streaming
+on:
+  push:
+    branches: [perf/sotc-readback-stream-034]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-rbstream-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: false
+      - name: Verify original GPU readback window and Android integration
+        run: |
+          python3 -m py_compile ports/sotc/android/repack_stream_034.py
+          python3 -m unittest discover -s tests -p test_sotc_readback_stream.py -v
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK build tools
+        run: sdkmanager 'build-tools;35.0.0'
+      - name: Download original signed 0.1.32 APK and verify SHA256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh run download 41362903464 --repo "$GITHUB_REPOSITORY" \
+            --name Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.32-bionic-vma-cache --dir original
+          (cd original && sha256sum -c Shadow-of-the-Colossus-Daedalus-Android-0.1.32-bionic-vma-cache-arm64.apk.sha256)
+      - name: Repackage 0.1.32 native binaries unchanged, build and sign launcher
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/repack_stream_034.py \
+            --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.32-bionic-vma-cache-arm64.apk --root .
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - name: Verify signed APK contains updated streaming shell and same native assets
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import tarfile, io, hashlib, json
+          apk=Path('out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.34-sequential-readback-arm64.apk')
+          assert apk.is_file() and apk.stat().st_size > 40000000
+          with ZipFile(apk) as z:
+              payload=z.read('assets/runtime.payload')
+              assert hashlib.sha256(payload).hexdigest()==z.read('assets/runtime.sha256').decode().strip()
+              with tarfile.open(fileobj=io.BytesIO(payload),mode='r:gz') as tar:
+                  sh=tar.extractfile('sotcport/run-sotc-bionic.sh').read()
+                  ini=tar.extractfile('sotcport/sotc.ini').read()
+                  assert b'SOTC_RB_STREAM=${SOTC_RB_STREAM:-1}' in sh
+                  assert b'SOTC_RB_STREAM_MAX_KB=${SOTC_RB_STREAM_MAX_KB:-512}' in sh
+                  assert b'sotc_rb_stream=1' in ini
+                  assert b'sotc_vm_range_cache=1' in ini
+                  assert b'sotc_readbacks=2' in ini
+                  assert json.load(tar.extractfile('runtime-manifest.json'))['version']=='0.1.34-boot-test'
+          print('PASS: 0.1.34 APK signed, same native SotC binaries, new readback window config')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.34-sequential-readback
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.34-sequential-readback-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.34-sequential-readback-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
