@@ -533,6 +533,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # Must patch the staged upstream copy: edits to the fork's gpu/ tree
+    # alone are not compiled by the native SotC Android build.
+    from stage_sotc_complete_draws import patch_sotc_complete_draws
+    patch_sotc_complete_draws(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
