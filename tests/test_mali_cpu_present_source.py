@@ -30,7 +30,9 @@ class MaliCpuPresentContract(unittest.TestCase):
         self.assertIn("vmaInvalidateAllocation(", PRESENTER)
         self.assertIn("instance.GetDevice().waitIdle()", PRESENTER)
         self.assertIn("MALI_CPU_PRESENT_SOURCE frame=", PRESENTER)
-        self.assertIn("swapchain.PresentCpuPixels(pixels, frame->width, frame->height)", PRESENTER)
+        self.assertIn("swapchain.PresentCpuPixels(", PRESENTER)
+        self.assertIn("frame->width, frame->height, frame->mali_capture_frame", PRESENTER)
+        self.assertIn("ReportPresented(", PRESENTER)
 
     def test_panvk_frame_fence_wait_not_device_wide_idle(self):
         start = PRESENTER.index("if (swapchain.UsesCpuPresentation())")
