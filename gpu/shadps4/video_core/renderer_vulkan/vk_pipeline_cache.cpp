@@ -439,7 +439,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                       instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
                       (!complete_draws || complete_draws[0] != '0');
     if (mali_sync_draws) {
-        std::printf("PanVK Mali graphics: complete draws enabled; no async draw discard\\n");
+        std::printf("PanVK Mali graphics: complete draws enabled; no async draw discard\n");
     }
 #endif
     const auto& vk12_props = instance.GetVk12Properties();
