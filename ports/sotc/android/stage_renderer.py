@@ -533,6 +533,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # SotC 0.1.43: accelerate negative CPU-dirty scans only for read-only
+    # Vulkan buffer binds. The original precise GPU readback path is untouched.
+    from stage_sotc_cpu_dirty_summary_043 import patch_cpu_dirty_word_summary
+    patch_cpu_dirty_word_summary(root, out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
