@@ -162,7 +162,7 @@ def patch_cpu_dirty_word_summary(root:Path,gpu:Path)->None:
     driver.write_text(d)
 
     checks=[
-        'std::atomic<u64> cpu_live_words{~0ULL}',  // new region starts conservatively dirty
+        'std::atomic<u64> cpu_live_words{~0ULL}',  # new region starts conservatively dirty
         'type == Type::CPU && cpu_op == StateOp::Clear',
         'gpu_op == StateOp::None',
         'SotcDirtyWord::MightContain',
