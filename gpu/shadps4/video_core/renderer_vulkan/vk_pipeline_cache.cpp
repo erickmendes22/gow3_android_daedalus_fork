@@ -428,6 +428,20 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     sel.regs = &liverpool->regs;
+#ifdef __ANDROID__
+    // Bachata's ordinary renderer builds a pipeline before executing the draw.
+    // GoW3's optional asynchronous shader/pipeline mode instead returns null
+    // on the first use and Rasterizer::Draw drops that draw permanently.
+    // On PanVK this loses essential scene/depth passes while shaders compile.
+    // Preserve every draw on Mali; keep the faster opt-in mode on other GPUs.
+    const char* complete_draws = std::getenv("GOW3_MALI_COMPLETE_DRAWS");
+    mali_sync_draws = std::getenv("GOW3_ANDROID_PORT") &&
+                      instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                      (!complete_draws || complete_draws[0] != '0');
+    if (mali_sync_draws) {
+        std::printf("PanVK Mali graphics: complete draws enabled; no async draw discard\\n");
+    }
+#endif
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
@@ -769,7 +783,10 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
+    // AsyncCompilation returns nullptr on cache misses, and the rasterizer
+    // drops the affected draw. Mali must construct the pipeline before drawing.
+    return !mali_sync_draws && compiler &&
+           Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
