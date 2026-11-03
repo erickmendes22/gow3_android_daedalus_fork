@@ -671,14 +671,6 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     return queued;
 }
 
-// Shadow of the Colossus Android may precompile ahead, but a draw must never
-// be discarded merely because a required shader/pipeline is still compiling.
-// Scope this strictly to the SotC launcher; other games keep their behavior.
-static bool SotcRequireCompleteDraws() {
-    const char* value = std::getenv("SOTC_NO_DROPPED_DRAWS");
-    return value && value[0] == '1' && value[1] == 0;
-}
-
 void PipelineCache::PublishShaders(bool wait) {
     for (size_t i = 0; i < pending_programs.size();) {
         auto* program = pending_programs[i];
@@ -899,30 +891,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        // SotC correctness mode: do not silently drop geometry because the
-        // asynchronous graphics pipeline has not been published. Wait only
-        // for this pipeline; use the normal synchronous path if the queue
-        // was full and no job could be submitted.
-        if (SotcRequireCompleteDraws()) {
-            const auto waiting = pending_graphics.find(sel.graphics_key);
-            if (waiting != pending_graphics.end()) {
-                {
-                    PhaseTimer timer{g_gow3_compile_wait_ns};
-                    waiting.value()->job.Wait();
-                }
-                PublishGraphics();
-                const auto ready = graphics_pipelines.find(sel.graphics_key);
-                if (ready != graphics_pipelines.end()) {
-                    return ready->second.get();
-                }
-                // A real compile failure is not a pending draw. The original
-                // PublishGraphics error is kept; do not invent a pipeline.
-                return nullptr;
-            }
-        } else {
-            ++g_gow3_pending_draws;
-            return nullptr;
-        }
+        ++g_gow3_pending_draws;
+        return nullptr;
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
@@ -1380,13 +1350,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
 
     auto it_pgm = program_cache.find(params.hash); // this thread is the only writer
-    // For SotC, a first-use shader must exist before its draw can execute.
-    // Background graphics pipeline creation still runs on worker threads,
-    // but publication is awaited only when the draw actually needs it.
     const bool compile_async = AsyncCompilation() && hw_stage != HwStage::Compute &&
                                !sel.regs->stage_enable.hs_en &&
-                               !EmulatorSettings.IsShaderCollect() &&
-                               !SotcRequireCompleteDraws();
+                               !EmulatorSettings.IsShaderCollect();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
             PhaseTimer waiting{g_gow3_compile_wait_ns};
