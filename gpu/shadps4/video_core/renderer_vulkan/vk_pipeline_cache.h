@@ -227,6 +227,9 @@ private:
     Shader::Pools pools;
     CompilerPool<Shader::Pools> compiler_pools{8};
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
+    // Bionic Mali: don't drop first-use graphics/depth draws for async compilation.
+    // Determined once from the Vulkan device; independent of the live UI toggle.
+    bool mali_sync_draws = false;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
     /// gow3: GOW3_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
