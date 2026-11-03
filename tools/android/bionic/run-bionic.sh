@@ -164,26 +164,32 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Pass captures force GPU render-pass breaks and extra readbacks. They are
       # for a controlled diagnostic session, never for ordinary Mali gameplay.
       # Explicit GOW3_MALI_AUTOCAPTURE=1 is still available to the developer.
-      export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-0}
+      # This Mali-only tester defaults to bounded multi-stage capture; override
+      # with GOW3_MALI_AUTOCAPTURE=0 to disable GPU readbacks.
+      export GOW3_MALI_VISUAL_TRACE=${GOW3_MALI_VISUAL_TRACE:-1}
+      export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-1}
       if [ "$GOW3_MALI_AUTOCAPTURE" = 1 ]; then
         export GOW3_MALI_CAPTURE_DIR="$base/logs/mali-captures"
         export GOW3_CAPTURE_DIR="$GOW3_MALI_CAPTURE_DIR"
         mkdir -p "$GOW3_MALI_CAPTURE_DIR"
         rm -f "$GOW3_MALI_CAPTURE_DIR"/guest_*.bmp "$GOW3_MALI_CAPTURE_DIR"/post_*.bmp \
               "$GOW3_MALI_CAPTURE_DIR"/cpu_*.bmp "$GOW3_MALI_CAPTURE_DIR"/frame_*.txt \
-              "$GOW3_MALI_CAPTURE_DIR"/scene_*.bmp "$GOW3_MALI_CAPTURE_DIR"/scene_*_pass.txt
+              "$GOW3_MALI_CAPTURE_DIR"/scene_*.bmp "$GOW3_MALI_CAPTURE_DIR"/scene_*_pass.txt \
+               "$GOW3_MALI_CAPTURE_DIR"/ahb_*.bmp
         printf '%s\n' \
-          'PanVK capture stages: guest = PS4 VideoOut, post = host Vulkan output, cpu = readback before Android AHB.' \
+          'PanVK stages: GPU image-create -> view-create/reject -> texture-binding -> draw -> VideoOut -> guest/post/cpu -> AHB -> Android IPC.' 
+           'GOW3_MALI_VISUAL records sampled events keyed by image UID, shader hash, flip and AHB buffer; summaries are cumulative, not proof of pixel correctness.' \
           'scene_????_3d_colorN.bmp = REAL Vulkan render-target contents after selected 3D draws.' \
           'scene_????_3d_depth.bmp = REAL Vulkan depth attachment, grayscale; scene_????_color is first non-depth pass.' \
           'scene_????_3d_stencil.bmp = stencil aspect as grayscale where available.' \
-          'scene_*_pass.txt = pass shader hashes, buffer addresses, physical formats and skip/failure reasons.' \
+          'scene_*_pass.txt = pass shader hashes, buffer addresses, physical formats and skip/failure reasons.'
+           'ahb_*.bmp = final CPU-writable AHardwareBuffer after scaling/letterboxing and alpha normalization.' \
           'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.' \
           'Previews: accepted guest frames 1 4 12 32 120 360 480 720 and first nonblack transition.' \
           'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.' \
           > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE trace=$GOW3_MALI_VISUAL_TRACE"
     fi
     ;;
 esac

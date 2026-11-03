@@ -8,6 +8,7 @@
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/image_view.h"
 #include "video_core/texture_cache/robust_image_view.h"
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 
 #include <magic_enum/magic_enum.hpp>
 #include <atomic>
@@ -223,6 +224,18 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
             check.issue = RobustImage::Issue::None;
         }
         if (check.issue != RobustImage::Issue::None) {
+            if (Vulkan::MaliVisualTrace::Requested()) {
+                const auto n = Vulkan::MaliVisualTrace::Add(Vulkan::MaliVisualTrace::Counts::views_rejected);
+                if (Vulkan::MaliVisualTrace::Sample(n))
+                    std::printf("GOW3_MALI_VISUAL event=view_reject seq=%llu uid=%llu guest=%#llx issue=%u requested=%s physical=%s mip=%u+%u layer=%u+%u shader_only=%d storage=%d\n",
+                                (unsigned long long)n, (unsigned long long)image.image_uid,
+                                (unsigned long long)image.info.guest_address, unsigned(check.issue),
+                                vk::to_string(view_format).c_str(),
+                                vk::to_string(backing_format).c_str(),
+                                view_range.baseMipLevel, view_range.levelCount,
+                                view_range.baseArrayLayer, view_range.layerCount,
+                                int(shader_only), int(shader_storage));
+            }
             static std::atomic<u32> warnings{0};
             if (warnings.fetch_add(1, std::memory_order_relaxed) < 32) {
                 LOG_WARNING(Render_Vulkan,
@@ -262,6 +275,17 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
     ASSERT_MSG(view_result == vk::Result::eSuccess, "Failed to create image view: {}",
                vk::to_string(view_result));
     image_view = std::move(view);
+    if (is_mali && Vulkan::MaliVisualTrace::Requested()) {
+        const auto n = Vulkan::MaliVisualTrace::Add(Vulkan::MaliVisualTrace::Counts::views_created);
+        if (Vulkan::MaliVisualTrace::Sample(n))
+            std::printf("GOW3_MALI_VISUAL event=view_create seq=%llu uid=%llu guest=%#llx format=%s physical=%s mip=%u+%u layer=%u+%u storage=%d\n",
+                        (unsigned long long)n, (unsigned long long)image.image_uid,
+                        (unsigned long long)image.info.guest_address,
+                        vk::to_string(view_format).c_str(),
+                        vk::to_string(image.backing->image.image_ci.format).c_str(),
+                        view_range.baseMipLevel, view_range.levelCount,
+                        view_range.baseArrayLayer, view_range.layerCount, int(shader_storage));
+    }
 
     const auto view_aspect = aspect & vk::ImageAspectFlagBits::eDepth     ? "Depth"
                              : aspect & vk::ImageAspectFlagBits::eStencil ? "Stencil"

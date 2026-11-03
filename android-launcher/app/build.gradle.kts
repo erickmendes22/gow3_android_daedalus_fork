@@ -4,6 +4,8 @@ plugins {
 }
 
 val bionicRuntime = providers.gradleProperty("gow3Bionic").orNull == "true"
+val standaloneMali = providers.gradleProperty("gow3MaliTest").orNull == "true"
+if (standaloneMali && !bionicRuntime) error("gow3MaliTest requires gow3Bionic")
 
 android {
     namespace = "com.gow3.android"
@@ -19,10 +21,12 @@ android {
         versionName = "2.1.8"
         manifestPlaceholders["appLabel"] = "@string/app_name"
         if (bionicRuntime) {
-            applicationId = "com.gow3.android.bionic"
+            applicationId = if (standaloneMali) "com.gow3.android.bionic.malitest"
+                            else "com.gow3.android.bionic"
             minSdk = 30
-            versionName = "2.1.8-bionic"
-            manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
+            versionName = if (standaloneMali) "2.1.8-bionic-malitest" else "2.1.8-bionic"
+            manifestPlaceholders["appLabel"] = if (standaloneMali)
+                "God of War III — Mali Diagnostic" else "God of War III — Daedalus Fork"
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

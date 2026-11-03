@@ -19,6 +19,7 @@
 #include "gow3_graphics.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 #ifdef __ANDROID__
 #include "gow3_lsfg.h"  // zFitness native bloodframe integration
 #endif
@@ -547,6 +548,27 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool frame_dump = manual_dump || image_capture;
     const int selected_dump_index = image_capture ? int(mali_index) : frame_dump_index;
     frame->mali_capture_frame = image_capture ? mali_index : 0;
+    frame->mali_trace_flip = 0;
+    frame->mali_trace_guest_address = 0;
+    frame->mali_trace_source_uid = 0;
+    const bool visual_trace = MaliVisualTrace::Enabled(
+        instance.GetPhysicalDevice().getProperties().vendorID);
+    if (visual_trace) {
+        frame->mali_trace_flip = MaliVisualTrace::Add(MaliVisualTrace::Counts::prepared);
+        frame->mali_trace_guest_address = cpu_address;
+        if (!upscaled) {
+            frame->mali_trace_source_uid = texture_cache.GetImage(image_id).image_uid;
+        }
+        if (MaliVisualTrace::Sample(frame->mali_trace_flip) || image_capture) {
+            std::printf("GOW3_MALI_VISUAL event=videoout_prepare flip=%llu "
+                        "guest=%#llx source_uid=%llu upscaled=%d "
+                        "frame_slot=%u capture=%u\n",
+                        (unsigned long long)frame->mali_trace_flip,
+                        (unsigned long long)cpu_address,
+                        (unsigned long long)frame->mali_trace_source_uid,
+                        int(upscaled), unsigned(frame->id), frame->mali_capture_frame);
+        }
+    }
     if (image_capture) {
         LOG_WARNING(Render_Vulkan,
                     "GOW3_MALI_CAPTURE accepted_frame={} first_content={} guest={:#x}",
@@ -1050,7 +1072,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             std::printf("GOW3_MALI_CAPTURE stage=cpu frame=%u path=%s ok=%d\n",
                         frame->mali_capture_frame, path, int(ok));
         }
-        swapchain.PresentCpuPixels(pixels, frame->width, frame->height);
+        const bool sent = swapchain.PresentCpuPixels(
+            pixels, frame->width, frame->height, frame->mali_capture_frame);
+        if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+            MaliVisualTrace::ReportPresented(
+                frame->mali_trace_flip, frame->mali_trace_guest_address,
+                frame->mali_trace_source_uid, frame->width, frame->height, sent);
+        }
         free_frame();
         if (!is_reusing_frame && is_game_frame) DebugState.IncFlipFrameNum();
         return;
@@ -1627,6 +1655,9 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
     }
 
     frame->mali_capture_frame = 0;
+    frame->mali_trace_flip = 0;
+    frame->mali_trace_guest_address = 0;
+    frame->mali_trace_source_uid = 0;
     if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
         frame->is_hdr != swapchain.GetHDR()) {
         RecreateFrame(frame, expected_frame_width, expected_frame_height);

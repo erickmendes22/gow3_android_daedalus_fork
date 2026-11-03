@@ -13,6 +13,16 @@ on:
       - 'tests/test_mali_warmup_disable.py'
       - 'tests/test_bachata_release_mali_shader_resources.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_visual_trace.h'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'tools/android/bionic/build_apk.sh'
+      - 'tools/android/bionic/sign_apk.sh'
+      - 'tools/android/bionic/package_runtime.py'
+      - 'tools/android/bionic/validate_apk.py'
+      - 'android-launcher/app/build.gradle.kts'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java'
+      - 'tests/test_mali_visual_provenance.py'
+      - 'tests/test_mali_only_package.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h'
@@ -73,6 +83,7 @@ jobs:
     env:
       GOW3_JOBS: '2'
       GOW3_BUILD_TOOLS: '36.0.0'
+      GOW3_MALI_ONLY_BUILD: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,6 +121,8 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_mali_only_package.py' -v
+          python -m unittest discover -s tests -p 'test_mali_visual_provenance.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
           python -m unittest discover -s tests -p 'test_mali_warmup_disable.py' -v
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
@@ -155,6 +168,7 @@ jobs:
         shell: bash -el {0}
         run: bash tools/android/bionic/build_runtime.sh
       - name: Build pinned MIT Bloodframe 2x/3x/4x engine
+        if: env.GOW3_MALI_ONLY_BUILD != '1'
         shell: bash
         run: |
           export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
@@ -175,11 +189,20 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_apk.sh --package-only
-      - name: Report missing signing identity
+      - name: Build separately installable Mali diagnostic APK
         if: env.GOW3_CAN_SIGN != '1'
         run: |
-          echo "### Native Mali graphics build only" >> "$GITHUB_STEP_SUMMARY"
-          echo "The existing Android signing key was not available in Actions cache. No replacement key was generated, and no installable APK was issued." >> "$GITHUB_STEP_SUMMARY"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          # Different package ID; no accidental override of the installed GoW3 app.
+          GOW3_MALI_TEST_APK=1 bash tools/android/bionic/build_apk.sh --package-only
+      - uses: actions/upload-artifact@v4
+        if: env.GOW3_CAN_SIGN != '1'
+        with:
+          name: God-of-War-III-Mali-Standalone-Diagnostic
+          path: |
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: env.GOW3_CAN_SIGN == '1'
         with:

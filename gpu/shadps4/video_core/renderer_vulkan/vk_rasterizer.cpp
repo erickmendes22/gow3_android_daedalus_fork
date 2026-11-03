@@ -11,6 +11,7 @@
 #include "gow3_settings.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_mali_pass_capture.h"
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -1003,6 +1004,12 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
                          prepared->reg_checksum == liverpool->gfx_reg_checksum);
     }
     if (!pipeline) {
+        if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+            const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::draws_skipped);
+            if (MaliVisualTrace::Sample(n))
+                std::printf("GOW3_MALI_VISUAL event=draw_skipped seq=%llu type=direct depth=%d reason=pipeline_unavailable\n",
+                            (unsigned long long)n, int(Regs().depth_control.depth_enable));
+        }
         return;
     }
     const DrawPredication pred{.predicated = liverpool->IsPacketPredicated()};
@@ -1297,6 +1304,24 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     DebugState.IncDrawCall();
+    if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+        const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::draws_recorded);
+        const bool depth_active = db_desc.first && bool(regs.depth_control.depth_enable);
+        if (depth_active) MaliVisualTrace::Add(MaliVisualTrace::Counts::depth_draws);
+        if (MaliVisualTrace::Sample(n)) {
+            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            const auto color_uid = cb_descs[0].first
+                ? texture_cache.GetImage(cb_descs[0].first).image_uid : 0;
+            const auto depth_uid = db_desc.first
+                ? texture_cache.GetImage(db_desc.first).image_uid : 0;
+            std::printf("GOW3_MALI_VISUAL event=draw_record seq=%llu vs=%016llx ps=%016llx color_uid=%llu depth_uid=%llu depth_on=%d mrt=%08x area=%ux%u\n",
+                        (unsigned long long)n, (unsigned long long)vs_info.pgm_hash,
+                        (unsigned long long)(ps ? ps->pgm_hash : 0),
+                        (unsigned long long)color_uid, (unsigned long long)depth_uid,
+                        int(depth_active), u32(pipeline->GetGraphicsKey().mrt_mask),
+                        state.width, state.height);
+        }
+    }
 
     // Collect ACTUAL pass attachment pixels, not just shader hashes or VideoOut.
     // This is strictly opt-in on PanVK. Each copy ends the render pass,
@@ -1345,6 +1370,12 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     };
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
     if (!pipeline) {
+        if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+            const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::draws_skipped);
+            if (MaliVisualTrace::Sample(n))
+                std::printf("GOW3_MALI_VISUAL event=draw_skipped seq=%llu type=indirect depth=%d reason=pipeline_unavailable\n",
+                            (unsigned long long)n, int(Regs().depth_control.depth_enable));
+        }
         return;
     }
     const IndirectDraw indirect = {arg_address + offset, count_address, stride, max_count};
@@ -2498,6 +2529,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+            if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+                const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::empty_sharps);
+                if (MaliVisualTrace::Sample(n))
+                    std::printf("GOW3_MALI_VISUAL event=empty_sharp seq=%llu shader=%016llx slot=%u guest=%#llx format=%u\n",
+                                (unsigned long long)n, (unsigned long long)stage.pgm_hash,
+                                image_index, (unsigned long long)tsharp.Address(), u32(data_fmt));
+            }
             image_bindings.emplace_back(VideoCore::ImageId{}, &image_desc_storage.emplace_back());
             image_binding_entries.push_back(nullptr);
             binding_proxy_ok.push_back(false);
@@ -2507,6 +2545,14 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
         if (!memory->IsValidGpuMapping(tsharp.Address(), 0) ||
             !IsKnownFormat(data_fmt, num_fmt)) {
+            if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+                const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::invalid_sharps);
+                if (MaliVisualTrace::Sample(n))
+                    std::printf("GOW3_MALI_VISUAL event=invalid_sharp seq=%llu shader=%016llx slot=%u guest=%#llx datafmt=%u numfmt=%u\n",
+                                (unsigned long long)n, (unsigned long long)stage.pgm_hash,
+                                image_index, (unsigned long long)tsharp.Address(),
+                                u32(data_fmt), u32(num_fmt));
+            }
             LOG_WARNING(Render_Vulkan,
                         "Rejecting invalid T# address={:#x}, pitch={}, width={}, "
                         "data_format={}, num_format={}",
@@ -2523,7 +2569,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         // Same as image_desc.NumBindings(stage), without fetching the T# again.
         const u32 num_bindings =
             mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex
-                ? static_cast<u32>(tsharp.last_level - tsharp.base_level + 1)
+                ? (tsharp.last_level >= tsharp.base_level
+                       ? static_cast<u32>(tsharp.last_level - tsharp.base_level + 1) : 1u)
                 : 1u;
         const bool proxy_candidate = sample_proxies && num_bindings == 1 &&
                                      !image_desc.needs_native && !image_desc.is_written &&
@@ -2686,7 +2733,32 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                 FrameCapture::Sampled(image.info, is_storage);
             }
 
+            if (!image_view.image_view) {
+                // An invalid PanVK view must become a legal null descriptor,
+                // never a dereference of an empty UniqueImageView.
+                if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+                    const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::null_view_binds);
+                    if (MaliVisualTrace::Sample(n))
+                        std::printf("GOW3_MALI_VISUAL event=null_view_binding seq=%llu shader=%016llx uid=%llu guest=%#llx format=%s storage=%d\n",
+                                    (unsigned long long)n, (unsigned long long)stage.pgm_hash,
+                                    (unsigned long long)image.image_uid,
+                                    (unsigned long long)image.info.guest_address,
+                                    vk::to_string(image.info.pixel_format).c_str(), int(is_storage));
+                }
+                image_infos.emplace_back(VK_NULL_HANDLE, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+                set_ok = false;
+                continue;
+            }
             vk::ImageView view = *image_view.image_view;
+            if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+                const auto n = MaliVisualTrace::Add(MaliVisualTrace::Counts::textures_bound);
+                if (MaliVisualTrace::Sample(n))
+                    std::printf("GOW3_MALI_VISUAL event=texture_bound seq=%llu shader=%016llx uid=%llu guest=%#llx format=%s storage=%d\n",
+                                (unsigned long long)n, (unsigned long long)stage.pgm_hash,
+                                (unsigned long long)image.image_uid,
+                                (unsigned long long)image.info.guest_address,
+                                vk::to_string(image.info.pixel_format).c_str(), int(is_storage));
+            }
             vk::ImageLayout layout = image.backing->state.layout;
             if (upscaler->Enabled()) {
                 // gow3: the display pass reads the upscaled frame (scaled presets).
@@ -2975,7 +3047,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             if (verified) {
                 static unsigned forward_logged = 0;
                 if (forward_logged++ < 3)
-                    std::printf("GSR2: forward scene accepted %ux%u MRT=%u depth=%u\\n",
+                    std::printf("GSR2: forward scene accepted %ux%u MRT=%u depth=%u\n",
                                 primary.info.size.width, primary.info.size.height,
                                 unsigned(std::popcount(key.mrt_mask & 0x7f)),
                                 unsigned(depth.info.pixel_format));

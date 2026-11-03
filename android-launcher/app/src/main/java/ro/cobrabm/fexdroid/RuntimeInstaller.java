@@ -75,7 +75,8 @@ public final class RuntimeInstaller {
             String identity = new String(Files.readAllBytes(path(root,"runtime-manifest.json").toPath()),
                     StandardCharsets.UTF_8);
             if (!identity.contains("\"schema\": 1") || !identity.contains("\"runtime_backend\": \"bionic\"") ||
-                    !identity.contains("\"application_id\": \"com.gow3.android.bionic\"") ||
+                    !(identity.contains("\"application_id\": \"com.gow3.android.bionic\"") ||
+                      identity.contains("\"application_id\": \"com.gow3.android.bionic.malitest\"")) ||
                     !identity.contains("\"java_package\": \"ro.cobrabm.fexdroid\""))
                 throw new IllegalStateException("Incompatible Bionic runtime identity");
             requireDirectory(root,"home/gow3port"); return;

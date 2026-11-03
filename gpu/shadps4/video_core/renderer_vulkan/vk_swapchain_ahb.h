@@ -55,7 +55,7 @@ public:
     // Mali/PanVK: present a CPU-readback RGBA8 frame without importing gralloc as
     // a Vulkan color attachment. This is intentionally independent from Adreno.
     bool UsesCpuPresentation() const { return cpu_present; }
-    bool PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height);
+    bool PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, u32 capture_frame = 0);
     vk::Image Image() const { return buffers[image_index].image; }
     vk::ImageView ImageView() const { return buffers[image_index].view; }
     vk::SurfaceFormatKHR GetSurfaceFormat() const { return surface_format; }

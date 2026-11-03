@@ -58,7 +58,8 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")', cache)
         self.assertIn('std::getenv("GOW3_MALI_COMPLETE_DRAWS")', cache)
         self.assertIn("return !mali_sync_draws && compiler &&", cache)
-        self.assertIn("if (!pipeline) {\n        return;", rasterizer)
+        self.assertIn("if (!pipeline) {", rasterizer)
+        self.assertIn("event=draw_skipped", rasterizer)
         self.assertIn("++g_gow3_pending_draws", cache)
 
     def test_scheduler_has_bounded_queue_setting(self):

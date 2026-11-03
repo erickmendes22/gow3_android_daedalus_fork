@@ -15,7 +15,13 @@ ROOT = Path(__file__).resolve().parents[3]
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--ndk', type=Path, required=True)
+    p.add_argument('--mali-only', action='store_true',
+                   help='Minimal PanVK graphics runtime; omit optional frame generator')
+    p.add_argument('--mali-test', action='store_true',
+                   help='Standalone signed diagnostic APK; never replaces normal installation')
     a = p.parse_args()
+    if a.mali_test and not a.mali_only:
+        p.error('--mali-test requires --mali-only')
     source = ROOT/'out/bionic'
     strip = a.ndk/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
     output = ROOT/'out/release'
@@ -27,9 +33,12 @@ def main():
         (stage/'home/gow3port/.fex-emu').mkdir(parents=True)
         (base/'user').mkdir(parents=True)
         (base/'logs').mkdir()
+        libs = ['libgow3cpu.so','libgow3gpu.so','libgow3present.so','libc++_shared.so']
+        if not a.mali_only:
+            libs.append('libbloodframe.so')
         for directory,names in {
             'bin':['gow3-probe','gow3-prepare','kgsl-chip-id','orbis-pkg-util'],
-            'lib':['libgow3cpu.so','libgow3gpu.so','libgow3present.so','libbloodframe.so','libc++_shared.so']}.items():
+            'lib':libs}.items():
             (runtime/directory).mkdir(parents=True)
             for name in names:shutil.copy2(source/directory/name,runtime/directory/name)
         shutil.copytree(source/'drivers',runtime/'drivers',ignore=shutil.ignore_patterns('.*'))
@@ -75,9 +84,13 @@ def main():
         jni = source/'apk-jni/arm64-v8a'
         jni.mkdir(parents=True,exist_ok=True)
         shutil.copy2(runtime/'lib/libgow3present.so',jni/'libgow3present.so')
-        manifest={'schema':1,'runtime_backend':'bionic','application_id':'com.gow3.android.bionic',
+        manifest={'schema':1,'runtime_backend':'bionic',
+                  'application_id':('com.gow3.android.bionic.malitest' if a.mali_test
+                                    else 'com.gow3.android.bionic'),
                   'java_package':'ro.cobrabm.fexdroid','runtime_name':'daedalus-gow3-bionic-2.1.8',
-                  'version':'2.1.8-bionic','min_api':30,
+                  'version':('2.1.8-bionic-malitest' if a.mali_test else '2.1.8-bionic'),
+                  'min_api':30,
+                  'bloodframe_bundled': not a.mali_only,
                   'driver':json.loads((ROOT/'tools/android/bionic/driver.json').read_text()),
                   'adreno7xx_driver':json.loads((ROOT/'tools/android/bionic/driver-adreno7xx.json').read_text())}
         (stage/'runtime-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

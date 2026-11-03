@@ -41,7 +41,10 @@ struct Frame {
     vk::Semaphore ready_semaphore;
     u64 ready_tick;
     bool is_hdr{false};
-    u32 mali_capture_frame{}; ///< Correlates guest/post/CPU snapshots on PanVK.
+    u32 mali_capture_frame{}; ///< Correlates guest/post/CPU/AHB snapshots on PanVK.
+    u64 mali_trace_flip{}; ///< Accepted guest flip sequence; 0 for blank/UI-only frames.
+    u64 mali_trace_guest_address{};
+    u64 mali_trace_source_uid{}; ///< 0 means post/upscaled image, not direct texture cache.
     u8 id{};
 
 };

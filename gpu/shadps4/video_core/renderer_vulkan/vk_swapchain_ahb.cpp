@@ -6,6 +6,9 @@
 #include <poll.h>
 #include <unistd.h>
 #include <algorithm>
+#include <array>
+#include <string>
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -453,7 +456,39 @@ int Swapchain::ExportPresentReady() {
     return fd; // -1 is possible too: the semaphore was already signaled
 }
 
-bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) {
+// The final CPU-writable AHardwareBuffer, after letterboxing and alpha forcing,
+// is distinct from the renderer's CPU readback. Preserve it for pixel comparison.
+bool SaveMaliAhbBmp(const char* path, const u8* rgba, u32 w, u32 h, u32 stride) {
+    if (!rgba || !w || !h || stride < w) return false;
+    const u32 dw = std::min(w, 960u), dh = std::min(h, 540u);
+    const u32 row_stride = (dw * 3 + 3) & ~3u;
+    const u32 bytes = row_stride * dh;
+    std::array<u8, 54> head{};
+    head[0] = 'B'; head[1] = 'M';
+    const auto put = [&](size_t off, u32 val) {
+        for (int i = 0; i < 4; ++i) head[off + i] = u8(val >> (8 * i));
+    };
+    put(2, 54 + bytes); put(10, 54); put(14, 40);
+    put(18, dw); put(22, dh); head[26] = 1; head[28] = 24; put(34, bytes);
+    std::FILE* out = std::fopen(path, "wb");
+    if (!out) return false;
+    bool ok = std::fwrite(head.data(), 1, head.size(), out) == head.size();
+    std::vector<u8> row(row_stride);
+    for (u32 y = 0; ok && y < dh; ++y) {
+        std::fill(row.begin(), row.end(), u8{0});
+        const u32 sy = u32((u64(dh - 1 - y) * h) / dh);
+        for (u32 x = 0; x < dw; ++x) {
+            const u32 sx = u32((u64(x) * w) / dw);
+            const u8* p = rgba + (size_t(sy) * stride + sx) * 4;
+            row[x * 3 + 0] = p[2]; row[x * 3 + 1] = p[1]; row[x * 3 + 2] = p[0];
+        }
+        ok = std::fwrite(row.data(), 1, row.size(), out) == row.size();
+    }
+    if (std::fclose(out) != 0) ok = false;
+    return ok;
+}
+
+bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, u32 capture_frame) {
     ASSERT_MSG(cpu_present && image_index < buffers.size(), "Invalid CPU present");
     Buffer& buffer = buffers[image_index];
     AHardwareBuffer_Desc desc{};
@@ -464,6 +499,7 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) 
     if (lock_result != 0 || !mapped) {
         LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_lock failed: {}",
                   lock_result);
+        if (MaliVisualTrace::Requested()) MaliVisualTrace::Add(MaliVisualTrace::Counts::ahb_failed);
         free_queue.push_back(image_index);
         return false;
     }
@@ -518,23 +554,72 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height) 
             }
         }
     }
+    // Sample final AHB pixels independently of the GPU readback. A nonzero
+    // source with an all-black AHB localizes the loss to CPU scaling/copy.
+    if (MaliVisualTrace::Requested()) {
+        const u64 sequence = frame_counter + 1;
+        if (MaliVisualTrace::Sample(sequence) || sequence % 120 == 0 || capture_frame) {
+            u64 visible = 0, alpha = 0, sampled = 0;
+            u64 hash = 14695981039346656037ull;
+            for (u32 y = 0; y < dst_h; y += 16) {
+                for (u32 x = 0; x < dst_w; x += 16) {
+                    const u8* p = dst + (size_t(y) * desc.stride + x) * 4;
+                    visible += (p[0] | p[1] | p[2]) != 0;
+                    alpha += p[3] != 0;
+                    for (int c = 0; c < 3; ++c) {
+                        hash ^= p[c]; hash *= 1099511628211ull;
+                    }
+                    ++sampled;
+                }
+            }
+            std::printf("GOW3_MALI_VISUAL event=ahb_pixels frame=%llu buffer=%u "
+                        "source=%ux%u dst=%ux%u stride=%u nonblack=%llu/%llu "
+                        "alpha_nonzero=%llu/%llu rgb_hash=%016llx\n",
+                        (unsigned long long)sequence, image_index,
+                        src_width, src_height, dst_w, dst_h, desc.stride,
+                        (unsigned long long)visible, (unsigned long long)sampled,
+                        (unsigned long long)alpha, (unsigned long long)sampled,
+                        (unsigned long long)hash);
+        }
+    }
+    if (capture_frame) {
+        const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
+        if (dir && *dir) {
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/ahb_%03u_%ux%u.bmp",
+                          dir, capture_frame, dst_w, dst_h);
+            const bool saved = SaveMaliAhbBmp(path, dst, dst_w, dst_h, desc.stride);
+            std::printf("GOW3_MALI_CAPTURE stage=ahb frame=%u path=%s ok=%d\n",
+                        capture_frame, path, int(saved));
+        }
+    }
     const int unlock_result = AHardwareBuffer_unlock(buffer.ahb, nullptr);
     if (unlock_result != 0) {
         LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_unlock failed: {}",
                   unlock_result);
+        if (MaliVisualTrace::Requested()) MaliVisualTrace::Add(MaliVisualTrace::Counts::ahb_failed);
         free_queue.push_back(image_index);
         return false;
     }
     ++frame_counter;
+    bool delivered = false;
     if (client.Connected()) {
-        if (!client.SendFrame(generation, image_index, frame_counter, width, height, -1)) {
-            PeerGone();
-        }
+        delivered = client.SendFrame(generation, image_index, frame_counter, width, height, -1);
+        if (!delivered) PeerGone();
     } else {
         free_queue.push_back(image_index);
     }
+    if (MaliVisualTrace::Requested()) {
+        MaliVisualTrace::Add(delivered ? MaliVisualTrace::Counts::ahb_sent
+                                      : MaliVisualTrace::Counts::ahb_failed);
+        if (!delivered || MaliVisualTrace::Sample(frame_counter))
+            std::printf("GOW3_MALI_VISUAL event=ahb_send frame=%llu "
+                        "generation=%u buffer=%u delivered=%d capture=%u\n",
+                        (unsigned long long)frame_counter, generation, image_index,
+                        int(delivered), capture_frame);
+    }
     buffer.acquire_imported = false;
-    return !needs_recreation;
+    return delivered && !needs_recreation;
 }
 
 bool Swapchain::Present() {

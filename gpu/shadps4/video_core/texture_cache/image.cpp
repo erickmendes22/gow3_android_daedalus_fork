@@ -7,6 +7,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
@@ -207,6 +208,16 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         }
     }
     if (image_format_properties.result == vk::Result::eErrorFormatNotSupported) {
+        if (Vulkan::MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+            const auto n = Vulkan::MaliVisualTrace::Add(Vulkan::MaliVisualTrace::Counts::unsupported_images);
+            if (Vulkan::MaliVisualTrace::Sample(n))
+                std::printf("GOW3_MALI_VISUAL event=image_unsupported seq=%llu uid=%llu guest=%#llx guest_format=%s physical=%s usage=%s\n",
+                            (unsigned long long)n, (unsigned long long)image_uid,
+                            (unsigned long long)info.guest_address,
+                            vk::to_string(info.pixel_format).c_str(),
+                            vk::to_string(supported_format).c_str(),
+                            vk::to_string(format_info.usage).c_str());
+        }
         LOG_ERROR(Render_Vulkan, "image format {} type {} is not supported (flags {}, usage {})",
                   vk::to_string(supported_format), vk::to_string(format_info.type),
                   vk::to_string(format_info.flags), vk::to_string(format_info.usage));
@@ -236,6 +247,18 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
     backing->image.Create(image_ci);
+    if (Vulkan::MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+        const auto n = Vulkan::MaliVisualTrace::Add(Vulkan::MaliVisualTrace::Counts::images_created);
+        if (Vulkan::MaliVisualTrace::Sample(n))
+            std::printf("GOW3_MALI_VISUAL event=image_create seq=%llu uid=%llu guest=%#llx size=%ux%ux%u guest_format=%s physical=%s mips=%u layers=%u depth=%d stencil=%d\n",
+                        (unsigned long long)n, (unsigned long long)image_uid,
+                        (unsigned long long)info.guest_address,
+                        info.size.width, info.size.height, info.size.depth,
+                        vk::to_string(info.pixel_format).c_str(),
+                        vk::to_string(image_ci.format).c_str(),
+                        image_ci.mipLevels, image_ci.arrayLayers,
+                        int(info.props.is_depth), int(info.props.has_stencil));
+    }
 
     Vulkan::SetObjectName(instance.GetDevice(), GetImage(),
                           "Image {}x{}x{} {} {} {:#x}:{:#x} L:{} M:{} S:{}", info.size.width,
