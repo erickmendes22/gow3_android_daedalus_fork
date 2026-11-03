@@ -533,6 +533,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # 0.1.41: coalesce only exact adjacent GPU-to-host VkBufferCopy spans.
+    # This is a staged native renderer change, not an ineffective APK env flag.
+    from stage_sotc_readback_coalesce import patch_readback_coalesce
+    patch_readback_coalesce(root, out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
