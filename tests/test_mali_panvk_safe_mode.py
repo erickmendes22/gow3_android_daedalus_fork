@@ -43,6 +43,24 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         self.assertEqual(self.profile("/private/libvulkan_panfrost.so", "0"),
                          "unset:unset:unset:unset:unset:unset")
 
+    def test_mali_shader_first_use_does_not_discard_graphics_draws(self):
+        cache = (
+            ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp"
+        ).read_text()
+        header = (
+            ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.h"
+        ).read_text()
+        rasterizer = (
+            ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp"
+        ).read_text()
+        self.assertIn("bool mali_sync_draws = false;", header)
+        self.assertIn("vendorID == 0x13B5", cache)
+        self.assertIn('std::getenv("GOW3_ANDROID_PORT")', cache)
+        self.assertIn('std::getenv("GOW3_MALI_COMPLETE_DRAWS")', cache)
+        self.assertIn("return !mali_sync_draws && compiler &&", cache)
+        self.assertIn("if (!pipeline) {\\n        return;", rasterizer)
+        self.assertIn("++g_gow3_pending_draws", cache)
+
     def test_scheduler_has_bounded_queue_setting(self):
         source = SCHEDULER.read_text()
         self.assertIn('std::getenv("GOW3_VK_MAX_IN_FLIGHT")', source)
