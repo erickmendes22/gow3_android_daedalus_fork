@@ -533,6 +533,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # SotC 0.1.42: independently backport upstream staging-large allocation
+    # reuse. Original 0.1.34 Vulkan renderer and readback path otherwise intact.
+    from stage_sotc_staging_pow2 import patch_staging_pow2
+    patch_staging_pow2(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
