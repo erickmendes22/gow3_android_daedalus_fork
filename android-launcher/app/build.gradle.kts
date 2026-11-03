@@ -21,12 +21,15 @@ android {
         versionName = "2.1.8"
         manifestPlaceholders["appLabel"] = "@string/app_name"
         if (bionicRuntime) {
-            applicationId = if (standaloneMali) "com.gow3.android.bionic.malitest"
-                            else "com.gow3.android.bionic"
+            applicationId = "com.gow3.android.bionic"
             minSdk = 30
-            versionName = if (standaloneMali) "2.1.8-bionic-malitest" else "2.1.8-bionic"
-            manifestPlaceholders["appLabel"] = if (standaloneMali)
-                "God of War III — Mali Diagnostic" else "God of War III — Daedalus Fork"
+            versionName = "2.1.8-bionic"
+            manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
+            if (standaloneMali) {
+                applicationId = "com.gow3.android.bionic.malitest"
+                versionName = "2.1.8-bionic-malitest"
+                manifestPlaceholders["appLabel"] = "God of War III — Mali Diagnostic"
+            }
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
