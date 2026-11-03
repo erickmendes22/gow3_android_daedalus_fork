@@ -24,9 +24,15 @@ class Release217(unittest.TestCase):
         validator = read("tools/android/bionic/validate_apk.py")
         signer = read("tools/android/bionic/sign_apk.sh")
         packager = read("tools/android/bionic/package_runtime.py")
-        self.assertIn("versionName='" + expected + "'", validator)
+        # The standalone Mali diagnostic APK has its own package/version; verify
+        # that normal Bionic builds still use the stable release contract.
+        self.assertIn("else '2.1.8-bionic'", validator)
+        self.assertIn("else 'com.gow3.android.bionic'", validator)
         self.assertIn("God-of-War-III-Daedalus-Fork-v" + expected + "-arm64.apk", signer)
-        self.assertIn("'version':'" + expected + "'", packager)
+        self.assertIn("else '2.1.8-bionic'", packager)
+        self.assertIn("else 'com.gow3.android.bionic'", packager)
+        self.assertIn("2.1.8-bionic-malitest", validator)
+        self.assertIn("2.1.8-bionic-malitest", packager)
         self.assertIn("'runtime_name':'daedalus-gow3-bionic-2.1.8'", packager)
         self.assertNotIn("2.1.6-daedalus.4-bionic", validator + signer + packager)
 
