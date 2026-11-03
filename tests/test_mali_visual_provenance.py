@@ -13,6 +13,8 @@ PRES = source("gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp")
 FRAME = source("gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h")
 SWAP = source("gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp")
 SWAPH = source("gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h")
+APP = source("tools/android/bionic/present/gow3present.c")
+NATIVE = source("tools/android/bionic/build_runtime.sh")
 TRACE = source("gpu/shadps4/video_core/renderer_vulkan/vk_mali_visual_trace.h")
 SH = source("tools/android/bionic/run-bionic.sh")
 ARCHIVE = source("android-launcher/app/src/main/java/com/gow3/android/data/LogArchive.kt")
@@ -55,6 +57,16 @@ class MaliVisualProvenance(unittest.TestCase):
         self.assertIn("SaveMaliAhbBmp", SWAP)
         self.assertIn("ahb_*.bmp", SH)
         self.assertIn("logs.walkTopDown().forEach", ARCHIVE)
+
+    def test_surface_control_receipt_and_completion_in_exported_zip(self):
+        self.assertIn("GOW3_MALI_PRESENT_TRACE=1", NATIVE)
+        self.assertIn("GOW3_MALI_VISUAL_APP", APP)
+        for event in ("frame_receive", "frame_drop", "frame_queued",
+                      "surface_submit", "surface_complete"):
+            self.assertIn(event, APP)
+        self.assertIn("ctx->shown_frame = frame;", APP)
+        self.assertIn("android-present.log", APP)
+        self.assertIn("S.path", APP)
 
 if __name__ == "__main__":
     unittest.main()

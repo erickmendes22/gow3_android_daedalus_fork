@@ -14,6 +14,8 @@ on:
       - 'tests/test_bachata_release_mali_shader_resources.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_visual_trace.h'
+      - 'tools/android/bionic/present/gow3present.c'
+      - 'tools/android/bionic/build_runtime.sh'
       - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
       - 'tools/android/bionic/build_apk.sh'
       - 'tools/android/bionic/sign_apk.sh'

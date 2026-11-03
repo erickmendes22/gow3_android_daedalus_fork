@@ -34,8 +34,12 @@ done
     "$prefix/lib/libswresample.a" "$prefix/lib/libavutil.a" -L"$out/lib" -lgow3gpu -lgow3cpu -lc++_shared \
     -lm -ldl -pthread -Wl,--exclude-libs,libavcodec.a:libavformat.a:libavutil.a:libswscale.a:libswresample.a -rdynamic -pie -Wl,-rpath,'$ORIGIN/../lib' -o "$out/bin/gow3-probe"
 "${cc[@]}" -std=c11 -O2 -Wall -Wextra -Werror -pie tools/android/build/kgsl_chip_id.c -o "$out/bin/kgsl-chip-id"
+present_flags=()
+if [[ ${GOW3_MALI_ONLY_BUILD:-0} == 1 ]]; then
+    present_flags+=(-DGOW3_MALI_PRESENT_TRACE=1)
+fi
 "${cc[@]}" -std=c11 -O2 -g -Wall -Wextra -Werror -fPIC -shared -Itools/android/present \
-    tools/android/bionic/present/gow3present.c -lnativewindow -landroid -llog -ldl -o "$out/lib/libgow3present.so"
+    "${present_flags[@]}" tools/android/bionic/present/gow3present.c -lnativewindow -landroid -llog -ldl -o "$out/lib/libgow3present.so"
 bash tools/android/bionic/build_prepare.sh android
 python3 tools/android/bionic/verify_bionic.py --ndk "$ndk" --api "$api" --root "$out"
 args=()

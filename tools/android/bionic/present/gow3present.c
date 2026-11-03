@@ -150,6 +150,40 @@ static struct {
 
 /* ---- lock held for everything below unless noted ---- */
 
+/* Mali-only test build: correlate native SurfaceFlinger transactions with
+ * the game-process SendFrame(frame) ID. Store the same data in the exported ZIP. */
+#ifdef GOW3_MALI_PRESENT_TRACE
+static uint64_t visual_seq;
+static uint64_t visual_problem_seq;
+static void trace_visual(const char* event, uint32_t generation, uint32_t index,
+                         uint64_t frame, const char* cause) {
+    uint64_t n = ++visual_seq;
+    const int problem = cause && strcmp(cause, "ok") != 0;
+    if (problem) {
+        const uint64_t bad = ++visual_problem_seq;
+        if (bad > 16 && (bad & (bad - 1)) != 0 && bad % 120 != 0) return;
+    } else if (n > 24 && (n & (n - 1)) != 0 && n % 120 != 0) {
+        return;
+    }
+    char line[320];
+    snprintf(line, sizeof line,
+             "GOW3_MALI_VISUAL_APP event=%s seq=%llu frame=%llu gen=%u index=%u cause=%s",
+             event, (unsigned long long)n, (unsigned long long)frame,
+             generation, index, cause ? cause : "ok");
+    LOGI("%s", line);
+    const char* sock = "/present.sock";
+    size_t len = strlen(S.path), suffix = strlen(sock);
+    if (len < suffix || strcmp(S.path + len - suffix, sock) != 0) return;
+    char logfile[256];
+    snprintf(logfile, sizeof logfile, "%.*s/logs/android-present.log",
+             (int)(len - suffix), S.path);
+    FILE* file = fopen(logfile, "a");
+    if (file) { fprintf(file, "%s\n", line); fclose(file); }
+}
+#else
+#define trace_visual(event,generation,index,frame,cause) ((void)0)
+#endif
+
 static void send_release(uint32_t generation, uint32_t index, uint64_t frame, int fence) {
     gow3_present_msg m = gow3_present_make(GOW3_PRESENT_RELEASE);
     m.generation = generation;
@@ -211,6 +245,8 @@ static void make_surface_control(void) {
 typedef struct {
     uint32_t session, generation, index; /* the buffer the transaction replaced; index == ~0: none */
     uint64_t frame;
+    uint64_t shown_frame; /* current buffer applied by this transaction */
+    uint32_t shown_index;
     uint64_t seq; /* the transaction's id (S.txn_seq), compared with S.inflight */
     int gates;    /* FIFO without a commit callback: this on_complete ends the outstanding state */
 } DoneCtx;
@@ -235,6 +271,8 @@ static void on_complete(void* ctx_, ASurfaceTransactionStats* stats) {
     if (n > 0) fence = api.prev_release_fence(stats, controls[0]);
     if (controls) api.release_controls(controls);
     pthread_mutex_lock(&S.lock);
+    trace_visual("surface_complete", ctx->generation, ctx->shown_index,
+                 ctx->shown_frame, "ok");
     if (ctx->index != ~0u && ctx->session == S.session && S.conn_fd >= 0) {
         send_release(ctx->generation, ctx->index, ctx->frame, fence);
     } else if (fence >= 0) {
@@ -279,6 +317,8 @@ static void show_frame(uint32_t generation, uint32_t index, uint64_t frame, uint
     ctx->generation = S.generation;
     ctx->index = S.last_set >= 0 ? (uint32_t)S.last_set : ~0u; /* replaced by this transaction */
     ctx->frame = 0;
+    ctx->shown_frame = frame;
+    ctx->shown_index = index;
     ctx->seq = ++S.txn_seq;
     ctx->gates = 0;
     CommitCtx* commit = NULL;
@@ -299,6 +339,7 @@ static void show_frame(uint32_t generation, uint32_t index, uint64_t frame, uint
     if (commit) api.set_on_commit(t, commit, on_commit);
     api.txn_apply(t);
     api.txn_delete(t);
+    trace_visual("surface_submit", generation, index, frame, "ok");
     S.last_set = (int)index;
     if (S.fifo) S.inflight = ctx->seq;
 }
@@ -311,6 +352,7 @@ static void pump_queue(void) {
         S.queue_head = (S.queue_head + 1) % GOW3_PRESENT_MAX_BUFFERS;
         S.queue_len--;
         if (!S.sc || !api.ok || q.generation != S.generation || q.index >= S.count || !S.bufs[q.index]) {
+            trace_visual("frame_drop", q.generation, q.index, q.frame, "queue_invalid");
             send_release(q.generation, q.index, q.frame, q.fence); /* cannot be shown: give it back */
             continue;
         }
@@ -366,12 +408,15 @@ static void set_fifo(int fifo) {
 }
 
 static void present_frame(const gow3_present_msg* m, int acquire_fd) {
+    trace_visual("frame_receive", m->generation, m->index, m->frame, "ok");
     if (m->generation != S.generation || m->index >= S.count || !S.bufs[m->index]) {
+        trace_visual("frame_drop", m->generation, m->index, m->frame, "invalid_buffer");
         if (acquire_fd >= 0) close(acquire_fd);
         return; /* a frame of a set we do not have: nothing to show, nothing to release */
     }
     atomic_fetch_add(&S.frames, 1);
     if (!S.sc || !api.ok) {
+        trace_visual("frame_drop", m->generation, m->index, m->frame, "no_surface");
         /* No display now (surface lost, app paused): the frame is dropped; its own acquire fence
          * is the release (the game's writes are what the buffer still waits for). */
         send_release(m->generation, m->index, m->frame, acquire_fd);
@@ -385,6 +430,7 @@ static void present_frame(const gow3_present_msg* m, int acquire_fd) {
         /* Cannot happen with a game that waits for RELEASE (it holds at most count <= MAX_BUFFERS
          * buffers); a broken one loses its oldest queued frame instead of growing the queue. */
         LOGE("frame queue full: dropping the oldest");
+        trace_visual("frame_drop", m->generation, m->index, m->frame, "queue_full");
         Queued* old = &S.queue[S.queue_head];
         send_release(old->generation, old->index, old->frame, old->fence);
         S.queue_head = (S.queue_head + 1) % GOW3_PRESENT_MAX_BUFFERS;
@@ -398,6 +444,7 @@ static void present_frame(const gow3_present_msg* m, int acquire_fd) {
     S.queue[tail].frame = m->frame;
     S.queue[tail].fence = acquire_fd;
     S.queue_len++;
+    trace_visual("frame_queued", m->generation, m->index, m->frame, "ok");
     pump_queue();
 }
 
