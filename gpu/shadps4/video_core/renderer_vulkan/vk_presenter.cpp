@@ -1038,10 +1038,21 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                    "MALI_CPU_PRESENT invalidate failed: {}",
                    vk::to_string(vk::Result(invalidate)));
         const u8* pixels = static_cast<const u8*>(mali_cpu_readback_mapped);
+        // Sampling the RGBA readback and hashing pixels was diagnostic only.
+        // The actual readback + AHB delivery remain untouched.
+        static const bool mali_probe_enabled = [] {
+            const char* probe = std::getenv("GOW3_MALI_PRESENT_PROBE");
+            const char* capture = std::getenv("GOW3_MALI_AUTOCAPTURE");
+            const char* snapshots = std::getenv("GOW3_MALI_CPU_SNAPSHOTS");
+            return (probe && probe[0] == '1') || (capture && capture[0] == '1') ||
+                   (snapshots && snapshots[0] == '1');
+        }();
         static u64 probe_count = 0;
         static bool mali_seen_nonblack = false;
-        const bool periodic_probe = ++probe_count <= 8 || probe_count % 120 == 0;
-        if (periodic_probe || !mali_seen_nonblack) {
+        if (mali_probe_enabled) ++probe_count;
+        const bool periodic_probe = mali_probe_enabled &&
+                                    (probe_count <= 8 || probe_count % 120 == 0);
+        if (mali_probe_enabled && (periodic_probe || !mali_seen_nonblack)) {
             u64 nonblack = 0, alpha_nonzero = 0, rgb_with_alpha = 0, sampled = 0;
             u64 rgb_hash = 14695981039346656037ull;
             for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {

@@ -157,6 +157,13 @@ static uint64_t visual_seq;
 static uint64_t visual_problem_seq;
 static void trace_visual(const char* event, uint32_t generation, uint32_t index,
                          uint64_t frame, const char* cause) {
+    // Visual IPC logging is opt-in; avoid file open/close on gameplay frames.
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char* flag = getenv("GOW3_MALI_PRESENT_TRACE");
+        enabled = flag && flag[0] == '1';
+    }
+    if (!enabled) return;
     uint64_t n = ++visual_seq;
     const int problem = cause && strcmp(cause, "ok") != 0;
     if (problem) {

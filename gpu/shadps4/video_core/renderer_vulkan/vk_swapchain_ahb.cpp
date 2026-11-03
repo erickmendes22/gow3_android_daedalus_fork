@@ -512,13 +512,6 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
     // SurfaceControl, however, composites RGBA AHBs using alpha: copying
     // transparent game pixels would hide perfectly valid RGB scene contents.
     // Output is an opaque game surface, including black letterbox bars.
-    for (u32 y = 0; y < dst_h; ++y) {
-        u8* row = dst + size_t(y) * desc.stride * 4;
-        std::memset(row, 0, size_t(desc.stride) * 4);
-        for (u32 x = 0; x < dst_w; ++x) {
-            row[size_t(x) * 4 + 3] = 255;
-        }
-    }
     if (rgba && src_width && src_height && dst_w && dst_h) {
         const float src_aspect = float(src_width) / float(src_height);
         const float dst_aspect = float(dst_w) / float(dst_h);
@@ -527,24 +520,53 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
         const u32 fit_h = src_aspect > dst_aspect
                             ? std::max(1u, u32(float(dst_w) / src_aspect)) : dst_h;
         const u32 x0 = (dst_w - fit_w) / 2, y0 = (dst_h - fit_h) / 2;
+        // Full-frame 16:9 copies overwrite every destination pixel. Avoid
+        // a redundant black clear and alpha pass before the actual pixel copy.
+        // Preserve opaque black letterbox bars for mismatched aspect ratios.
+        if (fit_w != dst_w || fit_h != dst_h) {
+            for (u32 y = 0; y < dst_h; ++y) {
+                u8* row = dst + size_t(y) * desc.stride * 4;
+                std::memset(row, 0, size_t(desc.stride) * 4);
+                for (u32 x = 0; x < dst_w; ++x) row[size_t(x) * 4 + 3] = 255;
+            }
+        }
+        // Cache nearest-neighbor horizontal coordinates across frames:
+        // no repeated per-pixel integer division on every game frame.
+        static thread_local std::vector<u32> mapped_x;
+        static thread_local u32 mapped_source_width = 0, mapped_fit_width = 0;
+        if (fit_w != src_width &&
+            (mapped_source_width != src_width || mapped_fit_width != fit_w)) {
+            mapped_x.resize(fit_w);
+            for (u32 x = 0; x < fit_w; ++x)
+                mapped_x[x] = std::min(src_width - 1, u32(u64(x) * src_width / fit_w));
+            mapped_source_width = src_width;
+            mapped_fit_width = fit_w;
+        }
         for (u32 y = 0; y < fit_h; ++y) {
             const u32 src_y = std::min(src_height - 1, u32(u64(y) * src_height / fit_h));
             u8* row = dst + (size_t(y + y0) * desc.stride + x0) * 4;
             const u8* input_row = rgba + size_t(src_y) * src_width * 4;
             if (fit_w == src_width) {
                 std::memcpy(row, input_row, size_t(fit_w) * 4);
-                for (u32 x = 0; x < fit_w; ++x) {
-                    row[size_t(x) * 4 + 3] = 255;
-                }
+                for (u32 x = 0; x < fit_w; ++x) row[size_t(x) * 4 + 3] = 255;
             } else {
                 for (u32 x = 0; x < fit_w; ++x) {
-                    const u32 src_x = std::min(src_width - 1, u32(u64(x) * src_width / fit_w));
-                    std::memcpy(row + size_t(x) * 4, input_row + size_t(src_x) * 4, 4);
-                    row[size_t(x) * 4 + 3] = 255;
+                    const u8* src = input_row + size_t(mapped_x[x]) * 4;
+                    u8* pixel = row + size_t(x) * 4;
+                    pixel[0] = src[0];
+                    pixel[1] = src[1];
+                    pixel[2] = src[2];
+                    pixel[3] = 255;
                 }
             }
         }
     } else if (dst_h) {
+        // Retain the original opaque fallback when the source is unavailable.
+        for (u32 y = 0; y < dst_h; ++y) {
+            u8* row = dst + size_t(y) * desc.stride * 4;
+            std::memset(row, 0, size_t(desc.stride) * 4);
+            for (u32 x = 0; x < dst_w; ++x) row[size_t(x) * 4 + 3] = 255;
+        }
         // A visible gold line on loading frames separates compositor failure
         // from a black render source even before the first guest draw.
         for (u32 y = 0; y < std::min<u32>(8, dst_h); ++y) {

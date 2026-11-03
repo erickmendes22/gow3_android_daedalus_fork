@@ -164,13 +164,15 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Pass captures force GPU render-pass breaks and extra readbacks. They are
       # for a controlled diagnostic session, never for ordinary Mali gameplay.
       # Explicit GOW3_MALI_AUTOCAPTURE=1 is still available to the developer.
-      # This Mali-only tester defaults to bounded multi-stage capture; override
-      # with GOW3_MALI_AUTOCAPTURE=0 to disable GPU readbacks.
-      export GOW3_MALI_VISUAL_TRACE=${GOW3_MALI_VISUAL_TRACE:-1}
+      # Gameplay now defaults to no forensic capture or trace; explicit flags
+      # still enable diagnostics without changing the proven render path.
+      export GOW3_MALI_VISUAL_TRACE=${GOW3_MALI_VISUAL_TRACE:-0}
       # Full GPU attachment copies can induce PanVK device loss (G720).
-      # Keep independent CPU/AHB snapshots and draw/image telemetry enabled.
+      # CPU/AHB snapshots and image/draw telemetry are also opt-in.
       export GOW3_MALI_AUTOCAPTURE=${GOW3_MALI_AUTOCAPTURE:-0}
-      export GOW3_MALI_CPU_SNAPSHOTS=${GOW3_MALI_CPU_SNAPSHOTS:-1}
+      export GOW3_MALI_CPU_SNAPSHOTS=${GOW3_MALI_CPU_SNAPSHOTS:-0}
+      export GOW3_MALI_PRESENT_PROBE=${GOW3_MALI_PRESENT_PROBE:-0}
+      export GOW3_MALI_PRESENT_TRACE=${GOW3_MALI_PRESENT_TRACE:-0}
       if [ "$GOW3_MALI_AUTOCAPTURE" = 1 ] || [ "$GOW3_MALI_CPU_SNAPSHOTS" = 1 ]; then
         export GOW3_MALI_CAPTURE_DIR="$base/logs/mali-captures"
         export GOW3_CAPTURE_DIR="$GOW3_MALI_CAPTURE_DIR"
@@ -194,7 +196,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE"
     fi
     ;;
 esac
