@@ -19,6 +19,21 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("temporary missing geometry", text)
         self.assertLess(text.index("export SOTC_ASYNC_SHADERS="), text.index('exec "$@"'))
 
+    def test_async_first_use_draws_are_never_discarded(self):
+        text = LAUNCHER.read_text()
+        patch = (ROOT / "ports/sotc/android/stage_sotc_complete_draws.py").read_text()
+        stage = (ROOT / "ports/sotc/android/stage_renderer.py").read_text()
+        self.assertIn("export SOTC_NO_DROPPED_DRAWS=1", text)
+        self.assertIn("patch_sotc_complete_draws(out)", stage)
+        # These are the actual AjncSystem SotC paths, NOT GoW3's PipelineCache.
+        self.assertIn("async_translate_ok = !SotcRequireCompleteDraws()", patch)
+        self.assertIn("if (queued && liverpool->regs.num_indices > 6 &&", patch)
+        self.assertIn("!SotcRequireCompleteDraws()) {", patch)
+        self.assertIn("QueueAsyncPipeline(pipeline_hash)", patch)
+        self.assertIn("SOTC_STAGE_SPEC_MEMO", patch)
+        self.assertLess(text.index("export SOTC_NO_DROPPED_DRAWS=1"),
+                        text.index('exec "$@"'))
+
     def test_no_zero_filled_texture_placeholders_on_android(self):
         text = LAUNCHER.read_text()
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", text)
