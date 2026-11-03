@@ -24,6 +24,7 @@ FILES = [
     "gpu/CMakeLists.txt",
     "gpu/shim/sdl_window.h",
     "gpu/shim/ps4gpu.cpp",
+    "gpu/shim/ps4_settings.cpp",
     "gpu/shim/window_android.cpp",
     "gpu/shim/order1886_present_client.cpp",
     "gpu/shim/order1886_present_client.h",
