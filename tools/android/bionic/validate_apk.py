@@ -37,10 +37,9 @@ def validate_payload(payload, expected_hash):
                 raise ValueError(f'Removed frame-generation component in runtime: {name}')
             if name.endswith('.pkg'):
                 raise ValueError('Player PKG must never be packaged')
-        identity = json.load(archive.extractfile('runtime-manifest.json')) if 'runtime-manifest.json' in members else {}
-        if not isinstance(identity.get('bloodframe_bundled', True), bool):
-            raise ValueError('Invalid runtime Bloodframe feature flag')
-        bloodframe_bundled = identity.get('bloodframe_bundled', True)
+        # Validate the fixed runtime contract first. Malformed or incomplete
+        # packages must report a missing runtime component instead of throwing
+        # a JSON decoder error for a stub/empty manifest.
         required = ['runtime-manifest.json','gow3port/run-bionic.sh',
                     'gow3port/arm64/bin/gow3-probe','gow3port/arm64/bin/gow3-prepare',
                     'gow3port/arm64/bin/orbis-pkg-util','gow3port/arm64/bin/kgsl-chip-id',
@@ -51,11 +50,22 @@ def validate_payload(payload, expected_hash):
                     'gow3port/arm64/python/lib/libpython3.13.so',
                     'gow3port/scripts/patches.py','gow3port/scripts/game_update.py',
                     'gow3port/scripts/launch_env.py','gow3port/gow3.default.ini']
-        if bloodframe_bundled:
-            required.append('gow3port/arm64/lib/libbloodframe.so')
         for name in required:
             if name not in members or not members[name].isfile():
                 raise ValueError(f'Missing Bionic runtime file: {name}')
+        try:
+            identity = json.load(archive.extractfile('runtime-manifest.json'))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError('Invalid Bionic runtime manifest JSON') from exc
+        if not isinstance(identity, dict):
+            raise ValueError('Invalid Bionic runtime manifest structure')
+        if not isinstance(identity.get('bloodframe_bundled', True), bool):
+            raise ValueError('Invalid runtime Bloodframe feature flag')
+        bloodframe_bundled = identity.get('bloodframe_bundled', True)
+        if bloodframe_bundled:
+            required.append('gow3port/arm64/lib/libbloodframe.so')
+            if not members.get('gow3port/arm64/lib/libbloodframe.so') or not members['gow3port/arm64/lib/libbloodframe.so'].isfile():
+                raise ValueError('Missing Bionic runtime file: gow3port/arm64/lib/libbloodframe.so')
         for name in required:
             if '/bin/' in name or name.endswith('/run-bionic.sh'):
                 if not members[name].mode & 0o111:
