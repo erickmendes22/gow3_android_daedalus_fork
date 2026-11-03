@@ -19,14 +19,14 @@ class NativeDirtySummary(unittest.TestCase):
             "core/libraries/videoout/driver.cpp",
         ]
         with tempfile.TemporaryDirectory() as tmp:
-            gpu=Path(tmp)/"shadps4"
+            gpu=Path(tmp)
             for rel in files:
-                dst=gpu/rel
+                dst=gpu/"shadps4"/rel
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(UP/rel,dst)
-            origin=(gpu/files[0]).read_text()
+            origin=(gpu/"shadps4"/files[0]).read_text()
             patch_cpu_dirty_word_summary(ROOT,gpu)
-            patched=(gpu/files[0]).read_text()
+            patched=(gpu/"shadps4"/files[0]).read_text()
             self.assertNotEqual(origin,patched)
             self.assertIn("cpu_live_words{~0ULL}",patched)
             self.assertIn("SotcDirtyWord::MightContain",patched)
@@ -37,7 +37,7 @@ class NativeDirtySummary(unittest.TestCase):
             self.assertIn("FaultGrace::Now()",patched)
             self.assertIn("sweep_words.fetch_or",patched)
             self.assertNotIn("SOTC_RB_AHEAD=1",patched)
-            self.assertIn("SOTC CPU dirty summary:",(gpu/files[2]).read_text())
+            self.assertIn("SOTC CPU dirty summary:",(gpu/"shadps4"/files[2]).read_text())
             with self.assertRaises(RuntimeError):
                 patch_cpu_dirty_word_summary(ROOT,gpu)
     def test_no_launcher_preferences_or_readback_changed(self):
