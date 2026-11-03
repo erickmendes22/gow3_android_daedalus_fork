@@ -26,6 +26,9 @@ on:
       - 'tests/test_mali_visual_provenance.py'
       - 'tests/test_mali_only_package.py'
       - 'tests/test_android_release_2_1_7.py'
+      - 'tests/test_mali_standalone_launcher.py'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/home/HomeScreen.kt'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h'
@@ -133,6 +136,7 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_mali_standalone_launcher.py' -v
           python -m unittest discover -s tests -p 'test_mali_only_package.py' -v
           python -m unittest discover -s tests -p 'test_mali_visual_provenance.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v

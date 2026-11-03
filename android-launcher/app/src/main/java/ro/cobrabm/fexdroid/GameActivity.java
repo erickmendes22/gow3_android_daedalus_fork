@@ -116,7 +116,13 @@ public final class GameActivity extends Activity {
         if (bionicRuntime()) main.post(hudConfigPoll);
     }
 
-    private boolean bionicRuntime() { return "com.gow3.android.bionic".equals(getPackageName()); }
+    // The separately signed Mali diagnostic is still the Bionic runtime.
+    // Treating it as legacy would launch the wrong boot path and skip PanVK capture.
+    private boolean bionicRuntime() {
+        final String packageName = getPackageName();
+        return "com.gow3.android.bionic".equals(packageName) ||
+               "com.gow3.android.bionic.malitest".equals(packageName);
+    }
 
     private boolean runtimeReady;
 
