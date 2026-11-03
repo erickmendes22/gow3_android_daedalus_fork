@@ -38,6 +38,36 @@ def patch_cpu_dirty_word_summary(root:Path,gpu:Path)->None:
         '    std::atomic<u64> cpu_live_words{~0ULL};\n',
         "conservative initial dirty words")
     s=once(s,
+        '''        if constexpr (locked) {
+            mutex.lock();
+        }
+        [[maybe_unused]] u64 raised = 0;''',
+        '''        if constexpr (locked) {
+            mutex.lock();
+        }
+        // Publish possible CPU-dirty words BEFORE changing their bits. A concurrent
+        // read-only bind may consult the summary without acquiring this mutex.
+        if constexpr (cpu_op == StateOp::Set) {
+            cpu_live_words.fetch_or(SotcDirtyWord::Mask(bounds.start_word, bounds.end_word),
+                                    std::memory_order_release);
+        }
+        [[maybe_unused]] u64 raised = 0;''',
+        "publish CPU dirties before touching page bits")
+    s=once(s,
+        '''        if constexpr (locked) {
+            mutex.lock();
+        }
+        // sotc: uploads (<CPU, Clear, None>)''',
+        '''        if constexpr (locked) {
+            mutex.lock();
+        }
+        if constexpr (cpu_op == StateOp::Set) {
+            cpu_live_words.fetch_or(SotcDirtyWord::Mask(bounds.start_word, bounds.end_word),
+                                    std::memory_order_release);
+        }
+        // sotc: uploads (<CPU, Clear, None>)''',
+        "publish CPU dirties in modified-range path before changing bits")
+    s=once(s,
         '''        [[maybe_unused]] u64 raised = 0;
         IterateWords(bounds, [&](u64 index, u64 mask) {
             UpdateStateAndProtection<cpu_op, gpu_op>(write_prot, read_prot, index, mask);
