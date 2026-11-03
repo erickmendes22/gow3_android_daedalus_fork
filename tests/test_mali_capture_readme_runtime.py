@@ -17,7 +17,8 @@ class MaliCaptureReadme(unittest.TestCase):
     def test_no_mksh_heredoc_tempfile(self):
         self.assertNotIn("<<'GOW3_CAPTURE_README'", self.branch)
         self.assertIn("} > \"$GOW3_MALI_CAPTURE_DIR/README.txt\"", self.branch)
-        self.assertIn("printf '%s", self.branch)
+        self.assertIn("printf '%s" + "\\n'", self.branch)
+        self.assertNotIn("printf '%s" + "\\\\n'", self.branch)
 
     def test_full_script_parses(self):
         p = subprocess.run(["sh", "-n", str(SOURCE)], capture_output=True, text=True)
@@ -37,6 +38,7 @@ class MaliCaptureReadme(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stderr, "")
         self.assertIsNotNone(text)
+        self.assertGreaterEqual(len(text.splitlines()), 10)
         for expected in ("PanVK stages:", "GOW3_MALI_VISUAL records",
                          "scene_????_3d_colorN.bmp", "scene_????_3d_depth.bmp",
                          "scene_????_3d_stencil.bmp", "scene_*_pass.txt",
