@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <map>
+#include <unordered_map>
 
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
@@ -374,6 +375,9 @@ private:
         bool is_written;
     };
     boost::container::static_vector<BoundBuffer, Shader::NUM_BUFFERS> bound_buffers;
+    // Reuse aligned copies for the same source and size within a Vulkan submit.
+    std::unordered_map<u64, u64> unaligned_copies;
+    u64 unaligned_copies_tick{};
 
     u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
