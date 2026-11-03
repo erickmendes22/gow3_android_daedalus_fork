@@ -800,6 +800,28 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     GraphicsPipeline::SerializationSupport sdata{};
     sdata.Deserialize(ar);
 
+#ifdef __ANDROID__
+    // Android Turnip lacks both native fragment barycentrics and AMD explicit
+    // vertex parameters. Live graphics compilation can reconstruct the
+    // VS/FS topology and inject the per-vertex auxiliary GS, but this archive
+    // loader has no live registers: sel.runtime_infos is not reconstructed.
+    // Replaying an archived pipeline without that GS silently drops the
+    // per-vertex interpolation needed by some The Order materials. Do not
+    // preload incomplete graphics stages; first use recompiles them with
+    // valid runtime info and the auxiliary geometry stage.
+    if (profile.supports_geometry_stage &&
+        !profile.supports_amd_shader_explicit_vertex_parameter &&
+        !profile.supports_fragment_shader_barycentric) {
+        static std::atomic_bool warned{false};
+        if (!warned.exchange(true, std::memory_order_relaxed)) {
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_CACHE_AUXGS: bypassing archived graphics pipelines; "
+                        "live runtime info required for correct per-vertex interpolation");
+        }
+        return false;
+    }
+#endif
+
     for (int stage_idx = 0; stage_idx < MaxShaderStages; ++stage_idx) {
         const auto& hash = sel.graphics_key.stage_hashes[stage_idx];
         if (!hash) {
