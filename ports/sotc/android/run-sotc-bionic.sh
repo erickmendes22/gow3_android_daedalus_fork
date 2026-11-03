@@ -153,6 +153,11 @@ echo "SotC render coherence: mode=$BB_READBACKS async=$SOTC_RB_ASYNC"
 # can cause missing objects/pop-in, so leave OFF unless testing A/B.
 # Translation and boot preload stay synchronous to isolate this one change.
 export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}
+# Correctness guard is intentionally ON even if experimental async is enabled.
+# Shader stages are materialized before draws; graphics pipeline compilation
+# may use a worker, but the draw waits instead of disappearing that frame.
+# No extra option is exposed in the UI.
+export SOTC_NO_DROPPED_DRAWS=1
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
 # Separate compute deferral. With recording thread + graphics workers this
