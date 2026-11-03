@@ -31,6 +31,8 @@ class NativeDirtySummary(unittest.TestCase):
             self.assertIn("cpu_live_words{~0ULL}",patched)
             self.assertIn("SotcDirtyWord::MightContain",patched)
             self.assertEqual(patched.count("SotcDirtyWord::Update(cpu_live_words"),2)
+            self.assertEqual(patched.count("cpu_live_words.fetch_or(SotcDirtyWord::Mask"),2)
+            self.assertLess(patched.index("cpu_live_words.fetch_or(SotcDirtyWord::Mask"), patched.index("UpdateStateAndProtection<cpu_op, gpu_op>"))
             self.assertIn("gpu_op == StateOp::None",patched)
             self.assertIn("type == Type::CPU && cpu_op == StateOp::Clear",patched)
             self.assertIn("tracker->UpdatePageWatchersForRegion",patched)
