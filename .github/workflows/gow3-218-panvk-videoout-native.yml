@@ -5,6 +5,13 @@ on:
     branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
     paths:
       - '.github/workflows/gow3-218-panvk-videoout-native.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+      - 'gpu/shadps4/shader_recompiler/resource.h'
+      - 'tests/test_mali_panvk_safe_mode.py'
+      - 'tests/test_mali_warmup_disable.py'
+      - 'tests/test_bachata_release_mali_shader_resources.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
@@ -97,6 +104,8 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
+          python -m unittest discover -s tests -p 'test_mali_warmup_disable.py' -v
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v
           python -m unittest discover -s tests -p 'test_mali_pass_attachment_capture.py' -v
