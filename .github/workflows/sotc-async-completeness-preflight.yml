@@ -1,0 +1,40 @@
+name: SotC complete-draw native preflight (no APK)
+on:
+  push:
+    branches:
+      - fix/sotc-async-graphics-draw-completeness-20261103
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Verify launch and Python source contracts
+        run: |
+          set -euo pipefail
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m py_compile ports/sotc/android/stage_sotc_complete_draws.py ports/sotc/android/stage_renderer.py
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+      - name: Stage actual Android GPU source (no driver or APK compilation)
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-completeness/gpu
+          f=out/sotc-completeness/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'static bool SotcRequireCompleteDraws()' "$f"
+          grep -Fq 'async_translate_ok = !SotcRequireCompleteDraws()' "$f"
+          grep -Fq 'if (queued && liverpool->regs.num_indices > 6 &&' "$f"
+          grep -Fq '!SotcRequireCompleteDraws()) {' "$f"
+          grep -Fq 'SOTC_STAGE_SPEC_MEMO' "$f"
+          grep -Fq 'SOTC_NO_DROPPED_DRAWS' "$f"
+          echo "SotC staged-source complete-draw guards passed (no native compile, no APK)"
