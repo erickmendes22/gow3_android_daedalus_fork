@@ -14,8 +14,10 @@ class MaliStageCapture(unittest.TestCase):
     def test_panvk_only_and_opt_out(self):
         self.assertIn("*/libvulkan_panfrost.so)", SHELL)
         self.assertIn("GOW3_MALI_AUTOCAPTURE:-0", SHELL)
-        self.assertIn("GOW3_MALI_CPU_SNAPSHOTS:-1", SHELL)
-        self.assertIn("GOW3_MALI_VISUAL_TRACE:-1", SHELL)
+        self.assertIn("GOW3_MALI_CPU_SNAPSHOTS:-0", SHELL)
+        self.assertIn("GOW3_MALI_VISUAL_TRACE:-0", SHELL)
+        self.assertIn("GOW3_MALI_PRESENT_PROBE", PRESENTER)
+        self.assertIn("mali_probe_enabled", PRESENTER)
         self.assertIn("vendorID == 0x13B5", PRESENTER)
 
     def test_bounded_stages(self):
