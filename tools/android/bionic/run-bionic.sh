@@ -179,20 +179,19 @@ case "${GOW3_VULKAN_DRIVER:-}" in
               "$GOW3_MALI_CAPTURE_DIR"/cpu_*.bmp "$GOW3_MALI_CAPTURE_DIR"/frame_*.txt \
               "$GOW3_MALI_CAPTURE_DIR"/scene_*.bmp "$GOW3_MALI_CAPTURE_DIR"/scene_*_pass.txt \
                "$GOW3_MALI_CAPTURE_DIR"/ahb_*.bmp
-        # Quoted heredoc: text cannot be misinterpreted as shell commands.
         # Grouped printf never asks Android mksh to create a heredoc temp file.
         # Android's default heredoc spool under /data/local is not writable.
         {
-          printf '%s\\n' 'PanVK stages: GPU image-create -> view-create/reject -> texture-binding -> draw -> VideoOut -> guest/post/cpu -> AHB -> Android IPC.'
-          printf '%s\\n' 'GOW3_MALI_VISUAL records sampled events keyed by image UID, shader hash, flip and AHB buffer; summaries are cumulative, not proof of pixel correctness.'
-          printf '%s\\n' 'scene_????_3d_colorN.bmp = REAL Vulkan render-target contents after selected 3D draws.'
-          printf '%s\\n' 'scene_????_3d_depth.bmp = REAL Vulkan depth attachment, grayscale; scene_????_color is first non-depth pass.'
-          printf '%s\\n' 'scene_????_3d_stencil.bmp = stencil aspect as grayscale where available.'
-          printf '%s\\n' 'scene_*_pass.txt = pass shader hashes, buffer addresses, physical formats and skip/failure reasons.'
-          printf '%s\\n' 'ahb_*.bmp = final CPU-writable AHardwareBuffer after scaling/letterboxing and alpha normalization.'
-          printf '%s\\n' 'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.'
-          printf '%s\\n' 'Previews: accepted guest frames 1 4 12 32 120 360 480 720 and first nonblack transition.'
-          printf '%s\\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
+          printf '%s\n' 'PanVK stages: GPU image-create -> view-create/reject -> texture-binding -> draw -> VideoOut -> guest/post/cpu -> AHB -> Android IPC.'
+          printf '%s\n' 'GOW3_MALI_VISUAL records sampled events keyed by image UID, shader hash, flip and AHB buffer; summaries are cumulative, not proof of pixel correctness.'
+          printf '%s\n' 'scene_????_3d_colorN.bmp = REAL Vulkan render-target contents after selected 3D draws.'
+          printf '%s\n' 'scene_????_3d_depth.bmp = REAL Vulkan depth attachment, grayscale; scene_????_color is first non-depth pass.'
+          printf '%s\n' 'scene_????_3d_stencil.bmp = stencil aspect as grayscale where available.'
+          printf '%s\n' 'scene_*_pass.txt = pass shader hashes, buffer addresses, physical formats and skip/failure reasons.'
+          printf '%s\n' 'ahb_*.bmp = final CPU-writable AHardwareBuffer after scaling/letterboxing and alpha normalization.'
+          printf '%s\n' 'frame_*.txt = scene passes, depth, samples and shader hashes; not a scene screenshot.'
+          printf '%s\n' 'Previews: accepted guest frames 1 4 12 32 120 360 480 720 and first nonblack transition.'
+          printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
       echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE"
