@@ -39,6 +39,16 @@ static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResourc
 
 namespace Vulkan {
 
+// Dynamic-mip image descriptor counts depend on live guest user data. A stored
+// Shader::Info has no valid SHARP backing: defer such pipeline keys until a real
+// draw/dispatch instead of reconstructing an incorrect layout or dereferencing
+// an address from a previous guest session.
+static bool NeedsLiveImageSharpForLayout(const Shader::Info* info) {
+    return info && std::ranges::any_of(info->images, [](const Shader::ImageResource& image) {
+        return image.mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex;
+    });
+}
+
 namespace PipelineBinaryCache {
 bool ValidKey(const Key& key) {
     return !key.empty() && key.size() <= VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR;
@@ -691,6 +701,12 @@ bool PipelineCache::LoadComputePipeline(Serialization::Archive& ar) {
     if (!LoadPipelineStage(meta_ar, 0)) {
         return false;
     }
+    if (NeedsLiveImageSharpForLayout(sel.infos[0])) {
+        // Rebuild with live guest user data at dispatch time.
+        sel.infos.fill(nullptr);
+        sel.modules.fill(nullptr);
+        return false;
+    }
 
     const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);
     ASSERT(is_new);
@@ -778,6 +794,14 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
         if (!LoadPipelineStage(meta_ar, stage_idx)) {
             return false;
         }
+    }
+
+    if (std::ranges::any_of(sel.infos, NeedsLiveImageSharpForLayout)) {
+        // Dynamic-mip layouts cannot be inferred from persisted shader metadata.
+        sel.infos.fill(nullptr);
+        sel.modules.fill(nullptr);
+        sel.fetch_shader.reset();
+        return false;
     }
 
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
@@ -1261,6 +1285,11 @@ void PipelineCache::PumpWarmUp() {
                 modules[i] = stage.result;
                 fetch = stage.fetch; // the blocking load keeps the last stage's too
             }
+        }
+        // Background warmup uses serialized metadata too, not live guest SHARPs.
+        // Both compute and graphics must skip dynamic-mip layouts here.
+        if (usable && std::ranges::any_of(infos, NeedsLiveImageSharpForLayout)) {
+            usable = false;
         }
         if (!usable) {
             warm.done.fetch_add(1, std::memory_order_relaxed);

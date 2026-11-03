@@ -163,8 +163,14 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        // Fixed-size descriptors never need guest user data. Shader metadata
+        // loaded from disk has no live guest SHARP address during warmup.
+        if (mip_fallback_mode != MipStorageFallbackMode::DynamicIndex) {
+            return 1;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
-        return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
+        // Malformed/absent SHARPs must not underflow the Vulkan descriptor count.
+        return tsharp.last_level >= tsharp.base_level
                    ? (tsharp.last_level - tsharp.base_level + 1)
                    : 1;
     }
