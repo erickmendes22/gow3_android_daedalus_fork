@@ -21,6 +21,7 @@ class MaliPanvkSafetyTests(unittest.TestCase):
         # app-private runtime path ($base). Keep expensive BMP capture off here;
         # the actual experimental PanVK launcher defaults it on.
         env["GOW3_MALI_AUTOCAPTURE"] = "0"
+        env["GOW3_MALI_CPU_SNAPSHOTS"] = "0"
         env.pop("GOW3_MALI_SAFE_MODE", None)
         if safe is not None:
             env["GOW3_MALI_SAFE_MODE"] = safe

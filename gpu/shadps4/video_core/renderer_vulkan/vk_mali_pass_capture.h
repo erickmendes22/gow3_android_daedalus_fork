@@ -268,6 +268,20 @@ inline void CaptureDraw(const Instance& instance, Scheduler& scheduler, Runtime&
                         VideoCore::Image* depth, bool depth_enabled, bool depth_write,
                         u32 mrt_mask, u32 sample_count, u64 vs_hash, u64 ps_hash,
                         u32 area_width, u32 area_height) {
+    // A G720 log captured the first color draw with render_area=0x0,
+    // then the PanVK device was lost while waiting for the present readback.
+    // Never force a diagnostic transfer from a pass with invalid render area.
+    if (!area_width || !area_height) {
+        static std::atomic<u32> zero_area_skips{0};
+        const u32 count = zero_area_skips.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || (count & (count - 1)) == 0)
+            std::printf("GOW3_MALI_PASS_CAPTURE skip=zero_render_area "
+                        "count=%u width=%u height=%u vs=%016llx ps=%016llx\n",
+                        count, area_width, area_height,
+                        static_cast<unsigned long long>(vs_hash),
+                        static_cast<unsigned long long>(ps_hash));
+        return;
+    }
     const VideoCore::Image* first = colors[0];
     if (!first || !first->backing || first->info.size.width < 320 ||
         first->info.size.height < 180) return;

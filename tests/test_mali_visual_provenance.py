@@ -26,7 +26,8 @@ class MaliVisualProvenance(unittest.TestCase):
         self.assertIn("occurrence <= 16", TRACE)
         self.assertIn("(occurrence & (occurrence - 1)) == 0", TRACE)
         self.assertIn("GOW3_MALI_VISUAL_TRACE:-1", SH)
-        self.assertIn("GOW3_MALI_AUTOCAPTURE:-1", SH)
+        self.assertIn("GOW3_MALI_AUTOCAPTURE:-0", SH)
+        self.assertIn("GOW3_MALI_CPU_SNAPSHOTS:-1", SH)
     def test_creates_images_then_views_with_persistent_uids(self):
         for token in ("event=image_create", "event=image_unsupported", "image_uid",
                       "info.guest_address", "image_ci.format"):

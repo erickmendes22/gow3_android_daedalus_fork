@@ -499,6 +499,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const char* capture_setting = std::getenv("GOW3_MALI_AUTOCAPTURE");
     const bool mali_auto = capture_setting && capture_setting[0] == '1' &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    // CPU-only snapshots use the existing present readback; they do NOT enqueue
+    // any extra Vulkan image copies. Use these when Mali GPU captures are disabled.
+    const char* cpu_snapshot_setting = std::getenv("GOW3_MALI_CPU_SNAPSHOTS");
+    const bool mali_cpu_snapshots = !mali_auto && cpu_snapshot_setting &&
+                                    cpu_snapshot_setting[0] == '1' &&
+                                    instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     // Count only accepted guest frames. Nonblocking PanVK can reject a flip
     // before GetRenderFrame; counting those discarded frames skipped EVERY
     // diagnostic image on the user's actual run.
@@ -531,23 +537,25 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 
     Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
-    const u32 mali_index = mali_auto ? ++mali_flip_index : 0;
+    const u32 mali_index = (mali_auto || mali_cpu_snapshots) ? ++mali_flip_index : 0;
     bool first_content = false;
 #ifdef __ANDROID__
-    if (mali_auto) {
+    if (mali_auto || mali_cpu_snapshots) {
         first_content = mali_capture_first_content.exchange(false, std::memory_order_acq_rel);
     }
 #endif
     // Capture immediately, at a few increasingly spaced startup frames,
     // and again after the longer startup/scene transition.
-    const bool scheduled = mali_auto &&
+    const bool scheduled = (mali_auto || mali_cpu_snapshots) &&
                            (mali_index == 1 || mali_index == 4 || mali_index == 12 ||
                             mali_index == 32 || mali_index == 120 || mali_index == 360 ||
                             mali_index == 480 || mali_index == 720);
-    const bool image_capture = scheduled || first_content;
+    const bool image_capture = mali_auto && (scheduled || first_content);
+    const bool cpu_only_capture = mali_cpu_snapshots && (scheduled || first_content);
+    // Only full GPU capture calls DumpRaw() and inserts extra Vulkan readbacks.
     const bool frame_dump = manual_dump || image_capture;
     const int selected_dump_index = image_capture ? int(mali_index) : frame_dump_index;
-    frame->mali_capture_frame = image_capture ? mali_index : 0;
+    frame->mali_capture_frame = (image_capture || cpu_only_capture) ? mali_index : 0;
     frame->mali_trace_flip = 0;
     frame->mali_trace_guest_address = 0;
     frame->mali_trace_source_uid = 0;
@@ -573,6 +581,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         LOG_WARNING(Render_Vulkan,
                     "GOW3_MALI_CAPTURE accepted_frame={} first_content={} guest={:#x}",
                     mali_index, first_content, cpu_address);
+    }
+    if (cpu_only_capture) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW3_MALI_CPU_SNAPSHOT accepted_frame={} first_content={} guest={:#x} "
+                    "additional_gpu_copies=0", mali_index, first_content, cpu_address);
     }
 
     const auto frame_subresources = vk::ImageSubresourceRange{

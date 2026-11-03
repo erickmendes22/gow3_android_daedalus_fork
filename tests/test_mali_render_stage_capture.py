@@ -13,7 +13,8 @@ ARCHIVE = (ROOT / "android-launcher/app/src/main/java/com/gow3/android/data/LogA
 class MaliStageCapture(unittest.TestCase):
     def test_panvk_only_and_opt_out(self):
         self.assertIn("*/libvulkan_panfrost.so)", SHELL)
-        self.assertIn("GOW3_MALI_AUTOCAPTURE:-1", SHELL)
+        self.assertIn("GOW3_MALI_AUTOCAPTURE:-0", SHELL)
+        self.assertIn("GOW3_MALI_CPU_SNAPSHOTS:-1", SHELL)
         self.assertIn("GOW3_MALI_VISUAL_TRACE:-1", SHELL)
         self.assertIn("vendorID == 0x13B5", PRESENTER)
 
@@ -36,7 +37,7 @@ class MaliStageCapture(unittest.TestCase):
 
     def test_accepted_frames_and_first_visible_transition(self):
         frame_acquire = PRESENTER.index("Frame* frame = GetRenderFrame(true);")
-        first_accepted = PRESENTER.index("const u32 mali_index = mali_auto ? ++mali_flip_index : 0;")
+        first_accepted = PRESENTER.index("const u32 mali_index = (mali_auto || mali_cpu_snapshots) ? ++mali_flip_index : 0;")
         self.assertLess(frame_acquire, first_accepted)
         self.assertIn("mali_capture_first_content.exchange(false,", PRESENTER)
         self.assertIn("mali_capture_first_content.store(true,", PRESENTER)
