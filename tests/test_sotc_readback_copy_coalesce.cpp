@@ -17,7 +17,7 @@ using Map=std::vector<std::pair<std::uint64_t,std::uint64_t>>;
 static Map Expand(const List& x) {
     Map out;
     for (auto c:x) {
-        assert(c.size<=128);
+        assert(c.size<=8192); // coalesced region may combine many original <=64-byte copies
         for (std::uint64_t n=0;n<c.size;++n) {
             out.emplace_back(c.dstOffset+n,c.srcOffset+n);
         }
