@@ -50,7 +50,7 @@ class StagingReuse(unittest.TestCase):
             # Fail fast rather than replacing an unpinned third party version twice.
             with self.assertRaises(RuntimeError):
                 patch_staging_pow2(Path(td))
-            self.assertIn('void StagingBufferPool::RequestFromRing(',new)
+            self.assertIn('StagingBufferRef StagingBufferPool::RequestFromRing(',new)
             self.assertEqual(new.count('StagingBufferPool::RequestLarge('),old.count('StagingBufferPool::RequestLarge('))
     def test_default_memory_limit_and_size_classes(self):
         # The exact same std::bit_ceil size-class rule that is staged into C++.
