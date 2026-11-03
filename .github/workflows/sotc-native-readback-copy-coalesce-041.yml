@@ -1,0 +1,148 @@
+name: SotC 0.1.41 native readback copy coalescer
+on:
+  push:
+    branches: [perf/sotc-readback-copy-coalesce-041]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-native-rb-coalesce-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Fail fast - equivalence test and exact native source staging
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_sotc_readback_coalesce.py ports/sotc/android/repack_native_readback_041.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -I. tests/test_sotc_readback_copy_coalesce.cpp             -o "$RUNNER_TEMP/test_sotc_readback_copy_coalesce"
+          "$RUNNER_TEMP/test_sotc_readback_copy_coalesce"
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq 'SotcReadback::CoalesceAdjacent(item.copies)'             out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+          grep -Fq 'SOTC readback copy coalescer:'             out/sotc-android/gpu/shadps4/core/libraries/videoout/driver.cpp
+          grep -Fq 'SOTC_RB_COPY_COALESCE'             out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+          grep -Fq 'FindInflightReadback('             out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+          grep -Fq 'ApplyDownloads('             out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install native NDK and build toolchain
+        run: |
+          sdkmanager 'ndk;29.0.14206865' 'build-tools;35.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools             make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: native-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Prepare native renderer dependencies
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+      - name: Build patched ARM64 libbbgpu.so, no FEX or Turnip changes
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          prefix="$PWD/.local-deps/android/bionic-prefix"
+          ndk="$GOW3_NDK"
+          llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+          atomic="$("$llvm/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)"
+          unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
+          export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
+          export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared             -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF             -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH             -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH             -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic"             "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
+          cmake --build out/sotc-android/cmake --target bbgpu --parallel "$GOW3_JOBS"
+          test -s out/sotc-android/cmake/libbbgpu.so
+          "$llvm/bin/llvm-readelf" -h out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-header.txt
+          grep -Fq AArch64 out/sotc-android/cmake/elf-header.txt
+          "$llvm/bin/llvm-nm" -D --defined-only out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-exports.txt
+          grep -Fwq bbgpu_init out/sotc-android/cmake/elf-exports.txt
+          grep -Fa 'SOTC readback copy coalescer' out/sotc-android/cmake/libbbgpu.so
+      - name: Download verified signed 0.1.40 base APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh run download 41526394504 --repo "$GITHUB_REPOSITORY"             --name Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.40-original-menu-four-optin             --dir original
+          (cd original && sha256sum -c Shadow-of-the-Colossus-Daedalus-Android-0.1.40-original-menu-four-optin-arm64.apk.sha256)
+      - name: Replace renderer only, recompile unchanged launcher and sign 0.1.41
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/repack_native_readback_041.py             --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.40-original-menu-four-optin-arm64.apk             --renderer out/sotc-android/cmake/libbbgpu.so --root .
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease             -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - name: Prove only Vulkan renderer and version manifest differ from signed 0.1.40
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib,io,json,tarfile
+          p=Path('out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.41-readback-copy-coalesce-arm64.apk')
+          assert p.exists() and p.stat().st_size>40_000_000
+          report=json.loads(Path('out/release/sotc-native-readback-coalesce-0.1.41.json').read_text())
+          assert set(report['only_changed_files'])=={'runtime-manifest.json','sotcport/arm64/lib/libbbgpu.so'}
+          with ZipFile(p) as z:
+              b=z.read('assets/runtime.payload')
+              assert hashlib.sha256(b).hexdigest()==z.read('assets/runtime.sha256').decode().strip()
+              with tarfile.open(fileobj=io.BytesIO(b),mode='r:gz') as t:
+                  for member,old_hash in report['original_sha256'].items():
+                      if member not in report['only_changed_files']:
+                          assert hashlib.sha256(t.extractfile(member).read()).hexdigest()==old_hash,member
+                  renderer=t.extractfile('sotcport/arm64/lib/libbbgpu.so').read()
+                  assert b'SOTC readback copy coalescer' in renderer
+                  assert hashlib.sha256(renderer).hexdigest()==report['renderer_patched_sha256']
+          print('PASS: signed APK includes actual native change; FEX/Turnip/INI/UI untouched')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.41-readback-copy-coalesce
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.41-readback-copy-coalesce-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.41-readback-copy-coalesce-arm64.apk.sha256
+            out/release/sotc-native-readback-coalesce-0.1.41.json
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: SotC-0.1.41-native-build-diagnostics
+          path: |
+            out/sotc-android/cmake/CMakeFiles/CMakeConfigureLog.yaml
+            out/sotc-android/cmake/elf-header.txt
+            out/sotc-android/cmake/elf-exports.txt
+          if-no-files-found: ignore
