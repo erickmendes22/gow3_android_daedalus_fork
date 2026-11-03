@@ -92,8 +92,14 @@ jobs:
         with:
           path: .local-deps/android/bionic-development.keystore
           key: bionic-development-signing-v1
-      - name: Require the established signing key (never replace the installed identity)
-        run: test -s .local-deps/android/bionic-development.keystore
+      - name: Check existing signing identity (never replace it)
+        run: |
+          if test -s .local-deps/android/bionic-development.keystore; then
+            echo "GOW3_CAN_SIGN=1" >> "$GITHUB_ENV"
+          else
+            echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
+            echo "::warning::Established Bionic signing key cache unavailable. Native renderer will still compile; no replacement signing identity or APK will be produced."
+          fi
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
@@ -158,11 +164,24 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_pkg.sh
+      - name: Upload compiled Mali GPU renderer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoW3-Mali-graphics-native-verified
+          path: out/bionic/lib/libgow3gpu.so
+          if-no-files-found: error
       - name: Package, sign and validate GoW3 2.1.8 APK
+        if: env.GOW3_CAN_SIGN == '1'
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_apk.sh --package-only
+      - name: Report missing signing identity
+        if: env.GOW3_CAN_SIGN != '1'
+        run: |
+          echo "### Native Mali graphics build only" >> "$GITHUB_STEP_SUMMARY"
+          echo "The existing Android signing key was not available in Actions cache. No replacement key was generated, and no installable APK was issued." >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
+        if: env.GOW3_CAN_SIGN == '1'
         with:
           name: God-of-War-III-Daedalus-2.1.8-PanVK-VideoOut-Experimental
           path: |
