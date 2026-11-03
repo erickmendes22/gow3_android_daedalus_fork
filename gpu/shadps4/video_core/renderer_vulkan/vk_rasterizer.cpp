@@ -3134,8 +3134,28 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         Gow3Stats::scene_draws.fetch_add(scene_started, std::memory_order_relaxed);
     }
     RenderState state;
-    state.width = instance.GetMaxFramebufferWidth();
-    state.height = instance.GetMaxFramebufferHeight();
+    // RenderState::width/height are u16, but Vulkan exposes u32 framebuffer
+    // limits. Some PanVK devices report 65536: narrowing that value directly
+    // to u16 produces ZERO, and every following min(width, attachment_width)
+    // stays zero. The resulting vkCmdBeginRendering area is 0x0 even though
+    // thousands of PS4 draw commands execute. Cap before narrowing.
+    const u32 max_framebuffer_width = instance.GetMaxFramebufferWidth();
+    const u32 max_framebuffer_height = instance.GetMaxFramebufferHeight();
+    state.width = static_cast<u16>(std::min<u32>(
+        max_framebuffer_width, std::numeric_limits<u16>::max()));
+    state.height = static_cast<u16>(std::min<u32>(
+        max_framebuffer_height, std::numeric_limits<u16>::max()));
+#ifdef __ANDROID__
+    if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+        static std::atomic<bool> logged_framebuffer_limit{false};
+        if (!logged_framebuffer_limit.exchange(true, std::memory_order_relaxed)) {
+            std::printf("GOW3_MALI_RENDER_EXTENT max_framebuffer=%ux%u "
+                        "safe_initial=%ux%u render_state_bits=16\n",
+                        max_framebuffer_width, max_framebuffer_height,
+                        u32(state.width), u32(state.height));
+        }
+    }
+#endif
     state.num_layers = std::numeric_limits<u16>::max();
     state.num_color_attachments = std::bit_width(key.mrt_mask);
     for (auto cb = 0u; cb < state.num_color_attachments; ++cb) {
