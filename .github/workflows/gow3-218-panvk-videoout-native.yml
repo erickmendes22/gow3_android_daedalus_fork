@@ -113,6 +113,15 @@ jobs:
             echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
             echo "::warning::Established Bionic signing key cache unavailable. Native renderer will still compile; no replacement signing identity or APK will be produced."
           fi
+      - name: Preflight Mali display bridge and separate signer
+        run: |
+          # Catch native bridge errors and unusable test signer before a long GPU build.
+          if [[ "$GOW3_CAN_SIGN" != 1 ]]; then
+            keytool -list -keystore tools/android/debug/gow3-debug.keystore -storepass android >/dev/null
+          fi
+          "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" \
+            -std=c11 -O2 -Wall -Wextra -Werror -fPIC -DGOW3_MALI_PRESENT_TRACE=1 \
+            -Itools/android/present -fsyntax-only tools/android/bionic/present/gow3present.c
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
