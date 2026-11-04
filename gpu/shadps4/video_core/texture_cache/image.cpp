@@ -504,6 +504,14 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         vk::AccessFlagBits2::eHostWrite |
         vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
     const bool upcoming_writes = static_cast<bool>(dst_mask & write_flags);
+    // Keep the ORIGINAL attachment-write ordering policy unchanged. Same
+    // attachment writes already run within a Vulkan render pass: adding an
+    // explicit barrier on every draw would be a major G720 regression.
+    // The broader mask above is only for deciding which reads can be elided.
+    constexpr vk::AccessFlags2 legacy_hazard_mask =
+        vk::AccessFlagBits2::eTransferWrite |
+        vk::AccessFlagBits2::eShaderWrite |
+        vk::AccessFlagBits2::eMemoryWrite;
     // A full-image access can collapse previously split subresources. Preserve
     // all read-only stages/accesses from those subresources for future writes.
     vk::AccessFlags2 preserved_read_access{};
@@ -562,7 +570,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                     continue;
                 }
                 if (state.layout != dst_layout || state.access_mask != dst_mask ||
-                    previous_writes || upcoming_writes) {
+                    static_cast<bool>(state.access_mask & legacy_hazard_mask)) {
                     barriers.emplace_back(vk::ImageMemoryBarrier2{
                         .srcStageMask = state.pl_stage,
                         .srcAccessMask = state.access_mask,
@@ -602,7 +610,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
             return;
         }
         if (last_state.layout == dst_layout && last_state.access_mask == dst_mask &&
-            !previous_writes && !upcoming_writes) {
+            !static_cast<bool>(last_state.access_mask & legacy_hazard_mask)) {
             return;
         }
 

@@ -47,6 +47,9 @@ class ImageBarrierTests(unittest.TestCase):
         self.assertIn("last_state.access_mask = dst_mask | preserved_read_access;",SRC)
         self.assertIn("last_state.pl_stage = dst_stage | preserved_read_stages;",SRC)
         self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDED",SRC)
+        self.assertIn("legacy_hazard_mask",SRC)
+        self.assertIn("state.access_mask & legacy_hazard_mask",SRC)
+        self.assertIn("last_state.access_mask & legacy_hazard_mask",SRC)
 
     def test_opt_out_and_vendor(self):
         self.assertIn("vendorID == 0x13B5",SRC)
