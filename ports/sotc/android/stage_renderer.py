@@ -533,6 +533,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # 0.1.44: lossless precheck on still-in-flight readbacks, without
+    # changing any GPU fences or CPU/GPU memory protections.
+    from stage_sotc_inflight_bounds_044 import patch_inflight
+    patch_inflight(root, out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
