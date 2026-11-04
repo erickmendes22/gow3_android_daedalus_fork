@@ -47,7 +47,7 @@ def patch_readback_dedup(gpu: Path, root: Path) -> None:
         const char* value = std::getenv("SOTC_RB_INFLIGHT_DEDUP");
         return !value || value[0] != '0';
     }();
-    if (dedup_inflight) {
+    if (dedup_inflight && memory_tracker->ReadbacksMode() == GpuReadbacksMode::Precise) {
         if (const AsyncReadback* owner =
                 FindCoveringInflightReadback(readback.device_addr, readback.size)) {
             readback.tick = owner->tick;
