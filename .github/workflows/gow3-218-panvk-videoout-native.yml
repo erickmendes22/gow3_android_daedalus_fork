@@ -11,6 +11,7 @@ on:
       - 'gpu/shadps4/shader_recompiler/resource.h'
       - 'tests/test_mali_panvk_safe_mode.py'
       - 'tests/test_mali_parallel_draw_android.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_draw_prep.cpp'
       # Re-run native verification when camera integration tests or new
       # Mali menu/performance regression guards are corrected.
       - 'tests/test_android_fsr_integration.py'
