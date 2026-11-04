@@ -15,6 +15,8 @@ on:
       - 'tests/test_android_fsr_integration.py'
       - 'tests/test_mali_menu_hotpath.py'
       - 'tests/test_mali_menu_metrics.py'
+      - 'tests/test_bionic_r11_gsr2_camera_feed.py'
+      - 'tests/test_bionic_r5_hud_and_gsr2.py'
       - 'tests/test_mali_gc_budget_and_layout.py'
       - 'tests/test_mali_perf_stats.py'
       - 'tests/test_mali_warmup_disable.py'

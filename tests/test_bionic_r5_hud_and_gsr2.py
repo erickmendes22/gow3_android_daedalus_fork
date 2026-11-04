@@ -42,7 +42,8 @@ class R5(unittest.TestCase):
                       "GOW3_GSR2_SPATIAL_ONLY", "resolution = graphics['render_resolution']"):
             self.assertIn(token,launch)
         raster=source("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
-        for token in ("gsr2_forward", "std::popcount(key.mrt_mask & 0x7f) <= 2",
+        for token in ("gsr2_forward", "const unsigned color_targets = std::popcount(key.mrt_mask & 0x7f);",
+                      "color_targets >= 1 && color_targets <= 2",
                       "scene_targets->EligibleScene(primary)", "scene_started = true"):
             self.assertIn(token,raster)
         camera=source("gpu/shadps4/video_core/renderer_vulkan/vk_camera_motion.cpp")

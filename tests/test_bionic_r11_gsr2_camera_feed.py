@@ -16,7 +16,8 @@ class BionicR11CameraFeed(unittest.TestCase):
         # Compile-scope regression: the original R11 placed this in
         # BindResources, invisible to its uses in BindBuffers (two errors).
         self.assertNotIn("const bool android_camera_feed =",bind_resources)
-        self.assertIn('std::strcmp(active_upscaler, "gsr2") == 0',section)
+        self.assertIn('static const bool camera_feed_requested = []',section)
+        self.assertIn('std::strcmp(selected, "gsr2") == 0',section)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")',section)
         self.assertIn("const bool android_camera_feed =",section)
         self.assertLess(section.index("const bool android_camera_feed ="),
