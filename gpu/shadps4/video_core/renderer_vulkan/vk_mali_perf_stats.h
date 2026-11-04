@@ -30,6 +30,7 @@ public:
         NewGraphicsPipeline, NewComputePipeline, NewShaderModule,
         NewBcImage, NewRgba128Image, NewOtherImage,
         SubmitMutex, SubmitThrottle, SubmitHostCopies, SubmitQueueDriver,
+        Pm4SubmitWall,
         Count,
     };
 
@@ -70,6 +71,12 @@ public:
     }
 
     static bool SampleSubmit() {
+        if (!Enabled()) return false;
+        static thread_local uint32_t submits = 0;
+        return (++submits & 31u) == 0;
+    }
+
+    static bool SamplePm4Submit() {
         if (!Enabled()) return false;
         static thread_local uint32_t submits = 0;
         return (++submits & 31u) == 0;
@@ -130,7 +137,7 @@ public:
             "graphics_pipeline_new", "compute_pipeline_new", "shader_module_new",
             "image_bc_new", "image_rgba128_new", "image_other_new",
             "submit_mutex", "submit_throttle", "submit_host_copy_wait",
-            "submit_vk_queue",
+            "submit_vk_queue", "pm4_submit_wall",
         };
         char line[2048]{};
         size_t used = static_cast<size_t>(std::snprintf(

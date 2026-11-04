@@ -10,6 +10,7 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
       - 'gpu/shadps4/shader_recompiler/resource.h'
       - 'tests/test_mali_panvk_safe_mode.py'
+      - 'tests/test_mali_parallel_draw_android.py'
       # Re-run native verification when camera integration tests or new
       # Mali menu/performance regression guards are corrected.
       - 'tests/test_android_fsr_integration.py'
@@ -153,6 +154,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_only_package.py' -v
           python -m unittest discover -s tests -p 'test_mali_visual_provenance.py' -v
           python -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
+          python -m unittest discover -s tests -p 'test_mali_parallel_draw_android.py' -v
           python -m unittest discover -s tests -p 'test_mali_warmup_disable.py' -v
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v

@@ -2871,7 +2871,7 @@ Rasterizer::BeginSignature Rasterizer::MakeBeginSignature(const GraphicsPipeline
 bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedStage* prepared,
                                      u32 first_image_idx, bool& barrier, TextureSet*& slot) {
     const u32 count = static_cast<u32>(stage.images.size());
-    if (!prepared || count == 0 || count > TextureSet::MaxImages ||
+    if (count == 0 || count > TextureSet::MaxImages ||
         Gow3Toggle::Disabled(Gow3Toggle::TextureSetMemo) || FrameCapture::Active()) {
         return false;
     }
@@ -2880,7 +2880,30 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
             return false;
         }
     }
-    u64 key = XXH3_64bits_withSeed(prepared->image_hashes, count * sizeof(u64),
+    // The memo was previously unusable with GOW3_PREP_WORKERS=0 because
+    // only worker-prepared draws carried image hashes. For the serial or
+    // lagging-worker path derive precisely the same key from the live
+    // shader sharps. A cache hit still validates the registry generation,
+    // original backing, CPU dirtiness, render-target feedback and upscaler.
+    // No image format or image ownership is changed by this fast path.
+    std::array<u64, TextureSet::MaxImages> inline_hashes{};
+    const u64* hashes = prepared ? prepared->image_hashes : nullptr;
+    if (!hashes) {
+        static const bool mali_inline_sets = [] {
+            const char* value = std::getenv("GOW3_MALI_INLINE_TEXTURE_SETS");
+            return value && value[0] == '1';
+        }();
+        if (!mali_inline_sets) {
+            return false;
+        }
+        for (u32 i = 0; i < count; ++i) {
+            const auto& image = stage.images[i];
+            const auto sharp = image.GetSharp(stage);
+            inline_hashes[i] = ImageDescHash(sharp, image);
+        }
+        hashes = inline_hashes.data();
+    }
+    u64 key = XXH3_64bits_withSeed(hashes, count * sizeof(u64),
                                    reinterpret_cast<u64>(&stage));
     key |= 1; // 0 marks an empty slot
     auto& set = texture_sets[key % texture_sets.size()];
@@ -2890,7 +2913,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
                        set.generation == generation &&
                        set.scene_generation == scene_targets->Generation() &&
                        std::equal(set.hashes.begin(), set.hashes.begin() + count,
-                                  prepared->image_hashes);
+                                  hashes);
     if (!match) {
         ++texture_set_why[set.key != key ? 0 : set.generation != generation ? 1 : 3];
         ++texture_set_misses;
@@ -2898,7 +2921,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
         set.stage = &stage;
         set.count = 0;
         set.generation = ~0ull;
-        std::copy_n(prepared->image_hashes, count, set.hashes.begin());
+        std::copy_n(hashes, count, set.hashes.begin());
         return false;
     }
     // Every image still has the backing its view belongs to and needs no refresh.

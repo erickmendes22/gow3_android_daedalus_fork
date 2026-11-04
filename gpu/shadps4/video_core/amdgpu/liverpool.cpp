@@ -9,6 +9,7 @@
 #include <time.h>
 #include "gow3_copy.h"
 #include "gow3_toggles.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include <cstdio>
 #include <boost/preprocessor/stringize.hpp>
 
@@ -784,6 +785,11 @@ void ScanDcb(std::span<const u32> dcb, int depth) {
 Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<const u32> ccb,
                                            u64 seq) {
     FIBER_ENTER(dcb_task_name);
+    // One in 32 guest submits, including yields, to distinguish PM4/guest
+    // submission processing from the already-fast Vulkan present path.
+    const Vulkan::MaliPerfStats::Scoped pm4_wall_time{
+        Vulkan::MaliPerfStats::Stage::Pm4SubmitWall,
+        Vulkan::MaliPerfStats::SamplePm4Submit()};
     // Top-level buffers enqueued for the draw preparation workers (nested IBs are not).
     Vulkan::DrawPreparation* draw_prep =
         seq != NoSeq && rasterizer ? &rasterizer->GetDrawPreparation() : nullptr;
