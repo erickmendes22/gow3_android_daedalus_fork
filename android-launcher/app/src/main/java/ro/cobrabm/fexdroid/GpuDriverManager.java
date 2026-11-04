@@ -100,15 +100,21 @@ public final class GpuDriverManager {
             Build.VERSION.SDK_INT>=31 ? Build.SOC_MANUFACTURER : "",kgsl,mali,maliRenderer());
     }
 
-    private static boolean nextPanvkVerifiedAutoDevice() {
+    private static boolean nextPanvkVerifiedAutoDevice(Context context) {
         // The 26.3.1 release contains actual G615 MC6 validation, not G720
         // gameplay validation. Keep G720 on the established driver by default.
         String renderer=maliRenderer();
-        return supportedCsfMali(renderer) &&
-               renderer.toLowerCase(Locale.ROOT).contains("g615");
+        if (!supportedCsfMali(renderer)) return false;
+        String normalized=renderer.toLowerCase(Locale.ROOT);
+        // 26.3.1 adds v12 CSF tiler recycling and BC memory/compiler
+        // improvements. A/B it on the isolated G720 malitest package ONLY.
+        // Never silently switch the established production Bionic G720.
+        if (context.getPackageName().equals("com.gow3.android.bionic.malitest") &&
+            normalized.contains("g720")) return true;
+        return normalized.contains("g615");
     }
     public static String automaticDescription(Context context) {
-        if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice()
+        if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice(context)
             ? R.string.gpu_driver_panvk_next : R.string.gpu_driver_panvk);
         if (adrenoCandidate()) return context.getString(R.string.gpu_driver_adreno_auto);
         return context.getString(R.string.gpu_driver_system);
@@ -142,7 +148,11 @@ public final class GpuDriverManager {
     }
 
 
-    public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()); }
+    public static boolean supported(Context context) {
+        String pkg=context.getPackageName();
+        return "com.gow3.android.bionic".equals(pkg) ||
+               "com.gow3.android.bionic.malitest".equals(pkg);
+    }
     private static File root(Context context) { return new File(context.getFilesDir(),"gpu-drivers"); }
     public static String selected(Context context) {
         return context.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("gpu_driver","auto");
@@ -200,7 +210,7 @@ public final class GpuDriverManager {
             if (Build.VERSION.SDK_INT>=35) {
                 try {
                     final boolean wantNext = "panvk-next".equals(selection) ||
-                        ("auto".equals(selection) && nextPanvkVerifiedAutoDevice());
+                        ("auto".equals(selection) && nextPanvkVerifiedAutoDevice(context));
                     DriverArchive.Installed drv;
                     boolean usingNext = wantNext;
                     try {
@@ -218,8 +228,9 @@ public final class GpuDriverManager {
                     environment.put("GOW3_BIONIC_DRIVER","custom");
                     environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
                     environment.put("GOW3_GPU_AUTO_REASON",
-                        usingNext ? "PanVK 26.3.1 (Mali G615 tested release)"
-                                  : "PanVK 3.2 (Mali experimental)");
+                        usingNext
+                            ? "PanVK 26.3.1 (CSF v12 G720 experimental A/B)"
+                            : "PanVK 3.2 (legacy Mali experimental)");
                     return;
                 } catch (Exception ex) {
                     if ("panvk".equals(selection) || "panvk-next".equals(selection))

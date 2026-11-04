@@ -231,7 +231,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Vulkan same-layout image READ->READ requires no barrier; preserve
       # all read stage/access scopes until a later write or layout change.
       # =0 retains old always-barrier behavior for identical-scene A/B.
-      export GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}
+      export GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
       # Bachata S4 completes Present() before publishing a guest flip event.
       # Do not acknowledge a Mali guest framebuffer while swap work is queued

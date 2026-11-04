@@ -48,10 +48,14 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
         self.assertIn("GOW3_MALI_CPU_PRESENT",launcher)
         self.assertIn("GOW3_PRESENT_THREAD=0",launcher)
 
-    def test_verified_g615_auto_and_g720_conservative(self):
+    def test_verified_g615_auto_and_g720_isolated_driver_ab(self):
         src=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java").read_text()
-        self.assertIn('renderer.toLowerCase(Locale.ROOT).contains("g615")',src)
-        self.assertIn('("auto".equals(selection) && nextPanvkVerifiedAutoDevice())',src)
+        self.assertIn('return normalized.contains("g615");',src)
+        self.assertIn('nextPanvkVerifiedAutoDevice(Context context)',src)
+        self.assertIn('context.getPackageName().equals("com.gow3.android.bionic.malitest")',src)
+        self.assertIn('normalized.contains("g720")',src)
+        self.assertIn('"com.gow3.android.bionic.malitest".equals(pkg)',src)
+        self.assertIn('("auto".equals(selection) && nextPanvkVerifiedAutoDevice(context))',src)
         self.assertIn('drv = bundledPanvk(context, false);',src)
         self.assertIn('if (!"auto".equals(selection) || !wantNext) throw new IOException("Selected PanVK driver unavailable",nextFailed);',src)
 
