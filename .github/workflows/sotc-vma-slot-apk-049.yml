@@ -1,0 +1,395 @@
+name: SotC 0.1.49 validated VMA cache locality ARM64 Android APK
+on:
+  push:
+    branches: [perf/sotc-vma-slot-locality-049]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-apk-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.ref != 'refs/heads/fix/sotc-real-lod-and-blur-20261031' && github.ref != 'refs/heads/diag/sotc-gpu-ab-20261031'
+    name: Build SotC FEX Bionic, verify original Vulkan ABI, package independent APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Validate SotC-specific packaging scripts before native compilation
+        run: |
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_sotc_lowres.py ports/sotc/android/stage_sotc_perf_profile.py ports/sotc/android/stage_sotc_stage_spec_cpu.py ports/sotc/android/stage_sotc_reg_snapshot.py ports/sotc/android/stage_sotc_rt_memo.py ports/sotc/android/analyze_frame_profile.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'export SOTC_LOD_POOL_LOW=${SOTC_LOD_POOL_LOW:-8}' ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fragment_tsharp.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gs_position_interface.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_tess_barycentric.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gpu_pass_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_meta_clear_integrity.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_adreno_lds_integrity.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_bachata_perf.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_vendor_turnip.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gamehub_dd_import.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_present_fastpath.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_low_resolution.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_lowres_upstream.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_frame_profile.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_profile_report.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_stage_spec_cpu.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_rt_memo.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_readbacks_modes.py' -v
+          # PC v0.71/v0.72: first prove this exact Android FEX code is safe.
+          python3 -m unittest discover -s tests -p 'test_sotc_pc072_android_045.py' -v
+          grep -Fq '(page ^ (page>>9) ^ (page>>18))' src/runtime_memory.c
+          grep -Fq 'SOTC_VM_RANGE_CACHE' ports/sotc/android/run-sotc-bionic.sh
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            tests/test_sotc_pc072_pool_owner.c -Wl,--gc-sections \
+            -o "$RUNNER_TEMP/sotc-pc072-owner"
+          "$RUNNER_TEMP/sotc-pc072-owner"
+          # Full Bionic source-level VM regression, before 30-minute native work.
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -pthread \
+            tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections \
+            -o "$RUNNER_TEMP/sotc-vm-cache"
+          "$RUNNER_TEMP/sotc-vm-cache"
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread -fsyntax-only \
+            src/runtime_memory.c
+          grep -Fq 'SOTC_VM_RANGE_CACHE' src/runtime_memory.c
+          grep -Fq 'sotc_vm_mark_dirty(address,address+size)' src/runtime_memory.c
+          grep -Fq 'sotc_vm_mark_dirty(start,end)' src/runtime_memory.c
+          clang++ -std=c++20 -O2 -Wall -Wextra -Werror tests/test_sotc_stage_spec_cpu.cpp -o "$RUNNER_TEMP/sotc-stage-spec-cpu"
+          "$RUNNER_TEMP/sotc-stage-spec-cpu"
+          clang++ -std=c++20 -O2 -Wall -Wextra -Werror tests/test_sotc_queued_regs.cpp -o "$RUNNER_TEMP/sotc-queued-regs"
+          "$RUNNER_TEMP/sotc-queued-regs"
+          python3 -m unittest discover -s tests -p 'test_sotc_prepare.py' -v
+          if test ! -f ports/sotc/android/vendor/turnip_gamehub_dd.zip; then
+            echo "::warning::GameHub DD binary not present in this GitHub checkout. APK will not contain the driver; use the exact ZIP via the in-app importer."
+          fi
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fastpaths.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_turnip_geometry.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_wave32_correctness.py' -v
+          # Compile and execute the portable SRT ABI and guest-memory tests
+          # before the expensive FEX and Vulkan build.
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_sotc_fastpaths.cpp -o "$RUNNER_TEMP/sotc-fastpaths"
+          "$RUNNER_TEMP/sotc-fastpaths"
+          clang++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_sotc_arm64_srt.cpp -o "$RUNNER_TEMP/sotc-srt-portable"
+          "$RUNNER_TEMP/sotc-srt-portable"
+          # Fast native ABI test: numeric SotC NIDs must route to real HLE
+          # functions, not an unsupported-import sentinel.
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -I. -Isrc -pthread -c src/runtime.c -o "$RUNNER_TEMP/sotc-runtime-imports.o"
+          # runtime_mutex.c already defines _GNU_SOURCE itself; defining it
+          # again on the command line is a warning promoted to error.
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -I. -Isrc -pthread -c src/runtime_mutex.c -o "$RUNNER_TEMP/sotc-mutex-imports.o"
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,--gc-sections -pthread \
+            tests/test_sotc_scoped_mutex.c "$RUNNER_TEMP/sotc-runtime-imports.o" \
+            "$RUNNER_TEMP/sotc-mutex-imports.o" -o "$RUNNER_TEMP/sotc-scoped-mutex"
+          "$RUNNER_TEMP/sotc-scoped-mutex"
+          # Native staging is cheap; run it before rebuilding FEX to catch
+          # source-transformation errors without a long failed job.
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          grep -Fq 'pthread_getcpuclockid(pthread_self(), &id)' out/sotc-android/gpu/shadps4/video_core/sotc_stats.cpp
+          grep -Fq 'getrusage(RUSAGE_SELF, &usage)' out/sotc-android/gpu/shadps4/video_core/sotc_stats.cpp
+          grep -Fq 'rt.flattened_ud_buf.swap(stage.flat);' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'sotc_last.flat == info.FlatBuf()' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'SOTC_STAGE_SPEC_MEMO' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'SOTC_REG_SNAPSHOT_MEMO' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'SOTC_RT_MEMO' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'Rasterizer::BeginRenderingFull(' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'sotc_last_queued_regs' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.h
+          grep -Fq 'RegChunkDwords = 64;' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.h
+          grep -Fq 'static constexpr u32 RegChunkDwords = 64;' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.h
+          ! grep -Fq 'SotcCpSpinBudget' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq 'skip_full_blit_clear' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'if (needs_black_clear)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'SotcPerf::BindGraphicsPipeline' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'SotcPerf::SetVertexInput' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq '++sotc_fastpath_epoch' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp
+          grep -Fq 'std::fill(set_writes.begin(), set_writes.end(), vk::WriteDescriptorSet{});' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'SotcUnusedDesktopVkFunction' out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
+          srt=out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes
+          grep -Fq 'SotcArm64Srt::Run' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'NeedsShaderDynamicOffset' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'IR::Opcode::Phi' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'const bool adreno_missing_barycentrics = instance.GetVendorID() == 0x5143;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'const Id gs_position_block{m.TypeStruct(vec4_id)};' out/sotc-android/gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp
+          grep -Fq 'SOTC GPU PASS CAPTURE armed' out/sotc-android/gpu/shim/bbgpu.cpp
+          grep -Fq 'SOTC GPU PASS CAPTURE image shader=' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          ! grep -Fq 'export SOTC_AUTO_GPU_DUMP_AFTER=80' ports/sotc/android/run-sotc-bionic.sh
+          ! grep -Fq 'export SOTC_DUMP=b33e9db6,91c6c95e,25338711,47c1dc64' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'instance.GetVendorID() == 0x5143,' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'metadata_only_dispatch = info.images.empty()' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'non_special_writes > 1' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'const bool tessellated_triangles = has_guest_tes &&' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+          grep -Fq '(!has_guest_tes || tessellated_triangles))' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+          grep -Fq 'm.MemberDecorate(gs_position_block, 0U, spv::Decoration::Invariant);' out/sotc-android/gpu/shadps4/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp
+          grep -Fq 'GS_fallback=%d' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+          grep -Fq 'SotC Turnip vertex integrity: nomultipos requested' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'constexpr u64 kTaaResolveHash = 0xa402ddac;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'taa_flat[kTaaEnableDword] &= ~1u;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'vk13_props.requiredSubgroupSizeStages & stage' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
+          grep -Fq 'android_fragment_tsharp && info.hw_stage == HwStage::Fragment' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/resource_patching_pass.cpp
+          grep -Fq '(info.hw_stage == HwStage::Compute || fragment_table)' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/resource_patching_pass.cpp
+          grep -Fq 'UseAdrenoWave32()' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
+          grep -Fq 'if (UseAdrenoWave32()) return 32u;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
+          grep -Fq 'SotC Adreno Wave32' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
+          grep -Fq 'OpCopyWindow' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'CopyFlatbufPlacement' "$srt/flatten_extended_userdata_pass.cpp"
+          grep -Fq 'SrtWalkerCode(walker_func)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+          ! grep -Fq 'FlattenExtendedUserdataPass unimplemented for target architecture.' "$srt/flatten_extended_userdata_pass.cpp"
+          python3 ports/sotc/android/check_imgui_loader.py out/sotc-android/gpu/third_party/imgui/backends/imgui_impl_vulkan.cpp
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install ARM64 compiler, SDK and build dependencies
+        run: |
+          sdkmanager 'ndk;29.0.14206865' 'build-tools;35.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build cmake clang lld pkg-config patchelf glslang-tools \
+            make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Compile Android launcher Java before costly native build
+        run: |
+          # Catch missing Java imports (including Bachata toggles) before FEX/Vulkan.
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: sotc-apk-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Build FEX guest CPU and GoW3-compatible Android platform bridge
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_runtime.sh
+          bash tools/android/bionic/build_python.sh
+          bash tools/android/bionic/build_pkg.sh
+      - name: Build original SotC Vulkan renderer with corrected Android AHB staging
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          # This renderer embeds FidelityFX sources as a git submodule; missing
+          # sources used to fail in CMake after building FEX for ~10 minutes.
+          test -s upstream-sotc/gpu/third_party/fsr-vulkan/src/ffx_vk_fsr3_3_1_6_framegen.cpp ||
+            { echo "::error::Missing SotC fsr-vulkan submodule; verify recursive checkout"; exit 1; }
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq '#ifndef __ANDROID__' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          prefix="$PWD/.local-deps/android/bionic-prefix"
+          ndk="$GOW3_NDK"
+          llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+          atomic="$("$llvm/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)"
+          unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
+          export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
+          export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF \
+            -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
+            "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
+          cmake --build out/sotc-android/cmake --target bbgpu --parallel "$GOW3_JOBS"
+          test -s out/sotc-android/cmake/libbbgpu.so
+          # Avoid an early-closing grep pipe: llvm-nm can exit 74 on EPIPE.
+          "$llvm/bin/llvm-readelf" -h out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-header.txt
+          grep -Fq AArch64 out/sotc-android/cmake/elf-header.txt
+          "$llvm/bin/llvm-nm" -D --defined-only out/sotc-android/cmake/libbbgpu.so > out/sotc-android/cmake/elf-exports.txt
+          grep -Fwq bbgpu_init out/sotc-android/cmake/elf-exports.txt
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Check all SotC HLE imports resolve from the FEX main executable
+        run: |
+          python3 ports/sotc/android/verify_sotc_link.py \
+            --ndk "$GOW3_NDK" \
+            --renderer out/sotc-android/cmake/libbbgpu.so \
+            --probe out/bionic/bin/gow3-probe
+          python3 tools/android/bionic/verify_bionic.py \
+            --ndk "$GOW3_NDK" --root out/bionic --complete
+      - name: Create independent SotC Android game runtime and APK
+        run: |
+          python3 ports/sotc/android/package_sotc_runtime.py \
+            --ndk "$GOW3_NDK" --upstream upstream-sotc \
+            --renderer out/sotc-android/cmake/libbbgpu.so
+          tar -tzf out/release/sotc-runtime.tar.gz > "$RUNNER_TEMP/sotc-payload-files.txt"
+          # Prove the patched 540p validator and exact guest patch verification
+          # are present in the APK payload, not only in the repository.
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/scripts/sotc-upstream/scripts/sotc_modes.py > "$RUNNER_TEMP/sotc-packaged-modes.py"
+          grep -Fq 'or w % 8 or h % 4:' "$RUNNER_TEMP/sotc-packaged-modes.py"
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/scripts/sotc_prepare_game.py > "$RUNNER_TEMP/sotc-packaged-prepare.py"
+          grep -Fq "verify_render_patches(out/'patches.bin', render)" "$RUNNER_TEMP/sotc-packaged-prepare.py"
+          grep -Fq 'sotcport/run-sotc-bionic.sh' "$RUNNER_TEMP/sotc-payload-files.txt"
+          grep -Fq 'sotcport/sotc.default.ini' "$RUNNER_TEMP/sotc-payload-files.txt"
+          grep -Fq 'sotcport/arm64/bin/sotc-probe' "$RUNNER_TEMP/sotc-payload-files.txt"
+          # Prove PC T38 is in the actual compiled FEX main executable,
+          # not merely an env variable that would enable unsafe hot copies.
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/bin/sotc-probe > "$RUNNER_TEMP/sotc-pc072-probe"
+          grep -aFq 'SotC PC 0.71 pool owner: skipped' "$RUNNER_TEMP/sotc-pc072-probe"
+          grep -aFq 'SotC PC 0.72: pool release site verified' "$RUNNER_TEMP/sotc-pc072-probe"
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/run-sotc-bionic.sh > "$RUNNER_TEMP/sotc-pc072-runtime.sh"
+          grep -Fq 'export SOTC_POOL_OWNER=' "$RUNNER_TEMP/sotc-pc072-runtime.sh"
+          grep -Fq 'export SOTC_RB_HOT=' "$RUNNER_TEMP/sotc-pc072-runtime.sh"
+          python3 - <<'PY'
+          import tarfile,json
+          with tarfile.open('out/release/sotc-runtime.tar.gz','r:gz') as t:
+              manifest=json.load(t.extractfile('runtime-manifest.json'))
+              assert manifest['version']=='0.1.49-boot-test',manifest
+          print('PASS: PC 0.71 runtime guard compiled, PC 0.72 fast reads opt-in and version verified')
+          PY
+          if grep -Fq 'God_of_War_III_Remastered.xml' "$RUNNER_TEMP/sotc-payload-files.txt"; then
+            echo "::error::SotC package includes GoW3 game patches"; exit 1
+          fi
+          if grep -q '^gow3port/' "$RUNNER_TEMP/sotc-payload-files.txt"; then
+            echo "::error::SotC package still uses the GoW3 game data directory"; exit 1
+          fi
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.49-vma-slot-locality
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.49-vma-slot-locality-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.49-vma-slot-locality-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sotc-android-apk-build-diagnostics
+          path: |
+            out/bionic/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/logs
+            .local-deps/android/bionic-build/*.log
+            out/release/sotc-badging.txt
+          if-no-files-found: ignore
+
+  repackage-verified-native:
+    if: github.ref == 'refs/heads/fix/sotc-real-lod-and-blur-20261031' || github.ref == 'refs/heads/diag/sotc-gpu-ab-20261031'
+    name: Repackage verified SotC 0.1.16 ARM64 runtime and rebuild 0.1.18 Android launcher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK for signed launcher
+        run: sdkmanager 'build-tools;35.0.0'
+      - name: Verify original successful 0.1.16 native artifact and repackage only changed inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh run download 41221644670 --repo "$GITHUB_REPOSITORY" \
+            --name 'Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.16-boot-test' --dir original
+          (cd original && sha256sum -c Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk.sha256)
+          python3 -m py_compile ports/sotc/android/repack_verified_native.py
+          python3 -m unittest discover -s tests -p 'test_sotc_render_completeness.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_taa_history.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_gpu_ab.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_perf_mechanisms.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_fastpaths.py' -v
+          python3 ports/sotc/android/repack_verified_native.py \
+            --base-apk original/Shadow-of-the-Colossus-Daedalus-Android-0.1.16-boot-test-arm64.apk \
+            --root .
+      - name: Compile 0.1.18 UI, sign APK, and inspect embedded corrected payload
+        run: |
+          set -euo pipefail
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          bash ports/sotc/android/sign_sotc_apk.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from io import BytesIO
+          import tarfile, hashlib, json
+          apk = Path("out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.18-boot-test-arm64.apk")
+          assert apk.is_file() and apk.stat().st_size > 40_000_000
+          with ZipFile(apk) as z:
+              payload = z.read("assets/runtime.payload")
+              assert hashlib.sha256(payload).hexdigest() == z.read("assets/runtime.sha256").decode().strip()
+              with tarfile.open(fileobj=BytesIO(payload), mode="r:gz") as t:
+                  script = t.extractfile("sotcport/run-sotc-bionic.sh").read()
+                  assert b"export SOTC_LOD_LINGER=" in script
+                  assert b"export SOTC_UPLOAD_BUDGET_MB=0" in script
+                  assert b"gpu-user-srt-phi6-gs-position" in script
+                  assert b"sotc_blur_suppression=1" in t.extractfile("sotcport/sotc.ini").read()
+                  assert b"sotc_fast_bind=0" in t.extractfile("sotcport/sotc.ini").read()
+                  assert b"sotc_record_thread=0" in t.extractfile("sotcport/sotc.ini").read()
+                  assert json.load(t.extractfile("runtime-manifest.json"))["version"] == "0.1.18-boot-test"
+              for name in ("lib/arm64-v8a/libfxdisplay.so", "lib/arm64-v8a/libfxio.so",
+                           "lib/arm64-v8a/libgow3present.so"):
+                  assert z.getinfo(name).file_size > 10000
+          print("PASS: actual signed APK includes corrected SotC config, native GS and JNI bridges")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.18-boot-test
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.18-boot-test-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.18-boot-test-arm64.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: SotC-0.1.18-repackage-diagnostics
+          path: |
+            out/release/sotc-badging.txt
+            android-launcher/app/build/outputs
+          if-no-files-found: ignore
