@@ -38,8 +38,8 @@ class PcMutexStage(unittest.TestCase):
         self.assertIn('export SOTC_STAGING_KEEP_MB=${SOTC_STAGING_KEEP_MB:-0}',shell)
         for old in ("SOTC_POOL_OWNER","SOTC_RB_HOT","BB_READBACKS","SOTC_RB_STREAM"):
             self.assertIn(old,shell)
-        self.assertIn('versionName = "0.1.46-pc072-mutex-stage"',(ROOT/"android-launcher/app/build.gradle.kts").read_text())
-        self.assertIn("version='0.1.46-boot-test'",(ROOT/"ports/sotc/android/package_sotc_runtime.py").read_text())
+        self.assertIn('versionName = "0.1.47-host-large-pow2"',(ROOT/"android-launcher/app/build.gradle.kts").read_text())
+        self.assertIn("version='0.1.47-boot-test'",(ROOT/"ports/sotc/android/package_sotc_runtime.py").read_text())
     def test_mutex_bounded_and_reversible(self):
         s=(ROOT/"src/runtime_mutex.c").read_text()
         self.assertIn('getenv("SOTC_MUTEX_SPIN_US")',s)
