@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <time.h>
+#include <unistd.h>
 typedef struct { int type; } GuestAttr;
 typedef struct { pthread_mutex_t native; } GuestMutex;
 static size_t created, locks, unlocks;
@@ -77,10 +78,62 @@ static int32_t ensure_mutex(GuestMutex **mutex) {
     pthread_mutex_unlock(&static_init);
     return e;
 }
+/* SotC PC v0.71: when a guest job mutex is briefly contended, try acquiring it
+ * for up to 20us before sleeping in the kernel. Off for GoW3 / by default.
+ * Android AArch64 uses WFE-free YIELD (does not sleep or hold scheduler locks).
+ * The original blocking pthread_mutex_lock remains the fallback.
+ */
+static unsigned sotc_mutex_spin_budget(void) {
+    static unsigned budget=UINT32_MAX;
+    unsigned v=__atomic_load_n(&budget,__ATOMIC_ACQUIRE);
+    if(v!=UINT32_MAX) return v;
+    const char *s=getenv("SOTC_MUTEX_SPIN_US");
+    unsigned long long n=s && s[0] && s[0]!='-' ? strtoull(s,NULL,10) : 0;
+    if(n>100) n=100; /* cap battery/thermal impact on Android */
+    if(n && sysconf(_SC_NPROCESSORS_ONLN)<=2) n=0;
+    v=(unsigned)n;
+    __atomic_store_n(&budget,v,__ATOMIC_RELEASE);
+    if(v) fprintf(stderr,"SotC PC v0.71 mutex spin: %u us on contended guest locks\\n",v);
+    return v;
+}
+static uint64_t sotc_spin_contended, sotc_spin_acquired;
+static uint64_t sotc_monotonic_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC,&ts);
+    return (uint64_t)ts.tv_sec*1000000000ull+(uint64_t)ts.tv_nsec;
+}
+static int sotc_spin_guest_mutex(pthread_mutex_t *m,unsigned us) {
+    const uint64_t start=sotc_monotonic_ns(),deadline=(uint64_t)us*1000;
+    int err=EBUSY;
+    do {
+        for(int i=0;i<16 && err==EBUSY;++i) {
+#if defined(__aarch64__)
+            __asm__ __volatile__("yield" ::: "memory");
+#elif defined(__x86_64__)
+            __asm__ __volatile__("pause" ::: "memory");
+#endif
+            err=pthread_mutex_trylock(m);
+        }
+    } while(err==EBUSY && sotc_monotonic_ns()-start<deadline);
+    return err;
+}
 static ABI int32_t mutex_lock(GuestMutex **mutex) {
     int32_t e = ensure_mutex(mutex);
     if (e) return e;
-    e = orbis_error(pthread_mutex_lock(&(*mutex)->native));
+    const unsigned spin_us=sotc_mutex_spin_budget();
+    int native;
+    if(!spin_us) {
+        native=pthread_mutex_lock(&(*mutex)->native); /* baseline byte-equivalent */
+    } else {
+        native=pthread_mutex_trylock(&(*mutex)->native);
+        if(native==EBUSY) {
+            __atomic_add_fetch(&sotc_spin_contended,1,__ATOMIC_RELAXED);
+            native=sotc_spin_guest_mutex(&(*mutex)->native,spin_us);
+            if(!native) __atomic_add_fetch(&sotc_spin_acquired,1,__ATOMIC_RELAXED);
+        }
+        if(native==EBUSY) native=pthread_mutex_lock(&(*mutex)->native);
+    }
+    e=orbis_error(native);
     if (!e) ++locks;
     return e;
 }
@@ -253,6 +306,9 @@ uintptr_t runtime_mutex_resolve(const char *name) {
 }
 void runtime_mutex_report(void) {
     printf("Runtime: mutexes created=%zu, locks=%zu, unlocks=%zu\n", created, locks, unlocks);
+    printf("SotC PC mutex spin: contended=%llu acquired_before_sleep=%llu\n",
+           (unsigned long long)__atomic_load_n(&sotc_spin_contended,__ATOMIC_RELAXED),
+           (unsigned long long)__atomic_load_n(&sotc_spin_acquired,__ATOMIC_RELAXED));
     printf("Runtime: condition variables created=%zu, waits=%zu, wakeups=%zu\n", conds, waits, wakeups);
 }
 
