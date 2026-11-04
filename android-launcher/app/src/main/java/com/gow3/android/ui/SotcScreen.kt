@@ -244,6 +244,17 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Cópias antecipadas de dados GPU: potencial de ganho no Santuário. Exige Readback 2 e correção do pool de páginas do PC 0.71. Desligado por padrão; faça backup dos saves. O ganho de até 25% foi medido somente no PC."
                          else "Speculative GPU copies: possible Shrine FPS gain. Requires Readback 2 and the PC 0.71 page-pool fix. OFF by default; back up saves. The up-to-25% figure was measured on PC only.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "PC 0.71: mutex rápido de 20 µs (teste)"
+                                      else "PC 0.71: 20 µs guest mutex spin (test)",
+                        (values["sotc_pc071_mutex_spin"]?:"0")=="1",
+                        {save("sotc_pc071_mutex_spin",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "PC 0.72: preparar staging RAM (teste)"
+                                      else "PC 0.72: host staging reserve (test)",
+                        (values["sotc_pc072_staging_prewarm"]?:"0")=="1",
+                        {save("sotc_pc072_staging_prewarm",if(it)"1" else "0")})
+                    Text(if(pt) "Experimentos independentes: mutex evita dormir em disputas curtas; staging prepara até 32 MiB por tipo de memória de sistema, sem reservar VRAM. Desligados por padrão. Reinicie o jogo para comparar."
+                         else "Independent tests: mutex avoids kernel sleep on brief contention; staging prewarms up to 32 MiB per system-memory ring without reserving VRAM. OFF by default. Restart to compare.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Adreno: compatibilidade Wave32" else "Adreno: Wave32 compatibility",
                         (values["sotc_adreno_wave32"]?:"0")=="1",
                         {save("sotc_adreno_wave32",if(it)"1" else "0")})
@@ -408,7 +419,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.45 — PC 0.72 / base 0.1.40",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.46 — PC mutex / staging",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
