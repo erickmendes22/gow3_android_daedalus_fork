@@ -15,7 +15,7 @@ struct Readback {
     std::vector<Item> items;
 };
 static bool OldOverlap(U a,U n,U b,U m) {
-    return n != 0 && m != 0 && a < b+m && b < a+n;
+    return a < b+m && b < a+n;
 }
 static bool OldDirty(const Readback& r,U addr,U size) {
     bool dirty=r.dirty;
@@ -49,6 +49,9 @@ int main() {
     static_assert(SotcInflight::Overlaps(10,5,14,1));
     static_assert(!SotcInflight::Overlaps(10,5,15,1));
     static_assert(!SotcInflight::Overlaps(10,0,10,5));
+    static_assert(SotcInflight::Overlaps(11,0,10,5));
+    static_assert(SotcInflight::Overlaps(10,5,11,0));
+    static_assert(!SotcInflight::Overlaps(10,5,10,0));
     static_assert(SotcInflight::Overlaps(UINT64_MAX-3,3,UINT64_MAX-1,1));
     std::mt19937_64 rnd{0x515442044};
     U excluded=0,scanned=0;
