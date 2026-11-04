@@ -282,13 +282,13 @@ static void fault(int sig, siginfo_t *info, void *context) {
     const uintptr_t fp = (uintptr_t)arm_context->uc_mcontext.regs[29];
     if (dladdr((void *)caller, &where) && where.dli_fname)
         snprintf(line, sizeof(line),
-                 "SotC crash caller: %s+0x%lx (%s), FP=%p, renderer_ready=%d\\n",
+                 "SotC crash caller: %s+0x%lx (%s), FP=%p, renderer_ready=%d\n",
                  where.dli_fname,
                  (unsigned long)(caller - (uintptr_t)where.dli_fbase),
                  where.dli_sname ? where.dli_sname : "?",
                  (void *)fp, sotc_renderer_ready);
     else
-        snprintf(line, sizeof(line), "SotC crash caller LR=%p FP=%p renderer_ready=%d\\n",
+        snprintf(line, sizeof(line), "SotC crash caller LR=%p FP=%p renderer_ready=%d\n",
                  (void *)caller, (void *)fp, sotc_renderer_ready);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
 #endif
@@ -603,7 +603,7 @@ static void apply_sotc_cmdline(const char *path, uint64_t size) {
         fail("SotC engine command line out of RIP-relative range");
     int32_t rel=(int32_t)delta;
     memcpy(image+lea+3,&rel,4);
-    printf("SotC engine command line prepared (%zu bytes)\\n",n);
+    printf("SotC engine command line prepared (%zu bytes)\n",n);
 }
 #endif
 
@@ -1027,13 +1027,13 @@ int main(int argc, char **argv) {
         const int recognized=size>0x1ac82 && image[0x1ac7d]==0xe8;
         if (recognized) {
             runtime_memory_set_release_site((uintptr_t)(image+0x1ac82));
-            fprintf(stderr,"SotC PC 0.72: pool release site verified; fast GPU readbacks %s\\n",
+            fprintf(stderr,"SotC PC 0.72: pool release site verified; fast GPU readbacks %s\n",
                     getenv("SOTC_RB_HOT") && getenv("SOTC_RB_HOT")[0]=='1'?"requested":"OFF");
         } else {
             /* Unknown eboot revision: do not risk resurrecting the colour
              * mosaic or guest heap corruption from unsafe hot readbacks. */
             setenv("SOTC_RB_HOT","0",1);
-            fprintf(stderr,"SotC PC 0.72: unverified pool release call; fast readbacks disabled\\n");
+            fprintf(stderr,"SotC PC 0.72: unverified pool release call; fast readbacks disabled\n");
         }
     }
     if (sotc_cmdline) apply_sotc_cmdline(sotc_cmdline,size);
