@@ -53,7 +53,7 @@ class ImageBarrierTests(unittest.TestCase):
 
     def test_opt_out_and_vendor(self):
         self.assertIn("vendorID == 0x13B5",SRC)
-        self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}",RUN)
+        self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}",RUN)
 
 if __name__ == "__main__":
     unittest.main()
