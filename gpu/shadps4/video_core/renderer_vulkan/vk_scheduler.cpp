@@ -381,10 +381,36 @@ void Scheduler::PopPendingOperations() {
         return;
     }
     if (!work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
+        // Bachata ARM64 reclaims resources using confirmed GPU ticks, without
+        // querying the Vulkan timeline from the draw hot path. Mali already
+        // uses bounded submissions, whose mandatory waits advance cached ticks.
+        // =0 explicitly restores the original 1-in-32-draw polling path.
+        static const bool mali_cached_pending_ticks = [this] {
+#ifdef __ANDROID__
+            const char* selected = std::getenv("GOW3_MALI_CACHED_PENDING_TICKS");
+            const char* legacy_submit = std::getenv("GOW3_VK_POLL_EACH_SUBMIT");
+            return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+                   instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                   (!selected || selected[0] != '0') &&
+                   !(legacy_submit && legacy_submit[0] == '1');
+#else
+            return false;
+#endif
+        }();
+        if (mali_cached_pending_ticks) {
+            // Leave this object pending; only a confirmed completed tick
+            // may retire it, as on the original Bachata scheduler.
+            return;
+        }
         if ((++pending_polls & 31) != 0 && !Gow3Toggle::Disabled(Gow3Toggle::PendingPollLimit)) {
             return;
         }
+        const bool sample_poll = MaliPerfStats::Enabled();
+        const auto query_start = sample_poll ? MaliPerfStats::Clock::now()
+                                              : MaliPerfStats::TimePoint{};
         work_semaphore.Refresh();
+        if (sample_poll)
+            MaliPerfStats::Record(MaliPerfStats::Stage::PendingTimelineQuery, query_start);
     }
     while (!pending_ops.empty() && work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
         pending_ops.front().callback();
