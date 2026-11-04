@@ -533,6 +533,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # Prevent overlapping guest threads from scheduling duplicate precise GPU copies.
+    from stage_sotc_inflight_dedup_048 import patch_readback_dedup
+    patch_readback_dedup(out, root)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
