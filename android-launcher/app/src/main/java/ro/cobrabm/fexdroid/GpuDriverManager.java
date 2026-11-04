@@ -23,7 +23,7 @@ public final class GpuDriverManager {
     // Increment when the default driver generation changes again. The
     // one-time upgrade converts legacy built-in 3.2 choices to "auto",
     // where a driver failure can fall back safely instead of breaking boot.
-    private static final String G720_DEFAULT_MIGRATION_KEY="g720_panvk_2631_upgrade_v1";
+    private static final String MALI_DEFAULT_MIGRATION_KEY="mali_panvk_2631_upgrade_v1";
 
     // PanVK CSF is NOT compatible with every Mali. Reject older
     // Job-Manager Mali (G52/G57/G76/G77/G78) and unknown GPU variants.
@@ -115,22 +115,23 @@ public final class GpuDriverManager {
         return normalized.contains("g720") || normalized.contains("g615");
     }
 
-    static String migratedG720Selection(String oldSelection, boolean isG720,
+    static String migratedMaliSelection(String oldSelection, boolean eligibleMali,
                                         boolean migrationApplied) {
         // Before this release, an explicit built-in "panvk" selection was
         // commonly retained from older installs, preventing improvements
         // to the default driver from ever reaching those users.
         // Convert ONLY that old 3.2 selection, ONCE, to auto. Do not
         // overwrite "system", custom packages, or a newer explicit choice.
-        return isG720 && !migrationApplied && "panvk".equals(oldSelection)
+        return eligibleMali && !migrationApplied && "panvk".equals(oldSelection)
             ? "auto" : oldSelection;
     }
 
-    private static boolean isCompatibleG720() {
+    private static boolean isCompatibleMaliAutoUpgrade() {
         if (!maliCandidate()) return false;
         String renderer=maliRenderer();
-        return supportedCsfMali(renderer) &&
-               renderer.toLowerCase(Locale.ROOT).contains("g720");
+        if (!supportedCsfMali(renderer)) return false;
+        final String name=renderer.toLowerCase(Locale.ROOT);
+        return name.contains("g720") || name.contains("g615");
     }
     public static String automaticDescription(Context context) {
         if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice(context)
@@ -177,16 +178,16 @@ public final class GpuDriverManager {
         final var prefs=context.getSharedPreferences("gow3",Context.MODE_PRIVATE);
         final String old=prefs.getString("gpu_driver","auto");
         if (!supported(context) ||
-            "1".equals(prefs.getString(G720_DEFAULT_MIGRATION_KEY,"0")) ||
-            !isCompatibleG720()) {
+            "1".equals(prefs.getString(MALI_DEFAULT_MIGRATION_KEY,"0")) ||
+            !isCompatibleMaliAutoUpgrade()) {
             return old;
         }
-        final String migrated=migratedG720Selection(old,true,false);
-        var editor=prefs.edit().putString(G720_DEFAULT_MIGRATION_KEY,"1");
+        final String migrated=migratedMaliSelection(old,true,false);
+        var editor=prefs.edit().putString(MALI_DEFAULT_MIGRATION_KEY,"1");
         if (!old.equals(migrated)) editor.putString("gpu_driver",migrated);
         if (editor.commit()) {
             if (!old.equals(migrated))
-                android.util.Log.i("GoW3","G720 driver upgraded from PanVK 3.2 to 26.3.1 automatic");
+                android.util.Log.i("GoW3","Mali G615/G720 driver upgraded from PanVK 3.2 to 26.3.1 automatic");
             return migrated;
         }
         // If storage fails, the next call can retry; don't report success.
@@ -201,7 +202,7 @@ public final class GpuDriverManager {
         // explicit return to PanVK 3.2 on the next app start.
         if (!context.getSharedPreferences("gow3",Context.MODE_PRIVATE).edit()
                 .putString("gpu_driver",value)
-                .putString(G720_DEFAULT_MIGRATION_KEY,"1").commit())
+                .putString(MALI_DEFAULT_MIGRATION_KEY,"1").commit())
             throw new IOException("Cannot save driver selection");
     }
     public static List<DriverArchive.Installed> installed(Context context) {

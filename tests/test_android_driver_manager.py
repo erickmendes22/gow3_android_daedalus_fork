@@ -101,7 +101,7 @@ class Harness {
   File files=new File(args[0],"files"); android.content.Context context=new android.content.Context(files);
   Map<String,String> env=new HashMap<>();
   assert GpuDriverManager.selected(context).equals("auto");
-  var migrate=GpuDriverManager.class.getDeclaredMethod("migratedG720Selection",
+  var migrate=GpuDriverManager.class.getDeclaredMethod("migratedMaliSelection",
       String.class, boolean.class, boolean.class);
   migrate.setAccessible(true);
   assert migrate.invoke(null,"panvk",true,false).equals("auto");

@@ -11,12 +11,13 @@ class G720DriverABTests(unittest.TestCase):
  def test_isolated_auto_branch(self):
   self.assertIn('nextPanvkVerifiedAutoDevice(Context context)',JAVA)
   self.assertIn('return normalized.contains("g720") || normalized.contains("g615");',JAVA)
-  self.assertIn('G720_DEFAULT_MIGRATION_KEY',JAVA)
-  self.assertIn('migratedG720Selection(old,true,false)',JAVA)
+  self.assertIn('return name.contains("g720") || name.contains("g615");',JAVA)
+  self.assertIn('MALI_DEFAULT_MIGRATION_KEY',JAVA)
+  self.assertIn('migratedMaliSelection(old,true,false)',JAVA)
   self.assertIn('if (!old.equals(migrated)) editor.putString("gpu_driver",migrated)',JAVA)
-  self.assertIn('.putString(G720_DEFAULT_MIGRATION_KEY,"1").commit()',JAVA)
+  self.assertIn('.putString(MALI_DEFAULT_MIGRATION_KEY,"1").commit()',JAVA)
   self.assertIn('normalized.contains("g720")',JAVA)
-  self.assertIn('isCompatibleG720()',JAVA)
+  self.assertIn('isCompatibleMaliAutoUpgrade()',JAVA)
   self.assertIn('"com.gow3.android.bionic".equals(pkg)',JAVA)
   self.assertIn('"com.gow3.android.bionic.malitest".equals(pkg)',JAVA)
  def test_both_drivers_keep_explicit_control(self):
