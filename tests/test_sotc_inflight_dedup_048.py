@@ -22,6 +22,7 @@ class InflightDedup(unittest.TestCase):
             result=(gpu/"buffer_cache.cpp").read_text()
             assert "FindCoveringInflightReadback(readback.device_addr, readback.size)" in result
             assert 'std::getenv("SOTC_RB_INFLIGHT_DEDUP")' in result
+            assert 'memory_tracker->ReadbacksMode() == GpuReadbacksMode::Precise' in result
             assert "readback.dependent = true;" in result
             assert result.index("FindCoveringInflightReadback(readback.device_addr") < result.index("GatherDownloads(arena, window_start, readback.window_size")
             for critical in ("scheduler.WaitSubmitted(readback.tick, false)",
