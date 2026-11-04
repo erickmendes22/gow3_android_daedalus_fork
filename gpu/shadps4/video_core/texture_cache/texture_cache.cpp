@@ -770,6 +770,32 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
     auto& cache_image = slot_images[cache_image_id];
     const bool safe_to_delete =
         scheduler.CurrentTick() - cache_image.tick_accessed_last > NumFramesBeforeRemoval;
+    // The default 32-tick retirement rule intentionally protects recent
+    // images. With the G720 BC3<->RGBA128 guest surface re-use, a clean
+    // retired image can outlive the corresponding Vulkan work and keep
+    // hundreds of MB resident solely because its age is <32 ticks.
+    // Only for 1-sample BC/non-BC layout transitions, release a clean image
+    // after its GPU completion tick has *actually* retired. Never drop
+    // GPU-written pixels or an image still bound by the current renderer.
+    static const bool fast_mali_bc_retire = [] {
+        const char* opt = std::getenv("GOW3_MALI_BC_ALIAS_RETIRE");
+        return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+               (!opt || opt[0] != '0');
+    }();
+    const auto& old_info = cache_image.info;
+    const bool is_bc_layout_pair =
+        old_info.num_samples == 1 && image_info.num_samples == 1 &&
+        (old_info.props.is_block != image_info.props.is_block) &&
+        ((u32(old_info.tile_mode) == 8 && u32(image_info.tile_mode) == 13) ||
+         (u32(old_info.tile_mode) == 13 && u32(image_info.tile_mode) == 8));
+    const bool clean_alias_retirable =
+        !safe_to_delete && fast_mali_bc_retire && is_bc_layout_pair &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        cache_image.tick_accessed_last != 0 &&
+        False(cache_image.flags & ImageFlagBits::GpuModified) &&
+        !cache_image.binding.is_target && !cache_image.binding.is_bound &&
+        scheduler.IsFree(cache_image.tick_accessed_last);
+    const bool can_retire_alias = safe_to_delete || clean_alias_retirable;
 
     // Equal address
     if (image_info.guest_address == cache_image.info.guest_address) {
@@ -845,9 +871,20 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                             vk::to_string(b.pixel_format).c_str(),
                             vk::to_string(a.pixel_format).c_str(),
                             u32(b.props.is_block), u32(a.props.is_block),
-                            u32(safe_to_delete));
+                            u32(can_retire_alias));
             }
-            if (safe_to_delete) FreeImage(cache_image_id);
+            if (clean_alias_retirable) {
+                static u32 fast_retire_count = 0;
+                if (++fast_retire_count <= 12 || fast_retire_count % 512 == 0)
+                    std::printf("GOW3_BC_ALIAS_RETIRED count=%u address=%#llx "
+                                "old_format=%s new_format=%s completed_gpu_tick=%llu\n",
+                                fast_retire_count,
+                                (unsigned long long)cache_image.info.guest_address,
+                                vk::to_string(cache_image.info.pixel_format).c_str(),
+                                vk::to_string(image_info.pixel_format).c_str(),
+                                (unsigned long long)cache_image.tick_accessed_last);
+            }
+            if (can_retire_alias) FreeImage(cache_image_id);
             return {merged_image_id, -1, -1};
         }
 
