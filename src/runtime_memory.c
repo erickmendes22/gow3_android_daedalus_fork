@@ -8,6 +8,7 @@
  * encode 40-bit addresses, so host-default 0x7f... addresses would not fit. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_cpu.h" /* guest return RIP for SotC PC v0.71 pool release */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -380,7 +381,9 @@ static int split_at(uintptr_t a) {
     if (i==vma_count || vmas[i].start>=a) return 0;
     Vma right=vmas[i];
     right.start=a;
-    if (right.kind==KIND_DIRECT) right.phys+=a-vmas[i].start;
+    /* SotC PC 0.71: flexible VMA splits must advance backing offsets too.
+     * Otherwise the right half aliases the wrong physical pages on unmap. */
+    if (right.kind!=KIND_RESERVED) right.phys+=a-vmas[i].start;
     vmas[i].end=a;
     return vma_insert(i+1,right);
 }
@@ -411,6 +414,38 @@ static uintptr_t find_free(uintptr_t hint, uint64_t size, uint64_t alignment) {
     }
     return 0;
 }
+/* SotC PC 0.71 T38: the game frees 64-KiB direct pages when shrinking a
+ * block, but leaves the old virtual mapping. A later entire-block release
+ * queries those stale mappings and otherwise frees the physical pages twice.
+ * Only enable on the SotC Android runtime, never on GoW3.
+ * All functions below run under the original VMA reader/writer lock.
+ */
+static uintptr_t *sotc_pool_owner;
+static uint64_t sotc_owner_count, sotc_owner_skips, sotc_owner_skipped_pages;
+static uintptr_t sotc_pool_release_site;
+static int sotc_pool_owner_enabled(void) {
+    static int enabled=-1;
+    if (enabled<0) {
+        const char *v=getenv("SOTC_POOL_OWNER");
+        enabled=v && v[0]=='1';
+    }
+    return enabled;
+}
+void runtime_memory_set_release_site(uintptr_t site) {
+    sotc_pool_release_site=site;
+    fprintf(stderr,"SotC PC 0.71 pool owner: release RIP=%p\\n",(void *)site);
+}
+static void sotc_owner_note(uint64_t phys, uintptr_t address, uint64_t size) {
+    if (!sotc_pool_owner_enabled()) return;
+    if (!sotc_pool_owner) {
+        sotc_owner_count=POOL_SIZE>>16;
+        sotc_pool_owner=calloc(sotc_owner_count,sizeof(*sotc_pool_owner));
+        if (!sotc_pool_owner) { sotc_owner_count=0; return; }
+    }
+    /* Mark only completely mapped 64 KiB physical pages, as the PC fix does. */
+    for (uint64_t p=(phys+0xffffull)&~0xffffull; p+0x10000ull<=phys+size; p+=0x10000ull)
+        if ((p>>16)<sotc_owner_count) sotc_pool_owner[p>>16]=address+(p-phys);
+}
 static void drop_range(uintptr_t start, uintptr_t end) {
     int error; size_t i=carve(start,end,&error), n=0;
     while (i+n<vma_count && vmas[i+n].end<=end && vmas[i+n].start>=start) {
@@ -439,6 +474,7 @@ static int32_t place(void **inout, uint64_t size, int prot, int flags, uint64_t 
     drop_range(address,address+size);
     if (vma_insert(vma_index(address),(Vma){address,address+size,kind,prot,type,phys})) return NO_MEMORY;
     if (kind==KIND_FLEXIBLE) flexible_bytes+=size;
+    if (kind==KIND_DIRECT) sotc_owner_note(phys,address,size);
     if (kind!=KIND_RESERVED) queue_hook(HOOK_MAP,address,size);
     *inout=mapped;
     return 0;
@@ -678,6 +714,32 @@ static ABI int32_t virtual_query(const void *address, int flags, VirtualQueryInf
     info->offset=v.kind==KIND_DIRECT ? v.phys : 0;
     info->protection=v.prot; info->memory_type=v.type;
     info->flags=(v.kind==KIND_FLEXIBLE ? 1u : 0) | (v.kind==KIND_DIRECT ? 2u : 0) | (v.kind!=KIND_RESERVED ? 16u : 0);
+    /* The FEX guest's return RIP, NOT a host C return address, identifies
+     * the game's release-site VirtualQuery. All unrelated queries preserve
+     * their exact original behavior. No stale physical page is released twice.
+     */
+    if (sotc_pool_release_site && sotc_pool_owner && v.kind==KIND_DIRECT &&
+        (uintptr_t)address>=v.start &&
+        guest_cpu_return_address((uintptr_t)__builtin_return_address(0))==sotc_pool_release_site) {
+        const uintptr_t page=(uintptr_t)address & ~(uintptr_t)0xffff;
+        uintptr_t at=page<v.start ? v.start : page;
+        uint64_t stale=0;
+        for (;at<v.end;at=(at & ~(uintptr_t)0xffff)+0x10000,++stale) {
+            const uint64_t physical=v.phys+(at-v.start);
+            if ((physical>>16)>=sotc_owner_count || !sotc_pool_owner[physical>>16] ||
+                sotc_pool_owner[physical>>16]==(at & ~(uintptr_t)0xffff)) break;
+        }
+        if (stale) {
+            info->start=(uintptr_t)address; info->end=at;
+            info->offset=v.phys+((uintptr_t)address-v.start);
+            info->flags &= ~16u; /* not committed from the pool release's view */
+            sotc_owner_skipped_pages+=stale;
+            if (++sotc_owner_skips<=20 || !(sotc_owner_skips&(sotc_owner_skips-1)))
+                fprintf(stderr,"SotC PC 0.71 pool owner: skipped %" PRIu64
+                               " stale 64KiB pages (%" PRIu64 " total)\\n",
+                        stale,sotc_owner_skipped_pages);
+        }
+    }
     strcpy(info->name, v.kind==KIND_RESERVED ? "reserved" : v.kind==KIND_DIRECT ? "direct" : "flexible");
     __atomic_add_fetch(&queries,1,__ATOMIC_RELAXED);
     read_unlock();
