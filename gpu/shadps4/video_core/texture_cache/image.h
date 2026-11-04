@@ -167,6 +167,7 @@ public:
         u32 depth_target : 1;
         u32 vo_surface : 1;
     } usage{};
+    bool mali_read_only_elision = false; ///< skip unnecessary same-layout read/read barriers.
     bool scene_proxy = false; ///< gow3: SceneTargets holds a reduced-size proxy of it
     VAddr track_addr = 0;
     VAddr track_addr_end = 0;

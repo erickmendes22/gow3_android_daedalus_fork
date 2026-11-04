@@ -12,6 +12,7 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
+#include "video_core/texture_cache/read_barrier_policy.h"
 
 #include <vk_mem_alloc.h>
 #include <algorithm>
@@ -296,6 +297,12 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     : guest_begin{info_.guest_address}, guest_end{info_.guest_address + info_.guest_size},
       info{info_}, runtime{&runtime_}, slot_image_views{&slot_image_views_} {
     Gow3Stats::Timer timer{Gow3Stats::t_image_create};
+    // Per-image immutable flag: the RAR barrier policy never changes while a
+    // Vulkan image is live. This is scoped to PanVK; =0 reproduces old behavior.
+    const char* rar_toggle = std::getenv("GOW3_MALI_IMAGE_RAR_ELIDE");
+    mali_read_only_elision = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!rar_toggle || rar_toggle[0] != '0');
     if (info.pixel_format == vk::Format::eUndefined) {
         return;
     }
@@ -485,6 +492,31 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         subres_range &&
         (subres_range->base != SubresourceBase{} || subres_range->extent != info.resources);
     const bool partially_transited = !subresource_states.empty();
+    // Include attachment writes: the old three-flag mask would incorrectly
+    // classify a color/depth write as a read and could drop a necessary WAR,
+    // RAW or WAW barrier. Never elide a barrier involving any of these writes.
+    constexpr vk::AccessFlags2 write_flags =
+        vk::AccessFlagBits2::eTransferWrite |
+        vk::AccessFlagBits2::eShaderWrite |
+        vk::AccessFlagBits2::eMemoryWrite |
+        vk::AccessFlagBits2::eColorAttachmentWrite |
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
+        vk::AccessFlagBits2::eHostWrite |
+        vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
+    const bool upcoming_writes = static_cast<bool>(dst_mask & write_flags);
+    // A full-image access can collapse previously split subresources. Preserve
+    // all read-only stages/accesses from those subresources for future writes.
+    vk::AccessFlags2 preserved_read_access{};
+    vk::PipelineStageFlags2 preserved_read_stages{};
+    const auto note_read_elision = [](bool partial) {
+        static thread_local u64 total = 0, subresource = 0;
+        ++total;
+        subresource += partial;
+        // One log per 16K saved barriers, without the expensive perf recorder.
+        if ((total & 16383ULL) == 0)
+            std::printf("GOW3_MALI_IMAGE_RAR_ELIDED count=%llu subresource=%llu\n",
+                        (unsigned long long)total, (unsigned long long)subresource);
+    };
 
     if (needs_partial_transition || partially_transited) {
         if (!partially_transited) {
@@ -514,11 +546,23 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                 ASSERT(subres_idx < subresource_states.size());
                 auto& state = subresource_states[subres_idx];
 
-                constexpr auto write_flags = vk::AccessFlagBits2::eTransferWrite |
-                                             vk::AccessFlagBits2::eShaderWrite |
-                                             vk::AccessFlagBits2::eMemoryWrite;
-                const bool is_write = static_cast<bool>(state.access_mask & write_flags);
-                if (state.layout != dst_layout || state.access_mask != dst_mask || is_write) {
+                const bool previous_writes = static_cast<bool>(state.access_mask & write_flags);
+                if (CanElideReadOnlyImageBarrier(
+                        mali_read_only_elision, state.layout == dst_layout,
+                        previous_writes, upcoming_writes)) {
+                    // Do not emit a read-after-read barrier. Union the source
+                    // stages/accesses so the NEXT write still sees every reader.
+                    state.access_mask |= dst_mask;
+                    state.pl_stage |= dst_stage;
+                    if (!needs_partial_transition) {
+                        preserved_read_access |= state.access_mask;
+                        preserved_read_stages |= state.pl_stage;
+                    }
+                    note_read_elision(true);
+                    continue;
+                }
+                if (state.layout != dst_layout || state.access_mask != dst_mask ||
+                    previous_writes || upcoming_writes) {
                     barriers.emplace_back(vk::ImageMemoryBarrier2{
                         .srcStageMask = state.pl_stage,
                         .srcAccessMask = state.access_mask,
@@ -548,11 +592,17 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
             subresource_states.clear();
         }
     } else { // Full resource transition
-        constexpr auto write_flags = vk::AccessFlagBits2::eTransferWrite |
-                                     vk::AccessFlagBits2::eShaderWrite |
-                                     vk::AccessFlagBits2::eMemoryWrite;
-        const bool is_write = static_cast<bool>(last_state.access_mask & write_flags);
-        if (last_state.layout == dst_layout && last_state.access_mask == dst_mask && !is_write) {
+        const bool previous_writes = static_cast<bool>(last_state.access_mask & write_flags);
+        if (CanElideReadOnlyImageBarrier(
+                mali_read_only_elision, last_state.layout == dst_layout,
+                previous_writes, upcoming_writes)) {
+            last_state.access_mask |= dst_mask;
+            last_state.pl_stage |= dst_stage;
+            note_read_elision(false);
+            return;
+        }
+        if (last_state.layout == dst_layout && last_state.access_mask == dst_mask &&
+            !previous_writes && !upcoming_writes) {
             return;
         }
 
@@ -577,8 +627,8 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
     }
 
     last_state.layout = dst_layout;
-    last_state.access_mask = dst_mask;
-    last_state.pl_stage = dst_stage;
+    last_state.access_mask = dst_mask | preserved_read_access;
+    last_state.pl_stage = dst_stage | preserved_read_stages;
 }
 
 } // namespace VideoCore
