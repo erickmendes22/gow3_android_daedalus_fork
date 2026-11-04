@@ -433,7 +433,7 @@ static int sotc_pool_owner_enabled(void) {
 }
 void runtime_memory_set_release_site(uintptr_t site) {
     sotc_pool_release_site=site;
-    fprintf(stderr,"SotC PC 0.71 pool owner: release RIP=%p\\n",(void *)site);
+    fprintf(stderr,"SotC PC 0.71 pool owner: release RIP=%p\n",(void *)site);
 }
 static void sotc_owner_note(uint64_t phys, uintptr_t address, uint64_t size) {
     if (!sotc_pool_owner_enabled()) return;
@@ -736,7 +736,7 @@ static ABI int32_t virtual_query(const void *address, int flags, VirtualQueryInf
             sotc_owner_skipped_pages+=stale;
             if (++sotc_owner_skips<=20 || !(sotc_owner_skips&(sotc_owner_skips-1)))
                 fprintf(stderr,"SotC PC 0.71 pool owner: skipped %" PRIu64
-                               " stale 64KiB pages (%" PRIu64 " total)\\n",
+                               " stale 64KiB pages (%" PRIu64 " total)\n",
                         stale,sotc_owner_skipped_pages);
         }
     }
