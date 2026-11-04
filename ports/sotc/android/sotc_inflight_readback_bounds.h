@@ -7,7 +7,11 @@
 namespace SotcInflight {
 constexpr bool Overlaps(std::uint64_t addr, std::uint64_t bytes,
                         std::uint64_t other, std::uint64_t other_bytes) noexcept {
-    if (bytes == 0 || other_bytes == 0) return false;
+    // Preserve the original half-open comparisons even for zero-byte requests.
+    // The old code can conservatively mark an in-flight readback dirty when a
+    // zero-byte write points strictly inside it. Never narrow that behavior.
+    if (bytes == 0) return addr > other && addr - other < other_bytes;
+    if (other_bytes == 0) return other > addr && other - addr < bytes;
     // Compare differences rather than sums: cannot overflow guest addresses.
     return addr <= other ? other - addr < bytes : addr - other < other_bytes;
 }
