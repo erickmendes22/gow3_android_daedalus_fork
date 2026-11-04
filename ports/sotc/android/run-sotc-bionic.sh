@@ -124,6 +124,13 @@ export SOTC_RB_HOT=${SOTC_RB_HOT:-0}
 case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid pool owner/fast readbacks" >&2; exit 2 ;; esac
 if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
 echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (OFF by default)"
+# PC v0.71 opt-in guest mutex spin (20 us) and PC v0.72 host staging reserve.
+# Both OFF by default; preserve precise readbacks and low VRAM use.
+export SOTC_MUTEX_SPIN_US=${SOTC_MUTEX_SPIN_US:-0}
+export SOTC_STAGING_KEEP_MB=${SOTC_STAGING_KEEP_MB:-0}
+case "$SOTC_MUTEX_SPIN_US" in 0|20) ;; *) echo "Invalid SOTC_MUTEX_SPIN_US" >&2; exit 2 ;; esac
+case "$SOTC_STAGING_KEEP_MB" in 0|32) ;; *) echo "Invalid SOTC_STAGING_KEEP_MB" >&2; exit 2 ;; esac
+echo "SotC PC CPU/memory experiments: mutex_spin_us=$SOTC_MUTEX_SPIN_US host_stage_keep_mb=$SOTC_STAGING_KEEP_MB (0 = original)"
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
