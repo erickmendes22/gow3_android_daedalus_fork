@@ -9,6 +9,7 @@
 #include <array>
 #include <string>
 #include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -488,14 +489,19 @@ bool SaveMaliAhbBmp(const char* path, const u8* rgba, u32 w, u32 h, u32 stride) 
     return ok;
 }
 
-bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, u32 capture_frame) {
+bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
+                                  u32 capture_frame, bool perf_sample) {
     ASSERT_MSG(cpu_present && image_index < buffers.size(), "Invalid CPU present");
+    const auto ahb_lock_start = perf_sample ? MaliPerfStats::Clock::now()
+                                           : MaliPerfStats::TimePoint{};
     Buffer& buffer = buffers[image_index];
     AHardwareBuffer_Desc desc{};
     AHardwareBuffer_describe(buffer.ahb, &desc);
     void* mapped = nullptr;
     const int lock_result = AHardwareBuffer_lock(
         buffer.ahb, AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, nullptr, &mapped);
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbLock, ahb_lock_start);
     if (lock_result != 0 || !mapped) {
         LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_lock failed: {}",
                   lock_result);
@@ -503,6 +509,8 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
         free_queue.push_back(image_index);
         return false;
     }
+    const auto ahb_copy_start = perf_sample ? MaliPerfStats::Clock::now()
+                                            : MaliPerfStats::TimePoint{};
     const u32 dst_w = std::min<u32>(width, desc.width);
     const u32 dst_h = std::min<u32>(height, desc.height);
     u8* dst = static_cast<u8*>(mapped);
@@ -615,7 +623,13 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
                         capture_frame, path, int(saved));
         }
     }
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbCopy, ahb_copy_start);
+    const auto ahb_unlock_start = perf_sample ? MaliPerfStats::Clock::now()
+                                              : MaliPerfStats::TimePoint{};
     const int unlock_result = AHardwareBuffer_unlock(buffer.ahb, nullptr);
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbUnlock, ahb_unlock_start);
     if (unlock_result != 0) {
         LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_unlock failed: {}",
                   unlock_result);
@@ -624,6 +638,8 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
         return false;
     }
     ++frame_counter;
+    const auto ahb_ipc_start = perf_sample ? MaliPerfStats::Clock::now()
+                                          : MaliPerfStats::TimePoint{};
     bool delivered = false;
     if (client.Connected()) {
         delivered = client.SendFrame(generation, image_index, frame_counter, width, height, -1);
@@ -631,6 +647,8 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height, 
     } else {
         free_queue.push_back(image_index);
     }
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbIpc, ahb_ipc_start);
     if (MaliVisualTrace::Requested()) {
         MaliVisualTrace::Add(delivered ? MaliVisualTrace::Counts::ahb_sent
                                       : MaliVisualTrace::Counts::ahb_failed);

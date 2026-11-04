@@ -20,6 +20,7 @@
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #ifdef __ANDROID__
 #include "gow3_lsfg.h"  // zFitness native bloodframe integration
 #endif
@@ -490,6 +491,11 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
+#ifdef __ANDROID__
+    const bool perf_prepare = MaliPerfStats::SamplePrepare();
+    const MaliPerfStats::Scoped perf_prepare_scope{
+        MaliPerfStats::Stage::PrepareFrame, perf_prepare};
+#endif
     // gow3: GOW3_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
     // guest display buffer and presented image are written to GOW3_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
@@ -772,7 +778,15 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             const u64 tick = recent_frame_ticks.front();
             recent_frame_ticks.pop_front();
             if (recent_frame_ticks.size() == frames_ahead) {
+#ifdef __ANDROID__
+                const auto wait_start = perf_prepare ? MaliPerfStats::Clock::now()
+                                                    : MaliPerfStats::TimePoint{};
+#endif
                 draw_scheduler.Wait(tick);
+#ifdef __ANDROID__
+                if (perf_prepare)
+                    MaliPerfStats::Record(MaliPerfStats::Stage::FramesAheadWait, wait_start);
+#endif
             }
         }
     }
@@ -966,6 +980,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (!lsfg) ApplyLsfgOutputMode();
     }
 #endif
+#ifdef __ANDROID__
+    const bool mali_perf_sample = swapchain.UsesCpuPresentation() && MaliPerfStats::SamplePresent();
+    const auto mali_acquire_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                   : MaliPerfStats::TimePoint{};
+#endif
     if (!swapchain.AcquireNextImage()) {
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
         if (!swapchain.AcquireNextImage()) {
@@ -985,6 +1004,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
 #ifdef __ANDROID__
     if (swapchain.UsesCpuPresentation()) {
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::AcquireAhb, mali_acquire_start);
+        const auto mali_rb_setup_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                         : MaliPerfStats::TimePoint{};
         // A Mali-specific path analogous to Bachata's conservative software
         // presentation: render normally with PanVK, read the completed RGBA8
         // frame back to host-visible memory, then CPU-copy into linear gralloc.
@@ -1065,16 +1088,30 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         SubmitInfo cpu_info{};
         cpu_info.AddWait(frame->ready_semaphore, frame->ready_tick);
         cpu_info.AddSignal(frame->present_done);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::ReadbackSetup, mali_rb_setup_start);
+        const auto mali_submit_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                       : MaliPerfStats::TimePoint{};
         cpu_scheduler.Flush(cpu_info);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::ReadbackSubmit, mali_submit_start);
         // Wait for this readback submission, not every outstanding GPU queue.
         // The present_done fence is signaled after the transfer completes.
         // A global device.waitIdle() serializes unrelated PanVK work per frame.
+        const auto mali_fence_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                      : MaliPerfStats::TimePoint{};
         const auto done = instance.GetDevice().waitForFences(frame->present_done, true, ~0ull);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::FenceWait, mali_fence_start);
         ASSERT_MSG(done == vk::Result::eSuccess,
                    "MALI_CPU_PRESENT readback fence failed: {}", vk::to_string(done));
+        const auto mali_invalidate_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                           : MaliPerfStats::TimePoint{};
         const VkResult invalidate =
             vmaInvalidateAllocation(instance.GetAllocator(), mali_cpu_readback_allocation,
                                     0, required);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::Invalidate, mali_invalidate_start);
         ASSERT_MSG(invalidate == VK_SUCCESS,
                    "MALI_CPU_PRESENT invalidate failed: {}",
                    vk::to_string(vk::Result(invalidate)));
@@ -1137,8 +1174,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             std::printf("GOW3_MALI_CAPTURE stage=cpu frame=%u path=%s ok=%d\n",
                         frame->mali_capture_frame, path, int(ok));
         }
+        const auto mali_ahb_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                    : MaliPerfStats::TimePoint{};
         const bool sent = swapchain.PresentCpuPixels(
-            pixels, frame->width, frame->height, frame->mali_capture_frame);
+            pixels, frame->width, frame->height, frame->mali_capture_frame, mali_perf_sample);
+        if (mali_perf_sample) {
+            MaliPerfStats::Record(MaliPerfStats::Stage::AhbTotal, mali_ahb_start);
+            MaliPerfStats::ReportIfDue();
+        }
         if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
             MaliVisualTrace::ReportPresented(
                 frame->mali_trace_flip, frame->mali_trace_guest_address,

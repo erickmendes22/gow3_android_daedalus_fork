@@ -19,6 +19,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_wait_diagnostics.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "video_core/texture_cache/aliasing.h"
 #include "video_core/texture_cache/host_compatibility.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -409,10 +410,18 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     };
     runtime.DownloadImage(&image, download.buffer, std::span{&image_download, 1});
     if (sync) {
+        // A dirty-texture writeback always synchronizes the GPU: measure every
+        // occurrence, not just 1/32, without a profiler thread or per-call log.
+        const bool perf_download = Vulkan::MaliPerfStats::Enabled();
+        const auto download_start = perf_download ? Vulkan::MaliPerfStats::Clock::now()
+                                                  : Vulkan::MaliPerfStats::TimePoint{};
         scheduler.Finish();
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image.info.guest_address),
                                                   download.mapped, download_size);
+        if (perf_download)
+            Vulkan::MaliPerfStats::Record(
+                Vulkan::MaliPerfStats::Stage::SyncTextureDownload, download_start);
     } else {
         scheduler.DeferPriorityOperation(
             [this, device_addr = image.info.guest_address, download, download_size] {
@@ -1689,6 +1698,10 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
 }
 
 void TextureCache::GarbageCollectImages() {
+    // Sample GC 1/32 invocations, including early returns with no pressure.
+    // This is separate from the existing expensive GOW3_PERF_DIAG mode.
+    const Vulkan::MaliPerfStats::Scoped mali_gc_sample{
+        Vulkan::MaliPerfStats::Stage::TextureGc, Vulkan::MaliPerfStats::SampleGc()};
     Gow3Stats::Timer gc_timer{Gow3Stats::t_gc};
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
