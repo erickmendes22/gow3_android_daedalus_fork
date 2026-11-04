@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include "kgsl_uapi_min.h"
 #include "kgsl_busy.h"
-#define SAMPLE_NS 1000000L
+#define SAMPLE_NS 2000000L /* 500 Hz, opt-in only; less overhead than upstream 1 kHz */
 #define SCAN_EVERY 200
 enum { MODE_RINGBUFFER = 1, MODE_CONTEXTS = 2 };
 struct reader {
