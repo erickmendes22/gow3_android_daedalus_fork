@@ -66,8 +66,13 @@ int main() {
                 Item item{base,length,{}};
                 r.lo=std::min(r.lo,base);r.hi=std::max(r.hi,base+length);
                 for(int c=0;c<4;++c) {
+                    // Page copies can extend slightly beyond the item window.
                     const U offset=(rnd()%16)*4096;
-                    if(offset<length) item.gpu_copies.push_back({base+offset,std::min<U>(4096,length-offset)});
+                    const U start=base+offset-(rnd()%3==0 && base>4096 ? 4096 : 0);
+                    const U bytes=4096+((rnd()%3==0)?4096:0);
+                    item.gpu_copies.push_back({start,bytes});
+                    r.lo=std::min(r.lo,start);
+                    r.hi=std::max(r.hi,start+bytes);
                 }
                 r.items.push_back(item);
             }
