@@ -146,6 +146,29 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # game frame into a host buffer and copy into a linear, CPU-writable AHB.
       # Off (0) reverts to the unmodified accelerated path for comparisons.
       export GOW3_MALI_CPU_PRESENT=${GOW3_MALI_CPU_PRESENT:-1}
+      # AHB transaction geometry in gow3present.c already scales the buffer
+      # to the physical SurfaceView. No need to CPU-upscale a verified 540p
+      # guest frame to the app's historical 1280x720 AHB. Leave higher
+      # resolutions and unverified eboots at their original 1280x720.
+      # GOW3_MALI_NATIVE_AHB=0 restores the previous output size.
+      export GOW3_MALI_NATIVE_AHB=${GOW3_MALI_NATIVE_AHB:-1}
+      if [ "$GOW3_MALI_CPU_PRESENT" = 1 ] &&
+         [ "$GOW3_MALI_NATIVE_AHB" = 1 ] &&
+         [ "${GOW3_RESOLUTION_STATUS:-}" = verified-direct-game-patch ]; then
+        case "${GOW3_PATCH_INPUT_RES:-}" in
+          960x540|854x480|752x424|640x360|426x240)
+            export GOW3_SCREEN_W="${GOW3_PATCH_INPUT_RES%x*}"
+            export GOW3_SCREEN_H="${GOW3_PATCH_INPUT_RES#*x}"
+            ;;
+        esac
+      fi
+      # 4 buffers rather than 3 gives the FIFO compositor one spare release
+      # while the CPU prepares the next image. GOW3_PRESENT_BUFFERS=3 restores
+      # the old setting; keep the user's VSync preference untouched.
+      export GOW3_PRESENT_BUFFERS=${GOW3_PRESENT_BUFFERS:-4}
+      # Fuse alpha normalization with copying RGBA using ARM64 NEON.
+      # Set 0 to compare against the previous memcpy + alpha pass.
+      export GOW3_MALI_AHB_FAST_COPY=${GOW3_MALI_AHB_FAST_COPY:-1}
       # Use the verified guest patch size as the CPU-present intermediate
       # while preserving the full Android AHB resolution. 0 restores the
       # previous 1920x1080 source for a controlled compatibility comparison.
@@ -212,7 +235,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac

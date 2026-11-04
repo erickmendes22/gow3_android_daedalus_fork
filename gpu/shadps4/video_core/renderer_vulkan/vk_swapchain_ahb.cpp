@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <algorithm>
 #include <array>
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #include <string>
 #include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
 #include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
@@ -30,6 +33,28 @@ constexpr u32 AhbFormat = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
 constexpr u64 AhbUsage = AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
                          AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
                          AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
+
+// Copy RGB and force opaque alpha in ONE pass. The old path did memcpy
+// followed by a separate alpha rewrite for every pixel. ARM64 NEON handles
+// four RGBA pixels per iteration, including unaligned mapped AHB rows.
+void CopyOpaqueRgbaRow(u8* dst, const u8* src, u32 pixels) {
+    u32 x = 0;
+#if defined(__aarch64__) || defined(__ARM_NEON)
+    const uint8x16_t opaque_alpha =
+        vreinterpretq_u8_u32(vdupq_n_u32(0xff000000u));
+    for (; x + 4 <= pixels; x += 4) {
+        const uint8x16_t colors = vld1q_u8(src + size_t(x) * 4);
+        vst1q_u8(dst + size_t(x) * 4, vorrq_u8(colors, opaque_alpha));
+    }
+#endif
+    for (; x < pixels; ++x) {
+        // u32 is stored little-endian on Android ARM64: alpha is byte 3.
+        u32 rgba;
+        std::memcpy(&rgba, src + size_t(x) * 4, 4);
+        rgba |= 0xff000000u;
+        std::memcpy(dst + size_t(x) * 4, &rgba, 4);
+    }
+}
 
 /// GOW3_PRESENT_BUFFERS: the number of buffers (3 by default: one shown, one pending, one rendered).
 u32 BufferCount(u32 framegen_multiplier = 0) {
@@ -520,6 +545,10 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
     // SurfaceControl, however, composites RGBA AHBs using alpha: copying
     // transparent game pixels would hide perfectly valid RGB scene contents.
     // Output is an opaque game surface, including black letterbox bars.
+    static const bool fast_opaque_copy = [] {
+        const char* flag = std::getenv("GOW3_MALI_AHB_FAST_COPY");
+        return !flag || flag[0] != '0';
+    }();
     if (rgba && src_width && src_height && dst_w && dst_h) {
         const float src_aspect = float(src_width) / float(src_height);
         const float dst_aspect = float(dst_w) / float(dst_h);
@@ -550,13 +579,26 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
             mapped_source_width = src_width;
             mapped_fit_width = fit_w;
         }
+        u32 previous_src_y = ~0u;
+        const u8* previous_output_row = nullptr;
         for (u32 y = 0; y < fit_h; ++y) {
             const u32 src_y = std::min(src_height - 1, u32(u64(y) * src_height / fit_h));
             u8* row = dst + (size_t(y + y0) * desc.stride + x0) * 4;
+            // Nearest scaling repeats source rows (e.g. 540 -> 720).
+            // Copy an already normalized AHB row instead of resampling.
+            if (fast_opaque_copy && previous_output_row && src_y == previous_src_y) {
+                std::memcpy(row, previous_output_row, size_t(fit_w) * 4);
+                previous_output_row = row;
+                continue;
+            }
             const u8* input_row = rgba + size_t(src_y) * src_width * 4;
             if (fit_w == src_width) {
-                std::memcpy(row, input_row, size_t(fit_w) * 4);
-                for (u32 x = 0; x < fit_w; ++x) row[size_t(x) * 4 + 3] = 255;
+                if (fast_opaque_copy) {
+                    CopyOpaqueRgbaRow(row, input_row, fit_w);
+                } else {
+                    std::memcpy(row, input_row, size_t(fit_w) * 4);
+                    for (u32 x = 0; x < fit_w; ++x) row[size_t(x) * 4 + 3] = 255;
+                }
             } else {
                 for (u32 x = 0; x < fit_w; ++x) {
                     const u8* src = input_row + size_t(mapped_x[x]) * 4;
@@ -567,6 +609,8 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
                     pixel[3] = 255;
                 }
             }
+            previous_src_y = src_y;
+            previous_output_row = row;
         }
     } else if (dst_h) {
         // Retain the original opaque fallback when the source is unavailable.
