@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(sotc_kgsl_telemetry LANGUAGES C)
+add_library(gpuusage SHARED gpuusage/kgsl_busy.c)
+set_target_properties(gpuusage PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)
+target_compile_options(gpuusage PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(gpuusage PRIVATE log)
