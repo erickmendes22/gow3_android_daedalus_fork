@@ -13,7 +13,7 @@ class MaliParallelDrawTest(unittest.TestCase):
         self.assertIn("GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-4}", SH)
         self.assertIn("GOW3_MALI_INLINE_TEXTURE_SETS=${GOW3_MALI_INLINE_TEXTURE_SETS:-1}", SH)
         self.assertIn("GOW3_DRAW_PIPE", RAST)
-        self.assertIn("const u64 MaxScanLag = 64;", DRAW)
+        self.assertIn("constexpr u64 MaxScanLag = 64;", DRAW)
         self.assertIn("prepared->reg_checksum == liverpool->gfx_reg_checksum", RAST)
         self.assertIn("Gow3Threads::MakeBackground()", DRAW)
     def test_fast_path_keeps_aliasing_and_view_safety(self):
