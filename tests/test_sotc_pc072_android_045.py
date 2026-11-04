@@ -40,7 +40,7 @@ class Pc072Android(unittest.TestCase):
         self.assertNotIn('SotcDirtyWord::Update',stage)
         self.assertNotIn('SotcInflight::Overlaps',stage)
     def test_runtime_and_ui_version_agree(self):
-        self.assertIn("version='0.1.45-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
-        self.assertIn('0.1.45-pc072-pool-owner-fast-readbacks',read("ports/sotc/android/sign_sotc_apk.sh"))
-        self.assertIn('versionCode = 10046',read("android-launcher/app/build.gradle.kts"))
+        self.assertIn("version='0.1.48-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
+        self.assertIn('0.1.48-inflight-rb-dedup',read("ports/sotc/android/sign_sotc_apk.sh"))
+        self.assertIn('versionCode = 10049',read("android-launcher/app/build.gradle.kts"))
 if __name__=="__main__":unittest.main()
