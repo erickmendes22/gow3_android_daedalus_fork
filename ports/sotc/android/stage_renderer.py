@@ -536,6 +536,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # PC 0.72 host staging reserve: no VRAM reserve; OFF unless UI opts in.
     from stage_sotc_pc072_staging_keep_046 import patch_staging
     patch_staging(out)
+    # PC 0.72: power-of-two classes only for opt-in host large uploads.
+    from stage_sotc_host_large_pow2_047 import patch_host_large_pow2
+    patch_host_large_pow2(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
