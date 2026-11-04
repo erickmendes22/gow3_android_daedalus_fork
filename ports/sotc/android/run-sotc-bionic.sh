@@ -131,6 +131,10 @@ export SOTC_STAGING_KEEP_MB=${SOTC_STAGING_KEEP_MB:-0}
 case "$SOTC_MUTEX_SPIN_US" in 0|20) ;; *) echo "Invalid SOTC_MUTEX_SPIN_US" >&2; exit 2 ;; esac
 case "$SOTC_STAGING_KEEP_MB" in 0|32) ;; *) echo "Invalid SOTC_STAGING_KEEP_MB" >&2; exit 2 ;; esac
 echo "SotC PC CPU/memory experiments: mutex_spin_us=$SOTC_MUTEX_SPIN_US host_stage_keep_mb=$SOTC_STAGING_KEEP_MB (0 = original)"
+# PC 0.72: optional power-of-two host upload size classes; 0 keeps v0.1.46 path.
+export SOTC_HOST_LARGE_POW2=${SOTC_HOST_LARGE_POW2:-0}
+case "$SOTC_HOST_LARGE_POW2" in 0|1) ;; *) echo "Invalid SOTC_HOST_LARGE_POW2" >&2; exit 2 ;; esac
+echo "SotC large host staging reuse: $SOTC_HOST_LARGE_POW2 (0=original, DeviceLocal unchanged)"
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
