@@ -95,7 +95,7 @@ public:
             !state.last_report_ms.compare_exchange_strong(last, now_ms,
                                                             std::memory_order_relaxed))
             return;
-        constexpr std::array names{
+        constexpr const char* names[]{
             "prepare", "ahead_wait", "acquire_ahb", "rb_setup",
             "rb_submit", "fence_wait", "invalidate", "ahb_total",
             "ahb_lock", "ahb_copy", "ahb_unlock", "ahb_ipc",
