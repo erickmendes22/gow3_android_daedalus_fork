@@ -659,6 +659,10 @@ public final class GameActivity extends Activity {
                 // prewarms DeviceLocal VRAM. Keep OFF until A/B confirms benefit.
                 env.put("SOTC_STAGING_KEEP_MB",
                         "1".equals(setting("sotc_pc072_staging_prewarm")) ? "32" : "0");
+                // PC 0.72: host-visible large upload size classes only, independently opt-in.
+                // Never change GPU readbacks or DeviceLocal staging allocations.
+                env.put("SOTC_HOST_LARGE_POW2",
+                        "1".equals(setting("sotc_pc072_host_large_pow2")) ? "1" : "0");
                 // PC 0.71 T38: double-free guard on the game's 64KiB direct page pool.
                 // Keep enabled even when PC 0.72 fast GPU readbacks are OFF.
                 env.put("SOTC_POOL_OWNER","1");
