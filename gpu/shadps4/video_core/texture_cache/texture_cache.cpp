@@ -43,6 +43,25 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
                 deferred_readbacks ? "enabled" : "disabled",
                 stale_readbacks ? "; CPU reads use the previous frame's copy" : "");
 
+    // The PanVK Android packages differ substantially in BCn support:
+    // some advertise none, others transcode BC1-7. The guest image alias
+    // rejection is NOT evidence of decompression. Query the selected Vulkan
+    // driver once here, with no per-frame probes or extra image allocation.
+    if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+        const auto bc1 = instance.GetPhysicalDevice()
+                             .getFormatProperties(vk::Format::eBc1RgbaUnormBlock)
+                             .optimalTilingFeatures;
+        const auto bc3 = instance.GetPhysicalDevice()
+                             .getFormatProperties(vk::Format::eBc3UnormBlock)
+                             .optimalTilingFeatures;
+        std::printf("MALI_BCN_CAPS bc1_sampled=%d bc1_transfer_dst=%d "
+                    "bc3_sampled=%d bc3_transfer_dst=%d\n",
+                    int(bool(bc1 & vk::FormatFeatureFlagBits::eSampledImage)),
+                    int(bool(bc1 & vk::FormatFeatureFlagBits::eTransferDst)),
+                    int(bool(bc3 & vk::FormatFeatureFlagBits::eSampledImage)),
+                    int(bool(bc3 & vk::FormatFeatureFlagBits::eTransferDst)));
+    }
+
     u32 max_samplers = instance.GetMaxSamplerAllocationCount();
     trigger_gc_samplers = max_samplers * 3 / 4;
     pressure_gc_samplers = max_samplers * 7 / 8;
