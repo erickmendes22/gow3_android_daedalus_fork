@@ -49,18 +49,28 @@ public final class SotcGpuUsageLogger {
 
     private static void capture(File target) {
         final long startedAt = SystemClock.elapsedRealtime();
+        long previousFrames = -1L;
+        long previousFrameAt = 0L;
         try (BufferedWriter out = new BufferedWriter(new FileWriter(target, false))) {
-            out.write("elapsed_ms,wall_ms,sysfs_busy_pct,kgsl_memstore_estimate_pct,gpu_freq_mhz,kgsl_mode,kgsl_status\n");
+            out.write("elapsed_ms,wall_ms,presented_fps,sysfs_busy_pct,kgsl_memstore_estimate_pct,gpu_freq_mhz,kgsl_mode,kgsl_status\n");
             out.flush();
             while (running && !Thread.currentThread().isInterrupted()) {
                 final long now = SystemClock.elapsedRealtime();
                 final String sysfs = sysfsGpuBusy();
                 final Integer kgsl = KgslLoadFallback.busyPercent();
                 final String freq = gpuClockMHz();
+                final long presentedFrames = Gow3Present.framesIfLoaded();
+                String presentedFps = "N/A";
+                if (previousFrames >= 0 && presentedFrames >= previousFrames && now > previousFrameAt) {
+                    presentedFps = String.format(Locale.US, "%.1f",
+                            (presentedFrames - previousFrames) * 1000.0 / (now - previousFrameAt));
+                }
+                previousFrames = presentedFrames;
+                previousFrameAt = now;
                 final String mode = KgslBusy.INSTANCE.getStatus();
                 final String status = kgsl == null ? "unavailable" : "estimated";
                 out.write((now - startedAt) + "," + System.currentTimeMillis() + "," +
-                          sysfs + "," + (kgsl == null ? "N/A" : kgsl.toString()) + "," +
+                          presentedFps + "," + sysfs + "," + (kgsl == null ? "N/A" : kgsl.toString()) + "," +
                           freq + "," + csv(mode) + "," + status + "\n");
                 out.flush();
                 try { Thread.sleep(2000); }
