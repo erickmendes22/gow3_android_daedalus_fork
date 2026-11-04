@@ -1715,6 +1715,14 @@ void TextureCache::GarbageCollectImages() {
         return;
     }
     std::scoped_lock lock{mutex};
+    // Only Mali's CPU->AHB presentation currently needs this conservative
+    // dirty-texture GC policy. Setting GOW3_MALI_GC_CLEAN_FIRST=0 restores
+    // the old policy for an immediate visual/performance A/B comparison.
+    static const bool mali_clean_first_gc = [] {
+        const char* cpu_present = std::getenv("GOW3_MALI_CPU_PRESENT");
+        const char* option = std::getenv("GOW3_MALI_GC_CLEAN_FIRST");
+        return cpu_present && cpu_present[0] == '1' && (!option || option[0] != '0');
+    }();
     bool pressured = false;
     bool aggresive = false;
     u64 ticks_to_destroy = 0;
@@ -1731,10 +1739,7 @@ void TextureCache::GarbageCollectImages() {
         if (num_deletions == 0) {
             return true;
         }
-        --num_deletions;
         auto& image = slot_images[image_id];
-        ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
-                         ReadbackSource::CacheCleanup);
         const bool download = image.SafeToDownload();
         const bool tiled = image.info.IsTiled();
         if (tiled && download) {
@@ -1744,6 +1749,25 @@ void TextureCache::GarbageCollectImages() {
         if (download && !pressured) {
             return false;
         }
+        // Every dirty-image eviction calls DownloadImageMemory(sync=true),
+        // which invokes scheduler.Finish() and stalls ALL GPU submissions.
+        // On Mali-G720 this happened 164 times in the provided gameplay log.
+        // At ordinary ~85% pressure prefer clean/stale images. Allow dirty
+        // writeback above halfway to the 95% critical limit (~90%) and
+        // unconditionally during the existing critical/aggressive pass.
+        // Never discard modified guest texture contents.
+        if (mali_clean_first_gc && download && !aggresive &&
+            total_used_memory <
+                pressure_gc_memory + (critical_gc_memory - pressure_gc_memory) / 2) {
+            ++gc_dirty_deferred;
+            return false;
+        }
+        // ResolveReadbacks and the deletion quota apply only to an image
+        // actually being freed. Previously skipped dirty/tiled images used
+        // up the deletion quota and triggered avoidable synchronization.
+        ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
+                         ReadbackSource::CacheCleanup);
+        --num_deletions;
         if (download) {
             // gow3: synchronously, while the image still protects its pages. A deferred
             // write-back landed after FreeImage had unprotected them, over whatever the game
@@ -1781,13 +1805,14 @@ void TextureCache::GarbageCollectImages() {
         const auto now = std::chrono::steady_clock::now();
         if (now - gc_report_time >= std::chrono::seconds(5)) {
             std::printf("Texture cache: memory pressure, %llu of %llu MiB (critical %llu): "
-                        "%llu images evicted, %llu written back since the last report\n",
+                        "%llu images evicted, %llu written back, %llu dirty kept since last report\n",
                         (unsigned long long)(total_used_memory >> 20),
                         (unsigned long long)(pressure_gc_memory >> 20),
                         (unsigned long long)(critical_gc_memory >> 20),
-                        (unsigned long long)gc_evictions, (unsigned long long)gc_downloads);
+                        (unsigned long long)gc_evictions, (unsigned long long)gc_downloads,
+                        (unsigned long long)gc_dirty_deferred);
             gc_report_time = now;
-            gc_evictions = gc_downloads = 0;
+            gc_evictions = gc_downloads = gc_dirty_deferred = 0;
         }
     }
 }

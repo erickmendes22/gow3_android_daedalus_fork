@@ -150,6 +150,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # while preserving the full Android AHB resolution. 0 restores the
       # previous 1920x1080 source for a controlled compatibility comparison.
       export GOW3_MALI_PRESENT_REDUCE=${GOW3_MALI_PRESENT_REDUCE:-1}
+      # Under normal pressure evict clean/stale textures first; postpone
+      # costly synchronous dirty-image writebacks until ~90% of the Mali
+      # memory budget (critical GC still evicts safely at ~95%).
+      export GOW3_MALI_GC_CLEAN_FIRST=${GOW3_MALI_GC_CLEAN_FIRST:-1}
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
       export GOW3_VK_MAX_IN_FLIGHT=2
@@ -200,7 +204,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST"
     fi
     ;;
 esac
