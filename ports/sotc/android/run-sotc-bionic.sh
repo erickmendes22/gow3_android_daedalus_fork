@@ -124,6 +124,10 @@ export SOTC_RB_HOT=${SOTC_RB_HOT:-0}
 case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid pool owner/fast readbacks" >&2; exit 2 ;; esac
 if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
 echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (OFF by default)"
+# Precise asynchronous GPU readback: reuse a fully covering in-flight GPU copy.
+# Default ON for 0.1.48; 0 restores 0.1.45. No changes to stale/relaxed reads.
+export SOTC_RB_INFLIGHT_DEDUP=${SOTC_RB_INFLIGHT_DEDUP:-1}
+case "$SOTC_RB_INFLIGHT_DEDUP" in 0|1) ;; *) echo "Invalid SOTC_RB_INFLIGHT_DEDUP" >&2; exit 2 ;; esac
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
