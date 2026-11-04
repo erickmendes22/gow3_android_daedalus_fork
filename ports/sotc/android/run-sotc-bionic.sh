@@ -128,6 +128,7 @@ echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (OF
 # Default ON for 0.1.48; 0 restores 0.1.45. No changes to stale/relaxed reads.
 export SOTC_RB_INFLIGHT_DEDUP=${SOTC_RB_INFLIGHT_DEDUP:-1}
 case "$SOTC_RB_INFLIGHT_DEDUP" in 0|1) ;; *) echo "Invalid SOTC_RB_INFLIGHT_DEDUP" >&2; exit 2 ;; esac
+if [ "$BB_READBACKS" != "2" ]; then SOTC_RB_INFLIGHT_DEDUP=0; export SOTC_RB_INFLIGHT_DEDUP; fi
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
