@@ -921,12 +921,17 @@ public final class GameActivity extends Activity {
                     BASE+(sotcRuntime() ? "/run-sotc-bionic.sh" : "/run-bionic.sh"),"game")
                 : process(ROOT+"/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
                     ROOT+"/bin/sh",BASE+"/run-gow3.sh","game"); game=launched;
+            // Optional read-only GPU telemetry in the exported logs/ directory.
+            // Separate from expensive SOTC_PERF_PROFILE, so tests can isolate overhead.
+            if (sotcRuntime() && "1".equals(setting("sotc_kgsl_utilization_log")))
+                SotcGpuUsageLogger.start(new File(BASE,"logs"));
             Thread log=new Thread(() -> {
                 try (BufferedReader r=new BufferedReader(new InputStreamReader(launched.getInputStream()));
                      PrintWriter out=new PrintWriter(new File(BASE,"logs/android-game.log"))) {
                     String line; while ((line=r.readLine())!=null) { out.println(line); out.flush(); }
                     int code=launched.waitFor();
                     if (game==launched) {
+                        SotcGpuUsageLogger.stop();
                         game=null;
                         // run-gow3.sh exits 4 when Vulkan/Turnip cannot initialize: the driver
                         // failure must not be reported as validated texture integrity.
@@ -947,6 +952,7 @@ public final class GameActivity extends Activity {
         main.post(() -> { if (!destroyed) { status.setText(UiText.get(this, message)); status.setVisibility(View.VISIBLE); } });
     }
     private void stopGame() {
+        SotcGpuUsageLogger.stop();
         Process p=game; game=null;
         if (p!=null) { p.destroyForcibly(); try { p.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
     }
