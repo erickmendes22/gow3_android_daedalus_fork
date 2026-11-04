@@ -13,6 +13,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_draw_prep.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include <xxhash.h>
 
@@ -496,7 +497,11 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
 
 void DrawPreparation::Count(bool was_used) {
     ++(was_used ? used : unused);
-    static const bool stats = std::getenv("GOW3_FRAME_STATS") != nullptr;
+    // Keep the pre-existing per-1024-draw, 5-second aggregate, but publish it
+    // automatically on PanVK to tell whether idle preparers ever manage to
+    // deliver validated draws. No extra per-draw clocks or snapshot captures.
+    static const bool stats = std::getenv("GOW3_FRAME_STATS") != nullptr ||
+                              MaliPerfStats::Enabled();
     // The clock is read every 1024 draws: per draw it was 8% of the GPU thread.
     if (!stats || ((used + unused) & 1023) != 0) {
         return;
