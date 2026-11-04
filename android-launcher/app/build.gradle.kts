@@ -69,6 +69,12 @@ android {
             useLegacyPackaging = true
         }
     }
+    // SotC-only KGSL GPU telemetry in opt-in diagnostic APK.
+    if (sotcAndroid) {
+        externalNativeBuild {
+            cmake { path = file("src/main/cpp/CMakeLists.txt") }
+        }
+    }
     sourceSets {
         getByName("main") {
             jniLibs.srcDir("../../tools/android/bridges")
