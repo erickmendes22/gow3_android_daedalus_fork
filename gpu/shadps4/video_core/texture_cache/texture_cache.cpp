@@ -1764,7 +1764,24 @@ void TextureCache::GarbageCollectImages() {
                         return 85u;
                     return static_cast<u32>(parsed);
                 }();
-                trigger_gc_memory = budget / 10 * 7;
+                // Mali: old 70% trigger silently evicted stale (but reusable)
+                // images even when no memory pressure was reported, forcing
+                // expensive recreation in the game's resource-heavy menu.
+                // Retain them until 85% and still clean before 88% pressure,
+                // 95% critical, with =70 restoring the prior policy.
+                static const u32 mali_trigger_pct = [] {
+                    const char* mali = std::getenv("GOW3_MALI_CPU_PRESENT");
+                    if (!mali || mali[0] != '1') return 70u;
+                    const char* requested = std::getenv("GOW3_MALI_GC_TRIGGER_PCT");
+                    if (!requested) return 85u;
+                    char* end = nullptr;
+                    const unsigned long parsed = std::strtoul(requested, &end, 10);
+                    if (end == requested || *end != '\0' ||
+                        (parsed != 70 && (parsed < 75 || parsed > 86)))
+                        return 85u;
+                    return static_cast<u32>(parsed);
+                }();
+                trigger_gc_memory = budget / 100 * std::min(mali_trigger_pct, mali_pressure_pct);
                 pressure_gc_memory = budget / 100 * mali_pressure_pct;
                 critical_gc_memory = budget / 100 * 95;
             }
@@ -1860,11 +1877,13 @@ void TextureCache::GarbageCollectImages() {
         lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
     // gow3: evictions under memory pressure, at most every 5 s (GOW3_FRAME_STATS or not).
-    if (pressured || gc_downloads != 0) {
+    // Report previously invisible clean evictions even without pressure.
+    if (gc_evictions || pressured || gc_downloads != 0) {
         const auto now = std::chrono::steady_clock::now();
         if (now - gc_report_time >= std::chrono::seconds(5)) {
-            std::printf("Texture cache: memory pressure, %llu of %llu MiB (critical %llu): "
+            std::printf("Texture cache: %s, %llu of %llu MiB (critical %llu): "
                         "%llu images evicted, %llu written back, %llu dirty kept since last report\n",
+                        pressured ? "memory pressure" : "routine eviction",
                         (unsigned long long)(total_used_memory >> 20),
                         (unsigned long long)(pressure_gc_memory >> 20),
                         (unsigned long long)(critical_gc_memory >> 20),

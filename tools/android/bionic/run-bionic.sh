@@ -181,6 +181,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # evicted 441 clean images. Default 88% reduces repeated uploads;
       # still below 95% critical. Override =85 to restore old behavior.
       export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-88}
+      # Before: evicted images silently at 70% even without memory pressure.
+      # Retain reusable BCn/UINT images until 85% (88% pressure; 95% critical).
+      # Set =70 to restore the old early-eviction policy.
+      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-85}
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
@@ -240,7 +244,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=$GOW3_VK_MAX_IN_FLIGHT frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=$GOW3_VK_MAX_IN_FLIGHT frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac
