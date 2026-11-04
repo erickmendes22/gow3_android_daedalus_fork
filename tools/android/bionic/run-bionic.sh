@@ -146,6 +146,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # game frame into a host buffer and copy into a linear, CPU-writable AHB.
       # Off (0) reverts to the unmodified accelerated path for comparisons.
       export GOW3_MALI_CPU_PRESENT=${GOW3_MALI_CPU_PRESENT:-1}
+      # Use the verified guest patch size as the CPU-present intermediate
+      # while preserving the full Android AHB resolution. 0 restores the
+      # previous 1920x1080 source for a controlled compatibility comparison.
+      export GOW3_MALI_PRESENT_REDUCE=${GOW3_MALI_PRESENT_REDUCE:-1}
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
       export GOW3_VK_MAX_IN_FLIGHT=2
@@ -196,7 +200,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE"
     fi
     ;;
 esac

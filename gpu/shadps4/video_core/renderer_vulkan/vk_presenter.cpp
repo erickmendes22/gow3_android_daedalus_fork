@@ -33,6 +33,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <csetjmp>
 #include <cstring>
 #include <cstdlib>
@@ -534,6 +535,46 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         // Failure leaves the original guest display image intact.
         upscaled = rasterizer->GetUpscaler().PresentGsr2FromGuestDisplay(image_id, display);
     }
+
+#ifdef __ANDROID__
+    // Mali's working CPU/linear-AHB presenter returns before the normal Vulkan
+    // Present() branch calls SetExpectedGameSize(). As a result its intermediate
+    // frame stayed at the 1920x1080 constructor default forever, even when a
+    // verified 960x540 game patch and 1280x720 Android output were selected.
+    // Resize before GetRenderFrame(), so pp_pass renders directly into the
+    // smaller intermediate image and the GPU -> CPU readback transfers fewer
+    // pixels. Keep the existing AHB's output size and composition unchanged.
+    if (swapchain.UsesCpuPresentation()) {
+        const char* reduce = std::getenv("GOW3_MALI_PRESENT_REDUCE");
+        if (!reduce || reduce[0] != '0') {
+            const vk::Extent2D output = swapchain.GetExtent();
+            u32 target_w = output.width, target_h = output.height;
+            static const vk::Extent2D verified_patch = [] {
+                const char* status = std::getenv("GOW3_RESOLUTION_STATUS");
+                const char* input = std::getenv("GOW3_PATCH_INPUT_RES");
+                unsigned w = 0, h = 0;
+                char extra = 0;
+                // The launcher grants this status only after matching game
+                // identity, version, eboot SHA and all patch signatures.
+                if (status && input &&
+                    std::strcmp(status, "verified-direct-game-patch") == 0 &&
+                    std::sscanf(input, "%ux%u%c", &w, &h, &extra) == 2 &&
+                    w >= 320 && h >= 180 && w <= 3840 && h <= 2160)
+                    return vk::Extent2D{w, h};
+                return vk::Extent2D{};
+            }();
+            if (verified_patch.width && verified_patch.height &&
+                verified_patch.width <= output.width &&
+                verified_patch.height <= output.height) {
+                target_w = verified_patch.width;
+                target_h = verified_patch.height;
+            }
+            // Prevent a 0x0 swapchain during an Android surface transition.
+            if (target_w && target_h)
+                SetExpectedGameSize(s32(target_w), s32(target_h));
+        }
+    }
+#endif
 
     Frame* frame = GetRenderFrame(true);
     if (!frame) return nullptr; // PanVK: no available present frame; defer PM4 flip.
