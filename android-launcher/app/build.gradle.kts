@@ -69,6 +69,14 @@ android {
             useLegacyPackaging = true
         }
     }
+    // SotC-only diagnostic KGSL memstore reader (no change to emulator runtime).
+    if (sotcAndroid) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
+        }
+    }
     sourceSets {
         getByName("main") {
             jniLibs.srcDir("../../tools/android/bridges")
