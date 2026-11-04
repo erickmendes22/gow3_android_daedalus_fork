@@ -1016,6 +1016,26 @@ int main(int argc, char **argv) {
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
 #ifdef __ANDROID__
+    /* Backport of PC v0.71's T38 double-free guard, required BEFORE enabling
+     * PC v0.72 fast speculative GPU readbacks. FEX host functions cannot use
+     * __builtin_return_address here: runtime_memory uses guest_cpu_return_address.
+     * The release call instruction / return RIP match the verified EU 1.01
+     * eboot offsets used by the desktop port. Unknown images fail CLOSED.
+     */
+    if (sotc_android_image) {
+        extern void runtime_memory_set_release_site(uintptr_t);
+        const int recognized=size>0x1ac82 && image[0x1ac7d]==0xe8;
+        if (recognized) {
+            runtime_memory_set_release_site((uintptr_t)(image+0x1ac82));
+            fprintf(stderr,"SotC PC 0.72: pool release site verified; fast GPU readbacks %s\\n",
+                    getenv("SOTC_RB_HOT") && getenv("SOTC_RB_HOT")[0]=='1'?"requested":"OFF");
+        } else {
+            /* Unknown eboot revision: do not risk resurrecting the colour
+             * mosaic or guest heap corruption from unsafe hot readbacks. */
+            setenv("SOTC_RB_HOT","0",1);
+            fprintf(stderr,"SotC PC 0.72: unverified pool release call; fast readbacks disabled\\n");
+        }
+    }
     if (sotc_cmdline) apply_sotc_cmdline(sotc_cmdline,size);
 #endif
 #if defined(GUEST_CPU_NATIVE)
