@@ -237,6 +237,13 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "2 (padrão) é preciso. 1 pode causar dados e imagens desatualizados; 0 desativa os readbacks e pode quebrar a renderização. Reinicie o jogo após alterar."
                          else "2 (default) is precise. 1 may cause stale GPU data/images; 0 disables readbacks and may break rendering. Restart the game after changing.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "PC 0.72: readbacks rápidos (+FPS, experimental)"
+                                      else "PC 0.72: fast GPU readbacks (experimental)",
+                        (values["sotc_pc072_fast_readbacks"]?:"0")=="1",
+                        {save("sotc_pc072_fast_readbacks",if(it)"1" else "0")})
+                    Text(if(pt) "Cópias antecipadas de dados GPU: potencial de ganho no Santuário. Exige Readback 2 e correção do pool de páginas do PC 0.71. Desligado por padrão; faça backup dos saves. O ganho de até 25% foi medido somente no PC."
+                         else "Speculative GPU copies: possible Shrine FPS gain. Requires Readback 2 and the PC 0.71 page-pool fix. OFF by default; back up saves. The up-to-25% figure was measured on PC only.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Adreno: compatibilidade Wave32" else "Adreno: Wave32 compatibility",
                         (values["sotc_adreno_wave32"]?:"0")=="1",
                         {save("sotc_adreno_wave32",if(it)"1" else "0")})
@@ -401,7 +408,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.40 — base 0.1.34",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.45 — PC 0.72 / base 0.1.40",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
