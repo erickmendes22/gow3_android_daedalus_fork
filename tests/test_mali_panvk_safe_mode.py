@@ -37,7 +37,7 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
 
     def test_panvk_is_conservative(self):
         self.assertEqual(self.profile("/private/libvulkan_panfrost.so"),
-                         "1:0:2:1:0:0")
+                         "1:0:4:1:0:0")
 
     def test_other_drivers_keep_existing_settings(self):
         for lib in ("/private/libvulkan_freedreno.so", "/system/libvulkan.so"):

@@ -15,6 +15,7 @@
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "gow3_toggles.h"
 #include "video_core/renderer_vulkan/vk_wait_diagnostics.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "common/arch.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -414,7 +415,14 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
+    // Compare Bachata's deeper timeline queue with GoW3's old PanVK cap=2.
+    // Only one out of 32 lock/record/submit operations are timed.
+    const bool mali_submit_sample = MaliPerfStats::SampleSubmit();
+    const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
+                                               : MaliPerfStats::TimePoint{};
     std::scoped_lock lk{submit_mutex};
+    if (mali_submit_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
     const u64 signal_value = work_semaphore.NextTick();
 
     // BACHATA ARM64's bounded timeline policy: do not issue
@@ -444,7 +452,15 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                !(opt_out && opt_out[0] == '1');
     }();
     if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
+        // Every forced wait is measured: this is precisely the suspected
+        // 60->5 FPS menu bottleneck, unlike AHB copy timing. The readback,
+        // guest-memory and presentation fences remain intact.
+        const bool mali_timing = MaliPerfStats::Enabled();
+        const auto throttle_start = mali_timing ? MaliPerfStats::Clock::now()
+                                                : MaliPerfStats::TimePoint{};
         work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+        if (mali_timing)
+            MaliPerfStats::Record(MaliPerfStats::Stage::SubmitThrottle, throttle_start);
     }
 
 #if TRACY_GPU_ENABLED
@@ -464,9 +480,13 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         // Until the next submission's first timestamp: mostly the GPU waiting for it.
         profiler->Mark(0x5B317ull, [] { return std::string{"(between submissions: GPU idle)"}; });
     }
+    const auto recording_start = mali_submit_sample ? MaliPerfStats::Clock::now()
+                                                    : MaliPerfStats::TimePoint{};
     SyncRecording();
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
+    if (mali_submit_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::SubmitHostCopies, recording_start);
     Check(current_cmdbuf.end());
 
     const vk::Semaphore timeline = work_semaphore.Handle();
@@ -496,7 +516,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     };
 
     ImGui::Core::TextureManager::Submit();
+    const auto queue_start = mali_submit_sample ? MaliPerfStats::Clock::now()
+                                                : MaliPerfStats::TimePoint{};
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    if (mali_submit_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::SubmitQueueDriver, queue_start);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
     // On Android, completion is cached and advanced by the bounded wait

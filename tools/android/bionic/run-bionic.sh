@@ -187,7 +187,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
-      export GOW3_VK_MAX_IN_FLIGHT=2
+      # Bachata-style bounded Vulkan timeline: the earlier Mali cap of 2
+      # forces a host wait before nearly every new GPU submission once
+      # the queue fills, starving PM4 decoding on draw-heavy game menus.
+      # 4 permits useful overlap with PanVK while remaining below the
+      # desktop/Bachata policy ceiling of 8. =2 restores the stable cap.
+      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-4}
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
       # Bachata S4 completes Present() before publishing a guest flip event.
       # Do not acknowledge a Mali guest framebuffer while swap work is queued
@@ -235,7 +240,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=2 frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=$GOW3_VK_MAX_IN_FLIGHT frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac

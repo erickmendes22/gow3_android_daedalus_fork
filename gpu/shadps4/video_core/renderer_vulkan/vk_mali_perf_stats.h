@@ -29,6 +29,7 @@ public:
         GpuDrawCpu, PipelineLookup,
         NewGraphicsPipeline, NewComputePipeline, NewShaderModule,
         NewBcImage, NewRgba128Image, NewOtherImage,
+        SubmitMutex, SubmitThrottle, SubmitHostCopies, SubmitQueueDriver,
         Count,
     };
 
@@ -66,6 +67,12 @@ public:
         if (!Enabled()) return false;
         static thread_local uint32_t draws = 0;
         return (++draws & 255u) == 0;
+    }
+
+    static bool SampleSubmit() {
+        if (!Enabled()) return false;
+        static thread_local uint32_t submits = 0;
+        return (++submits & 31u) == 0;
     }
 
     static void RecordImageAllocation(bool compressed, bool rgba128, uint64_t bytes) {
@@ -122,11 +129,13 @@ public:
             "gpu_draw_cpu", "pipeline_lookup",
             "graphics_pipeline_new", "compute_pipeline_new", "shader_module_new",
             "image_bc_new", "image_rgba128_new", "image_other_new",
+            "submit_mutex", "submit_throttle", "submit_host_copy_wait",
+            "submit_vk_queue",
         };
         char line[2048]{};
         size_t used = static_cast<size_t>(std::snprintf(
             line, sizeof(line),
-            "MALI_PERF_STATS interval_ms=%llu sample=1/32 (except texture_sync_download=all) "
+            "MALI_PERF_STATS interval_ms=%llu sample=present,submit=1/32 draw=1/256 "
             "values=count/total_ms/avg_ms/max_ms",
             static_cast<unsigned long long>(now_ms - last)));
         for (unsigned i = 0; i < static_cast<unsigned>(Stage::Count); ++i) {
