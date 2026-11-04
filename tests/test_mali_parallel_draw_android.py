@@ -1,4 +1,4 @@
-"""Android Mali: enable verified checksummed parallel draw preparation and safe inline texture memo."""
+"""Android Mali: safely opt into background preparation; default to observed serial baseline."""
 from pathlib import Path
 import unittest
 R=Path(__file__).resolve().parents[1]
@@ -10,7 +10,8 @@ PM4=(R/"gpu/shadps4/video_core/amdgpu/liverpool.cpp").read_text()
 PERF=(R/"gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h").read_text()
 class MaliParallelDrawTest(unittest.TestCase):
     def test_preparation_workers_safely_opt_in_and_rollback(self):
-        self.assertIn("GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-4}", SH)
+        self.assertIn("GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-0}", SH)
+        self.assertIn("=4 explicitly opts back into checksummed", SH)
         self.assertIn("GOW3_MALI_INLINE_TEXTURE_SETS=${GOW3_MALI_INLINE_TEXTURE_SETS:-1}", SH)
         self.assertIn("GOW3_DRAW_PIPE", RAST)
         self.assertIn("constexpr u64 MaxScanLag = 64;", DRAW)

@@ -186,13 +186,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # available for a separate A/B if repeated image recreation is proven.
       # Critical limit remains 95%.
       export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-70}
-      # On the eight-core Mali host the disabled draw-preparation workers
-      # leave 2000+ draw/guest-frame pipelines, sharps and hashes on the
-      # serial GPU command processor. Source project benchmark:
-      # four workers, eight CPU threads: 68 FPS versus 53 without.
-      # The helpers are SCHED_IDLE and validate register checksums before
-      # a prepared result can be consumed. =0 restores the serial path.
-      export GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-4}
+      # The source-project 68 vs 53 FPS worker result is NOT a G615/G720
+      # measurement. Their 2026-11-04 device logs used zero preparation
+      # workers. Restore this known Mali baseline and avoid competing with
+      # the game's FEX thread until identical-scene A/B proves otherwise.
+      # =4 explicitly opts back into checksummed background preparation.
+      export GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-0}
       # No checksum consumer when prep_workers=0; set =1 for the old path.
       export GOW3_PM4_CHECKSUM_ALWAYS=${GOW3_PM4_CHECKSUM_ALWAYS:-0}
       # The TextureSet memo only accepted precomputed hashes; Android
