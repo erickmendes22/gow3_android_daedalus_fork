@@ -136,12 +136,12 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         return;
     }
 
-    const MaliPerfStats::Scoped mali_image_build{
-        info.props.is_block ? MaliPerfStats::Stage::NewBcImage
+    const Vulkan::MaliPerfStats::Scoped mali_image_build{
+        info.props.is_block ? Vulkan::MaliPerfStats::Stage::NewBcImage
         : info.pixel_format == vk::Format::eR32G32B32A32Uint
-              ? MaliPerfStats::Stage::NewRgba128Image
-              : MaliPerfStats::Stage::NewOtherImage,
-        MaliPerfStats::Enabled()};
+              ? Vulkan::MaliPerfStats::Stage::NewRgba128Image
+              : Vulkan::MaliPerfStats::Stage::NewOtherImage,
+        Vulkan::MaliPerfStats::Enabled()};
     image_uid = global_image_uid.Next();
     mip_hashes.resize(info.resources.levels);
     vk::ImageCreateFlags flags{vk::ImageCreateFlagBits::eMutableFormat |
@@ -254,8 +254,8 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
     backing->image.Create(image_ci);
-    if (MaliPerfStats::Enabled())
-        MaliPerfStats::RecordImageAllocation(info.props.is_block,
+    if (Vulkan::MaliPerfStats::Enabled())
+        Vulkan::MaliPerfStats::RecordImageAllocation(info.props.is_block,
             info.pixel_format == vk::Format::eR32G32B32A32Uint,
             static_cast<uint64_t>(backing->image.size_bytes));
     if (Vulkan::MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
