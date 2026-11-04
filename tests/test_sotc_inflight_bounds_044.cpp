@@ -24,8 +24,9 @@ static bool OldDirty(const Readback& r,U addr,U size) {
 }
 static bool NewDirty(const Readback& r,U addr,U size) {
     if(r.dirty) return true;
-    if(!SotcInflight::Overlaps(addr,size,r.lo,r.hi-r.lo))return false;
-    for(auto& x:r.items)if(SotcInflight::Overlaps(addr,size,x.addr,x.size))return true;
+    if(r.items.size()==1) return SotcInflight::Overlaps(addr,size,r.items[0].addr,r.items[0].size);
+    // Original multi-region path, no speculative HOT hull rejection.
+    for(auto& x:r.items)if(OldOverlap(addr,size,x.addr,x.size))return true;
     return false;
 }
 static int OldFind(const std::vector<Readback>& all,U addr,U size) {
@@ -38,7 +39,7 @@ static int OldFind(const std::vector<Readback>& all,U addr,U size) {
 static int NewFind(const std::vector<Readback>& all,U addr,U size) {
     for(int i=0;i<(int)all.size();++i) {
         auto& r=all[i];
-        if(!SotcInflight::Overlaps(addr,size,r.lo,r.hi-r.lo))continue;
+        if(r.items.size()==1&&!SotcInflight::Overlaps(addr,size,r.lo,r.hi-r.lo))continue;
         for(auto& x:r.items)
             for(auto& c:x.gpu_copies)
                 if(OldOverlap(addr,size,c.addr,c.size))return i;
