@@ -1,4 +1,4 @@
-SotC PC 0.72 page-pool fix + in-flight readback dedup Android 0.1.48 ARM64 Bionic boot-test APK
+name: SotC PC 0.72 page-pool fix + in-flight readback dedup Android 0.1.48 ARM64 Bionic boot-test APK
 on:
   push:
     branches: [perf/sotc-readback-inflight-dedup-048]
