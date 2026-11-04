@@ -36,6 +36,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
 namespace Vulkan {
@@ -913,6 +914,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
+        const MaliPerfStats::Scoped mali_pipeline_build{
+            MaliPerfStats::Stage::NewGraphicsPipeline, MaliPerfStats::Enabled()};
         const auto pipeline_hash = std::hash<GraphicsPipelineKey>{}(sel.graphics_key);
         LOG_INFO(Render_Vulkan, "Compiling graphics pipeline {:#x}", pipeline_hash);
         CompileTimer timer;
@@ -947,6 +950,8 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     }
     const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);
     if (is_new) {
+        const MaliPerfStats::Scoped mali_pipeline_build{
+            MaliPerfStats::Stage::NewComputePipeline, MaliPerfStats::Enabled()};
         const auto pipeline_hash = std::hash<ComputePipelineKey>{}(compute_key);
         LOG_INFO(Render_Vulkan, "Compiling compute pipeline {:#x}", pipeline_hash);
         CompileTimer timer;
@@ -1293,6 +1298,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
+    const MaliPerfStats::Scoped mali_shader_build{
+        MaliPerfStats::Stage::NewShaderModule, MaliPerfStats::Enabled()};
     CompileTimer timer;
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);

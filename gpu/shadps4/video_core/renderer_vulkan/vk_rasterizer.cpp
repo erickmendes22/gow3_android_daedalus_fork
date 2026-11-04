@@ -12,6 +12,7 @@
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_mali_pass_capture.h"
 #include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -978,6 +979,9 @@ bool Rasterizer::FilterDrawPasses() const {
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
     RENDERER_TRACE;
+    const bool mali_draw_sample = MaliPerfStats::SampleDraw();
+    const MaliPerfStats::Scoped mali_draw_timer{
+        MaliPerfStats::Stage::GpuDrawCpu, mali_draw_sample};
     Gow3Stats::draws.fetch_add(1, std::memory_order_relaxed);
 
     // gow3: with the draw pipeline this thread only selects the pipeline and hands the draw
@@ -996,7 +1000,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
             return;
         }
     }
+    const auto mali_lookup_start = mali_draw_sample ? MaliPerfStats::Clock::now()
+                                                    : MaliPerfStats::TimePoint{};
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline({}, prepared);
+    if (mali_draw_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::PipelineLookup, mali_lookup_start);
     const PreparedDraw* used_prepared = pipeline_cache.UsedPrepared();
     if (prepared) {
         draw_prep->Count(pipeline != nullptr &&

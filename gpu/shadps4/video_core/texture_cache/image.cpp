@@ -8,6 +8,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
@@ -135,6 +136,12 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         return;
     }
 
+    const MaliPerfStats::Scoped mali_image_build{
+        info.props.is_block ? MaliPerfStats::Stage::NewBcImage
+        : info.pixel_format == vk::Format::eR32G32B32A32Uint
+              ? MaliPerfStats::Stage::NewRgba128Image
+              : MaliPerfStats::Stage::NewOtherImage,
+        MaliPerfStats::Enabled()};
     image_uid = global_image_uid.Next();
     mip_hashes.resize(info.resources.levels);
     vk::ImageCreateFlags flags{vk::ImageCreateFlagBits::eMutableFormat |
@@ -247,6 +254,10 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
     backing->image.Create(image_ci);
+    if (MaliPerfStats::Enabled())
+        MaliPerfStats::RecordImageAllocation(info.props.is_block,
+            info.pixel_format == vk::Format::eR32G32B32A32Uint,
+            static_cast<uint64_t>(backing->image.size_bytes));
     if (Vulkan::MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
         const auto n = Vulkan::MaliVisualTrace::Add(Vulkan::MaliVisualTrace::Counts::images_created);
         if (Vulkan::MaliVisualTrace::Sample(n))

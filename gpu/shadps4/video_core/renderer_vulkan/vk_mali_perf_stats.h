@@ -25,7 +25,11 @@ public:
         PrepareFrame, FramesAheadWait, AcquireAhb, ReadbackSetup,
         ReadbackSubmit, FenceWait, Invalidate, AhbTotal,
         AhbLock, AhbCopy, AhbUnlock, AhbIpc,
-        TextureGc, SyncTextureDownload, Count,
+        TextureGc, SyncTextureDownload,
+        GpuDrawCpu, PipelineLookup,
+        NewGraphicsPipeline, NewComputePipeline, NewShaderModule,
+        NewBcImage, NewRgba128Image, NewOtherImage,
+        Count,
     };
 
     static bool Enabled() {
@@ -53,6 +57,21 @@ public:
         if (!Enabled()) return false;
         static std::atomic<uint32_t> collections{0};
         return ((collections.fetch_add(1, std::memory_order_relaxed) + 1) & 31u) == 0;
+    }
+
+    // One sample per 256 draws; no clock calls or per-draw logging on
+    // the 255 unsampled draws. Covers CPU/GPU command processing even
+    // when the menu stops delivering VideoOut frames.
+    static bool SampleDraw() {
+        if (!Enabled()) return false;
+        static thread_local uint32_t draws = 0;
+        return (++draws & 255u) == 0;
+    }
+
+    static void RecordImageAllocation(bool compressed, bool rgba128, uint64_t bytes) {
+        if (!Enabled()) return;
+        Get().image_bytes[compressed ? 0u : rgba128 ? 1u : 2u].fetch_add(
+            bytes, std::memory_order_relaxed);
     }
 
     static void Record(Stage stage, TimePoint start) {
@@ -100,6 +119,9 @@ public:
             "rb_submit", "fence_wait", "invalidate", "ahb_total",
             "ahb_lock", "ahb_copy", "ahb_unlock", "ahb_ipc",
             "texture_gc", "texture_sync_download",
+            "gpu_draw_cpu", "pipeline_lookup",
+            "graphics_pipeline_new", "compute_pipeline_new", "shader_module_new",
+            "image_bc_new", "image_rgba128_new", "image_other_new",
         };
         char line[2048]{};
         size_t used = static_cast<size_t>(std::snprintf(
@@ -121,6 +143,20 @@ public:
             if (written > 0)
                 used += std::min(static_cast<size_t>(written), sizeof(line) - used);
         }
+        // Report real Vulkan image allocations, not an inferred BC3
+        // conversion based only on a rejected alias of guest memory.
+        constexpr const char* image_labels[]{
+            "image_alloc_bc_mib", "image_alloc_rgba128_mib", "image_alloc_other_mib"};
+        for (unsigned i = 0; i < state.image_bytes.size(); ++i) {
+            const uint64_t bytes = state.image_bytes[i].exchange(
+                0, std::memory_order_relaxed);
+            if (!bytes || used >= sizeof(line)) continue;
+            const int written = std::snprintf(
+                line + used, sizeof(line) - used,
+                " %s=%.2f", image_labels[i], bytes / 1048576.0);
+            if (written > 0)
+                used += std::min(static_cast<size_t>(written), sizeof(line) - used);
+        }
         std::printf("%s\n", line);
     }
 
@@ -130,6 +166,7 @@ private:
     };
     struct State {
         std::array<Counter, static_cast<unsigned>(Stage::Count)> stages{};
+        std::array<std::atomic<uint64_t>, 3> image_bytes{};
         std::atomic<uint64_t> last_report_ms{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
