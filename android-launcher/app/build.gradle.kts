@@ -27,8 +27,8 @@ android {
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
             if (sotcAndroid) {
                 applicationId = "com.sotc.android.daedalus"
-                versionCode = 10046
-                versionName = "0.1.45-pc072-pool-owner-fast-readbacks"
+                versionCode = 10047
+                versionName = "0.1.46-pc072-mutex-stage"
                 manifestPlaceholders["appIcon"] = "@drawable/sotc_icon"
                 manifestPlaceholders["appLabel"] = "Shadow of the Colossus — Daedalus"
             }
