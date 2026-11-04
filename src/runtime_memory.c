@@ -733,11 +733,12 @@ static ABI int32_t virtual_query(const void *address, int flags, VirtualQueryInf
             info->start=(uintptr_t)address; info->end=at;
             info->offset=v.phys+((uintptr_t)address-v.start);
             info->flags &= ~16u; /* not committed from the pool release's view */
-            sotc_owner_skipped_pages+=stale;
-            if (++sotc_owner_skips<=20 || !(sotc_owner_skips&(sotc_owner_skips-1)))
+            const uint64_t skipped=__atomic_add_fetch(&sotc_owner_skipped_pages,stale,__ATOMIC_RELAXED);
+            const uint64_t count=__atomic_add_fetch(&sotc_owner_skips,1,__ATOMIC_RELAXED);
+            if (count<=20 || !(count&(count-1)))
                 fprintf(stderr,"SotC PC 0.71 pool owner: skipped %" PRIu64
                                " stale 64KiB pages (%" PRIu64 " total)\n",
-                        stale,sotc_owner_skipped_pages);
+                        stale,skipped);
         }
     }
     strcpy(info->name, v.kind==KIND_RESERVED ? "reserved" : v.kind==KIND_DIRECT ? "direct" : "flexible");
