@@ -252,6 +252,10 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                                       else "PC 0.72: host staging reserve (test)",
                         (values["sotc_pc072_staging_prewarm"]?:"0")=="1",
                         {save("sotc_pc072_staging_prewarm",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "PC 0.72: reusar staging grande na RAM (teste)"
+                                      else "PC 0.72: reuse large host staging (test)",
+                        (values["sotc_pc072_host_large_pow2"]?:"0")=="1",
+                        {save("sotc_pc072_host_large_pow2",if(it)"1" else "0")})
                     Text(if(pt) "Experimentos independentes: mutex evita dormir em disputas curtas; staging prepara até 32 MiB por tipo de memória de sistema, sem reservar VRAM. Desligados por padrão. Reinicie o jogo para comparar."
                          else "Independent tests: mutex avoids kernel sleep on brief contention; staging prewarms up to 32 MiB per system-memory ring without reserving VRAM. OFF by default. Restart to compare.",
                         color=SotcPalette.secondary,fontSize=11.sp)
@@ -419,7 +423,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.46 — PC mutex / staging",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • 0.1.47 — staging RAM otimizado",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
