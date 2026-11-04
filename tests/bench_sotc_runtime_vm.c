@@ -11,7 +11,7 @@ int32_t *runtime_errno(void) { return &mock_errno; }
 int main(void) {
     enum { REGIONS=32, LOOKUPS=1000000 };
     const uintptr_t first=USER_MIN+0x400000;
-    const uintptr_t unrelated=USER_MIN+0x40000000;
+    const uintptr_t unrelated=USER_MIN+0x4000000000ULL;
     // Use common contiguous layout by default and 1/8/64 MiB spaced
     // guest regions in A/B to exercise real VMA cache-set aliasing.
     const char *step_env=getenv("SOTC_VM_BENCH_STRIDE_MB");
