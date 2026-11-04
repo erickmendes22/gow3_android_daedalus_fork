@@ -7,7 +7,11 @@
 #include <pthread.h>
 #include <errno.h>
 #include <time.h>
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <windows.h>
+#endif
 typedef struct { int type; } GuestAttr;
 typedef struct { pthread_mutex_t native; } GuestMutex;
 static size_t created, locks, unlocks;
@@ -90,7 +94,12 @@ static unsigned sotc_mutex_spin_budget(void) {
     const char *s=getenv("SOTC_MUTEX_SPIN_US");
     unsigned long long n=s && s[0] && s[0]!='-' ? strtoull(s,NULL,10) : 0;
     if(n>100) n=100; /* cap battery/thermal impact on Android */
+#ifdef _WIN32
+    SYSTEM_INFO sys; GetSystemInfo(&sys);
+    if(n && sys.dwNumberOfProcessors<=2) n=0;
+#else
     if(n && sysconf(_SC_NPROCESSORS_ONLN)<=2) n=0;
+#endif
     v=(unsigned)n;
     __atomic_store_n(&budget,v,__ATOMIC_RELEASE);
     if(v) fprintf(stderr,"SotC PC v0.71 mutex spin: %u us on contended guest locks\\n",v);
