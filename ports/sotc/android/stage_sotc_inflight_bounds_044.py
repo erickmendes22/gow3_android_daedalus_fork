@@ -66,17 +66,22 @@ def patch_inflight(root:Path,gpu:Path)->None:
         if (readback->dirty) {
             continue;
         }
-        const bool overlaps = SotcInflight::Overlaps(
-            addr, size, readback->inflight_lo, readback->inflight_hi - readback->inflight_lo);
-        if (SotcStats::kFpsLog) {
-            SotcStats::rb_inflight_checks.fetch_add(1, std::memory_order_relaxed);
-        }
-        if (!overlaps) {
+        // SOTC_RB_HOT=0 normally produces one item. Test that exact item
+        // directly, avoiding both the vector loop and an extra hull check.
+        if (readback->pending.size() == 1) {
+            const auto& item = readback->pending.front();
+            const bool overlaps = SotcInflight::Overlaps(addr, size, item.addr, item.size);
+            readback->dirty = overlaps;
             if (SotcStats::kFpsLog) {
-                SotcStats::rb_inflight_pruned.fetch_add(1, std::memory_order_relaxed);
+                SotcStats::rb_inflight_checks.fetch_add(1, std::memory_order_relaxed);
+                if (!overlaps) {
+                    SotcStats::rb_inflight_pruned.fetch_add(1, std::memory_order_relaxed);
+                }
             }
             continue;
         }
+        // HOT multi-region hulls can be wide; scanning them without an extra
+        // precheck was faster in the isolated benchmark. Keep original logic.
         for (const auto& item : readback->pending) {
             if (SotcInflight::Overlaps(addr, size, item.addr, item.size)) {
                 readback->dirty = true;
@@ -100,9 +105,20 @@ def patch_inflight(root:Path,gpu:Path)->None:
     return nullptr;
 }''',
 '''    for (AsyncReadback* readback : inflight_readbacks) {
-        if (!SotcInflight::Overlaps(addr, size, readback->inflight_lo,
-                                    readback->inflight_hi - readback->inflight_lo)) {
-            continue;
+        // Only reject from a hull when exactly one readback region is
+        // pending. With speculative HOT regions enabled, the hull can cover
+        // too much unrelated guest memory and cause a CPU regression.
+        if (readback->pending.size() == 1) {
+            if (SotcStats::kFpsLog) {
+                SotcStats::rb_find_checks.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (!SotcInflight::Overlaps(addr, size, readback->inflight_lo,
+                                        readback->inflight_hi - readback->inflight_lo)) {
+                if (SotcStats::kFpsLog) {
+                    SotcStats::rb_find_pruned.fetch_add(1, std::memory_order_relaxed);
+                }
+                continue;
+            }
         }
         // The hull is only a rejection filter. The original GPU copy-level
         // check determines whether a readback really contains these bytes.
@@ -149,6 +165,7 @@ def patch_inflight(root:Path,gpu:Path)->None:
     t=once(t,
         'inline std::atomic<uint64_t> early_flushes{0};',
         'inline std::atomic<uint64_t> rb_inflight_checks{0}, rb_inflight_pruned{0};\n'
+        'inline std::atomic<uint64_t> rb_find_checks{0}, rb_find_pruned{0};\n'
         'inline std::atomic<uint64_t> early_flushes{0};',
         "profiling-only reject counters")
     stats.write_text(t)
@@ -161,6 +178,11 @@ def patch_inflight(root:Path,gpu:Path)->None:
                              SotcStats::rb_inflight_pruned.exchange(0)),
                          static_cast<unsigned long long>(
                              SotcStats::rb_inflight_checks.exchange(0)));
+            ReportPrintf(report, "SOTC inflight lookup: %llu of %llu copy-region scans safely skipped\\n",
+                         static_cast<unsigned long long>(
+                             SotcStats::rb_find_pruned.exchange(0)),
+                         static_cast<unsigned long long>(
+                             SotcStats::rb_find_checks.exchange(0)));
 '''
     d=once(d,anchor,added+anchor,"existing 5-second diagnostic")
     driver.write_text(d)
