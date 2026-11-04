@@ -1,0 +1,43 @@
+name: SotC VMA slot locality 0.1.49 source benchmark (no APK)
+on:
+  push:
+    branches: [perf/sotc-vma-slot-locality-049]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-benchmark:
+    name: Validate runtime VMA cache and compare 1/8/64 MiB locality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run mapped/unmapped, dirty-journal, hole and concurrent-writer regressions
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -pthread tests/test_sotc_runtime_vm_cache.c -Wl,--gc-sections -o /tmp/sotc-vm-cache
+          /tmp/sotc-vm-cache
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -pthread -DSOTC_VM_SLOT_LEGACY tests/test_sotc_runtime_vm_cache.c \
+            -Wl,--gc-sections -o /tmp/sotc-vm-cache-legacy
+          /tmp/sotc-vm-cache-legacy
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread -fsyntax-only src/runtime_memory.c
+      - name: Compare real VMA query cost, old and new slot distribution
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -pthread tests/bench_sotc_runtime_vm.c -Wl,--gc-sections -o /tmp/vm-new
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -pthread -DSOTC_VM_SLOT_LEGACY tests/bench_sotc_runtime_vm.c \
+            -Wl,--gc-sections -o /tmp/vm-old
+          for stride in 0 1 8 64; do
+            echo "::group::VM query stride ${stride} MiB"
+            for trial in 1 2 3; do
+              SOTC_VM_BENCH_STRIDE_MB="$stride" SOTC_VM_RANGE_CACHE=1 /tmp/vm-old
+              SOTC_VM_BENCH_STRIDE_MB="$stride" SOTC_VM_RANGE_CACHE=1 /tmp/vm-new
+            done
+            echo "::endgroup::"
+          done
+      - name: Check native Android runtime builds this exact function
+        run: |
+          grep -Fq 'src/runtime*.c' tools/android/bionic/build_runtime.sh
+          grep -Fq 'SOTC_VM_RANGE_CACHE' ports/sotc/android/run-sotc-bionic.sh
