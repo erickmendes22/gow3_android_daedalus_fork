@@ -177,10 +177,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # costly synchronous dirty-image writebacks until ~90% of the Mali
       # memory budget (critical GC still evicts safely at ~95%).
       export GOW3_MALI_GC_CLEAN_FIRST=${GOW3_MALI_GC_CLEAN_FIRST:-1}
-      # Experimental extra cache headroom 85..90% of PanVK's reported
-      # dynamic budget. Default 85 preserves the stable profile; critical
-      # cleanup stays at 95% to avoid uncontrolled memory growth.
-      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}
+      # 752p G720 ran at 3302MiB with 85% threshold ~3280MiB and
+      # evicted 441 clean images. Default 88% reduces repeated uploads;
+      # still below 95% critical. Override =85 to restore old behavior.
+      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-88}
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.

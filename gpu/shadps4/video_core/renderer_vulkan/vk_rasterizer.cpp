@@ -1036,15 +1036,21 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // Consume the boundary once per validated scene, not once per display draw.
     const bool is_display_draw = regs.color_buffers[0] &&
         FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
-    const bool gsr2_bionic = std::getenv("GOW3_ANDROID_PORT") &&
-                             std::getenv("GOW3_UPSCALER") &&
-                             std::strcmp(std::getenv("GOW3_UPSCALER"), "gsr2") == 0;
+    // The launcher fixes these environment values before the game starts.
+    // Do not call libc getenv three times for every GPU draw (menu hot path).
+    static const bool gsr2_bionic = [] {
+        const char* selected = std::getenv("GOW3_UPSCALER");
+        return std::getenv("GOW3_ANDROID_PORT") && selected &&
+               std::strcmp(selected, "gsr2") == 0;
+    }();
+    static const bool direct_videoout =
+        std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") != nullptr;
     // One guest frame can write dozens of registered VideoOut targets, but
     // only SubmitFlipInternal identifies which surface is REALLY presented.
     // Do not advance the scene camera, depth, jitter or GSR2 history on an
     // arbitrary display-target DRAW. Gsr2OnVideoOutFlip() does that at flip.
     const bool defer_gsr2_boundary_to_flip =
-        gsr2_bionic && std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
+        gsr2_bionic && direct_videoout &&
         Gow3Settings::RenderPreset() != Gow3Settings::NativeAA;
     if (defer_gsr2_boundary_to_flip && camera_motion->Enabled() &&
         is_display_draw && scene_started) {
@@ -2287,12 +2293,14 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
     // BindBuffers is a separate method from BindResources; declarations there
     // are NOT visible here. Evaluate the camera gate in the actual reader scope.
     // Both guest and host-ring constants are consumed below.
-    const char* active_upscaler = std::getenv("GOW3_UPSCALER");
-    const bool gow3_gsr2_camera = std::getenv("GOW3_ANDROID_PORT") &&
-        active_upscaler && std::strcmp(active_upscaler, "gsr2") == 0;
-    const bool android_camera_feed = upscaler && upscaler->Enabled() &&
-        (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gow3_gsr2_camera) &&
-        camera_motion->Depth();
+    static const bool camera_feed_requested = [] {
+        const char* selected = std::getenv("GOW3_UPSCALER");
+        const bool gsr2_camera = std::getenv("GOW3_ANDROID_PORT") && selected &&
+                                 std::strcmp(selected, "gsr2") == 0;
+        return std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gsr2_camera;
+    }();
+    const bool android_camera_feed = camera_feed_requested && upscaler &&
+        upscaler->Enabled() && camera_motion->Depth();
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
@@ -3011,12 +3019,15 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     // GoW3 uses forward passes (usually 1-2 MRTs), not Bloodborne's five-MRT
     // G-buffer. Recognize only color+depth attachments at the SHA-validated
     // guest resolution; shadow-map passes have different extents.
-    const bool gsr2_forward = std::getenv("GOW3_ANDROID_PORT") &&
-                              std::getenv("GOW3_PATCH_INPUT_RES") &&
-                              std::getenv("GOW3_UPSCALER") &&
-                              std::string_view(std::getenv("GOW3_UPSCALER")) == "gsr2" &&
-                              std::popcount(key.mrt_mask & 0x7f) >= 1 &&
-                              std::popcount(key.mrt_mask & 0x7f) <= 2;
+    static const bool gsr2_forward_enabled = [] {
+        const char* selected = std::getenv("GOW3_UPSCALER");
+        return std::getenv("GOW3_ANDROID_PORT") &&
+               std::getenv("GOW3_PATCH_INPUT_RES") && selected &&
+               std::string_view(selected) == "gsr2";
+    }();
+    const unsigned color_targets = std::popcount(key.mrt_mask & 0x7f);
+    const bool gsr2_forward = gsr2_forward_enabled &&
+                              color_targets >= 1 && color_targets <= 2;
     if ((std::popcount(key.mrt_mask & 0x7f) >= 5 || gsr2_forward) && db_desc.first) {
         const auto& depth = texture_cache.GetImage(db_desc.first);
         // The 720p eboot patch changes guest allocations, but checking the
