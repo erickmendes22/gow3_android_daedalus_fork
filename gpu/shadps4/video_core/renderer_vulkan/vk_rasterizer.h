@@ -75,6 +75,11 @@ public:
     DrawPreparation& GetDrawPreparation() {
         return *draw_prep;
     }
+    // Only the optional two-stage draw recorder consumes Liverpool's
+    // per-register dirty bitset. Direct Vulkan draws use the live regs.
+    [[nodiscard]] bool HasDrawPipe() const noexcept {
+        return draw_pipe != nullptr;
+    }
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                       VAddr count_address, u16 vertex_sgpr_offset, u16 instance_sgpr_offset);
 

@@ -194,6 +194,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-0}
       # No checksum consumer when prep_workers=0; set =1 for the old path.
       export GOW3_PM4_CHECKSUM_ALWAYS=${GOW3_PM4_CHECKSUM_ALWAYS:-0}
+      # Dirty bitsets only feed the optional two-stage draw recorder.
+      # With direct Vulkan draws, tracking them is unused CPU work.
+      # =1 restores old tracking independently of draw workers.
+      export GOW3_PM4_DIRTY_ALWAYS=${GOW3_PM4_DIRTY_ALWAYS:-0}
       # The TextureSet memo only accepted precomputed hashes; Android
       # had disabled prep workers, leaving that path inactive on misses.
       # Compute equivalent hashes on the GPU thread only when a worker
@@ -264,7 +268,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=1 warmup=off gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac

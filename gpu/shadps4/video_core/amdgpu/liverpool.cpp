@@ -803,6 +803,14 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     static const bool force_checksum =
         EmulatorSettingsImpl::Flag("GOW3_PM4_CHECKSUM_ALWAYS", false);
     const bool compute_checksum = draw_prep != nullptr || force_checksum;
+    // When no two-stage draw recorder exists, PostDraw never consumes
+    // Liverpool::pipe_dirty. Updating its bitset for every SetContextReg
+    // is pure overhead on the Mali/Bachata-style serial draw path.
+    // =1 explicitly preserves the old bitset marking for device A/B.
+    static const bool force_dirty =
+        EmulatorSettingsImpl::Flag("GOW3_PM4_DIRTY_ALWAYS", false);
+    AmdGpu::RegDirty* const draw_dirty =
+        (rasterizer && rasterizer->HasDrawPipe()) || force_dirty ? &pipe_dirty : nullptr;
     if (draw_prep) {
         draw_prep->BeginSubmission(seq, regs, gfx_reg_checksum);
     }
@@ -867,7 +875,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 saved_index_base.reset();
             }
 
-            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, &pipe_dirty,
+            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, draw_dirty,
                                         compute_checksum);
             // DmaData to 0x3022C does nothing here (skipped below): no need to wait.
             if (rasterizer && !PipelinedOpcode(opcode) &&
