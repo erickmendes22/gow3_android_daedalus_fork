@@ -117,6 +117,13 @@ case "$SOTC_RB_STREAM" in 0|1) ;; *) echo "Invalid SOTC_RB_STREAM" >&2; exit 2 ;
 case "$SOTC_RB_STREAM_MAX_KB" in 512|1024) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
 if [ "$BB_READBACKS" != "2" ]; then export SOTC_RB_STREAM=0; fi
 echo "SotC readback streaming: enabled=$SOTC_RB_STREAM max_kib=$SOTC_RB_STREAM_MAX_KB mode=$BB_READBACKS"
+# PC v0.71 T38 64KiB pool ownership / PC v0.72 speculative readbacks.
+# The FEX probe disables fast readbacks if the release-call site is unverified.
+export SOTC_POOL_OWNER=${SOTC_POOL_OWNER:-1}
+export SOTC_RB_HOT=${SOTC_RB_HOT:-0}
+case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid pool owner/fast readbacks" >&2; exit 2 ;; esac
+if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
+echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (OFF by default)"
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
