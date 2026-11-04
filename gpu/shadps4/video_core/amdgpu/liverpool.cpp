@@ -558,7 +558,7 @@ u64 Liverpool::HashRegisterPacket(u64 checksum, const u32* words, u32 count) {
 }
 
 void Liverpool::ApplyGraphicsRegisterPacket(Regs& regs, const PM4Header* header, u64& checksum,
-                                             RegDirty* dirty) {
+                                             RegDirty* dirty, bool update_checksum) {
     const u32 count = header->type3.NumWords();
     const auto* payload = reinterpret_cast<const u32*>(header + 2);
     const auto mark = [&](u32 word, u32 words) {
@@ -675,7 +675,11 @@ void Liverpool::ApplyGraphicsRegisterPacket(Regs& regs, const PM4Header* header,
     default:
         return;
     }
-    checksum = HashRegisterPacket(checksum, reinterpret_cast<const u32*>(header), count + 1);
+    // When no draw preparation worker exists, this register checksum has no
+    // consumer. The actual GPU register writes are still applied unconditionally.
+    if (update_checksum) {
+        checksum = HashRegisterPacket(checksum, reinterpret_cast<const u32*>(header), count + 1);
+    }
 }
 
 // gow3: GOW3_DCB_STATS=1 — structure of graphics command buffers (read-only scan, printed every
@@ -793,6 +797,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     // Top-level buffers enqueued for the draw preparation workers (nested IBs are not).
     Vulkan::DrawPreparation* draw_prep =
         seq != NoSeq && rasterizer ? &rasterizer->GetDrawPreparation() : nullptr;
+    // G615/G720 logs from 2026-11-04 have zero preparation workers. The GPU
+    // processor still hashed every PM4 state write for those missing workers.
+    // =1 keeps legacy checksums, without modifying renderer state.
+    static const bool force_checksum =
+        EmulatorSettingsImpl::Flag("GOW3_PM4_CHECKSUM_ALWAYS", false);
+    const bool compute_checksum = draw_prep != nullptr || force_checksum;
     if (draw_prep) {
         draw_prep->BeginSubmission(seq, regs, gfx_reg_checksum);
     }
@@ -857,7 +867,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 saved_index_base.reset();
             }
 
-            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, &pipe_dirty);
+            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, &pipe_dirty,
+                                        compute_checksum);
             // DmaData to 0x3022C does nothing here (skipped below): no need to wait.
             if (rasterizer && !PipelinedOpcode(opcode) &&
                 !(opcode == PM4ItOpcode::DmaData &&
@@ -1624,9 +1635,18 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                             header + 2, set_size);
                 // gow3: interleaves with the graphics stream at an unpredictable point, so
                 // draw-preparation workers cannot reproduce it: make their checksums differ.
-                gfx_reg_checksum = HashRegisterPacket(gfx_reg_checksum ^ 0xA5C0A5C0A5C0ull,
-                                                      reinterpret_cast<const u32*>(header),
-                                                      header->type3.NumWords() + 1);
+                // ASC writes must invalidate speculative graphics checksums
+                // only if a draw preparation worker can consume those hashes.
+                static const bool force_checksum =
+                    EmulatorSettingsImpl::Flag("GOW3_PM4_CHECKSUM_ALWAYS", false);
+                const bool checksum_needed = force_checksum ||
+                    (rasterizer && rasterizer->GetDrawPreparation().Enabled());
+                if (checksum_needed) {
+                    gfx_reg_checksum = HashRegisterPacket(
+                        gfx_reg_checksum ^ 0xA5C0A5C0A5C0ull,
+                        reinterpret_cast<const u32*>(header),
+                        header->type3.NumWords() + 1);
+                }
             }
             break;
         }
@@ -1817,6 +1837,11 @@ void Liverpool::SubmitGfx(std::span<const u32> dcb, std::span<const u32> ccb) {
     // The copy for the draw preparation workers is made before taking the queue lock, which
     // the GPU thread needs to pick up work.
     auto* draw_prep = rasterizer ? &rasterizer->GetDrawPreparation() : nullptr;
+    // Avoid numbering/copying packets and checksum bookkeeping when all
+    // speculative preparation is disabled. Direct draws remain unchanged.
+    if (draw_prep && !draw_prep->Enabled()) {
+        draw_prep = nullptr;
+    }
     auto prep_submission = draw_prep ? draw_prep->Build(dcb) : nullptr;
     {
         // Numbering, enqueueing and queueing under one lock keep the three orders identical.
