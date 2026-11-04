@@ -15,8 +15,8 @@ L = (ROOT/"tools/android/bionic/run-bionic.sh").read_text()
 
 class MaliSchedulerBachataParityTests(unittest.TestCase):
     def test_bounded_queue_and_rollbacks(self):
-        self.assertIn("GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-4}", L)
-        self.assertIn("=2 restores the stable cap", L)
+        self.assertIn("GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-2}", L)
+        self.assertIn("=4 remains available to benchmark", L)
         self.assertIn("requested >= 1 && requested <= 8", S)
         self.assertIn("work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions)", S)
         self.assertIn("export GOW3_FRAMES_AHEAD=1", L)

@@ -8,7 +8,7 @@ SH = (ROOT / 'tools/android/bionic/run-bionic.sh').read_text()
 
 class MaliBudgetAndLayoutTests(unittest.TestCase):
     def test_pressure_is_opt_in_not_new_default(self):
-        self.assertIn('GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-88}', SH)
+        self.assertIn('GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}', SH)
         self.assertIn('std::getenv("GOW3_MALI_GC_PRESSURE_PCT")', TEX)
         self.assertIn('std::getenv("GOW3_MALI_CPU_PRESENT")', TEX)
         self.assertIn('parsed < 85 || parsed > 90', TEX)

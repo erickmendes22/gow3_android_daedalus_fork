@@ -7,7 +7,7 @@ RASTER = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").rea
 CACHE = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
 class MaliMenuFastpathTests(unittest.TestCase):
     def test_budget_preserves_rollback_and_critical(self):
-        self.assertIn("GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-88}", SH)
+        self.assertIn("GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}", SH)
         self.assertIn("critical_gc_memory = budget / 100 * 95", CACHE)
         self.assertIn("parsed < 85 || parsed > 90", CACHE)
     def test_fixed_launcher_values_cached_in_draw(self):

@@ -177,14 +177,15 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # costly synchronous dirty-image writebacks until ~90% of the Mali
       # memory budget (critical GC still evicts safely at ~95%).
       export GOW3_MALI_GC_CLEAN_FIRST=${GOW3_MALI_GC_CLEAN_FIRST:-1}
-      # 752p G720 ran at 3302MiB with 85% threshold ~3280MiB and
-      # evicted 441 clean images. Default 88% reduces repeated uploads;
-      # still below 95% critical. Override =85 to restore old behavior.
-      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-88}
-      # Before: evicted images silently at 70% even without memory pressure.
-      # Retain reusable BCn/UINT images until 85% (88% pressure; 95% critical).
-      # Set =70 to restore the old early-eviction policy.
-      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-85}
+      # Restore stable 85% pressure threshold. 88% was unproven for steady
+      # 5 FPS and risks retaining extra memory on a memory-shared GPU.
+      # Critical cleanup remains at 95%, and =88 is still available.
+      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}
+      # The 85% early-GC experiment had no demonstrated FPS gain. Restore
+      # the 70% baseline while testing threaded draw-preparation; =85 is
+      # available for a separate A/B if repeated image recreation is proven.
+      # Critical limit remains 95%.
+      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-70}
       # On the eight-core Mali host the disabled draw-preparation workers
       # leave 2000+ draw/guest-frame pipelines, sharps and hashes on the
       # serial GPU command processor. Source project benchmark:
@@ -204,12 +205,11 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
       export GOW3_GPU_COMPILER_WORKERS=1
       export GOW3_BACKGROUND_WARMUP=0
-      # Bachata-style bounded Vulkan timeline: the earlier Mali cap of 2
-      # forces a host wait before nearly every new GPU submission once
-      # the queue fills, starving PM4 decoding on draw-heavy game menus.
-      # 4 permits useful overlap with PanVK while remaining below the
-      # desktop/Bachata policy ceiling of 8. =2 restores the stable cap.
-      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-4}
+      # The measured submit_throttle total was <1 ms over several seconds
+      # even with cap=4. Restore the proven cap=2 to avoid changing two
+      # variables while verifying parallel GPU draw preparation.
+      # =4 remains available to benchmark the queue independently.
+      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-2}
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
       # Bachata S4 completes Present() before publishing a guest flip event.
       # Do not acknowledge a Mali guest framebuffer while swap work is queued
