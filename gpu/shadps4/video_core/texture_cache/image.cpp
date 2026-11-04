@@ -560,13 +560,14 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                         previous_writes, upcoming_writes)) {
                     // Do not emit a read-after-read barrier. Union the source
                     // stages/accesses so the NEXT write still sees every reader.
+                    const bool removed_a_barrier = state.access_mask != dst_mask;
                     state.access_mask |= dst_mask;
                     state.pl_stage |= dst_stage;
                     if (!needs_partial_transition) {
                         preserved_read_access |= state.access_mask;
                         preserved_read_stages |= state.pl_stage;
                     }
-                    note_read_elision(true);
+                    if (removed_a_barrier) note_read_elision(true);
                     continue;
                 }
                 if (state.layout != dst_layout || state.access_mask != dst_mask ||
@@ -604,9 +605,10 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         if (CanElideReadOnlyImageBarrier(
                 mali_read_only_elision, last_state.layout == dst_layout,
                 previous_writes, upcoming_writes)) {
+            const bool removed_a_barrier = last_state.access_mask != dst_mask;
             last_state.access_mask |= dst_mask;
             last_state.pl_stage |= dst_stage;
-            note_read_elision(false);
+            if (removed_a_barrier) note_read_elision(false);
             return;
         }
         if (last_state.layout == dst_layout && last_state.access_mask == dst_mask &&
