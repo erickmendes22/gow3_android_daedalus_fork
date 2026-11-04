@@ -47,7 +47,10 @@ public class ContentResolver { public java.io.InputStream openInputStream(androi
 'android/content/res/AssetManager.java':'''package android.content.res;
 public class AssetManager { public java.io.InputStream open(String path) throws java.io.IOException { throw new java.io.IOException("not used by non-Mali fixture"); } }''',
 'android/util/Log.java':'''package android.util;
-public class Log { public static int w(String tag,String msg,Throwable error) { return 0; } }''',
+public class Log {
+ public static int w(String tag,String msg,Throwable error) { return 0; }
+ public static int i(String tag,String msg) { return 0; }
+}''',
 'android/opengl/EGLDisplay.java':'package android.opengl; public class EGLDisplay {}',
 'android/opengl/EGLContext.java':'package android.opengl; public class EGLContext {}',
 'android/opengl/EGLSurface.java':'package android.opengl; public class EGLSurface {}',
@@ -98,6 +101,15 @@ class Harness {
   File files=new File(args[0],"files"); android.content.Context context=new android.content.Context(files);
   Map<String,String> env=new HashMap<>();
   assert GpuDriverManager.selected(context).equals("auto");
+  var migrate=GpuDriverManager.class.getDeclaredMethod("migratedG720Selection",
+      String.class, boolean.class, boolean.class);
+  migrate.setAccessible(true);
+  assert migrate.invoke(null,"panvk",true,false).equals("auto");
+  assert migrate.invoke(null,"panvk",true,true).equals("panvk");
+  assert migrate.invoke(null,"panvk",false,false).equals("panvk");
+  assert migrate.invoke(null,"panvk-next",true,false).equals("panvk-next");
+  assert migrate.invoke(null,"system",true,false).equals("system");
+  assert migrate.invoke(null,"custom:123",true,false).equals("custom:123");
   assert GpuDriverManager.installed(context).size()==1;
   String id=GpuDriverManager.installed(context).get(0).id;
   GpuDriverManager.select(context,"custom:"+id);

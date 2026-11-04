@@ -20,6 +20,10 @@ public final class GpuDriverManager {
     // Do not change the automatic driver or any Adreno/Exynos selections.
     private static final String PANVK_NEXT_ZIP="Mesa-PanVK-Android-v26.3.1-795ca7ff.adpkg.zip";
     private static final String PANVK_NEXT_SHA256="0c61ef0cdd5c9314715c4a0cc34a5929dbd727ce7a30545b947577e83600b900";
+    // Increment when the default driver generation changes again. The
+    // one-time upgrade converts legacy built-in 3.2 choices to "auto",
+    // where a driver failure can fall back safely instead of breaking boot.
+    private static final String G720_DEFAULT_MIGRATION_KEY="g720_panvk_2631_upgrade_v1";
 
     // PanVK CSF is NOT compatible with every Mali. Reject older
     // Job-Manager Mali (G52/G57/G76/G77/G78) and unknown GPU variants.
@@ -101,17 +105,32 @@ public final class GpuDriverManager {
     }
 
     private static boolean nextPanvkVerifiedAutoDevice(Context context) {
-        // The 26.3.1 release contains actual G615 MC6 validation, not G720
-        // gameplay validation. Keep G720 on the established driver by default.
+        // 26.3.1 carries CSF v12 / BC improvements intended for G720.
+        // Applies to BOTH the normal Bionic app and isolated malitest.
+        // Device-specific FPS still requires gameplay confirmation.
+        if (!supported(context)) return false;
         String renderer=maliRenderer();
         if (!supportedCsfMali(renderer)) return false;
         String normalized=renderer.toLowerCase(Locale.ROOT);
-        // 26.3.1 adds v12 CSF tiler recycling and BC memory/compiler
-        // improvements. A/B it on the isolated G720 malitest package ONLY.
-        // Never silently switch the established production Bionic G720.
-        if (context.getPackageName().equals("com.gow3.android.bionic.malitest") &&
-            normalized.contains("g720")) return true;
-        return normalized.contains("g615");
+        return normalized.contains("g720") || normalized.contains("g615");
+    }
+
+    static String migratedG720Selection(String oldSelection, boolean isG720,
+                                        boolean migrationApplied) {
+        // Before this release, an explicit built-in "panvk" selection was
+        // commonly retained from older installs, preventing improvements
+        // to the default driver from ever reaching those users.
+        // Convert ONLY that old 3.2 selection, ONCE, to auto. Do not
+        // overwrite "system", custom packages, or a newer explicit choice.
+        return isG720 && !migrationApplied && "panvk".equals(oldSelection)
+            ? "auto" : oldSelection;
+    }
+
+    private static boolean isCompatibleG720() {
+        if (!maliCandidate()) return false;
+        String renderer=maliRenderer();
+        return supportedCsfMali(renderer) &&
+               renderer.toLowerCase(Locale.ROOT).contains("g720");
     }
     public static String automaticDescription(Context context) {
         if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice(context)
@@ -155,14 +174,34 @@ public final class GpuDriverManager {
     }
     private static File root(Context context) { return new File(context.getFilesDir(),"gpu-drivers"); }
     public static String selected(Context context) {
-        return context.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("gpu_driver","auto");
+        final var prefs=context.getSharedPreferences("gow3",Context.MODE_PRIVATE);
+        final String old=prefs.getString("gpu_driver","auto");
+        if (!supported(context) ||
+            "1".equals(prefs.getString(G720_DEFAULT_MIGRATION_KEY,"0")) ||
+            !isCompatibleG720()) {
+            return old;
+        }
+        final String migrated=migratedG720Selection(old,true,false);
+        var editor=prefs.edit().putString(G720_DEFAULT_MIGRATION_KEY,"1");
+        if (!old.equals(migrated)) editor.putString("gpu_driver",migrated);
+        if (editor.commit()) {
+            if (!old.equals(migrated))
+                android.util.Log.i("GoW3","G720 driver upgraded from PanVK 3.2 to 26.3.1 automatic");
+            return migrated;
+        }
+        // If storage fails, the next call can retry; don't report success.
+        return old;
     }
     public static void select(Context context,String value) throws IOException {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
         else if ("panvk".equals(value) || "panvk-next".equals(value)) { if (!maliCandidate() || Build.VERSION.SDK_INT<35) throw new IOException("PanVK requires Mali and Android 15+"); }
         else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(value)) throw new IOException("Invalid driver selection");
-        if (!context.getSharedPreferences("gow3",Context.MODE_PRIVATE).edit().putString("gpu_driver",value).commit())
+        // A choice made AFTER this upgrade is deliberate. Never migrate an
+        // explicit return to PanVK 3.2 on the next app start.
+        if (!context.getSharedPreferences("gow3",Context.MODE_PRIVATE).edit()
+                .putString("gpu_driver",value)
+                .putString(G720_DEFAULT_MIGRATION_KEY,"1").commit())
             throw new IOException("Cannot save driver selection");
     }
     public static List<DriverArchive.Installed> installed(Context context) {
@@ -229,8 +268,8 @@ public final class GpuDriverManager {
                     environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
                     environment.put("GOW3_GPU_AUTO_REASON",
                         usingNext
-                            ? "PanVK 26.3.1 (CSF v12 G720 experimental A/B)"
-                            : "PanVK 3.2 (legacy Mali experimental)");
+                            ? "PanVK 26.3.1 (default Mali G720/G615)"
+                            : "PanVK 3.2 (legacy compatibility)");
                     return;
                 } catch (Exception ex) {
                     if ("panvk".equals(selection) || "panvk-next".equals(selection))

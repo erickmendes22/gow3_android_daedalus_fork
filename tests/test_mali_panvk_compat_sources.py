@@ -50,9 +50,10 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
 
     def test_verified_g615_auto_and_g720_isolated_driver_ab(self):
         src=(ROOT/"android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java").read_text()
-        self.assertIn('return normalized.contains("g615");',src)
+        self.assertIn('return normalized.contains("g720") || normalized.contains("g615");',src)
         self.assertIn('nextPanvkVerifiedAutoDevice(Context context)',src)
-        self.assertIn('context.getPackageName().equals("com.gow3.android.bionic.malitest")',src)
+        self.assertIn('migratedG720Selection(old,true,false)',src)
+        self.assertIn('G720_DEFAULT_MIGRATION_KEY',src)
         self.assertIn('normalized.contains("g720")',src)
         self.assertIn('"com.gow3.android.bionic.malitest".equals(pkg)',src)
         self.assertIn('("auto".equals(selection) && nextPanvkVerifiedAutoDevice(context))',src)

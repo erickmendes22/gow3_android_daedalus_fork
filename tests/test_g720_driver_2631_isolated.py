@@ -1,4 +1,4 @@
-"""CSF v12 26.3.1 A/B: malitest only, baseline and production unchanged."""
+"""CSF v12 26.3.1 default + one-time upgrade of legacy G720 installations."""
 from pathlib import Path
 import re
 import unittest
@@ -10,9 +10,13 @@ LAUNCH=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
 class G720DriverABTests(unittest.TestCase):
  def test_isolated_auto_branch(self):
   self.assertIn('nextPanvkVerifiedAutoDevice(Context context)',JAVA)
-  self.assertIn('context.getPackageName().equals("com.gow3.android.bionic.malitest")',JAVA)
+  self.assertIn('return normalized.contains("g720") || normalized.contains("g615");',JAVA)
+  self.assertIn('G720_DEFAULT_MIGRATION_KEY',JAVA)
+  self.assertIn('migratedG720Selection(old,true,false)',JAVA)
+  self.assertIn('if (!old.equals(migrated)) editor.putString("gpu_driver",migrated)',JAVA)
+  self.assertIn('.putString(G720_DEFAULT_MIGRATION_KEY,"1").commit()',JAVA)
   self.assertIn('normalized.contains("g720")',JAVA)
-  self.assertIn('return normalized.contains("g615");',JAVA)
+  self.assertIn('isCompatibleG720()',JAVA)
   self.assertIn('"com.gow3.android.bionic".equals(pkg)',JAVA)
   self.assertIn('"com.gow3.android.bionic.malitest".equals(pkg)',JAVA)
  def test_both_drivers_keep_explicit_control(self):
@@ -24,6 +28,6 @@ class G720DriverABTests(unittest.TestCase):
   self.assertIn('GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}',LAUNCH)
  def test_driver_log_identity(self):
   self.assertIn('GOW3_GPU_AUTO_REASON',JAVA)
-  self.assertIn('PanVK 26.3.1 (CSF v12 G720 experimental A/B)',JAVA)
-  self.assertIn('PanVK 3.2 (legacy Mali experimental)',JAVA)
+  self.assertIn('PanVK 26.3.1 (default Mali G720/G615)',JAVA)
+  self.assertIn('PanVK 3.2 (legacy compatibility)',JAVA)
 if __name__=="__main__": unittest.main()
