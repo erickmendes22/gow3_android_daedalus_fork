@@ -10,6 +10,13 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
       - 'gpu/shadps4/shader_recompiler/resource.h'
       - 'tests/test_mali_panvk_safe_mode.py'
+      # Re-run native verification when camera integration tests or new
+      # Mali menu/performance regression guards are corrected.
+      - 'tests/test_android_fsr_integration.py'
+      - 'tests/test_mali_menu_hotpath.py'
+      - 'tests/test_mali_menu_metrics.py'
+      - 'tests/test_mali_gc_budget_and_layout.py'
+      - 'tests/test_mali_perf_stats.py'
       - 'tests/test_mali_warmup_disable.py'
       - 'tests/test_bachata_release_mali_shader_resources.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
