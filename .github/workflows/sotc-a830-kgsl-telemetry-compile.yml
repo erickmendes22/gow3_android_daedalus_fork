@@ -25,10 +25,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android 37, CMake and NDK
+      - name: Install Android 37, CMake and NDK (runner SDK, no deprecated tools package)
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
-          sdkmanager --install 'platforms;android-37' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+          set -euo pipefail
+          echo "$ANDROID_HOME/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --install 'platforms;android-37' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
       - name: Compile Kotlin, Java and SotC JNI (no full game runtime)
         run: |
           chmod +x android-launcher/gradlew
