@@ -23,6 +23,8 @@ class BcImagePoolTest(unittest.TestCase):
   self.assertIn("budgets[i].usage * 10 > budgets[i].budget * 9",S)
   self.assertLess(I.index("FlushMaliBcImagePool(allocator)"),I.index("vmaDestroyAllocator(allocator)"))
   self.assertIn("size_bytes = std::exchange(other.size_bytes, 0);",H)
+  self.assertIn("reused_from_pool = std::exchange(other.reused_from_pool, false);",H)
+  self.assertIn("!backing->image.reused_from_pool",S)
   self.assertIn("GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}",RUN)
  def test_original_path_is_recoverable(self):
   self.assertIn("(!option || option[0] != '0')",S) if False else None

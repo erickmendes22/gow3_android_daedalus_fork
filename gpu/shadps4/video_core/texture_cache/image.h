@@ -54,7 +54,8 @@ struct UniqueImage {
           image{std::exchange(other.image, VK_NULL_HANDLE)},
           image_ci{std::move(other.image_ci)},
           size_bytes{std::exchange(other.size_bytes, 0)},
-          recycle_bc{std::exchange(other.recycle_bc, false)} {}
+          recycle_bc{std::exchange(other.recycle_bc, false)},
+          reused_from_pool{std::exchange(other.reused_from_pool, false)} {}
     UniqueImage& operator=(UniqueImage&& other) {
         if (this == &other) return *this;
         Destroy();
@@ -65,6 +66,7 @@ struct UniqueImage {
         image_ci = std::move(other.image_ci);
         size_bytes = std::exchange(other.size_bytes, 0);
         recycle_bc = std::exchange(other.recycle_bc, false);
+        reused_from_pool = std::exchange(other.reused_from_pool, false);
         return *this;
     }
 
@@ -88,6 +90,7 @@ public:
     vk::ImageCreateInfo image_ci{};
     vk::DeviceSize size_bytes{};
     bool recycle_bc = false; ///< Mali: recycle exact-format retired BC images only.
+    bool reused_from_pool = false; ///< Exclude recycled bytes from newly allocated VRAM stats.
 };
 
 // Must be called before vmaDestroyAllocator(). Never leave pooled VMA

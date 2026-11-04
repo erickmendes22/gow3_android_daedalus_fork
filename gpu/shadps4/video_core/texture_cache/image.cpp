@@ -258,6 +258,7 @@ void UniqueImage::Destroy() {
         allocation = VK_NULL_HANDLE;
         size_bytes = 0;
         recycle_bc = false;
+        reused_from_pool = false;
     }
 }
 
@@ -277,8 +278,10 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     VkImage unsafe_image{};
     if (recycle_bc && TakeBcImage(allocator, image_ci, unsafe_image, allocation, size_bytes)) {
         image = vk::Image{unsafe_image};
+        reused_from_pool = true;
         return;
     }
+    reused_from_pool = false;
     VmaAllocationInfo alloc_info{};
     VkResult result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
                                      &allocation, &alloc_info);
@@ -424,7 +427,9 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         std::getenv("GOW3_ANDROID_PORT") != nullptr;
     backing->image.Create(image_ci);
-    if (Vulkan::MaliPerfStats::Enabled())
+    // A hit reuses existing driver/VMA memory and must not be counted as a
+    // fresh image_alloc_bc_mib allocation in future performance logs.
+    if (Vulkan::MaliPerfStats::Enabled() && !backing->image.reused_from_pool)
         Vulkan::MaliPerfStats::RecordImageAllocation(info.props.is_block,
             info.pixel_format == vk::Format::eR32G32B32A32Uint,
             static_cast<uint64_t>(backing->image.size_bytes));
