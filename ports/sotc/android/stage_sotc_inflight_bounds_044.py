@@ -43,6 +43,13 @@ def patch_inflight(root:Path,gpu:Path)->None:
     for (const auto& item : readback.pending) {
         readback.inflight_lo = std::min(readback.inflight_lo, item.addr);
         readback.inflight_hi = std::max(readback.inflight_hi, item.addr + item.size);
+        // Copy ranges can expand to GPU page boundaries; include the actual
+        // copied bytes as well, so dependent readbacks never miss them.
+        for (const auto& copy : item.copies) {
+            const VAddr start = item.arena->cpu_addr + copy.srcOffset;
+            readback.inflight_lo = std::min(readback.inflight_lo, start);
+            readback.inflight_hi = std::max(readback.inflight_hi, start + copy.size);
+        }
     }
     inflight_readbacks.push_back(&readback);
     SotcStats::readback_finish.fetch_add(1, std::memory_order_relaxed);''',
