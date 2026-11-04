@@ -95,6 +95,14 @@ int main(void) {
         assert(runtime_memory_backing_pointer(first+11)==backing_base+11);
     }
     assert(pthread_join(worker,NULL)==0);
+    /* A validated direct cache entry at a distinct 8MiB / 64MiB arena
+     * must not evict the other one. This check concerns only placement:
+     * correctness still goes through the generation and dirty journal.
+     */
+#ifndef SOTC_VM_SLOT_LEGACY
+    assert(sotc_vm_slot(first)!=sotc_vm_slot(first+0x800000));
+    assert(sotc_vm_slot(first)!=sotc_vm_slot(first+0x4000000));
+#endif
     puts("SotC Bionic VM interval cache: changed/unrelated/overflow/adjacent/hole/concurrent OK");
     free(vmas);free(backing_base);
     return 0;
