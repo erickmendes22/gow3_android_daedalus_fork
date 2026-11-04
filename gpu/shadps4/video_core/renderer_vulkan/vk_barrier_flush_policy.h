@@ -9,7 +9,7 @@ struct BarrierFlushDecision {
     bool emit_memory;
     bool emit_images;
     bool retire_buffer_ranges;
-    bool has_work() const { return emit_memory || emit_images; }
+    constexpr bool has_work() const noexcept { return emit_memory || emit_images; }
 };
 
 constexpr BarrierFlushDecision DecideBarrierFlush(bool split_image_and_buffer,
