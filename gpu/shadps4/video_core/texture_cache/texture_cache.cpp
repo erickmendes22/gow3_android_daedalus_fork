@@ -812,12 +812,21 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
              a.alt_tile != b.alt_tile || a.num_samples != b.num_samples)) {
             static u32 rejected_overlap_layout = 0;
             if (++rejected_overlap_layout <= 12 || rejected_overlap_layout % 1000 == 0) {
-                std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT count=%u address=%#llx "
-                            "pitch=%u->%u tile=%u->%u samples=%u->%u\n",
+                // This is the PORT refusing unsafe alias reuse, not a
+                // PanVK driver rejection or a failed BCn decode. Log both
+                // Vulkan formats to identify whether BC1/BC3 is involved.
+                std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT source=port_alias_guard "
+                            "count=%u address=%#llx pitch=%u->%u tile=%u->%u "
+                            "samples=%u->%u cached_format=%s requested_format=%s "
+                            "cached_block=%u requested_block=%u safe_to_delete=%u\n",
                             rejected_overlap_layout,
                             static_cast<unsigned long long>(a.guest_address),
                             b.pitch, a.pitch, u32(b.tile_mode), u32(a.tile_mode),
-                            b.num_samples, a.num_samples);
+                            b.num_samples, a.num_samples,
+                            vk::to_string(b.pixel_format).c_str(),
+                            vk::to_string(a.pixel_format).c_str(),
+                            u32(b.props.is_block), u32(a.props.is_block),
+                            u32(safe_to_delete));
             }
             if (safe_to_delete) FreeImage(cache_image_id);
             return {merged_image_id, -1, -1};
@@ -1146,13 +1155,16 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             // resolution rather than being selected as an exact backing.
             static u32 layout_rejections = 0;
             if (++layout_rejections <= 12 || layout_rejections % 1000 == 0) {
-                std::printf("GOW3_TEXTURE_LAYOUT_REJECT count=%u address=%#llx "
-                            "pitch=%u->%u tile=%u->%u samples=%u->%u\n",
+                std::printf("GOW3_TEXTURE_LAYOUT_REJECT source=port_exact_match_guard "
+                            "count=%u address=%#llx pitch=%u->%u tile=%u->%u "
+                            "samples=%u->%u cached_format=%s requested_format=%s\n",
                             layout_rejections,
                             static_cast<unsigned long long>(info.guest_address),
                             cache_image.info.pitch, info.pitch,
                             u32(cache_image.info.tile_mode), u32(info.tile_mode),
-                            cache_image.info.num_samples, info.num_samples);
+                            cache_image.info.num_samples, info.num_samples,
+                            vk::to_string(cache_image.info.pixel_format).c_str(),
+                            vk::to_string(info.pixel_format).c_str());
             }
             continue;
         }
@@ -1718,8 +1730,23 @@ void TextureCache::GarbageCollectImages() {
         if (instance.IsIntegrated() || forced_budget) {
             const u64 budget = forced_budget ? forced_budget : instance.GetDeviceMemoryBudgetNow();
             if (budget != 0) {
+                // This is a GC pressure WATERMARK, not a hardware VRAM cap.
+                // On integrated Mali, a carefully bounded experiment may
+                // retain clean textures longer, avoiding expensive reuploads.
+                // Default stays 85% to preserve stable G720/G615 behavior;
+                // 86..90% are opt-in. Critical cleanup stays at 95%.
+                static const u32 mali_pressure_pct = [] {
+                    const char* mali = std::getenv("GOW3_MALI_CPU_PRESENT");
+                    const char* env = std::getenv("GOW3_MALI_GC_PRESSURE_PCT");
+                    if (!mali || mali[0] != '1' || !env) return 85u;
+                    char* end = nullptr;
+                    const unsigned long parsed = std::strtoul(env, &end, 10);
+                    if (end == env || *end != '\0' || parsed < 85 || parsed > 90)
+                        return 85u;
+                    return static_cast<u32>(parsed);
+                }();
                 trigger_gc_memory = budget / 10 * 7;
-                pressure_gc_memory = budget / 100 * 85;
+                pressure_gc_memory = budget / 100 * mali_pressure_pct;
                 critical_gc_memory = budget / 100 * 95;
             }
         }
