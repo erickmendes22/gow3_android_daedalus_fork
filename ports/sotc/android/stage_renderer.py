@@ -533,6 +533,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # PC 0.72 host staging reserve: no VRAM reserve; OFF unless UI opts in.
+    from stage_sotc_pc072_staging_keep_046 import patch_staging
+    patch_staging(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
