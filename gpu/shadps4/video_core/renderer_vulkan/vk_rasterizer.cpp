@@ -121,7 +121,9 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     // gow3: this thread joins the texture binding helper before it changes image state.
     runtime.SetImageAccessHook(&JoinBindHelper, this);
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
-        runtime.FlushBarriers();
+        // At queue boundaries preserve the old buffer-memory dependency and
+        // end the extended tracking epoch even if no conflict was seen yet.
+        runtime.FlushBarriers(true);
         buffer_cache.SubmitPendingArenaBinds(info);
     });
 }

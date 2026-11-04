@@ -6,6 +6,7 @@
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_barrier_tracker.h"
+#include "video_core/renderer_vulkan/vk_barrier_flush_policy.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/types.h"
@@ -97,7 +98,8 @@ public:
     bool IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 size,
                           bool check_read_access = false);
 
-    void FlushBarriers();
+    // force_buffer_barrier is used at queue submission to retire accumulated ranges.
+    void FlushBarriers(bool force_buffer_barrier = false);
 
     /// gow3: runs before this thread changes image state (layouts, pending image
     /// barriers): the rasterizer joins its texture binding helper there (BindHelper).
@@ -121,6 +123,10 @@ private:
     BarrierTracker barrier_tracker;
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};
+    // A Mali image-only transition may defer the unrelated global buffer
+    // dependency. Do NOT clear ranges until a buffer hazard or queue submit.
+    bool buffer_hazard_pending = false;
+    bool split_image_buffer_barriers = false;
     // gow3: ranges inserted into barrier_tracker since its last Clear(); re-inserting a
     // contained range is a no-op, and draws re-bind the same ranges constantly.
     struct AccessMemo {

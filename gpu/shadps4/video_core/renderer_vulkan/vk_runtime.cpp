@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#include <cstdlib>
 #include "gow3_toggles.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -105,6 +106,17 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
     memory_barrier.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
     memory_barrier.dstAccessMask =
         vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+#ifdef __ANDROID__
+    // The PanVK/GoW3 hot path submits ~thousands of draws per game frame.
+    // Image layout changes previously emitted an unrelated global buffer
+    // barrier, even when no buffer RAW/WAR/WAW dependency was found.
+    // Restrict this experiment to Mali; =0 restores the original schedule.
+    const char* split = std::getenv("GOW3_MALI_IMAGE_BARRIER_SPLIT");
+    split_image_buffer_barriers =
+        std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!split || split[0] != '0');
+#endif
 }
 
 void Runtime::TickFrame() {
@@ -811,6 +823,10 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
     if (check_read_access && !has_access) {
         has_access |= barrier_tracker.FindRange(range, Access::Read);
     }
+    // Includes WAR execution dependencies: read->write is not harmless.
+    // The old global memory barrier must still be emitted for any overlapping
+    // writer or prior read when the next operation writes the same range.
+    buffer_hazard_pending |= has_access;
     return has_access;
 }
 
@@ -870,25 +886,21 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
     memory_barrier.srcAccessMask |= src_access & WRITE_MASK;
 }
 
-void Runtime::FlushBarriers() {
+void Runtime::FlushBarriers(bool force_buffer_barrier) {
     BeforeImageAccess();
-    vk::DependencyInfo dep_info{};
-
-    if (memory_barrier.srcStageMask) {
-        dep_info.pMemoryBarriers = &memory_barrier;
-        dep_info.memoryBarrierCount = 1U;
-    }
-    if (!image_barriers.empty()) {
-        dep_info.pImageMemoryBarriers = image_barriers.data();
-        dep_info.imageMemoryBarrierCount = static_cast<u32>(image_barriers.size());
-    }
-
-    if (!dep_info.memoryBarrierCount && !dep_info.imageMemoryBarrierCount) {
+    const auto decision = DecideBarrierFlush(
+        split_image_buffer_barriers, buffer_hazard_pending, force_buffer_barrier,
+        bool(memory_barrier.srcStageMask), !image_barriers.empty());
+    if (!decision.has_work()) {
         return;
     }
 
+    // An image-only dependency needs only its VkImageMemoryBarrier2 entries.
+    // Preserve the buffer tracker and pending src stage/access masks until
+    // a real buffer hazard or queue submission, otherwise future RAW/WAR/WAW
+    // dependencies would be silently dropped after an unrelated image transit.
     scheduler.EndRendering();
-    scheduler.Record([memory = memory_barrier, has_memory = dep_info.memoryBarrierCount != 0,
+    scheduler.Record([memory = memory_barrier, has_memory = decision.emit_memory,
                       images = scheduler.RecordData(std::span<const vk::ImageMemoryBarrier2>(
                           image_barriers.data(), image_barriers.size()))](vk::CommandBuffer cmdbuf) {
         const vk::DependencyInfo info = {
@@ -900,12 +912,14 @@ void Runtime::FlushBarriers() {
         cmdbuf.pipelineBarrier2(info);
     });
 
-    memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
-    memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
-
     image_barriers.clear();
-    barrier_tracker.Clear();
-    ++access_epoch;
+    if (decision.retire_buffer_ranges) {
+        memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
+        memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+        barrier_tracker.Clear();
+        buffer_hazard_pending = false;
+        ++access_epoch;
+    }
 }
 
 } // namespace Vulkan
