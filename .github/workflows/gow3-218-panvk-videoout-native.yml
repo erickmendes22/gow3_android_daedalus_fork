@@ -16,10 +16,14 @@ on:
       - 'tests/test_mali_pm4_unused_checksum.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_draw_prep.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.h'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
       - 'tests/test_mali_pm4_unused_dirty.py'
+      - 'tests/test_mali_bc_image_pool.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_barrier_flush_policy.h'
       # Re-run native verification when camera integration tests or new
       # Mali menu/performance regression guards are corrected.
@@ -169,6 +173,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_image_barrier_split.py' -v
           python -m unittest discover -s tests -p 'test_mali_pm4_unused_checksum.py' -v
           python -m unittest discover -s tests -p 'test_mali_pm4_unused_dirty.py' -v
+          python -m unittest discover -s tests -p 'test_mali_bc_image_pool.py' -v
           python -m unittest discover -s tests -p 'test_mali_warmup_disable.py' -v
           python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
           python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v

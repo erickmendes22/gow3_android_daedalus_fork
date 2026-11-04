@@ -48,9 +48,13 @@ struct UniqueImage {
     UniqueImage& operator=(const UniqueImage&) = delete;
 
     UniqueImage(UniqueImage&& other)
-        : allocator{std::exchange(other.allocator, VK_NULL_HANDLE)},
+        : device{other.device},
+          allocator{std::exchange(other.allocator, VK_NULL_HANDLE)},
           allocation{std::exchange(other.allocation, VK_NULL_HANDLE)},
-          image{std::exchange(other.image, VK_NULL_HANDLE)}, image_ci{std::move(other.image_ci)} {}
+          image{std::exchange(other.image, VK_NULL_HANDLE)},
+          image_ci{std::move(other.image_ci)},
+          size_bytes{std::exchange(other.size_bytes, 0)},
+          recycle_bc{std::exchange(other.recycle_bc, false)} {}
     UniqueImage& operator=(UniqueImage&& other) {
         if (this == &other) return *this;
         Destroy();
@@ -59,6 +63,8 @@ struct UniqueImage {
         allocator = std::exchange(other.allocator, VK_NULL_HANDLE);
         allocation = std::exchange(other.allocation, VK_NULL_HANDLE);
         image_ci = std::move(other.image_ci);
+        size_bytes = std::exchange(other.size_bytes, 0);
+        recycle_bc = std::exchange(other.recycle_bc, false);
         return *this;
     }
 
@@ -81,7 +87,13 @@ public:
     vk::Image image{};
     vk::ImageCreateInfo image_ci{};
     vk::DeviceSize size_bytes{};
+    bool recycle_bc = false; ///< Mali: recycle exact-format retired BC images only.
 };
+
+// Must be called before vmaDestroyAllocator(). Never leave pooled VMA
+// allocations alive after the Vulkan instance is destroyed.
+void FlushMaliBcImagePool(VmaAllocator allocator);
+
 
 struct Image {
     explicit Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime,

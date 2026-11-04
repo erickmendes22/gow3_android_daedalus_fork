@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/texture_cache/image.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 
 #include <vk_mem_alloc.h>
@@ -187,6 +188,8 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
 
 Instance::~Instance() {
     ImGui::Core::Shutdown(GetDevice());
+    // Pool objects own VMA allocations and must die before their allocator.
+    VideoCore::FlushMaliBcImagePool(allocator);
     vmaDestroyAllocator(allocator);
 }
 
