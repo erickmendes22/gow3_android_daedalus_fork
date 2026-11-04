@@ -956,8 +956,22 @@ static int sotc_vm_cache_on(void) {
     }
     return value;
 }
+/* SotC Bionic: physical/guest arena regions commonly repeat at MiB-spaced
+ * addresses. Indexing only low 9 address-page bits aliases every 8 MiB, so
+ * unrelated mapped resources evict each other before the next GPU draw.
+ *
+ * Fold higher page-address bits into the same 512 direct slots. This changes
+ * ONLY where an already validated VMA descriptor is stored. The journal and
+ * lock-based slow path are unchanged. The compile-time legacy variant exists
+ * solely for repeatable non-APK host A/B benchmarks.
+ */
 static size_t sotc_vm_slot(uintptr_t address) {
-    return (address>>14)&(SOTC_VM_DIRECT_SLOTS-1);
+    const uintptr_t page=address>>14;
+#ifdef SOTC_VM_SLOT_LEGACY
+    return page & (SOTC_VM_DIRECT_SLOTS-1);
+#else
+    return (page ^ (page>>9) ^ (page>>18)) & (SOTC_VM_DIRECT_SLOTS-1);
+#endif
 }
 static int sotc_vm_cached_valid(CachedRegion *c, uint64_t generation) {
     if (!c->end || !c->start || (generation & 1 && !sotc_vm_cache_on())) return 0;
