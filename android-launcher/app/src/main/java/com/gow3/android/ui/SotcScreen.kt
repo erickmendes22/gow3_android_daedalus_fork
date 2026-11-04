@@ -306,6 +306,13 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Desligado por padrão. A cada 5 s registra CPU real das threads de desenho/processamento, tempo em binds, readback, esperas GPU, texturas e comandos. A medição tem custo: desligue ao comparar FPS e reinicie para aplicar."
                          else "OFF by default. Logs real draw/command CPU time, binds, readbacks, GPU waits, textures and command costs every 5 s. Profiling has overhead: disable for FPS comparisons and restart to apply.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Registrar GPU KGSL e frequência nos logs (diagnóstico)"
+                                      else "Log KGSL GPU load and clock (diagnostic)",
+                        (values["sotc_kgsl_utilization_log"]?:"0")=="1",
+                        {save("sotc_kgsl_utilization_log",if(it)"1" else "0")})
+                    Text(if(pt) "Desligado por padrão. Cria logs/kgsl-gpu-utilization-*.csv com atividade estimada KGSL, gpubusy sysfs e MHz da GPU a cada 2 s. KGSL faz amostragens de alta frequência (custo de CPU); compare FPS com a opção desligada."
+                         else "OFF by default. Exports logs/kgsl-gpu-utilization-*.csv with KGSL estimate, sysfs gpubusy and GPU MHz every 2 s. Native sampling adds CPU overhead; measure actual FPS with this option OFF.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Reuso exato de especializações FS/CS (CPU)"
                                       else "Exact FS/CS shader specialization reuse (CPU)",
                         (values["sotc_stage_spec_memo"]?:"1")=="1",
