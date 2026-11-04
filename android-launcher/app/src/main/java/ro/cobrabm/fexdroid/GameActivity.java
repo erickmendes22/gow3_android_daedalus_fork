@@ -651,6 +651,15 @@ public final class GameActivity extends Activity {
                 // Asynchronous GPU readback is a reversible SotC-only setting.
                 env.put("SOTC_RB_ASYNC",
                         "1".equals(setting("sotc_rb_async")) ? "1" : "0");
+                // PC 0.71 T38: double-free guard on the game's 64KiB direct page pool.
+                // Keep enabled even when PC 0.72 fast GPU readbacks are OFF.
+                env.put("SOTC_POOL_OWNER","1");
+                // PC 0.72 +25% PC-only Shrine result; optional here until Android tests.
+                // Precise Readback 2 required; game-revision check in probe fails closed.
+                env.put("SOTC_RB_HOT",
+                        "1".equals(setting("sotc_pc072_fast_readbacks")) &&
+                        !"0".equals(setting("sotc_readbacks")) &&
+                        !"1".equals(setting("sotc_readbacks")) ? "1" : "0");
                 // Exact native SotC sequential GPU readbacks with bounded prefetch.
                 env.put("SOTC_RB_STREAM",
                         "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
