@@ -651,6 +651,14 @@ public final class GameActivity extends Activity {
                 // Asynchronous GPU readback is a reversible SotC-only setting.
                 env.put("SOTC_RB_ASYNC",
                         "1".equals(setting("sotc_rb_async")) ? "1" : "0");
+                // PC 0.71: fast contended guest mutex wait; off unless measured.
+                env.put("SOTC_MUTEX_SPIN_US",
+                        "1".equals(setting("sotc_pc071_mutex_spin")) ? "20" : "0");
+                // PC 0.72: prewarm HOST RAM staging only (2 x 16 MiB per host type).
+                // The pinned renderer retains its original size classes and never
+                // prewarms DeviceLocal VRAM. Keep OFF until A/B confirms benefit.
+                env.put("SOTC_STAGING_KEEP_MB",
+                        "1".equals(setting("sotc_pc072_staging_prewarm")) ? "32" : "0");
                 // PC 0.71 T38: double-free guard on the game's 64KiB direct page pool.
                 // Keep enabled even when PC 0.72 fast GPU readbacks are OFF.
                 env.put("SOTC_POOL_OWNER","1");
