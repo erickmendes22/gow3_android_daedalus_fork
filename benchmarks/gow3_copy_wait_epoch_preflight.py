@@ -103,7 +103,7 @@ void run() {
     const auto ordinary_ended = std::chrono::steady_clock::now();
     const auto ordinary_us = std::chrono::duration<double,std::micro>(
         ordinary_ended-ordinary_started).count()/4000.0;
-    std::printf("GOW3_COPY_CONTROL mode=MODE empty_ns=%.3f one_copy_us=%.3f\\n",
+    std::printf("GOW3_COPY_CONTROL mode=MODE empty_ns=%.3f one_copy_us=%.3f\n",
                 empty_ns, ordinary_us);
     std::printf("GOW3_COPY_EPOCH mode=MODE elapsed_ms=%.3f "
                 "prefix_done=%d later_done_at_barrier=%d\n",
@@ -143,9 +143,10 @@ def run_mode(text: str, mode: str, temp: Path):
         raise ValueError("Pre-barrier copy was not completed")
     suffix = re.search(r"later_done_at_barrier=(\d+)",output)
     elapsed = re.search(r"elapsed_ms=([\d.]+)",output)
-    if not suffix or not elapsed:
+    control = re.search(r"one_copy_us=([\d.]+)", output)
+    if not suffix or not elapsed or not control:
         raise ValueError("Missing benchmark output")
-    return float(elapsed.group(1)),int(suffix.group(1)),output.strip()
+    return float(elapsed.group(1)),int(suffix.group(1)),float(control.group(1)),output.strip()
 
 
 if __name__ == "__main__":
@@ -154,8 +155,8 @@ if __name__ == "__main__":
     current = (ROOT/FILE).read_text()
     with tempfile.TemporaryDirectory(prefix="gow3-copy-epoch-") as tmp:
         directory = Path(tmp)
-        old_ms, old_future, old_out = run_mode(baseline,"baseline",directory)
-        new_ms, new_future, new_out = run_mode(current,"candidate",directory)
+        old_ms, old_future, old_normal_us, old_out = run_mode(baseline,"baseline",directory)
+        new_ms, new_future, new_normal_us, new_out = run_mode(current,"candidate",directory)
     print(old_out)
     print(new_out)
     print("HOST PREFLIGHT: confirmed relative reduction",
@@ -163,6 +164,10 @@ if __name__ == "__main__":
     assert old_future == 1, "Baseline did not include post-barrier task"
     assert new_future == 0, "Candidate still waited for a post-barrier task"
     assert new_ms < old_ms * 0.70, "No substantial wait reduction in synthetic overlap"
+    # Avoid CI host jitter while still rejecting the former heap-callback
+    # implementation's observed 2.067us -> 3.575us normal-path regression.
+    assert new_normal_us <= old_normal_us * 1.5 or new_normal_us - old_normal_us <= 1.0, (
+        f"Ordinary one-copy barrier regressed: {old_normal_us:.3f}us -> {new_normal_us:.3f}us")
     print("PASS: pre-barrier copies complete and later copies do not delay the wait.")
     print("LIMITATION: Crafted host concurrency case. Not measured GoW3 PanVK FPS;"
           " requires evidence of late-copy contention before promoting an APK.")
