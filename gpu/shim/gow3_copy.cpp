@@ -74,16 +74,31 @@ public:
         callback();
     }
 
-    void WaitAll() {
-        // The waiting thread helps instead of only spinning.
-        while (true) {
+    void WaitIssued() {
+        // A submission only depends on the copies issued before this barrier.
+        // Waiting for a globally empty pool also waits for unrelated later
+        // copies from other producer threads and can starve under continuous
+        // uploads. Close the current epoch under the queue mutex, and help
+        // only tasks belonging to that epoch or any earlier epoch.
+        std::atomic<bool> done{false};
+        u64 last_required_epoch{};
+        {
+            std::unique_lock lk{mutex};
+            if (epochs.size() == 1 && epochs.back().pending == 0 && !draining) {
+                return;
+            }
+            last_required_epoch = epoch_base + epochs.size() - 1;
+            epochs.back().callbacks.emplace_back([&done] {
+                done.store(true, std::memory_order_release);
+            });
+            epochs.emplace_back();
+        }
+        while (!done.load(std::memory_order_acquire)) {
             Task task;
             {
                 std::scoped_lock lk{mutex};
-                if (pending == 0 && epochs.size() == 1 && !draining) {
-                    return;
-                }
-                if (!async_tasks.empty()) {
+                if (!async_tasks.empty() &&
+                    async_tasks.front().epoch <= last_required_epoch) {
                     task = std::move(async_tasks.front());
                     async_tasks.pop_front();
                 }
@@ -291,7 +306,7 @@ void WaitAsync() {
         batch.items.clear();
         batch.bytes = 0;
     }
-    GetPool().WaitAll();
+    GetPool().WaitIssued();
 }
 
 void ParallelFor(std::size_t count, const std::function<void(std::size_t)>& task) {
