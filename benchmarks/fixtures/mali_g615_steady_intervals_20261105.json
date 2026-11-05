@@ -1,0 +1,296 @@
+{
+  "source_log": "GodOfWar3-Logs-20261105-152530.zip",
+  "source_sha256": "9ca4977665a27011cc9bcb5977d4cb309649909c9a816cb96ce443b62e9cf97f",
+  "device": "Mali-G615 MC6",
+  "resolution": "1280x720",
+  "provenance": "Four contiguous real device interval_ms summaries at ~7 FPS, indexes 8-11; no new pipelines or image allocations",
+  "fields": [
+    "prepare",
+    "gpu_draw_cpu",
+    "pipeline_lookup",
+    "pm4_submit_wall",
+    "submit_host_copy_wait",
+    "submit_throttle",
+    "fence_wait",
+    "ahb_total",
+    "submit_mutex",
+    "submit_vk_queue",
+    "graphics_pipeline_new",
+    "image_bc_new",
+    "image_rgba128_new",
+    "image_other_new"
+  ],
+  "sample_factors": {
+    "prepare": 32,
+    "gpu_draw_cpu": 256,
+    "pipeline_lookup": 256,
+    "pm4_submit_wall": 32,
+    "submit_host_copy_wait": 32,
+    "submit_throttle": 1,
+    "fence_wait": 32,
+    "ahb_total": 32,
+    "submit_mutex": 32,
+    "submit_vk_queue": 32,
+    "graphics_pipeline_new": 1,
+    "image_bc_new": 1,
+    "image_rgba128_new": 1,
+    "image_other_new": 1
+  },
+  "intervals": [
+    {
+      "source_index": 8,
+      "interval_ms": 8906,
+      "values": [
+        [
+          2,
+          3.9
+        ],
+        [
+          116,
+          4.44
+        ],
+        [
+          116,
+          1.25
+        ],
+        [
+          108,
+          108.58
+        ],
+        [
+          10,
+          0.43
+        ],
+        [
+          321,
+          2.45
+        ],
+        [
+          2,
+          4.25
+        ],
+        [
+          2,
+          6.29
+        ],
+        [
+          10,
+          0.01
+        ],
+        [
+          10,
+          4.06
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "source_index": 9,
+      "interval_ms": 9155,
+      "values": [
+        [
+          2,
+          2.94
+        ],
+        [
+          115,
+          5.94
+        ],
+        [
+          115,
+          2.22
+        ],
+        [
+          108,
+          110.71
+        ],
+        [
+          10,
+          0.12
+        ],
+        [
+          320,
+          2.12
+        ],
+        [
+          2,
+          5.19
+        ],
+        [
+          2,
+          11.89
+        ],
+        [
+          10,
+          0.01
+        ],
+        [
+          10,
+          1.77
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "source_index": 10,
+      "interval_ms": 9002,
+      "values": [
+        [
+          2,
+          4.58
+        ],
+        [
+          115,
+          7.09
+        ],
+        [
+          115,
+          2.86
+        ],
+        [
+          108,
+          89
+        ],
+        [
+          10,
+          0.19
+        ],
+        [
+          320,
+          1.1
+        ],
+        [
+          2,
+          1.15
+        ],
+        [
+          2,
+          13.96
+        ],
+        [
+          10,
+          0.01
+        ],
+        [
+          10,
+          5.39
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "source_index": 11,
+      "interval_ms": 8661,
+      "values": [
+        [
+          2,
+          4.47
+        ],
+        [
+          116,
+          4.91
+        ],
+        [
+          116,
+          1.23
+        ],
+        [
+          108,
+          141.46
+        ],
+        [
+          10,
+          0.04
+        ],
+        [
+          320,
+          4.88
+        ],
+        [
+          2,
+          5.81
+        ],
+        [
+          2,
+          18.51
+        ],
+        [
+          10,
+          15.24
+        ],
+        [
+          10,
+          2.45
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    }
+  ],
+  "notes": [
+    "Numbers are sampled totals, NOT per-frame measured stage times.",
+    "Estimated frames = 32 * number of sampled prepare calls; ~256 across these intervals, quantization +/-32 per interval.",
+    "PM4 wall clock includes draw CPU plus suspensions and yields, so do not sum PM4 and draw stages.",
+    "submit_throttle measured on every throttle and is not scaled 32x.",
+    "A stage's removal is an optimistic bound, NOT a measured FPS uplift or guaranteed critical-path saving."
+  ]
+}
