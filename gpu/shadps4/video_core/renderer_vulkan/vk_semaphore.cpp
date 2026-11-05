@@ -20,7 +20,7 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     const char* opt = std::getenv("GOW3_MALI_DIRECT_TIMELINE_WAIT");
     direct_timeline_wait = std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
-                           (!opt || opt[0] != '0');
+                           (opt && opt[0] == '1');
 #endif
     const vk::StructureChain semaphore_chain = {
         vk::SemaphoreCreateInfo{},
