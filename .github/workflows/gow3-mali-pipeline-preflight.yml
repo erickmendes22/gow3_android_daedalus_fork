@@ -10,6 +10,8 @@ on:
       - 'tests/test_mali_draw_perf_gate.py'
       - 'tests/test_mali_frame_budget_gate.py'
       - 'tests/test_mali_zero_worker_checksum.py'
+      - 'tests/test_mali_pm4_unused_checksum.py'
+      - 'tests/test_mali_pm4_unused_dirty.py'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shim/gow3_copy.cpp'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
@@ -41,6 +43,8 @@ jobs:
       - name: Test actual Mali no-worker PM4 checksum and benchmark its cost
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_zero_worker_checksum.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_pm4_unused_checksum.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_pm4_unused_dirty.py' -v
           python3 benchmarks/mali_pm4_checksum_gate.py
       - name: Compare actual GoW3 copy pool baseline and bounded epoch wait
         run: |
