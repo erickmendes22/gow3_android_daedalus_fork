@@ -51,6 +51,7 @@ protected:
     vk::UniqueSemaphore semaphore;    ///< Timeline semaphore.
     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
     std::atomic<u64> current_tick{1}; ///< Current logical tick.
+    bool direct_timeline_wait = false; ///< Mali: a successful timeline wait proves tick completion.
 };
 
 } // namespace Vulkan
