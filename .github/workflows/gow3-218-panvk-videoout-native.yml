@@ -2,9 +2,11 @@ name: GoW3 2.1.8 Mali PanVK VideoOut isolated native verification
 
 on:
   push:
-    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
+    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031, analysis/gow3-mali-pipeline-preflight-20261105]
     paths:
       - '.github/workflows/gow3-218-panvk-videoout-native.yml'
+      - 'benchmarks/gow3_pm4_contended_producer_gate.py'
+      - 'tests/test_mali_pm4_backoff_launch.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
@@ -118,7 +120,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031'
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -132,10 +134,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Require measured Mali performance preflight BEFORE native build or APK
+      - name: Require measured improvement preflight BEFORE native build or APK
         run: |
-          python -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
-          python benchmarks/mali_draw_perf_gate.py
+          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 ]]; then
+            python3 -m unittest discover -s tests -p 'test_mali_pm4_backoff_launch.py' -v
+            python3 -m unittest discover -s tests -p 'test_mali_steady_state_cost_gate.py' -v
+            python3 benchmarks/gow3_pm4_idle_coroutine_gate.py
+            python3 benchmarks/gow3_pm4_contended_producer_gate.py
+          else
+            python3 -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
+            python3 benchmarks/mali_draw_perf_gate.py
+          fi
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -150,7 +159,12 @@ jobs:
           key: bionic-development-signing-v1
       - name: Check existing signing identity (never replace it)
         run: |
-          if test -s .local-deps/android/bionic-development.keystore; then
+          # This analysis branch must ALWAYS produce a separate-install test APK.
+          # Never overwrite the signed production app from an experiment.
+          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 ]]; then
+            echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
+            echo "Mali PM4 experiment: separate-install debug identity required"
+          elif test -s .local-deps/android/bionic-development.keystore; then
             echo "GOW3_CAN_SIGN=1" >> "$GITHUB_ENV"
           else
             echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
@@ -248,7 +262,7 @@ jobs:
       - name: Upload compiled Mali GPU renderer
         uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-graphics-native-verified
+          name: GoW3-Mali-PM4-Coroutine-Native-Verified
           path: out/bionic/lib/libgow3gpu.so
           if-no-files-found: error
       - name: Package, sign and validate GoW3 2.1.8 APK
@@ -265,7 +279,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: env.GOW3_CAN_SIGN != '1'
         with:
-          name: God-of-War-III-Mali-Standalone-Diagnostic
+          name: God-of-War-III-Mali-PM4-Coroutine-Tester-APK
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
