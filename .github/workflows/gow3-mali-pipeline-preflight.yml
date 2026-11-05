@@ -9,6 +9,8 @@ on:
       - 'benchmarks/**'
       - 'tests/test_mali_draw_perf_gate.py'
       - 'tests/test_mali_frame_budget_gate.py'
+      - 'tests/test_mali_zero_worker_checksum.py'
+      - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
 
 permissions:
@@ -33,6 +35,10 @@ jobs:
       - name: Check mathematical tests for the rejected image-free-draw hypothesis
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
+      - name: Test actual Mali no-worker PM4 checksum and benchmark its cost
+        run: |
+          python3 -m unittest discover -s tests -p 'test_mali_zero_worker_checksum.py' -v
+          python3 benchmarks/mali_pm4_checksum_gate.py
       - name: Frame-budget gate for CPU-only steady FPS hypotheses
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_frame_budget_gate.py' -v
