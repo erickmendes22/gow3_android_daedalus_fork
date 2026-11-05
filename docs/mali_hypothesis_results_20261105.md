@@ -107,3 +107,86 @@ branch is unchanged, and the 10 ms/frame gate remains intact.
 
 Copy-pool and PM4 test run (no APK):
 https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/42019263894
+
+## Follow-up: four **actual** G615 steady-state log intervals and new PM4 hypothesis
+
+After finding the original uploaded ZIP in the Library, the source fixture was
+reconstructed from the real `GodOfWar3-Logs-20261105-152530.zip` rather than
+from a synthetic workload. Original source SHA-256:
+`9ca4977665a27011cc9bcb5977d4cb309649909c9a816cb96ce443b62e9cf97f`.
+The four consecutive no-new-pipeline/no-image-allocation intervals (35,724 ms
+wall total, estimated 256 delivered frames) give approximately **7.166 FPS**
+and **139.547 ms/frame**; the frame count is inferred from prepare samples
+(1/32), not an exact display-frame counter.
+
+| Stage | Estimated ms/frame | Important interpretation |
+|---|---:|---|
+| `pm4_submit_wall` | 56.219 | Sampled wall time, can include nested ProcessGraphics and coroutine suspension |
+| `gpu_draw_cpu` | 22.380 | Inside PM4 wall in part; do NOT add to PM4 |
+| `pipeline_lookup` | 7.560 | Subset of draw CPU; even perfect elimination <10 ms/frame |
+| `submit_host_copy_wait` | 0.098 | Entire stage far below 10 ms/frame |
+| `submit_throttle` | 0.041 | Every throttle is counted, no 1/32 multiplier |
+| `fence_wait` | 2.050 | Host fence stall, not necessarily pure GPU work |
+| `ahb_total` | 6.331 | Sampled CPU presentation |
+| `submit_mutex` | 1.909 | Includes one isolated 15.24 ms sampled spike; not proof of persistent 1.9 ms contention |
+
+See `benchmarks/fixtures/mali_g615_steady_intervals_20261105.json`,
+`benchmarks/mali_steady_state_cost_gate.py`, and
+`tests/test_mali_steady_state_cost_gate.py`. The no-APK workflow now
+**rejects** a proposal predicated on a 10 ms/frame improvement from eliminating
+copy waits or timeline throttle alone.
+
+### Safety changes from real device metrics
+
+- `GOW3_MALI_COPY_EPOCH_WAIT=1` now required to enable the epoch-bounded
+  wait experiment; original `Pool::WaitAll` is the **default**. Host
+  one-copy timing proved noisy across runs (including a regression).
+- `GOW3_MALI_DIRECT_TIMELINE_WAIT=1` now required for the alternative
+  timeline-semaphore wait; original refresh is the **default**. The real
+  `submit_throttle` budget is only 0.041 ms/frame, and host Vulkan
+  already-signaled timing varied between benchmark executions.
+- Both are unproven for significant Mali game FPS and remain analysis-only.
+
+### New PM4 blocked-coroutine CPU occupancy test
+
+`Liverpool::Process` resumes a guest PM4 fiber in a loop. A `WaitRegMem`,
+`MemSemaphore`, or `Rewind` operation can repeatedly `co_yield` while its
+condition is unresolved. With no other runnable guest submit or command, the
+resuming thread can busy-spin while the producer still needs CPU.
+
+A deliberately **opt-in** analysis-only experiment tags exactly those blocked
+PM4 coroutine yield states and, only when `num_submits==1`,
+`num_commands==0`, and Mali PanVK is active, permits a short backoff
+through `GOW3_MALI_PM4_IDLE_BACKOFF_US=1..100`; the variable is **unset**
+by default, and draws, fulfilled waits and concurrent-submit cases retain
+their old behavior.
+
+`benchmarks/gow3_pm4_idle_coroutine_gate.py` compiles Liverpool's actual
+C++ Task coroutine structure and models the scheduler with a 35 ms blocked
+condition, then checks per-thread CPU clock as well as wall clock:
+
+| Host blocked-coroutine synthetic | Baseline | Candidate 20µs |
+|---|---:|---:|
+| CPU occupancy for 35 ms blocked wait | 35.086 ms | 2.341 ms |
+| Elapsed wall-clock waiting | 35.081 ms | 35.109 ms |
+| Resume count | 17,951,256 | 458 |
+| Release-to-resume delay | 0.002 ms | 0.039 ms |
+| Other runnable submit | unthrottled | unthrottled |
+
+The approximately **32.745 ms saved are CPU occupancy in an intentionally
+blocked 35 ms test**, **not removed frame time**. Actual G615 logs do not
+contain per-opcode blocked-yield counts or an isolated GPU command-thread
+CPU-time breakdown, so we cannot infer how often the test scenario occurs
+or claim game FPS gain. This is why the branch remains experimental and
+no APK was generated.
+
+The full native no-APK preflight workflow with original code, negative
+controls, actual G615 sample-factor gates, the Vulkan timeline API experiment,
+and the PM4 coroutine experiment:
+https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/42026758570
+
+**Next decision criterion:** prioritize a measured change that reduces an
+observed recurring >=10 ms/frame component, not a large percentage on
+an unobserved synthetic case. For PM4, a material claim requires evidence
+of the blocked wait opcode frequency AND per-thread CPU-clock usage; wall
+time alone confounds nested coroutines, GPU waits, and CPU work.
