@@ -185,8 +185,30 @@ void Liverpool::Process(std::stop_token stoken) {
                 task = queue.submits.front();
             }
             task.resume();
-
+#ifdef __ANDROID__
+            // An unresolved guest memory label can make this sole coroutine
+            // yield immediately, over and over, spinning a CPU core while
+            // FEX/the producer or Vulkan is still completing the operation.
+            // Do not sleep while other guest submits or commands can progress.
+            // Opt-in only: host synthetic tests cannot establish frequency
+            // or FPS benefit in the real G615 capture.
+            static const unsigned idle_backoff_us = [] {
+                const char* driver = std::getenv("GOW3_VULKAN_DRIVER");
+                const char* opt = std::getenv("GOW3_MALI_PM4_IDLE_BACKOFF_US");
+                if (!std::getenv("GOW3_ANDROID_PORT") || !driver ||
+                    !std::strstr(driver, "panfrost") || !opt) return 0u;
+                const int us = std::atoi(opt);
+                return us >= 1 && us <= 100 ? unsigned(us) : 0u;
+            }();
+            if (idle_backoff_us && gfx_blocked_fiber_wait &&
+                num_submits.load(std::memory_order_relaxed) == 1 &&
+                num_commands.load(std::memory_order_relaxed) == 0 &&
+                !task.done()) {
+                std::this_thread::sleep_for(std::chrono::microseconds(idle_backoff_us));
+            }
+#endif
             if (task.done()) {
+                gfx_blocked_fiber_wait = false;
                 task.destroy();
 
                 std::scoped_lock lock{queue.m_access};
@@ -1339,7 +1361,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     mem_semaphore->Signal();
                 } else {
                     while (!mem_semaphore->Signaled()) {
+                        gfx_blocked_fiber_wait = true;
                         YIELD_GFX();
+                        gfx_blocked_fiber_wait = false;
                     }
                     mem_semaphore->Decrement();
                 }
@@ -1355,7 +1379,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 const PM4CmdRewind* rewind = reinterpret_cast<const PM4CmdRewind*>(header);
                 while (!rewind->Valid()) {
+                    gfx_blocked_fiber_wait = true;
                     YIELD_GFX();
+                    gfx_blocked_fiber_wait = false;
                 }
                 break;
             }
@@ -1391,7 +1417,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         rasterizer->DrainDrawPipe(static_cast<u32>(opcode));
                         continue;
                     }
+                    gfx_blocked_fiber_wait = true;
                     YIELD_GFX();
+                    gfx_blocked_fiber_wait = false;
                 }
                 break;
             }
