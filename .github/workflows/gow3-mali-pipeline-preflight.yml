@@ -9,6 +9,7 @@ on:
       - 'benchmarks/**'
       - 'tests/test_mali_draw_perf_gate.py'
       - 'tests/test_mali_frame_budget_gate.py'
+      - 'tests/test_mali_steady_state_cost_gate.py'
       - 'tests/test_mali_zero_worker_checksum.py'
       - 'tests/test_mali_pm4_unused_checksum.py'
       - 'tests/test_mali_pm4_unused_dirty.py'
@@ -51,6 +52,18 @@ jobs:
       - name: Compare actual GoW3 copy pool baseline and bounded epoch wait
         run: |
           python3 benchmarks/gow3_copy_wait_epoch_preflight.py
+      - name: Reject minor stage hypotheses using actual G615 sample rates
+        run: |
+          python3 -m unittest discover -s tests -p 'test_mali_steady_state_cost_gate.py' -v
+          python3 benchmarks/mali_steady_state_cost_gate.py --report-only
+          if python3 benchmarks/mali_steady_state_cost_gate.py --stage submit_host_copy_wait; then
+            echo 'ERROR: the measured copy wait should not justify an APK' >&2
+            exit 1
+          fi
+          if python3 benchmarks/mali_steady_state_cost_gate.py --stage submit_throttle; then
+            echo 'ERROR: the measured semaphore throttle should not justify an APK' >&2
+            exit 1
+          fi
       - name: Real Vulkan timeline semaphore before and after query elimination
         run: |
           python3 benchmarks/gow3_timeline_wait_gate.py
