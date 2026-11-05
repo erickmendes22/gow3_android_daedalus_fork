@@ -10,7 +10,7 @@ R = (ROOT / "tools/android/bionic/run-bionic.sh").read_text()
 class Pm4ChecksumTests(unittest.TestCase):
     def test_no_worker_skips_unconsumed_checksum(self):
         self.assertIn("if (draw_prep && !draw_prep->Enabled())", C)
-        self.assertIn("const bool compute_checksum = draw_prep != nullptr || force_checksum;", C)
+        self.assertIn("const bool compute_checksum = (draw_prep && draw_prep->Enabled()) || force_checksum;", C)
         self.assertIn("ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, draw_dirty,", C)
         self.assertIn("if (update_checksum) {", C)
         self.assertIn("GOW3_PM4_CHECKSUM_ALWAYS", C)
