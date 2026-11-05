@@ -45,3 +45,65 @@ Relevant files:
 - .github/workflows/gow3-mali-pipeline-preflight.yml
 
 This test environment uses llvmpipe graphics software on an x86 CI runner and does not benchmark Mali GPU hardware or GoW3 Vulkan graphics pipelines.
+
+## 2026-11-05 follow-up: real source PM4 and copy-pool tests
+
+### PM4 register checksum condition (correctness)
+
+Production previously tested whether the `DrawPreparation*` object existed,
+even when `DrawPreparation::Enabled()` was false because no preparation
+workers were running. Its register-packet hash was therefore still computed
+without a consumer on Mali with `GOW3_PREP_WORKERS=0`.
+
+The analysis-branch correction changes the guard to
+`(draw_prep && draw_prep->Enabled()) || force_checksum` while preserving
+the explicit `GOW3_PM4_CHECKSUM_ALWAYS` rollback.
+
+A native host benchmark compiles the exact `Liverpool::HashRegisterPacket`
+body extracted from the project's source. At 64 words/packet, savings were
+approximately 90-120 ns/packet on the Actions x86 host. At that rate,
+saving 10 ms/frame would require about 83,000-109,000 such packets per frame.
+The G615 fixture does not include measured packet counts; **do not claim a
+material device FPS gain from this correction alone**. The legacy checksum
+and dirty-register tests are included in the no-APK CI.
+
+### Copy-pool wait: actual synchronization change and two workload controls
+
+In the original `gpu/shim/gow3_copy.cpp`,
+`Gow3Copy::WaitAsync()` called `Pool::WaitAll()`: this waited until
+**all** globally pending copies finished, even copies enqueued on another
+producer thread **after** the barrier. A GPU submission only needs the
+prefix issued before its barrier.
+
+The analysis branch implements `Pool::WaitIssued()`, which:
+- Under the existing pool mutex, closes the issued prefix as an epoch;
+- Helps execute only queued tasks whose epoch belongs to the required prefix;
+- Awaits a release/acquire `retired_epoch` watermark, published by `Complete`
+  **after** all callbacks for retired epochs run;
+- Does not wait for unrelated future copies or allocate a callback per wait;
+- Leaves `AfterCopies` callback ordering and `GOW3_COPY_THREADS` unchanged.
+
+The regression benchmark extracts and compiles the **real Pool class** twice:
+the original source from production commit `0f919000` and the candidate
+branch's source. Results on the GitHub Actions x86 host:
+
+| Scenario | Original | Candidate | Meaning |
+|---|---:|---:|---|
+| Deliberately overlapping **late producer** | 236.142 ms | 45.032 ms | 191.110 ms less waiting; prefix and callback order verified |
+| Ordinary one-copy barrier | 2.147 µs | 2.150 µs | No meaningful normal-path regression in this run |
+| Empty barrier | 13.844 ns | 9.270 ns | No added empty-barrier overhead in this run |
+
+These are controlled host tests, not GoW3 game FPS tests. A late concurrent
+producer is **required** for the large 191 ms benefit; its frequency and
+critical-path contribution have not been established in the G615 device logs.
+The existence of multiple copy-issuing call sites in `buffer_cache.cpp`
+proves this scenario is possible, not common or costly in real gameplay.
+
+**Decision:** Keep both code changes isolated in
+`analysis/gow3-mali-pipeline-preflight-20261105`. Do not generate an APK
+or claim an FPS uplift until device evidence attributes significant recurring
+wait time to the copy-pool's later tasks. The original native/APK production
+branch is unchanged, and the 10 ms/frame gate remains intact.
+
+Copy-pool and PM4 test run (no APK):
+https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/42019263894
