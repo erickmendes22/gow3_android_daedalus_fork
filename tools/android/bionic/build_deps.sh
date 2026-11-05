@@ -16,32 +16,44 @@ mkdir -p "$prefix" "$src" "$bld"
 J=${GOW3_JOBS:-2}
 run() { "$@"; }
 
-fetch() { # name url
-    local dir=$src/$1 archive=$src/$1.tar attempt
+fetch() { # name url [expected_sha256] [fallback_url...]
+    local name=$1 primary=$2 expected_sha=${3:-} dir archive attempt url
+    local -a urls=("$primary")
+    # Keep all existing two-argument fetches unchanged. SHA/fallbacks
+    # are supplied only for archives with a published exact checksum.
+    if [[ $# -ge 4 ]]; then
+        urls+=("${@:4}")
+    fi
+    dir=$src/$name archive=$src/$name.tar
     [[ -d $dir ]] && return 0
-    # Network resets on GitHub mirrors can terminate entire APK builds.
-    # Retry transport failures including curl 35, then retry corrupt/short
-    # tarballs without ever promoting a partial unpacked dependency.
-    for attempt in 1 2 3; do
-        rm -rf -- "$dir.tmp"
-        rm -f -- "$archive"
-        echo "Downloading $1 (attempt $attempt/3)"
-        if curl -fLSs --retry 4 --retry-all-errors --retry-delay 3 \
-                --connect-timeout 25 --max-time 240 --speed-limit 1024 \
-                --speed-time 45 "$2" -o "$archive"; then
-            mkdir -p "$dir.tmp"
-            if tar --no-same-owner -xf "$archive" -C "$dir.tmp" --strip-components=1; then
-                mv "$dir.tmp" "$dir"
-                rm -f "$archive"
-                return 0
+    for url in "${urls[@]}"; do
+        for attempt in 1 2 3; do
+            rm -rf -- "$dir.tmp"
+            rm -f -- "$archive"
+            echo "Downloading $name from $url (attempt $attempt/3)"
+            if curl -fLSs --retry 2 --retry-all-errors --retry-delay 2 \
+                    --connect-timeout 12 --max-time 180 --speed-limit 1024 \
+                    --speed-time 35 "$url" -o "$archive"; then
+                if [[ -n $expected_sha ]] && \
+                        ! printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c --status; then
+                    echo "BAD_SHA256: $name from $url; refusing archive" >&2
+                    continue
+                fi
+                mkdir -p "$dir.tmp"
+                if tar --no-same-owner -xf "$archive" -C "$dir.tmp" --strip-components=1; then
+                    mv "$dir.tmp" "$dir"
+                    rm -f "$archive"
+                    return 0
+                fi
             fi
-        fi
-        rm -rf -- "$dir.tmp"
-        rm -f -- "$archive"
-        echo "Dependency $1 download/extraction failed (attempt $attempt)" >&2
-        sleep "$attempt"
+            rm -rf -- "$dir.tmp"
+            rm -f -- "$archive"
+            echo "Dependency $name download/extraction failed from $url (attempt $attempt)" >&2
+            sleep "$attempt"
+        done
+        echo "Trying next mirror for $name" >&2
     done
-    echo "Dependency $1 could not be downloaded intact from $2" >&2
+    echo "Dependency $name could not be downloaded intact from any source" >&2
     return 1
 }
 cm() { # name source-dir extra cmake args...
@@ -63,7 +75,13 @@ fetch xxhash-0.8.3 https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.3.t
 fetch miniz-3.1.2 https://github.com/richgel999/miniz/archive/refs/tags/3.1.2.tar.gz
 fetch Vulkan-Headers-1.4.363 https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.363.tar.gz
 fetch SPIRV-Headers-1.4.309 https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-1.4.309.0.tar.gz
-fetch ffmpeg-7.1.5 https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz
+# Same FFmpeg 7.1.5 release; original ffmpeg.org was unreachable on Actions.
+# SHA-256/size are published in MacPorts ffmpeg7 7.1.5 Portfile.
+# Prefer mirror and refuse mismatched bytes before unpacking.
+fetch ffmpeg-7.1.5 https://distfiles.macports.org/ffmpeg/ffmpeg-7.1.5.tar.xz \
+  de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f \
+  https://fco.it.distfiles.macports.org/ffmpeg/ffmpeg-7.1.5.tar.xz \
+  https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz
 
 # Header-only: vulkan-hpp (the NDK ships Vulkan 1.3.275 C headers without it) and SPIR-V.
 cm vulkan-headers "$src/Vulkan-Headers-1.4.363"
