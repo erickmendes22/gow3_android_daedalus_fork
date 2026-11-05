@@ -67,6 +67,26 @@ void run() {
     if (!first) std::abort();
     pool.WAIT_METHOD();
     if (!later_done.load(std::memory_order_acquire)) std::abort();
+    // Stress asynchronous callback order across closed epochs with multiple
+    // workers: a later copy must never publish its completion callback first.
+    std::mutex callback_mutex;
+    std::vector<int> callback_order;
+    pool.Async([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(18));
+    });
+    pool.AfterCopies([&] {
+        std::scoped_lock lock{callback_mutex};
+        callback_order.push_back(1);
+    });
+    pool.Async([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    });
+    pool.AfterCopies([&] {
+        std::scoped_lock lock{callback_mutex};
+        callback_order.push_back(2);
+    });
+    pool.WAIT_METHOD();
+    if (callback_order != std::vector<int>{1, 2}) std::abort();
     std::printf("GOW3_COPY_EPOCH mode=MODE elapsed_ms=%.3f "
                 "prefix_done=%d later_done_at_barrier=%d\n",
                 std::chrono::duration<double,std::milli>(ended-started).count(),
