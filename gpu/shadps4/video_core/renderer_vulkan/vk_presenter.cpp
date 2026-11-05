@@ -203,6 +203,12 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     if (background_warmup && *background_warmup == '0') {
         return;
     }
+    if (std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+        // Never fall through to Mali's crash-prone synchronous stale loader.
+        rasterizer->GetPipelineCache().StartSafeMaliWarmUp();
+        return;
+    }
     if (rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
     }

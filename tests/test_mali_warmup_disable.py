@@ -7,9 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaliWarmupDisabledTests(unittest.TestCase):
-    def test_mali_launcher_explicitly_disables_warmup(self):
+    def test_mali_launcher_uses_safe_warmup_by_default(self):
         script = (ROOT / "tools/android/bionic/run-bionic.sh").read_text()
-        self.assertRegex(script, r"(?m)^\s*export GOW3_BACKGROUND_WARMUP=0\s*$")
+        self.assertIn("export GOW3_BACKGROUND_WARMUP=${GOW3_BACKGROUND_WARMUP:-1}", script)
+        source = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text()
+        self.assertIn("PipelineCache::StartSafeMaliWarmUp()", source)
+        self.assertIn("const bool compatible = CheckCacheProfile();", source)
+        self.assertIn("warm.threads = mali ? 1u", source)
+        self.assertIn("mali_driver_cache_restored", source)
 
     def test_presenter_does_not_fall_through_to_sync_warmup(self):
         src = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text()

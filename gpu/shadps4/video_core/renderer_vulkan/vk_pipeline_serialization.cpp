@@ -1079,6 +1079,21 @@ struct PipelineCache::BackgroundWarmup {
     std::unique_ptr<WarmupPool> pool; ///< last: its jobs use the members above
 };
 
+bool PipelineCache::StartSafeMaliWarmUp() {
+    // When warmup=0 the database was never opened, so RegisterPipelineData
+    // silently skipped ALL new shader/pipeline metadata. Even a large Vulkan
+    // driver cache could not precompile those pipelines on the next launch.
+    // A cold run opens the writer; a matching driver cache permits preloading.
+    if (!mali_driver_cache_restored || !Storage::DataBase::Instance().ConcurrentReads()) {
+        const bool compatible = CheckCacheProfile();
+        Storage::DataBase::Instance().FinishPreload();
+        std::printf("GOW3_MALI_PIPELINE_PREPASS status=record-only driver_cache=%u profile=%u\n",
+                    unsigned(mali_driver_cache_restored), unsigned(compatible));
+        return true;
+    }
+    return StartBackgroundWarmUp();
+}
+
 bool PipelineCache::StartBackgroundWarmUp() {
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
         return false;
@@ -1089,20 +1104,37 @@ bool PipelineCache::StartBackgroundWarmUp() {
     background = new BackgroundWarmup;
     auto& warm = *background;
     warm.started = std::chrono::steady_clock::now();
-    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    // A single low-priority worker keeps FEX and PanVK's live render thread
+    // available. Desktop compilation retains its established thread count.
+    const bool mali = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    warm.threads = mali ? 1u
+        : WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     // The first job reads the whole store; with one thread the builds queue behind it.
     warm.pool->Push([this, &warm] {
         const auto reader_started = std::chrono::steady_clock::now();
         auto& db = Storage::DataBase::Instance();
+        SCOPE_EXIT {
+            warm.stages.clear();
+            warm.reader_ns = ElapsedNs(reader_started);
+            warm.reading = false;
+        };
         warm.total = u32(db.CountBlobs(Storage::BlobType::PipelineKey));
         db.ForEachBlob(
             Storage::BlobType::PipelineKey,
-            [&](std::vector<u8>&& data) { ReadWarmEntry(warm, std::move(data)); },
+            [&](std::vector<u8>&& data) {
+                try {
+                    ReadWarmEntry(warm, std::move(data));
+                } catch (const std::exception& e) {
+                    warm.done.fetch_add(1, std::memory_order_relaxed);
+                    LOG_WARNING(Render_Vulkan, "Skipping invalid warmup entry: {}", e.what());
+                } catch (...) {
+                    warm.done.fetch_add(1, std::memory_order_relaxed);
+                    LOG_WARNING(Render_Vulkan, "Skipping invalid warmup entry");
+                }
+            },
             [&] { return warm.stopping.load(std::memory_order_relaxed); });
-        warm.stages.clear();
-        warm.reader_ns = ElapsedNs(reader_started);
-        warm.reading = false;
         return true;
     });
     std::printf("Pipeline warm-up: loading in the background (%u threads)\n", warm.threads);

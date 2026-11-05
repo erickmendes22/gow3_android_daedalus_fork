@@ -134,6 +134,7 @@ public:
     /// gow3: the same load on low-priority threads while the game runs; the GPU thread takes
     /// the results a few at a time (PumpWarmUp). False when it cannot (zip archive store).
     bool StartBackgroundWarmUp();
+    bool StartSafeMaliWarmUp(); // metadata writer always opens; validates driver cache before reading
     void StartOnDemand();
     void Sync();
     void ReportCompilerStats();
@@ -218,6 +219,7 @@ private:
     vk::UniquePipelineCache pipeline_cache;
     struct DriverCacheState;
     std::unique_ptr<DriverCacheState> driver_cache;
+    bool mali_driver_cache_restored = false;
     std::vector<u8> LoadDriverCache();
     void StartDriverCache();
     void StopDriverCache();

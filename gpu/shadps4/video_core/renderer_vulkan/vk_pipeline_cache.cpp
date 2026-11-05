@@ -514,6 +514,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     if (created_cache.result != vk::Result::eSuccess && !driver_data.empty())
         created_cache = instance.GetDevice().createPipelineCacheUnique({});
     auto [cache_result, cache] = std::move(created_cache);
+    mali_driver_cache_restored = cache_result == vk::Result::eSuccess && !driver_data.empty();
     if (cache_result == vk::Result::eSuccess && !driver_data.empty())
         std::printf("Driver pipeline cache: loaded %zu bytes\n", driver_data.size());
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
