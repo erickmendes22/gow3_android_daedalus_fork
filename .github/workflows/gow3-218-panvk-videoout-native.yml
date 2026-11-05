@@ -81,6 +81,10 @@ on:
       - 'tests/test_bionic_videoout_flip_retirement.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'benchmarks/mali_draw_perf_gate.py'
+      - 'benchmarks/mali_image_free_bind_bench.cpp'
+      - 'benchmarks/fixtures/mali_g615_20261105_152530.json'
+      - 'tests/test_mali_draw_perf_gate.py'
       - 'gpu/shadps4/video_core/texture_cache/tile_manager.cpp'
       - 'gpu/shadps4/video_core/texture_cache/tile_manager.h'
       - 'gpu/shadps4/video_core/texture_cache/blit_helper.cpp'
@@ -128,6 +132,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Require measured Mali performance preflight BEFORE native build or APK
+        run: |
+          python -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
+          python benchmarks/mali_draw_perf_gate.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
