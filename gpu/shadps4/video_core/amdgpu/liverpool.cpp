@@ -802,7 +802,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     // =1 keeps legacy checksums, without modifying renderer state.
     static const bool force_checksum =
         EmulatorSettingsImpl::Flag("GOW3_PM4_CHECKSUM_ALWAYS", false);
-    const bool compute_checksum = draw_prep != nullptr || force_checksum;
+    // A DrawPreparation object exists even with GOW3_PREP_WORKERS=0. With no
+    // workers there is no checksum consumer: do not hash every guest PM4
+    // register packet. Explicit GOW3_PM4_CHECKSUM_ALWAYS=1 still overrides.
+    const bool compute_checksum = (draw_prep && draw_prep->Enabled()) || force_checksum;
     // When no two-stage draw recorder exists, PostDraw never consumes
     // Liverpool::pipe_dirty. Updating its bitset for every SetContextReg
     // is pure overhead on the Mali/Bachata-style serial draw path.
