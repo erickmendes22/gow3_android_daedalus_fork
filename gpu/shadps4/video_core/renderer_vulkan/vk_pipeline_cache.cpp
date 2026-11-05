@@ -511,10 +511,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     const auto driver_info = vk::PipelineCacheCreateInfo{
         .initialDataSize = driver_data.size(), .pInitialData = driver_data.empty() ? nullptr : driver_data.data()};
     auto created_cache = instance.GetDevice().createPipelineCacheUnique(driver_info);
+    // A successful FALLBACK to an empty Vulkan cache is not a restored
+    // driver snapshot: never use it to authorize stale shader preloading.
+    const bool driver_cache_accepted =
+        created_cache.result == vk::Result::eSuccess && !driver_data.empty();
     if (created_cache.result != vk::Result::eSuccess && !driver_data.empty())
         created_cache = instance.GetDevice().createPipelineCacheUnique({});
     auto [cache_result, cache] = std::move(created_cache);
-    mali_driver_cache_restored = cache_result == vk::Result::eSuccess && !driver_data.empty();
+    mali_driver_cache_restored = driver_cache_accepted;
     if (cache_result == vk::Result::eSuccess && !driver_data.empty())
         std::printf("Driver pipeline cache: loaded %zu bytes\n", driver_data.size());
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
