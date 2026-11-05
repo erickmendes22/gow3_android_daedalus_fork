@@ -190,3 +190,47 @@ observed recurring >=10 ms/frame component, not a large percentage on
 an unobserved synthetic case. For PM4, a material claim requires evidence
 of the blocked wait opcode frequency AND per-thread CPU-clock usage; wall
 time alone confounds nested coroutines, GPU waits, and CPU work.
+
+## Decision update: **tester APK justified by host producer-contention A/B**
+
+The earlier requirement for real-device blocked-opcode counts *before* packaging
+was too strict and is **superseded**. Real-device FPS confirmation is the role
+of the testers **after** a successful native build. A host gate should show
+a significant **wall-time improvement on representative work contention**,
+not merely a CPU utilization percentage.
+
+`benchmarks/gow3_pm4_contended_producer_gate.py` now compiles the actual
+`Liverpool::Task` coroutine type, forces the PM4 consumer and a FEX-like
+producer to run on **one pinned CPU core**, and measures five independent A/B
+pairs with the **same 35 ms of useful CPU work**.
+
+Locally on x86 Linux:
+
+| Median from 5 paired runs | Original busy-spin | 20µs blocked-only backoff |
+|---|---:|---:|
+| Time to producer completion | 71.1 ms | 40.0 ms |
+| CPU used by PM4 consumer | 35.9 ms | 4.9 ms |
+| Useful producer CPU work | 35 ms | 35 ms |
+
+The change saves **~31.1 ms of measured wall-clock delay (43.7%)**
+under a single-core CPU-contention scenario; it is NOT a measured GoW3
+per-frame improvement and does not imply +43.7% FPS on Android. Unlike the
+former 35 ms sleeping-producer test, it demonstrates that releasing a core
+**can accelerate the thread that completes the guest wait**.
+
+Production guard: only a blocked PM4 `WaitRegMem`/`Rewind`/`MemSemaphore`
+coroutine, with one pending submit and no other ready command, may back off.
+The isolated PanVK launcher defaults `GOW3_MALI_PM4_IDLE_BACKOFF_US=20`,
+with `=0` to disable. Non-PanVK drivers are unaffected. Both the
+experimental copy-pool epoch wait and direct Vulkan timeline wait remain
+disabled by default after their device cost ceilings were found too small.
+
+The original production branch is unchanged. A **separately installable**
+diagnostic APK workflow was started on this analysis branch to allow
+testers to evaluate the real G615/G720 impact only once its native
+compile, release packaging, and signing checks complete:
+https://github.com/erickmendes22/gow3_android_daedalus_fork/actions/runs/42028939625
+
+If successful, tester comparison should use matched scene, same resolution
+and settings, with FPS and correct rendering. An isolated benchmark is a
+reason to **test**, not a claim of achieved device FPS.
