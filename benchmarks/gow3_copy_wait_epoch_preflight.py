@@ -87,6 +87,24 @@ void run() {
     });
     pool.WAIT_METHOD();
     if (callback_order != std::vector<int>{1, 2}) std::abort();
+    // Negative control: the common no-work barrier should not regress.
+    const auto empty_started = std::chrono::steady_clock::now();
+    for (unsigned i=0; i<60000; ++i) pool.WAIT_METHOD();
+    const auto empty_ended = std::chrono::steady_clock::now();
+    const auto empty_ns = std::chrono::duration<double,std::nano>(
+        empty_ended-empty_started).count()/60000.0;
+    // Loaded-but-no-future-producer control: ensure the bounded barrier
+    // does not create a large per-submission tax in normal use.
+    const auto ordinary_started = std::chrono::steady_clock::now();
+    for (unsigned i=0;i<4000;++i) {
+        pool.Async([] {});
+        pool.WAIT_METHOD();
+    }
+    const auto ordinary_ended = std::chrono::steady_clock::now();
+    const auto ordinary_us = std::chrono::duration<double,std::micro>(
+        ordinary_ended-ordinary_started).count()/4000.0;
+    std::printf("GOW3_COPY_CONTROL mode=MODE empty_ns=%.3f one_copy_us=%.3f\\n",
+                empty_ns, ordinary_us);
     std::printf("GOW3_COPY_EPOCH mode=MODE elapsed_ms=%.3f "
                 "prefix_done=%d later_done_at_barrier=%d\n",
                 std::chrono::duration<double,std::milli>(ended-started).count(),
