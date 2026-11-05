@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+
+// Freeze scene MSAA depth from the exact same draw as the pre-HUD color.
+// PS4 GoW III uses a 2x multisampled D32S8 image: texelFetch must target
+// sampler2DMS (not sampler2D). Use sample zero consistently across all
+// pixels rather than combining unrelated foreground/background samples.
+layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
+layout(binding=0) uniform sampler2DMS InputDepthMS;
+layout(binding=1,r32f) uniform writeonly image2D FrozenDepth;
+layout(push_constant) uniform Params { uvec2 size; } params;
+
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(uvec2(pixel),params.size))) return;
+    float depth=texelFetch(InputDepthMS,pixel,0).r;
+    imageStore(FrozenDepth,pixel,vec4(depth,0.0,0.0,1.0));
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-10-15",
+  "source_repository": "https://github.com/zenithblue-oss/shadps4-arm64",
+  "source_ref": "main",
+  "source_sha": "be6bc2e9c60799e071dd2fafa6216e8d80ec619c",
+  "source_fex_sha": "f2b679f6028ce1c38875233aecfcf5d3f8ebecec",
+  "port_fex_sha": "fb925d6fc5cc8576bf0f9ae6978fc6d912485593",
+  "verified_exact_core025_binary": false,
+  "ci_build_requested": false
+}

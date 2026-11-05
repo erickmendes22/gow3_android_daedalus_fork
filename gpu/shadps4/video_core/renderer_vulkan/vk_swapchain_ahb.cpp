@@ -1,0 +1,730 @@
+// Adapted from Bloodborne-Android 2e472653; Android presentation infrastructure.
+// SPDX-License-Identifier: GPL-2.0-or-later
+// gow3: see vk_swapchain_ahb.h.
+#ifdef __ANDROID__
+#include <android/hardware_buffer.h>
+#include <poll.h>
+#include <unistd.h>
+#include <algorithm>
+#include <array>
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+#include <string>
+#include "video_core/renderer_vulkan/vk_mali_visual_trace.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include "common/assert.h"
+#include "gow3_settings.h"
+#include "common/logging/log.h"
+#include "imgui/renderer/imgui_core.h"
+#include "sdl_window.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_swapchain_ahb.h"
+
+namespace Vulkan {
+
+namespace {
+
+constexpr u32 AhbFormat = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+constexpr u64 AhbUsage = AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+                         AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
+                         AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
+
+// Copy RGB and force opaque alpha in ONE pass. The old path did memcpy
+// followed by a separate alpha rewrite for every pixel. ARM64 NEON handles
+// four RGBA pixels per iteration, including unaligned mapped AHB rows.
+void CopyOpaqueRgbaRow(u8* dst, const u8* src, u32 pixels) {
+    u32 x = 0;
+#if defined(__aarch64__) || defined(__ARM_NEON)
+    const uint8x16_t opaque_alpha =
+        vreinterpretq_u8_u32(vdupq_n_u32(0xff000000u));
+    for (; x + 4 <= pixels; x += 4) {
+        const uint8x16_t colors = vld1q_u8(src + size_t(x) * 4);
+        vst1q_u8(dst + size_t(x) * 4, vorrq_u8(colors, opaque_alpha));
+    }
+#endif
+    for (; x < pixels; ++x) {
+        // u32 is stored little-endian on Android ARM64: alpha is byte 3.
+        u32 rgba;
+        std::memcpy(&rgba, src + size_t(x) * 4, 4);
+        rgba |= 0xff000000u;
+        std::memcpy(dst + size_t(x) * 4, &rgba, 4);
+    }
+}
+
+/// GOW3_PRESENT_BUFFERS: the number of buffers (3 by default: one shown, one pending, one rendered).
+u32 BufferCount(u32 framegen_multiplier = 0) {
+    // Bloodframe requires one output per generated frame plus buffering.
+    if (framegen_multiplier >= 2) return std::min<u32>(8, framegen_multiplier + 3);
+    if (const char* value = std::getenv("GOW3_PRESENT_BUFFERS")) {
+        const long count = std::strtol(value, nullptr, 10);
+        if (count >= 2 && count <= static_cast<long>(8)) {
+            return static_cast<u32>(count);
+        }
+    }
+    return 3;
+}
+
+/// Waits (up to timeout_ms) for a sync file to signal. True when signaled.
+bool WaitSyncFile(int fd, int timeout_ms) {
+    pollfd pfd{fd, POLLIN, 0};
+    int ready;
+    do {
+        ready = poll(&pfd, 1, timeout_ms);
+    } while (ready < 0 && errno == EINTR);
+    return ready > 0;
+}
+
+} // namespace
+
+u32 Swapchain::MaxImageCount() { return BufferCount(); }
+
+Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& window_,
+                     u32 framegen_multiplier)
+    : instance{instance_}, window{window_} {
+    image_count = BufferCount(framegen_multiplier);
+    const char* cpu_setting = std::getenv("GOW3_MALI_CPU_PRESENT");
+    cpu_present = cpu_setting && cpu_setting[0] == '1';
+    if (cpu_present) {
+        LOG_WARNING(Render_Vulkan,
+                    "MALI_CPU_PRESENT enabled: linear CPU-writable AHB, no Vulkan gralloc import");
+    }
+    const vk::PhysicalDeviceExternalSemaphoreInfo semaphore_info{
+        .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
+    };
+    const auto semaphore_props = instance.GetPhysicalDevice().getExternalSemaphoreProperties(semaphore_info);
+    if (!cpu_present) ASSERT_MSG(
+        (semaphore_props.externalSemaphoreFeatures & vk::ExternalSemaphoreFeatureFlagBits::eExportable) &&
+            (semaphore_props.externalSemaphoreFeatures & vk::ExternalSemaphoreFeatureFlagBits::eImportable),
+        "The Vulkan driver cannot export and import sync-file semaphores (SYNC_FD): the AHB "
+        "swapchain cannot synchronize with the app");
+    if (Gow3Present::Client::Configured()) {
+        if (!client.Connect(window.GetWidth(), window.GetHeight(), AhbFormat, image_count,
+                            Gow3Settings::Get().vsync.load() || framegen_multiplier >= 2)) {
+            std::printf("Present: no connection to the app: frames are rendered but not shown\n");
+        }
+    } else {
+        std::printf("Present: GOW3_PRESENT_SOCKET is not set: frames are rendered but not shown\n");
+    }
+    Create(window.GetWidth(), window.GetHeight());
+}
+
+void Swapchain::UpdateVsync() {
+    const bool fifo = Gow3Settings::Get().vsync;
+    if (client.Connected()) client.SetFifo(fifo);
+}
+
+Swapchain::~Swapchain() {
+    Destroy();
+    client.Disconnect();
+}
+
+std::pair<u32, u32> Swapchain::AcquireQueues() const {
+    return {VK_QUEUE_FAMILY_FOREIGN_EXT, instance.GetGraphicsQueueFamilyIndex()};
+}
+
+std::pair<u32, u32> Swapchain::ReleaseQueues() const {
+    return {instance.GetGraphicsQueueFamilyIndex(), VK_QUEUE_FAMILY_FOREIGN_EXT};
+}
+
+void Swapchain::Create(u32 width_, u32 height_) {
+    width = width_;
+    height = height_;
+    needs_recreation = false;
+    // A 0x0 output (no screen size) has no buffers; they come when the size is back.
+    if (width == 0 || height == 0) {
+        zero_extent = true;
+        needs_recreation = true;
+        return;
+    }
+    zero_extent = false;
+    Destroy();
+    extent = vk::Extent2D{width, height};
+    ++generation;
+    if (client.Connected()) {
+        if (!client.BeginGeneration(generation, width, height, AhbFormat, image_count)) {
+            PeerGone();
+        }
+    }
+    const vk::Device device = instance.GetDevice();
+    buffers.resize(image_count);
+    image_acquired.resize(image_count);
+    present_ready.resize(image_count);
+    for (u32 i = 0; i < image_count; ++i) {
+        CreateBuffer(i);
+        if (!cpu_present) {
+        auto [acquired_result, acquired] = device.createSemaphore({});
+        ASSERT_MSG(acquired_result == vk::Result::eSuccess, "Failed to create semaphore: {}",
+                   vk::to_string(acquired_result));
+        image_acquired[i] = acquired;
+        // The present-ready semaphore is exported as a sync file after its signal is submitted.
+        const vk::ExportSemaphoreCreateInfo export_info{
+            .handleTypes = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
+        };
+        auto [ready_result, ready] = device.createSemaphore({.pNext = &export_info});
+        ASSERT_MSG(ready_result == vk::Result::eSuccess, "Failed to create exportable semaphore: {}",
+                   vk::to_string(ready_result));
+        present_ready[i] = ready;
+        SetObjectName(device, image_acquired[i], "AHB swapchain image_acquired {}", i);
+        SetObjectName(device, present_ready[i], "AHB swapchain present_ready {}", i);
+        }
+        free_queue.push_back(i);
+        if (client.Connected() &&
+            !client.SendBuffer(generation, i, width, height, AhbFormat, buffers[i].ahb)) {
+            PeerGone();
+        }
+    }
+    image_index = 0;
+    LOG_INFO(Render_Vulkan, "AHB swapchain: {} buffers {}x{} (generation {}, {})", image_count, width,
+             height, generation, client.Connected() ? "app connected" : "no app");
+}
+
+void Swapchain::CreateBuffer(u32 index) {
+    const vk::Device device = instance.GetDevice();
+    Buffer& buffer = buffers[index];
+
+    AHardwareBuffer_Desc desc{
+        .width = width,
+        .height = height,
+        .layers = 1,
+        .format = AhbFormat,
+        .usage = cpu_present
+                     ? (AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
+                        AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
+                        AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY)
+                     : AhbUsage,
+    };
+    int allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
+    if (allocated != 0 && cpu_present) {
+        // Some Mali grallocs cannot simultaneously provide a CPU-linear
+        // buffer and a hardware composer overlay. SurfaceControl can fall
+        // back to GPU composition, which only needs a sampled AHB.
+        desc.usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
+                     AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
+        LOG_WARNING(Render_Vulkan,
+                    "MALI_CPU_PRESENT overlay allocation failed {}; retry sampled linear AHB",
+                    allocated);
+        allocated = AHardwareBuffer_allocate(&desc, &buffer.ahb);
+    }
+    ASSERT_MSG(allocated == 0 && buffer.ahb, "AHardwareBuffer_allocate {}x{} failed: {}", width,
+               height, allocated);
+    // CPU presentation never binds this AHB to a VkImage. This also avoids
+    // PanVK/gralloc AFBC layout disagreements on Mali G615/G720.
+    if (cpu_present) return;
+
+    auto [props_result, props_chain] = device.getAndroidHardwareBufferPropertiesANDROID<
+        vk::AndroidHardwareBufferPropertiesANDROID, vk::AndroidHardwareBufferFormatPropertiesANDROID>(
+        *buffer.ahb);
+    ASSERT_MSG(props_result == vk::Result::eSuccess,
+               "vkGetAndroidHardwareBufferPropertiesANDROID failed: {}", vk::to_string(props_result));
+    const auto& props = props_chain.get<vk::AndroidHardwareBufferPropertiesANDROID>();
+    const auto& format_props = props_chain.get<vk::AndroidHardwareBufferFormatPropertiesANDROID>();
+    ASSERT_MSG(format_props.format != vk::Format::eUndefined,
+               "The driver maps the AHardwareBuffer to no Vulkan format (external format {:#x})",
+               format_props.externalFormat);
+    const auto required = vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eBlitDst;
+    ASSERT_MSG((format_props.formatFeatures & required) == required,
+               "The driver cannot render/blit into the AHardwareBuffer format {} (features {})",
+               vk::to_string(format_props.format), vk::to_string(format_props.formatFeatures));
+    surface_format.format = format_props.format;
+
+    vk::ImageUsageFlags usage =
+        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
+    if (format_props.formatFeatures & vk::FormatFeatureFlagBits::eTransferSrc) {
+        usage |= vk::ImageUsageFlagBits::eTransferSrc;
+    }
+    if (format_props.formatFeatures & vk::FormatFeatureFlagBits::eSampledImage) {
+        usage |= vk::ImageUsageFlagBits::eSampled;
+    }
+    const vk::ExternalMemoryImageCreateInfo external_info{
+        .handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eAndroidHardwareBufferANDROID,
+    };
+    const vk::ImageCreateInfo image_info{
+        .pNext = &external_info,
+        .imageType = vk::ImageType::e2D,
+        .format = format_props.format,
+        .extent = {width, height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+    auto [image_result, image] = device.createImage(image_info);
+    ASSERT_MSG(image_result == vk::Result::eSuccess, "Failed to create the AHB image: {}",
+               vk::to_string(image_result));
+    buffer.image = image;
+
+    const auto memory_properties = instance.GetPhysicalDevice().getMemoryProperties();
+    u32 memory_type = ~0u;
+    for (u32 i = 0; i < memory_properties.memoryTypeCount; ++i) {
+        if (!(props.memoryTypeBits & (1u << i))) {
+            continue;
+        }
+        if (memory_type == ~0u) {
+            memory_type = i;
+        }
+        if (memory_properties.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) {
+            memory_type = i;
+            break;
+        }
+    }
+    ASSERT_MSG(memory_type != ~0u, "No memory type for the AHardwareBuffer (bits {:#x})",
+               props.memoryTypeBits);
+    const vk::MemoryDedicatedAllocateInfo dedicated{.image = image};
+    const vk::ImportAndroidHardwareBufferInfoANDROID import_info{
+        .pNext = &dedicated,
+        .buffer = buffer.ahb,
+    };
+    auto [memory_result, memory] = device.allocateMemory({
+        .pNext = &import_info,
+        .allocationSize = props.allocationSize,
+        .memoryTypeIndex = memory_type,
+    });
+    ASSERT_MSG(memory_result == vk::Result::eSuccess, "Failed to import the AHardwareBuffer: {}",
+               vk::to_string(memory_result));
+    buffer.memory = memory;
+    const auto bind_result = device.bindImageMemory(image, memory, 0);
+    ASSERT_MSG(bind_result == vk::Result::eSuccess, "Failed to bind the AHB image: {}",
+               vk::to_string(bind_result));
+
+    auto [view_result, view] = device.createImageView({
+        .image = image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format_props.format,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .levelCount = 1,
+                             .layerCount = 1},
+    });
+    ASSERT_MSG(view_result == vk::Result::eSuccess, "Failed to create the AHB image view: {}",
+               vk::to_string(view_result));
+    buffer.view = view;
+    SetObjectName(device, image, "AHB swapchain image {}", index);
+    SetObjectName(device, view, "AHB swapchain view {}", index);
+}
+
+void Swapchain::SetFrameGeneration(u32 multiplier) {
+    const bool fifo = Gow3Settings::Get().vsync.load() || multiplier >= 2;
+    if (client.Connected() && !client.SetFifo(fifo)) PeerGone();
+    const u32 target_count = BufferCount(multiplier);
+    if (target_count == image_count) return;
+    image_count = target_count;
+    Recreate(width ? width : window.GetWidth(), height ? height : window.GetHeight());
+}
+
+void Swapchain::Recreate(u32 width_, u32 height_) {
+    LOG_DEBUG(Render_Vulkan, "Recreate the AHB swapchain: width={} height={}", width_, height_);
+    Create(width_, height_);
+}
+
+void Swapchain::Destroy() {
+    vk::Device device = instance.GetDevice();
+    const auto wait_result = device.waitIdle();
+    if (wait_result != vk::Result::eSuccess) {
+        LOG_WARNING(Render_Vulkan, "Failed to wait for device to become idle: {}",
+                    vk::to_string(wait_result));
+    }
+    for (Buffer& buffer : buffers) {
+        if (!cpu_present) {
+        device.destroyImageView(buffer.view);
+        device.destroyImage(buffer.image);
+        device.freeMemory(buffer.memory);
+        }
+        // The app and the compositor keep the memory while they use it (reference counted).
+        if (buffer.ahb) {
+            AHardwareBuffer_release(buffer.ahb);
+        }
+        if (buffer.release_fd >= 0) {
+            close(buffer.release_fd);
+        }
+    }
+    buffers.clear();
+    if (!cpu_present) {
+        for (const auto sem : image_acquired) {
+            device.destroySemaphore(sem);
+        }
+        for (const auto sem : present_ready) {
+            device.destroySemaphore(sem);
+        }
+    }
+    image_acquired.clear();
+    present_ready.clear();
+    free_queue.clear();
+}
+
+void Swapchain::PeerGone() const {
+    // The app is the game's screen: without it (closed, killed) the process ends, as when the
+    // window of the glibc build is closed.
+    LOG_INFO(Frontend, "The app closed the frame connection");
+    std::fflush(stdout);
+    std::_Exit(0);
+}
+
+void Swapchain::HandleRelease(Gow3Present::Release& release) {
+    if (release.generation != generation || release.index >= buffers.size()) {
+        if (release.fence_fd >= 0) {
+            close(release.fence_fd); // a buffer of a set that is gone
+        }
+        return;
+    }
+    Buffer& buffer = buffers[release.index];
+    if (buffer.release_fd >= 0) {
+        close(buffer.release_fd);
+    }
+    buffer.release_fd = release.fence_fd;
+    free_queue.push_back(release.index);
+}
+
+bool Swapchain::AcquireNextImage() {
+    if (zero_extent || buffers.empty()) {
+        needs_recreation = true;
+        return false;
+    }
+    Gow3Present::Release release;
+    // Releases that arrived meanwhile.
+    while (client.Connected()) {
+        const int got = client.WaitRelease(release, 0);
+        if (got < 0) {
+            PeerGone();
+        }
+        if (got == 0) {
+            break;
+        }
+        HandleRelease(release);
+    }
+    // All buffers are at the app: the display is slower than the game. Wait for one.
+    const auto wait_start = std::chrono::steady_clock::now();
+    bool warned = false;
+    while (free_queue.empty()) {
+        const int got = client.WaitRelease(release, 1000);
+        if (got < 0) {
+            PeerGone();
+        }
+        if (got > 0) {
+            HandleRelease(release);
+        } else if (!warned && std::chrono::steady_clock::now() - wait_start > std::chrono::seconds(5)) {
+            warned = true;
+            LOG_WARNING(Render_Vulkan, "AHB swapchain: no buffer released by the app for 5 s");
+        }
+    }
+    image_index = free_queue.front();
+    free_queue.pop_front();
+    ImportAcquire(image_index);
+    return !needs_recreation;
+}
+
+void Swapchain::ImportAcquire(u32 index) {
+    Buffer& buffer = buffers[index];
+    buffer.acquire_imported = false;
+    const int fd = buffer.release_fd;
+    if (fd < 0) {
+        return; // never shown, or released at once: nothing to wait for
+    }
+    buffer.release_fd = -1;
+    if (cpu_present) {
+        // We write CPU pixels, not Vulkan commands. The display release fence
+        // must be completed on the CPU before locking the same AHB again.
+        while (!WaitSyncFile(fd, 1000)) {
+            LOG_WARNING(Render_Vulkan, "MALI_CPU_PRESENT waiting for display release buffer {}", index);
+        }
+        close(fd);
+        return;
+    }
+    if (sync_import_ok) {
+        const vk::ImportSemaphoreFdInfoKHR import_info{
+            .semaphore = image_acquired[index],
+            .flags = vk::SemaphoreImportFlagBits::eTemporary,
+            .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
+            .fd = fd,
+        };
+        const auto result = instance.GetDevice().importSemaphoreFdKHR(import_info);
+        if (result == vk::Result::eSuccess) {
+            buffer.acquire_imported = true; // the driver owns the fd now
+            return;
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "Importing the release fence failed ({}): waiting for fences on the CPU instead",
+                    vk::to_string(result));
+        sync_import_ok = false;
+    }
+    // CPU wait: the fence signals when the display is done with the buffer.
+    while (!WaitSyncFile(fd, 1000)) {
+        LOG_WARNING(Render_Vulkan, "AHB swapchain: release fence of buffer {} still pending", index);
+    }
+    close(fd);
+}
+
+int Swapchain::ExportPresentReady() {
+    const auto [result, fd] = instance.GetDevice().getSemaphoreFdKHR({
+        .semaphore = present_ready[image_index],
+        .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd,
+    });
+    if (result != vk::Result::eSuccess) {
+        // Without the fence the app would read a half-drawn buffer: wait for the GPU here.
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            LOG_ERROR(Render_Vulkan,
+                      "Exporting the present-ready semaphore as a sync file failed ({}): falling "
+                      "back to waiting for the GPU on every frame",
+                      vk::to_string(result));
+        }
+        const auto idle = instance.GetDevice().waitIdle();
+        ASSERT_MSG(idle == vk::Result::eSuccess, "waitIdle failed: {}", vk::to_string(idle));
+        return -1;
+    }
+    return fd; // -1 is possible too: the semaphore was already signaled
+}
+
+// The final CPU-writable AHardwareBuffer, after letterboxing and alpha forcing,
+// is distinct from the renderer's CPU readback. Preserve it for pixel comparison.
+bool SaveMaliAhbBmp(const char* path, const u8* rgba, u32 w, u32 h, u32 stride) {
+    if (!rgba || !w || !h || stride < w) return false;
+    const u32 dw = std::min(w, 960u), dh = std::min(h, 540u);
+    const u32 row_stride = (dw * 3 + 3) & ~3u;
+    const u32 bytes = row_stride * dh;
+    std::array<u8, 54> head{};
+    head[0] = 'B'; head[1] = 'M';
+    const auto put = [&](size_t off, u32 val) {
+        for (int i = 0; i < 4; ++i) head[off + i] = u8(val >> (8 * i));
+    };
+    put(2, 54 + bytes); put(10, 54); put(14, 40);
+    put(18, dw); put(22, dh); head[26] = 1; head[28] = 24; put(34, bytes);
+    std::FILE* out = std::fopen(path, "wb");
+    if (!out) return false;
+    bool ok = std::fwrite(head.data(), 1, head.size(), out) == head.size();
+    std::vector<u8> row(row_stride);
+    for (u32 y = 0; ok && y < dh; ++y) {
+        std::fill(row.begin(), row.end(), u8{0});
+        const u32 sy = u32((u64(dh - 1 - y) * h) / dh);
+        for (u32 x = 0; x < dw; ++x) {
+            const u32 sx = u32((u64(x) * w) / dw);
+            const u8* p = rgba + (size_t(sy) * stride + sx) * 4;
+            row[x * 3 + 0] = p[2]; row[x * 3 + 1] = p[1]; row[x * 3 + 2] = p[0];
+        }
+        ok = std::fwrite(row.data(), 1, row.size(), out) == row.size();
+    }
+    if (std::fclose(out) != 0) ok = false;
+    return ok;
+}
+
+bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
+                                  u32 capture_frame, bool perf_sample) {
+    ASSERT_MSG(cpu_present && image_index < buffers.size(), "Invalid CPU present");
+    const auto ahb_lock_start = perf_sample ? MaliPerfStats::Clock::now()
+                                           : MaliPerfStats::TimePoint{};
+    Buffer& buffer = buffers[image_index];
+    AHardwareBuffer_Desc desc{};
+    AHardwareBuffer_describe(buffer.ahb, &desc);
+    void* mapped = nullptr;
+    const int lock_result = AHardwareBuffer_lock(
+        buffer.ahb, AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, nullptr, &mapped);
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbLock, ahb_lock_start);
+    if (lock_result != 0 || !mapped) {
+        LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_lock failed: {}",
+                  lock_result);
+        if (MaliVisualTrace::Requested()) MaliVisualTrace::Add(MaliVisualTrace::Counts::ahb_failed);
+        free_queue.push_back(image_index);
+        return false;
+    }
+    const auto ahb_copy_start = perf_sample ? MaliPerfStats::Clock::now()
+                                            : MaliPerfStats::TimePoint{};
+    const u32 dst_w = std::min<u32>(width, desc.width);
+    const u32 dst_h = std::min<u32>(height, desc.height);
+    u8* dst = static_cast<u8*>(mapped);
+    // AHB stride is measured in RGBA pixels. A CPU-writable AHB forces a
+    // layout that the Android compositor can consume without PanVK AFBC.
+    // The PS4 guest is allowed to leave the framebuffer alpha zero. Android
+    // SurfaceControl, however, composites RGBA AHBs using alpha: copying
+    // transparent game pixels would hide perfectly valid RGB scene contents.
+    // Output is an opaque game surface, including black letterbox bars.
+    static const bool fast_opaque_copy = [] {
+        const char* flag = std::getenv("GOW3_MALI_AHB_FAST_COPY");
+        return !flag || flag[0] != '0';
+    }();
+    if (rgba && src_width && src_height && dst_w && dst_h) {
+        const float src_aspect = float(src_width) / float(src_height);
+        const float dst_aspect = float(dst_w) / float(dst_h);
+        const u32 fit_w = src_aspect > dst_aspect
+                            ? dst_w : std::max(1u, u32(float(dst_h) * src_aspect));
+        const u32 fit_h = src_aspect > dst_aspect
+                            ? std::max(1u, u32(float(dst_w) / src_aspect)) : dst_h;
+        const u32 x0 = (dst_w - fit_w) / 2, y0 = (dst_h - fit_h) / 2;
+        // Full-frame 16:9 copies overwrite every destination pixel. Avoid
+        // a redundant black clear and alpha pass before the actual pixel copy.
+        // Preserve opaque black letterbox bars for mismatched aspect ratios.
+        if (fit_w != dst_w || fit_h != dst_h) {
+            for (u32 y = 0; y < dst_h; ++y) {
+                u8* row = dst + size_t(y) * desc.stride * 4;
+                std::memset(row, 0, size_t(desc.stride) * 4);
+                for (u32 x = 0; x < dst_w; ++x) row[size_t(x) * 4 + 3] = 255;
+            }
+        }
+        // Cache nearest-neighbor horizontal coordinates across frames:
+        // no repeated per-pixel integer division on every game frame.
+        static thread_local std::vector<u32> mapped_x;
+        static thread_local u32 mapped_source_width = 0, mapped_fit_width = 0;
+        if (fit_w != src_width &&
+            (mapped_source_width != src_width || mapped_fit_width != fit_w)) {
+            mapped_x.resize(fit_w);
+            for (u32 x = 0; x < fit_w; ++x)
+                mapped_x[x] = std::min(src_width - 1, u32(u64(x) * src_width / fit_w));
+            mapped_source_width = src_width;
+            mapped_fit_width = fit_w;
+        }
+        u32 previous_src_y = ~0u;
+        const u8* previous_output_row = nullptr;
+        for (u32 y = 0; y < fit_h; ++y) {
+            const u32 src_y = std::min(src_height - 1, u32(u64(y) * src_height / fit_h));
+            u8* row = dst + (size_t(y + y0) * desc.stride + x0) * 4;
+            // Nearest scaling repeats source rows (e.g. 540 -> 720).
+            // Copy an already normalized AHB row instead of resampling.
+            if (fast_opaque_copy && previous_output_row && src_y == previous_src_y) {
+                std::memcpy(row, previous_output_row, size_t(fit_w) * 4);
+                previous_output_row = row;
+                continue;
+            }
+            const u8* input_row = rgba + size_t(src_y) * src_width * 4;
+            if (fit_w == src_width) {
+                if (fast_opaque_copy) {
+                    CopyOpaqueRgbaRow(row, input_row, fit_w);
+                } else {
+                    std::memcpy(row, input_row, size_t(fit_w) * 4);
+                    for (u32 x = 0; x < fit_w; ++x) row[size_t(x) * 4 + 3] = 255;
+                }
+            } else {
+                for (u32 x = 0; x < fit_w; ++x) {
+                    const u8* src = input_row + size_t(mapped_x[x]) * 4;
+                    u8* pixel = row + size_t(x) * 4;
+                    pixel[0] = src[0];
+                    pixel[1] = src[1];
+                    pixel[2] = src[2];
+                    pixel[3] = 255;
+                }
+            }
+            previous_src_y = src_y;
+            previous_output_row = row;
+        }
+    } else if (dst_h) {
+        // Retain the original opaque fallback when the source is unavailable.
+        for (u32 y = 0; y < dst_h; ++y) {
+            u8* row = dst + size_t(y) * desc.stride * 4;
+            std::memset(row, 0, size_t(desc.stride) * 4);
+            for (u32 x = 0; x < dst_w; ++x) row[size_t(x) * 4 + 3] = 255;
+        }
+        // A visible gold line on loading frames separates compositor failure
+        // from a black render source even before the first guest draw.
+        for (u32 y = 0; y < std::min<u32>(8, dst_h); ++y) {
+            for (u32 x = 0; x < dst_w; ++x) {
+                u8* pixel = dst + (size_t(y) * desc.stride + x) * 4;
+                pixel[0] = 200; pixel[1] = 145; pixel[2] = 35; pixel[3] = 255;
+            }
+        }
+    }
+    // Sample final AHB pixels independently of the GPU readback. A nonzero
+    // source with an all-black AHB localizes the loss to CPU scaling/copy.
+    if (MaliVisualTrace::Requested()) {
+        const u64 sequence = frame_counter + 1;
+        if (MaliVisualTrace::Sample(sequence) || sequence % 120 == 0 || capture_frame) {
+            u64 visible = 0, alpha = 0, sampled = 0;
+            u64 hash = 14695981039346656037ull;
+            for (u32 y = 0; y < dst_h; y += 16) {
+                for (u32 x = 0; x < dst_w; x += 16) {
+                    const u8* p = dst + (size_t(y) * desc.stride + x) * 4;
+                    visible += (p[0] | p[1] | p[2]) != 0;
+                    alpha += p[3] != 0;
+                    for (int c = 0; c < 3; ++c) {
+                        hash ^= p[c]; hash *= 1099511628211ull;
+                    }
+                    ++sampled;
+                }
+            }
+            std::printf("GOW3_MALI_VISUAL event=ahb_pixels frame=%llu buffer=%u "
+                        "source=%ux%u dst=%ux%u stride=%u nonblack=%llu/%llu "
+                        "alpha_nonzero=%llu/%llu rgb_hash=%016llx\n",
+                        (unsigned long long)sequence, image_index,
+                        src_width, src_height, dst_w, dst_h, desc.stride,
+                        (unsigned long long)visible, (unsigned long long)sampled,
+                        (unsigned long long)alpha, (unsigned long long)sampled,
+                        (unsigned long long)hash);
+        }
+    }
+    if (capture_frame) {
+        const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
+        if (dir && *dir) {
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/ahb_%03u_%ux%u.bmp",
+                          dir, capture_frame, dst_w, dst_h);
+            const bool saved = SaveMaliAhbBmp(path, dst, dst_w, dst_h, desc.stride);
+            std::printf("GOW3_MALI_CAPTURE stage=ahb frame=%u path=%s ok=%d\n",
+                        capture_frame, path, int(saved));
+        }
+    }
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbCopy, ahb_copy_start);
+    const auto ahb_unlock_start = perf_sample ? MaliPerfStats::Clock::now()
+                                              : MaliPerfStats::TimePoint{};
+    const int unlock_result = AHardwareBuffer_unlock(buffer.ahb, nullptr);
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbUnlock, ahb_unlock_start);
+    if (unlock_result != 0) {
+        LOG_ERROR(Render_Vulkan, "MALI_CPU_PRESENT AHardwareBuffer_unlock failed: {}",
+                  unlock_result);
+        if (MaliVisualTrace::Requested()) MaliVisualTrace::Add(MaliVisualTrace::Counts::ahb_failed);
+        free_queue.push_back(image_index);
+        return false;
+    }
+    ++frame_counter;
+    const auto ahb_ipc_start = perf_sample ? MaliPerfStats::Clock::now()
+                                          : MaliPerfStats::TimePoint{};
+    bool delivered = false;
+    if (client.Connected()) {
+        delivered = client.SendFrame(generation, image_index, frame_counter, width, height, -1);
+        if (!delivered) PeerGone();
+    } else {
+        free_queue.push_back(image_index);
+    }
+    if (perf_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::AhbIpc, ahb_ipc_start);
+    if (MaliVisualTrace::Requested()) {
+        MaliVisualTrace::Add(delivered ? MaliVisualTrace::Counts::ahb_sent
+                                      : MaliVisualTrace::Counts::ahb_failed);
+        if (!delivered || MaliVisualTrace::Sample(frame_counter))
+            std::printf("GOW3_MALI_VISUAL event=ahb_send frame=%llu "
+                        "generation=%u buffer=%u delivered=%d capture=%u\n",
+                        (unsigned long long)frame_counter, generation, image_index,
+                        int(delivered), capture_frame);
+    }
+    buffer.acquire_imported = false;
+    return delivered && !needs_recreation;
+}
+
+bool Swapchain::Present() {
+    const int fence_fd = ExportPresentReady();
+    ++frame_counter;
+    if (client.Connected()) {
+        if (!client.SendFrame(generation, image_index, frame_counter, width, height, fence_fd)) {
+            PeerGone();
+        }
+        // The buffer is the app's until its release.
+    } else {
+        // Nobody shows it: the sync file is dropped, the buffer is free at once.
+        free_queue.push_back(image_index);
+        buffers[image_index].release_fd = -1;
+    }
+    if (fence_fd >= 0) {
+        close(fence_fd);
+    }
+    buffers[image_index].acquire_imported = false;
+    return !needs_recreation;
+}
+
+} // namespace Vulkan
+#endif // __ANDROID__

@@ -1,0 +1,23 @@
+name: Daedalus Bionic FEX C Smoke
+
+on:
+  push:
+    branches: [release/2.1.7-bionic-ui-mods-cheats-8k-20261020]
+    paths: ['.github/fex-c-smoke-trigger.txt']
+
+permissions:
+  contents: read
+
+jobs:
+  bionic-fex-c:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools ndk;29.0.14206865'
+      - name: Compile FEX guest hooks under the actual Android ARM64 target
+        run: |
+          CLANG="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
+          "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -I. -Isrc -fPIE -fsyntax-only src/probe.c

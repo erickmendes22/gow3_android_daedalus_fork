@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">God of War III — Daedalus Fork</string>
+
+    <!-- 品牌与关键动作按钮：双语同值，不翻译 -->
+    <string name="title_god_of_war_iii">GOD OF WAR III</string>
+    <string name="title_remastered">REMASTERED</string>
+    <string name="launch_button">LAUNCH</string>
+    <string name="start_game_button">START GAME</string>
+
+    <!-- 导航 -->
+    <string name="nav_home">HOME</string>
+    <string name="nav_about">ABOUT</string>
+
+    <!-- Home 页 -->
+    <string name="settings_save_failed">Settings could not be saved</string>
+
+    <!-- 启动参数 -->
+    <string name="launch_parameters_title">LAUNCH PARAMETERS</string>
+    <string name="launch_parameters_group_game">GAME</string>
+    <string name="game_folder_label">Game folder</string>
+    <string name="game_folder_not_selected">Not selected</string>
+    <string name="game_folder_hint">Tap to choose a different folder</string>
+    <string name="update_folder_label">Update folder</string>
+    <string name="update_folder_not_set">Not set (use the game folder as-is)</string>
+    <string name="update_folder_description">Optional: the game\'s update (patch) folder, e.g. CUSA01740-patch. Laid over the game at start.</string>
+    <string name="change_button">CHANGE  ›</string>
+    <string name="launch_parameters_footer">Changes are saved to gow3.ini immediately and take effect at the next launch.</string>
+    <string name="param_group_display">DISPLAY</string>
+    <string name="param_group_performance">PERFORMANCE</string>
+    <string name="param_group_startup">STARTUP</string>
+    <string name="dialog_ok">OK</string>
+
+    <!-- 启动参数：参数名 -->
+    <string name="param_resolution">Resolution</string>
+    <string name="param_render_resolution">Render resolution</string>
+    <string name="param_render_resolution_desc">Sets the rendering resolution. Takes effect on the next launch.</string>
+    <string name="param_resolution_original">1080p</string>
+    <string name="param_resolution_480">480p</string>
+    <string name="param_resolution_720">720p</string>
+    <string name="param_resolution_900">900p</string>
+    <string name="param_resolution_1440">1440p</string>
+    <string name="param_resolution_1800">1800p</string>
+    <string name="param_resolution_4k">4K</string>
+    <string name="param_resolution_240">240p</string>
+    <string name="param_resolution_360">360p</string>
+    <string name="param_resolution_424">424p</string>
+    <string name="param_resolution_540">540p</string>
+    <string name="param_resolution_8k">8K · EXPERIMENTAL (eboot verified only)</string>
+    
+    
+    
+    
+    
+    <string name="param_option_quality">Quality</string>
+    <string name="param_option_performance">Performance</string>
+    <string name="param_option_ultra_performance">Ultra Performance</string>
+    <string name="param_shadows">Disable dynamic shadows</string>
+    <string name="param_desc_shadows">ON disables dynamic shadows by applying the verified CUSA01715 v1.02 patch after restart. OFF keeps original shadows.</string>
+    <string name="param_fps_limit">FPS limit</string>
+    <string name="param_engine_fps">Engine FPS</string>
+    <string name="param_vsync">VSync</string>
+    <string name="param_frames_queued">Frames queued</string>
+    <string name="param_offline_start">Offline start</string>
+    <string name="param_skip_intros">Skip intros</string>
+    <string name="param_free_camera">Free camera</string>
+
+    <!-- 启动参数：选项名 -->
+    <string name="param_option_off_720p">Off (render at 1280×720)</string>
+    <string name="param_option_native">Native</string>
+    <string name="param_option_480p">480p</string>
+    <string name="param_option_720p">720p</string>
+    <string name="param_option_900p">900p</string>
+    <string name="param_option_1440p">1440p</string>
+    <string name="param_option_1800p">1800p</string>
+    <string name="param_option_4k">4K</string>
+    <string name="param_option_30">30</string>
+    <string name="param_option_60">60</string>
+    <string name="param_option_120">120</string>
+    <string name="param_option_240">240</string>
+    <string name="param_option_unlimited">Unlimited</string>
+    <string name="param_option_engine_60">60 (the game\'s own)</string>
+    <string name="param_option_on">ON</string>
+    <string name="param_option_off">OFF</string>
+    <string name="param_option_frames_1">1 (lowest latency)</string>
+    <string name="param_option_frames_2">2</string>
+
+    <!-- 启动参数：说明 -->
+    <string name="param_desc_engine_fps">How fast the game engine itself updates the game world, separate from the display. 60 is the game\'s original speed; higher values make motion smoother but use more power.</string>
+    <string name="param_desc_vsync">Syncs the game\'s frames with your screen\'s refresh rate to stop visual tearing. Leave it ON unless you see tearing or stutter.</string>
+    <string name="param_desc_frames_queued">How many frames the game prepares ahead of what the screen shows. Lower numbers cut input lag; higher numbers can improve smoothness on weaker hardware.</string>
+    <string name="param_desc_free_camera">Lets you move the camera freely around the world for exploring or testing, instead of following the gameplay camera. Meant for experimentation, not normal play.</string>
+
+    <!-- 帧生成卡片 -->
+
+    <!-- About 页 -->
+    <string name="about_title">God of War III — Daedalus Fork</string>
+    <string name="about_version_fmt">Version %1$s</string>
+    <string name="about_description">Daedalus fork of God of War III Remastered for Android, maintained by erickmendes22. Uses an Android/Bionic runtime. Base project: zFitness and contributors.</string>
+    <string name="about_third_party_licenses">Third-party licenses</string>
+    <string name="language_setting">Language</string>
+    <string name="language_follow_system">Follow system</string>
+    <string name="language_zh">简体中文</string>
+    <string name="language_en">English</string>
+
+    <!-- 存档卡片 -->
+    <string name="save_data_title">SAVE DATA</string>
+    <string name="saves_found">Saves found</string>
+    <string name="no_saves_yet">No saves yet</string>
+    <string name="save_data_description">Back up your God of War III saves to a .zip file, or restore a backup. The game\'s savedata lives in the app\'s private folder.</string>
+    <string name="save_export">EXPORT SAVE</string>
+    <string name="save_import">IMPORT SAVE</string>
+    <string name="save_import_footer">Importing replaces the current saves, but the existing ones are backed up first into the app\'s private folder.</string>
+
+    <!-- 日志卡片 -->
+    <string name="log_runtime_logs">RUNTIME LOGS</string>
+    <string name="logs_found">Logs found</string>
+    <string name="no_logs_yet">No logs yet</string>
+    <string name="log_description">Export the God of War III runtime logs to a .zip file for troubleshooting. The game\'s log (android-game.log) lives in the app\'s private folder.</string>
+    <string name="log_export">EXPORT LOGS</string>
+    <string name="log_export_footer">Exporting only reads the runtime log files; it never modifies them or grabs the system logcat.</string>
+
+    <!-- 联系卡片 -->
+    <string name="contact_title">AUTHOR &amp; SUPPORT</string>
+    <string name="contact_author_label">Fork and modifications</string>
+    <string name="contact_qq_label">QQ group</string>
+    <string name="contact_telegram_label">Telegram</string>
+    <string name="contact_open">OPEN</string>
+    <string name="copied_fmt">%1$s copied</string>
+    <string name="contact_qq_not_installed">QQ not installed, group number copied</string>
+    <string name="contact_no_app_fmt">No app can open %1$s</string>
+    <string name="contact_description">Bug reports, crashes and feature requests are all welcome — attach the exported logs when you report an issue so it can be reproduced.</string>
+
+    <!-- GitHub 卡片 -->
+    <string name="github_title">GITHUB</string>
+    <string name="github_star_label">Star us</string>
+    <string name="github_star_description">Enjoying the project? Give it a star to support development.</string>
+    <string name="github_issue_label">Issues &amp; feedback</string>
+    <string name="github_issue_description">Report bugs, crashes or feature requests on the Issues page.</string>
+    <string name="github_open">OPEN</string>
+
+    <!-- Mods 页 -->
+    <string name="mods_title">MOD &amp; PATCH</string>
+    <string name="mods_description">Manage game file mods and third-party shadPS4 patches for God of War III.</string>
+    <string name="mods_empty_title">NO MODS INSTALLED</string>
+    <string name="mods_empty_description">Your mod and patch list will appear here.</string>
+
+    <!-- 数据层消息 -->
+    <string name="no_file_picker_fmt">No file picker is available on this device (%1$s).</string>
+    <string name="unknown_error">unknown error</string>
+    <string name="selected_location">the selected location</string>
+    <string name="log_no_logs">No logs to export</string>
+    <string name="log_write_failed">Could not write to the selected location. The logs were not modified.</string>
+    <string name="log_exported_fmt">Logs exported: %1$s</string>
+    <string name="log_export_failed_fmt">Log export failed: %1$s</string>
+    <string name="save_no_saves">No saves to export</string>
+    <string name="save_write_failed">Could not write to the selected location. No saves were changed.</string>
+    <string name="save_exported_fmt">Saves exported: %1$s</string>
+    <string name="save_export_failed_fmt">Save export failed: %1$s</string>
+    <string name="save_read_failed">Could not read the selected file.</string>
+    <string name="save_imported_with_backup_fmt">Saves imported successfully; the previous saves were backed up to %1$s.</string>
+    <string name="save_imported">Saves imported successfully.</string>
+    <string name="save_import_failed_fmt">Save import failed: %1$s</string>
+    <string name="save_archive_not_zip">The selected file is not a valid zip archive.</string>
+    <string name="save_archive_no_content">The archive contains no saves to import.</string>
+    <string name="save_archive_unsafe_path_fmt">The archive contains an unsafe path: %1$s</string>
+    <string name="save_archive_duplicate_fmt">The archive contains a duplicate path: %1$s</string>
+    <string name="save_archive_wrong_layout_fmt">The archive layout is not a savedata layout: %1$s</string>
+    <string name="save_archive_title_fmt">The archive title does not match God of War III (%2$s): %1$s</string>
+
+    <!-- 游戏目录管理器 -->
+    <string name="storage_permission_title">Storage permission required</string>
+    <string name="storage_permission_message">God of War III needs storage access to read the game folder.</string>
+    <string name="not_a_game_folder">Not a God of War III folder</string>
+    <string name="not_a_game_update_folder">Not a God of War III update folder</string>
+    <string name="choose_again">Choose again</string>
+    <string name="no_eboot">That location has no eboot.bin.</string>
+    <string name="no_eboot_path_fmt">%1$s has no eboot.bin.</string>
+    <string name="update_same_as_game">Choose a folder separate from the game folder, or clear the update.</string>
+    <string name="folder_eyebrow_game">GAME SETUP</string>
+    <string name="folder_eyebrow_update">GAME UPDATE</string>
+    <string name="folder_title_game">Choose your game folder</string>
+    <string name="folder_title_update">Choose the game update folder</string>
+    <string name="folder_message_update">Optional: the update (patch) folder of the game, e.g. CUSA01740-patch. Its eboot.bin and sce_sys are laid over the game at start; the game files are never changed. Leave it empty to use the game folder as-is.</string>
+    <string name="folder_message_game">Select the extracted God of War III folder, such as CUSA01740, or its parent folder. The selected location must contain eboot.bin.</string>
+    <string name="folder_current_selection_fmt">\n\nCurrent selection:\n%1$s</string>
+    <string name="folder_choose_update">CHOOSE UPDATE FOLDER</string>
+    <string name="folder_choose_game">CHOOSE GAME FOLDER</string>
+    <string name="no_folder_picker_fmt">No folder picker: %1$s</string>
+    <string name="language_pt">Português (Brasil)</string>
+    <string name="pkg_install">Install PKG</string>
+    <string name="pkg_update">Install update PKG</string>
+    <string name="setup_title">Set up God of War III</string>
+    <string name="setup_message">How would you like to add the game? Install a PKG directly into a chosen folder, or select an extracted game folder.</string>
+    <string name="setup_folder">Select folder</string>
+    <string name="param_group_fps">FPS HUD</string>
+    <string name="param_show_fps">Show FPS</string>
+        <string name="param_fps_horizontal">FPS HUD horizontal position</string>
+    <string name="param_fps_vertical">FPS HUD vertical position</string>
+    <string name="fps_left">Left</string>
+    <string name="fps_center">Center</string>
+    <string name="fps_right">Right</string>
+    <string name="fps_top">Top</string>
+    <string name="fps_middle">Center</string>
+    <string name="fps_bottom">Bottom</string>
+    <string name="param_fps_position">FPS HUD position</string>
+    <string name="param_fps_size">FPS HUD size</string>
+    <string name="fps_top_left">Top left</string>
+    <string name="fps_top_center">Top center</string>
+    <string name="fps_top_right">Top right</string>
+    <string name="fps_size_50" formatted="false">50%</string>
+    <string name="fps_size_75" formatted="false">75%</string>
+    <string name="fps_size_100" formatted="false">100%</string>
+    <string name="fps_size_125" formatted="false">125%</string>
+    <string name="fps_size_150" formatted="false">150%</string>
+    <string name="fps_size_200" formatted="false">200%</string>
+    <string name="fps_size_250" formatted="false">250%</string>
+    <string name="fps_size_300" formatted="false">300%</string>
+    <string name="contact_base_label">Base project</string>
+    <string name="contact_youtube_label">YouTube</string>
+    <string name="param_anisotropy">Anisotropic filtering</string>
+    <string name="param_option_game_default">Game default</string>
+    <string name="param_desc_anisotropy">Sharpens textures viewed at an angle. May reduce performance. Applied after restart.</string>
+    <string name="param_option_2x">2×</string>
+    <string name="param_option_4x">4×</string>
+    <string name="param_option_8x">8×</string>
+    <string name="param_option_16x">16×</string>
+    <string name="gpu_driver_title">VULKAN DRIVER</string>
+    <string name="gpu_driver_auto">Automatic (Turnip on Adreno; PanVK on compatible Mali; system otherwise)</string>
+    <string name="gpu_driver_system">System driver</string>
+    <string name="gpu_driver_bundled">Turnip Gen8 V38 Patched (Adreno 8xx)</string>
+    <string name="gpu_driver_import">Import driver ZIP</string>
+    <string name="gpu_driver_importing">Importing driver…</string>
+    <string name="gpu_driver_hint">Import an Android ARM64 AdrenoTools driver ZIP. Imported drivers are selected automatically. Changes apply the next time the game starts.</string>
+    <string name="gpu_driver_error">Driver selection failed</string>
+    <string name="gpu_driver_invalid">Could not import or select this driver. Choose a valid Android AdrenoTools ZIP containing meta.json and its driver library.</string>
+    <string name="gpu_driver_wrong_abi">This driver is not an Android ARM64 shared library. Windows and Linux drivers are not supported.</string>
+    <string name="gpu_driver_newer_android">This driver requires a newer Android version.</string>
+    <string name="gpu_driver_missing">Selected driver unavailable. Import it again or choose another driver.</string>
+    <string name="nav_mods">PATCHES</string>
+    <string name="param_android_fullscreen">Fullscreen</string>
+    <string name="param_desc_android_fullscreen">Fill the phone screen. Off keeps the original 16:9 aspect ratio.</string>
+    <string name="patch_next_launch">Changes apply on the next game launch. Resolution and FPS stay on Home.</string>
+    <string name="patch_automatic">Managed automatically with the existing fixes and resolution settings.</string>
+    <string name="patch_skip_intro">Skip Intro</string>
+    <string name="patch_skip_video">Skip Any Video With X Button</string>
+    <string name="patch_texture_fix">Texture corruption fix</string>
+    <string name="patch_black_screen">Startup black screen fix</string>
+    <string name="patch_ssao">Disable SSAO</string>
+    <string name="patch_blur">Disable Motion Blur</string>
+    <string name="patch_dof">Disable Depth of Field</string>
+    <string name="patch_bloom">Disable Bloom</string>
+    <string name="patch_particles">Disable Soft Particles</string>
+    <string name="patch_save_failed">Could not save patch settings.</string>
+    <string name="patch_effect_note">Optional effect patches require a supported 01.02 executable.</string>
+    <string name="gpu_driver_adreno7xx">Turnip v27.0.0-R1 (Adreno 6xx/7xx)</string>
+    <string name="param_expand_video_arena">Expand video arena</string>
+    <string name="param_desc_expand_video_arena">Increases the game video arena independently of resolution. OFF keeps the original arena and may cause texture errors or crashes, especially at higher resolutions. Requires restart.</string>
+    <string name="contact_bionic_label">Android/Bionic runtime</string>
+
+    <!-- 2.1.7 launcher/dialog localization -->
+    <string name="nav_settings">SETTINGS</string>
+    <string name="home_select_game">Select game folder</string>
+    <string name="home_select_update">Select update folder</string>
+    <string name="home_install_pkg">Install game from PKG</string>
+    <string name="home_install_update_pkg">Install update from PKG</string>
+    <string name="home_section_video">VIDEO &amp; PERFORMANCE</string>
+    <string name="home_section_mods">MODS &amp; CHEATS</string>
+    <string name="home_fps_unlimited">Unlimited</string>
+    <string name="home_fps_summary_fmt">FPS &amp; VSync · %1$s · %2$s</string>
+    <string name="home_vsync_on">VSync ON</string>
+    <string name="home_vsync_off">VSync OFF</string>
+    <string name="home_resolution_summary_fmt">Video &amp; resolution · %1$s</string>
+    <string name="home_mods_action">Mods · select &amp; organize</string>
+    <string name="home_cheats_action">Cheats · select</string>
+    <string name="popup_fps_title">FPS &amp; VSync</string>
+    <string name="popup_video_title">Video &amp; resolution</string>
+    <string name="popup_cheats_title">Cheats</string>
+    <string name="popup_fps_limit">FPS limit</string>
+    <string name="popup_engine_fps">Game engine FPS</string>
+    <string name="popup_unlimited">Unlimited</string>
+    <string name="popup_internal_resolution">Internal game resolution</string>
+    <string name="popup_native_resolution">1080p (original)</string>
+    <string name="popup_8k_resolution">8K · Experimental · 7680×4320</string>
+    <string name="popup_8k_warning">8K requires a verified CUSA01715 01.02 eboot.bin. If the SHA or signatures do not match, the patch is rejected. Very high memory usage.</string>
+    <string name="popup_cheat_warning">Available only when the game code matches verified signatures. Applied at the next launch.</string>
+    <string name="popup_cancel">Cancel</string>
+    <string name="popup_apply">Apply</string>
+    <string name="popup_save_failed">Could not save settings.</string>
+    <string name="popup_cheat_health">Infinite health</string>
+    <string name="popup_cheat_magic">Infinite magic</string>
+    <string name="popup_cheat_item">Infinite items</string>
+    <string name="popup_cheat_rage">Infinite Rage of Sparta</string>
+    <string name="popup_cheat_orbs">Maximum red orbs</string>
+    <string name="popup_cheat_very_hard">Unlock Very Hard</string>
+    <string name="popup_cheat_double_jumps">Infinite double jumps</string>
+    <string name="popup_cheat_auto_qte">Automatic QTE (SpartanPort 2.6)</string>
+    <string name="popup_mods_load">Load mods</string>
+    <string name="popup_mods_order_help">The order below defines priority. In a conflict, the lower mod wins.</string>
+    <string name="popup_mods_none">No mods installed. Import a ZIP compatible with SpartanPort.</string>
+    <string name="popup_mods_import">Import mod ZIP</string>
+    <string name="popup_mods_importing">Importing...</string>
+    <string name="popup_mods_imported_fmt">Mod imported: %1$s</string>
+    <string name="popup_mods_import_failed">Import failed</string>
+    <string name="popup_mods_save_failed">Could not save mods.</string>
+    <string name="popup_mods_select_zip">Select a mod ZIP file.</string>
+    <string name="popup_mods_invalid_name">Invalid mod name.</string>
+    <string name="popup_mods_exists">Mod already installed.</string>
+    <string name="popup_mods_unavailable">File unavailable.</string>
+    <string name="popup_mods_too_large">ZIP exceeds 16 GiB.</string>
+    <string name="popup_mods_empty_zip">Empty ZIP.</string>
+    <string name="popup_mods_install_failed">Could not install ZIP.</string>
+    <string name="settings_title">SETTINGS</string>
+    <string name="settings_language_section">LANGUAGE</string>
+    <string name="settings_hud_section">HUD &amp; CONTROLS</string>
+    <string name="settings_hud_label">HUD — FPS / GPU / CPU</string>
+    <string name="settings_hud_save_failed">Could not save HUD settings.</string>
+    <string name="settings_driver_section">OPTIONS</string>
+    <string name="settings_saves_section">SAVES &amp; LOGS</string>
+    <string name="settings_framegen_import_ok">Lossless.dll imported successfully.</string>
+    <string name="settings_framegen_import_failed">Import failed: select a valid, non-empty Lossless.dll.</string>
+    <string name="settings_framegen_title">Lossless.dll · Bloodframe</string>
+    <string name="settings_framegen_ready">Imported · native frame generation is available</string>
+    <string name="settings_framegen_missing">Not imported · frame generation is disabled by default</string>
+    <string name="settings_framegen_import">IMPORT LOSSLESS.DLL</string>
+    <string name="settings_framegen_notice">Provide your own DLL. Bloodframe uses its shaders; the APK never bundles the DLL.</string>
+    <string name="settings_framegen_bionic_only">Native Bloodframe options are available in the Bionic version.</string>
+    <string name="framegen_import_first">Import your Lossless.dll in Settings first.</string>
+    <string name="framegen_section">FRAME GENERATION</string>
+    <string name="framegen_status_off">Off · original frame rate</string>
+    <string name="framegen_status_on_fmt">Bloodframe %1$dx</string>
+    <string name="framegen_next_launch">Configured for next launch. The in-game menu can change it live.</string>
+    <string name="framegen_missing_hint">Lossless.dll missing · import in Settings.</string>
+    <string name="home_gsr2_summary_fmt">Snapdragon Super Resolution · %1$s</string>
+    <string name="popup_gsr2_title">Snapdragon Super Resolution (GSR2)</string>
+    <string name="popup_gsr2_off">Off</string>
+    <string name="popup_gsr2_on">On · GSR2 spatial filter (not temporal upscaling)</string>
+    <string name="popup_gsr2_preset_title">GSR2 quality preset</string>
+    <string name="popup_gsr2_native_aa">Native AA (720p → 720p)</string>
+    <string name="popup_gsr2_quality">Quality</string>
+    <string name="popup_gsr2_balanced">Balanced</string>
+    <string name="popup_gsr2_performance">Performance</string>
+    <string name="popup_gsr2_ultra_performance">Ultra Performance</string>
+    <string name="popup_gsr2_720p_notice">Spatial 1:1 filter, no temporal reconstruction or history. Uses selected game resolution including 8K, subject to GPU memory. Restart to apply.</string>
+    <string name="popup_gsr2_summary_off">Off</string>
+    <string name="popup_gsr2_spatial_notice">GSR2 is a spatial-only filter, NOT temporal upscaling. It preserves the game\'s resolution without frame accumulation. Restart to apply.</string>
+    <!-- Optional direct launch and mobile controls -->
+    <string name="settings_gameplay_section">GAMEPLAY</string>
+    <string name="settings_direct_game_title">Launch directly into the game</string>
+    <string name="settings_direct_game_desc">Skip the launcher on startup when the game folder is ready.</string>
+    <string name="settings_mobile_controller_title">On-screen mobile controller</string>
+    <string name="settings_mobile_controller_desc">Optional virtual PlayStation buttons. Physical gamepads still work.</string>
+    <string name="settings_controller_labels_title">Button captions</string>
+    <string name="settings_controller_labels_desc">Show the physical button IDs below action icons for combos and QTEs.</string>
+    <string name="controller_triangle">TRIANGLE</string>
+    <string name="controller_circle">CIRCLE</string>
+    <string name="controller_cross">CROSS</string>
+    <string name="controller_square">SQUARE</string>
+    <string name="settings_fullscreen_title">Fullscreen (fill display)</string>
+    <string name="settings_fullscreen_desc">Off: centered 16:9. On: stretch to fill without cropping. Android system bars stay hidden in both modes.</string>
+    <string name="gpu_driver_mali_notice">Compatible Mali CSF (Android 15+): experimental PanVK 3.2 is available. Exynos and unsupported GPUs use system Vulkan. Turnip is only for Adreno.</string>
+    <string name="home_swap_rb">Swap red and blue (R/B)</string>
+    <string name="home_swap_rb_hint">Use if game colors are reversed with your driver. Takes effect on the next game start.</string>
+    <string name="gpu_driver_panvk">PanVK 3.2 (Mali; experimental)</string>
+    <string name="gpu_driver_panvk_next">PanVK 26.3.1 (Mali; updated experimental driver)</string>
+    <string name="gpu_driver_adreno_auto">Gen8 V38 Patched (Adreno 8xx) / v27 R1 (Adreno 6xx/7xx)</string>
+</resources>

@@ -1,0 +1,23 @@
+Native build validation for GSR2 native-input motion correction.
+Source-check, Android launcher, Bionic CPU/GPU and native runtime are compiled.
+No APK is packaged or advertised as visually corrected.
+
+Re-run after correcting the workflow YAML syntax; compile only.
+
+Run C++ ARM64 after DrawIndirectRecord regs fix dfc1de008ed36468ca08bb9bc52d445e726cd9ac.
+
+Trigger full signed experimental Bionic APK packaging and artifact upload after native runtime build succeeded in GitHub Actions run 40977302209.
+
+2026-10-30: compile real Android native C++ and package GSR2 post-scene VideoOut source experimental APK after Stage CI 41015061274 passed.
+
+2026-10-30: compile native Bionic and package diagnostic APK with menu-triggered draw-stage readback (1 through 2048) and flip-correlated final VideoOut.
+
+2026-10-30 ZIP7: compile Android Bionic with native-only jitter guard and fine-grained HUD transition captures from draw 17..48; keep Native AA unchanged.
+
+ZIP8/ZIP9 real measured +3/+1 native flow: signed Android Bionic APK including 30 original-native candidates, center-tap pruning, bounded fractional history reprojection. Native jitter guard unchanged.
+
+ZIP10/ZIP11 2026-10-30: native Android compile and signed experimental APK from dynamic 3D-to-depthless scene snapshot; keep zero jitter and original early-copy fallback.
+
+ZIP11: rerun Android native compile and package signed diagnostic APK after Stage CI 41060408686 passed; dynamic completed-3D capture from depth-enabled to depthless transitions.
+
+2026-10-30 ZIP12/13: after GSR2 Stage Correlation 41065797004 success (real GLSL SPIR-V and tests), build ONE Bionic native APK with camera-Y-guided original-native 5x3 history correction. No framebuffer, color, jitter or HUD changes. Source replay validates false 1px vs real 3-4px vertical motion.

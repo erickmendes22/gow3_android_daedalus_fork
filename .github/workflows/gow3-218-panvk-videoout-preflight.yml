@@ -1,0 +1,27 @@
+name: GoW3 PanVK framebuffer label retirement source preflight (no APK)
+# The native APK workflow already executes these tests on every push.
+# Keep the lightweight check available on demand to avoid duplicate runs.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          sh -n tools/android/bionic/run-bionic.sh
+          python -m unittest discover -s tests -p 'test_bionic_videoout_flip_retirement.py' -v
+          # Dependency-free source guards; the complete native/Bionic suite runs
+          # after provisioning the Android NDK and third-party headers.
+          python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
+          python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
+          python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
+          python -m unittest discover -s tests -p 'test_bionic_eboot_source.py' -v
+          python -m unittest discover -s tests -p 'test_game_update.py' -v
+          python -m unittest discover -s tests -p 'test_sparse_queue.py' -v
+          python -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v

@@ -1,0 +1,18 @@
+Experimental GoW III 2.1.7 GSR2: Bloodborne Catmull-Rom history + capture six same-flip frames (input, depth, motion, output, composited, videoout) with in-game ZIP export.
+Based on GSR2 AtomicDepth #165, source eboot CUSA01623 01.02 SHA256 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c.
+
+CI trigger 2026-10-29: dedicated GSR2 temporal capture APK build.
+
+Build after capture metadata corrections; exact completed VideoOut shader and CUSA01623 markers.
+
+Fix capture interaction: 3-second delayed raw frame sampling after dismissing Android menu.
+
+Single final APK validation 2026-10-29: complete VideoOut RGB source matched to verified MSAA depth/motion; preserve raw early scene A/B and fix sRGB output.
+
+CI retest: fix a provably failing GSR2 full_color assert in test_android_gsr2_complete_videoout.py. Confirmed all 45 new assertIn patterns against branch source. Only one Bionic APK workflow on this trigger.
+
+2026-10-29 temporal-only capture verification: second real-device archive (1) had 6/6 spatial reset frames (full VideoOut input but motion=0); first archive had 6/6 true temporal frames with incomplete LDR input. Skip spatial frames and wait for six real history (reset=0) frames with complete VideoOut. One Bionic APK workflow only.
+
+GSR2 actual shader correction 2026-10-29: photometric validation in gsr2_upscale.comp against false ~1-2 pixel ModelToPreProj camera vectors. Offline six-frame ZIP (2): background prev-frame reprojection error reduced from 0.087-0.095 to 0.022-0.027 on five pairs. Adds tests/test_android_gsr2_photometric_motion.py. Build only via existing Bionic APK workflow; no duplicate workflow.
+
+Final real shader correction after fourth ZIP (3), 2026-10-29: gsr2_upscale.comp 5-tap YCoCg photometric history with 2D correspondence search (16 candidates) and disocclusion reject, correcting false 1-7 pixel model-camera vectors. Offline pixel checks on all 10 frame pairs ZIP (2),(3): old-vectors errors 0.0924/0.0683 vs selected-motion 0.0253/0.0141; one Bionic APK build, no extra diagnostic workflow.

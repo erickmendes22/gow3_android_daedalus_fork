@@ -1,0 +1,1 @@
+Run one gated R9 Bionic build. Fix: one display boundary per verified scene; host GSR2 framebuffer survives intermediate passes and presenter sees valid output. HUD, LSFG, shaders, patches untouched.

@@ -1,0 +1,3 @@
+R4 validated source-only gate (2026-10-19)
+Trigger this branch's Bionic APK workflow exactly once after source-test assertion correction and HUD/GSR2 integration preflight.
+Source commit before trigger: 9f5f384ef1081eb1ecd91cfa82bd5ee9079d0e49

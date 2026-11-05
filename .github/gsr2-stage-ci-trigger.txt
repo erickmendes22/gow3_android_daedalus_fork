@@ -1,0 +1,47 @@
+GSR2 pre-HUD source correlation and projection guard 2026-10-21; run all Bionic host regressions.
+
+2026-10-21: validate depth target write-generation forwarding to GSR2 VideoOut match guard.
+
+R22 2026-10-21: regression check for native ARM64 settings header after vk_rasterizer.cpp undeclared Gow3Settings failure in run 39652898177; depth write-generation safeguards.
+
+2026-10-21: Direct GSR2 frame-matched temporal jitter, camera motion reproject includes completed Halton phase. Native AA unaffected. R16 jitter regression replaced by true completed-frame contract. This is strictly GSR2 upscale quality work, not corruption investigation.
+
+GSR2 jitter R23 host gate: replace stale spatial-only assertion in test_bionic_gsr2_direct_videoout_presets with completed-frame jitter evidence. Preserve strong camera validation and Native AA path.
+
+2026-10-21 GSR2 pre-HUD pipeline groundwork: retain last genuine LDR scene when guest binds VideoOut color; do not dispatch jitter over composite or change present path. Regression test validates last-scene provenance and direct-mode no-output-change contract.
+
+GSR2 2026-10-21 verify complete opt-in pre-HUD guest-scene GPU snapshot, 3-buffer exact flip provenance, Qualcomm temporal GSR2 input, post-HUD merge shader, frame-matched jitter and stable fallback. Run source and regression gate before ARM64 native APK.
+
+2026-10-21 after native C++ failure: Vulkan UniqueImage explicit default constructor fix, ensure pre-HUD slot array constructs, and bounded diagnostic newline correction. Verify host tests before ARM64 build retry.
+
+2026-10-21 post test 190657 GSR2: history and prehud active from ~3600, but prior thumbnail generation 2400 was different frame. Validate same flip composite stage snapshots, 16-point scene-content guard and bilinear fallback for guest HUD; no new random jitter changes.
+
+2026-10-21 confirmed log 190657: at frame 12000 matched prehud scene slot but no valid camera history and jitter nonzero. Require completed camera validity for scene jitter, in addition to sameflip stage dump, linear HUD sampling, global mismatch guest fallback.
+
+2026-10-21 log 194900: same-VideoOut-flip 4800/7200/9600 sampled; Qualcomm RGBA16F raw values linear, not dark SRGB; 9600 final loses guest VideoOut color-grading. Restore color-pass linear residual after scene-only GSR2, preserve strong-HUD direct pixels, count ALL actually nonreset temporal dispatches instead of sampling once every 600 frames. Run full host regression gate.
+
+2026-10-21 log 194900 saturated 16/16 adjacent-frame camera source cache with all 64 probes consumed. Raise ONLY per-frame source storage to 32, preserve 64 bounded probes and unchanged shader/pose/projection/cut validity. Validate exact camera regression and scene-HUD color residual.
+
+2026-10-21 verify temporal counts only AFTER a successful gsr2->Record, keeping 32/32-source adjacent-camera cache (64 probes fixed), color residual and HUD separation. Regression gate before final native integration.
+
+2026-10-21 log 202739 root-cause 0/16200 temporal: sustained 200 valid scene cameras per 600 VideoOut flips (scene once every three PS4 presentation callbacks). Scene temporal history must stay in separate Qualcomm provider from filler spatial flips; matching shader + full prior scene matrices + saved previous jitter + max four-flip gap; no reuse across unmatched scene camera/cut/provider reset. Add dedicated cadence tests and ARM64 gate.
+
+2026-10-21 scene-cadence test gate retry: update prior motion-jitter regression assertion to accept camera-verified prior scene jitter instead of intermediate VideoOut jitter. All actual CUSA01623 camera projection/hard-reset safety constraints unchanged.
+
+2026-10-21 scene-cadence temporal fix second regression: hold jitter across intermediate 240 Hz VideoOut callbacks; advance exactly on verified real scene; use patched 640x360 input and 1280x720 output 32 Halton phases rather than nominal 1:1 SceneTargets, and no reset on intermediate eligibility toggles. Validate camera continuity, dual GSR2 providers and fallback.
+
+2026-10-21 log GodOfWar3-Logs-20261021-212023.zip: 5013 genuine temporal dispatches but full-screen alternating visual corruption. Root issues: reprojection previously used approximate prior VideoOut camera rather than exact prior temporal GSR scene camera; post-HUD compositor mistook 7/16 full-screen mismatching samples at generation 7200 as eligible for scene mixing (12/16 threshold). Fix strict prior camera matching; exact previous temporal matrices with corresponding jitter; conservative 5/16 coherent full-frame guest fallback; feather per-pixel HUD mixing; Qualcomm current-frame color-consistency history rejection before blending. Preserve 1-in-3 temporal accumulation and independent spatial provider. Run full source and regression tests, then native build.
+
+2026-10-21 log 215958 still shows approx 38.5 percent valid temporal, no visual improvement; same-flip 4800/7200/9600 reconstructed color is mostly coherent, but corruption between samples. SGSR2 shader used clamp(rawPrevUV,0,1) on missing/invalid/out-of-raster motion, which can smear old history border pixels across the frame; conversion didn't validate motion before encoding, jittered source index could be = input size. Clamp current sample indices; set depthclip=1 on invalid camera motion, reject stale history per-pixel if rawPrevUV outside raster/nonfinite, preserve genuine temporal for in-bounds motion. Run host regressions and shader check, not another arbitrary global HUD threshold change.
+
+2026-10-21 21:59 guard tests rerun: original test expected direct raw InputMotion sample in SGSR2 convert. Update test to require the SAME sign/units after validating offscreen raw historyUV and forcing only invalid samples spatial. Real temporal in-bounds movement remains unchanged. Recheck entire host test suite before ARM64 build.
+
+2026-10-21 rerun after adapting final legacy assertion: SGSR2 PrevUV mathematical reprojection is unchanged, now first computes raw unbounded previous UV to forbid border-clamped stale history, then clamps safe. Regression source checks both the raw formula and pixel-history rejection for invalid reprojection.
+
+2026-10-21 final invalid-motion SGSR2 gate: reject previous UV outside frame, NaN/Inf motion and History RGBA16F including alpha; ensure only invalid pixels spatial while others accumulate temporal; enforce current jitter source index < raster extents. Tests updated for original mathematically equivalent motion sign and raw previous UV before clamp.
+
+2026-10-22, inspect 215958 vs 212023: no reduction in user-visible flickering despite temporal reprojection/history threshold changes (4851 genuine temporal histories/12600 flips). Current per-frame preHUD composite classifier uses raw difference 5/16 causing false whole-screen spatial/temporal switching on global PS4 color grading (real sameflip sample at 7200/9600). Replace it with per-channel bounded affine LINEAR-light grade computed from 16 fixed screen points, evaluate mismatch AFTER grade, soften global fallback 3..11 residual sites and preserve HUD via spatial local difference AFTER grade, keep scene-only Qualcomm history. Verify regression suite and shader before full native build; no claim of visual fix without phone data.
+
+2026-10-22 guard robust same-flip 16-site linear color grade: exclude 0.55+ outlier HUD samples before affine regression, require >=8 valid scene sites; otherwise full PS4 guest fallback. Reject true mismatch from post-grade residual, not PS4 global illumination/tonemap; smooth whole-frame weight 3..11 sites. Full numeric synthetic tests added. Need host CI before any APK; visually unverified.
+
+2026-10-22 updated robust-color-regression structural expectation: covariance now normalizes by accepted (not total) scene samples to exclude anomalous HUD pixels. Verify all tests after replacing obsolete fixed-16 assertion. Do not treat compile as visual validation.

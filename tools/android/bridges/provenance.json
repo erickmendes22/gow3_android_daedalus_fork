@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "source_apk": "fexdroid-legacy.apk",
+  "source_apk_sha256": "21bed34092f698e39e77138589ebdab8d3498577ffc4fdc3bfef1c711b50d3bf",
+  "source_project": "fexdroid",
+  "source_revision": "2b03ec73c3507b640fba1942fb8d99b43b88945a",
+  "abi": "arm64-v8a",
+  "license": "fexdroid upstream license; see frontend/THIRD_PARTY_LICENSES.txt",
+  "distribution": "developer-provided extracted bridge inputs; verify upstream license before redistribution",
+  "files": [
+    {
+      "archive_path": "lib/arm64-v8a/libfxdisplay.so",
+      "output_path": "tools/android/bridges/arm64-v8a/libfxdisplay.so",
+      "sha256": "726e1f3afc8407ccc7418642e17c432e11dc1eab3b2a81a3a7e9352976998945",
+      "size": 16344
+    },
+    {
+      "archive_path": "lib/arm64-v8a/libfxio.so",
+      "output_path": "tools/android/bridges/arm64-v8a/libfxio.so",
+      "sha256": "76060e808a0d2adbfac036410b6b2a66b0767c4c6e4643963286d4211b2f38ad",
+      "size": 23272
+    }
+  ]
+}

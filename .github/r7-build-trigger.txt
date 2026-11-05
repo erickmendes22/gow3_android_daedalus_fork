@@ -1,0 +1,1 @@
+R7: One controlled Bionic build. GPU readback provenance: scene_proxy 640x360 -> GSR2 output 1280x720 -> UI blit 1280x720 -> PS4 display 1280x720. Single shot; no shader changes.

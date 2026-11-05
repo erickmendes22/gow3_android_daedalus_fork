@@ -1,0 +1,282 @@
+name: GoW3 2.1.8 Mali PanVK VideoOut isolated native verification
+
+on:
+  push:
+    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031]
+    paths:
+      - '.github/workflows/gow3-218-panvk-videoout-native.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+      - 'gpu/shadps4/shader_recompiler/resource.h'
+      - 'tests/test_mali_panvk_safe_mode.py'
+      - 'tests/test_mali_parallel_draw_android.py'
+      - 'tests/test_mali_bachata_cached_pending_ticks.py'
+      - 'tests/test_mali_image_barrier_split.py'
+      - 'tests/test_mali_pm4_unused_checksum.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_draw_prep.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.h'
+      - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
+      - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
+      - 'tests/test_mali_pm4_unused_dirty.py'
+      - 'tests/test_mali_bc_image_pool.py'
+      - 'tests/test_mali_rgba128_image_pool.py'
+      - 'tests/test_mali_bc_alias_retirement.py'
+      - 'gpu/shadps4/video_core/texture_cache/read_barrier_policy.h'
+      - 'tests/test_mali_read_only_image_barriers.py'
+      - 'tests/test_g720_driver_2631_isolated.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_barrier_flush_policy.h'
+      # Re-run native verification when camera integration tests or new
+      # Mali menu/performance regression guards are corrected.
+      - 'tests/test_android_fsr_integration.py'
+      - 'tests/test_mali_menu_hotpath.py'
+      - 'tests/test_mali_menu_metrics.py'
+      - 'tests/test_bionic_r11_gsr2_camera_feed.py'
+      - 'tests/test_bionic_r5_hud_and_gsr2.py'
+      - 'tests/test_mali_gc_budget_and_layout.py'
+      - 'tests/test_mali_perf_stats.py'
+      - 'tests/test_mali_warmup_disable.py'
+      - 'tests/test_bachata_release_mali_shader_resources.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_visual_trace.h'
+      - 'tools/android/bionic/present/gow3present.c'
+      - 'tools/android/bionic/build_runtime.sh'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'tools/android/bionic/build_apk.sh'
+      - 'tools/android/bionic/sign_apk.sh'
+      - 'tools/android/bionic/package_runtime.py'
+      - 'tools/android/bionic/validate_apk.py'
+      - 'android-launcher/app/build.gradle.kts'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java'
+      - 'tests/test_mali_visual_provenance.py'
+      - 'tests/test_mali_capture_readme_runtime.py'
+      - 'tests/test_mali_framebuffer_extent.py'
+      - 'tests/test_mali_only_package.py'
+      - 'tests/test_android_release_2_1_7.py'
+      - 'tests/test_mali_standalone_launcher.py'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/home/HomeScreen.kt'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_swapchain_ahb.h'
+      - 'tools/android/bionic/run-bionic.sh'
+      - 'scripts/game_update.py'
+      - 'tests/test_game_update.py'
+      - 'tools/android/bionic/fetch_panvk.sh'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java'
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/home/GpuDriverCard.kt'
+      - 'android-launcher/app/src/main/res/values/strings.xml'
+      - 'android-launcher/app/src/main/res/values-pt-rBR/strings.xml'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'tests/test_mali_panvk_compat_sources.py'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/robust_image_view.h'
+      - 'tests/test_mali_robust_image_view.py'
+      - 'tests/test_mali_cpu_present_source.py'
+      - 'tests/test_mali_render_stage_capture.py'
+      - 'tests/test_bionic_videoout_flip_retirement.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_frame_capture.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/tile_manager.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/tile_manager.h'
+      - 'gpu/shadps4/video_core/texture_cache/blit_helper.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_shader_hle.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_predication.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_predication.h'
+      - 'gpu/shadps4/shader_recompiler/resource.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h'
+      - 'tests/test_bachata_release_mali_shader_resources.py'
+      - 'tests/test_mali_no_push_predication_and_copy.py'
+      - 'gpu/shadps4/video_core/texture_cache/blit_helper.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.h'
+      - 'tests/test_bachata_release_mali_tiling_descriptors.py'
+      - 'tests/test_bachata_release_mali_blit_descriptors.py'
+      - 'tests/test_bachata_release_mali_postprocess_descriptors.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp'
+      - 'scripts/launch_env.py'
+      - 'tests/test_launch_env.py'
+      - 'tests/test_mali_physical_depth_bridge.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_pass_capture.h'
+      - 'tests/test_mali_pass_attachment_capture.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bionic-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+      GOW3_BUILD_TOOLS: '36.0.0'
+      GOW3_MALI_ONLY_BUILD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - name: Restore established APK upgrade signing key
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-development.keystore
+          key: bionic-development-signing-v1
+      - name: Check existing signing identity (never replace it)
+        run: |
+          if test -s .local-deps/android/bionic-development.keystore; then
+            echo "GOW3_CAN_SIGN=1" >> "$GITHUB_ENV"
+          else
+            echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
+            echo "::warning::Established Bionic signing key cache unavailable. Native renderer will still compile; no replacement signing identity or APK will be produced."
+          fi
+      - name: Preflight Mali display bridge and separate signer
+        run: |
+          # Catch native bridge errors and unusable test signer before a long GPU build.
+          if [[ "$GOW3_CAN_SIGN" != 1 ]]; then
+            keytool -list -keystore tools/android/debug/gow3-debug.keystore -storepass android >/dev/null
+          fi
+          "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" \
+            -std=c11 -O2 -Wall -Wextra -Werror -fPIC -DGOW3_MALI_PRESENT_TRACE=1 \
+            -Itools/android/present -fsyntax-only tools/android/bionic/present/gow3present.c
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          targets: aarch64-linux-android
+      - name: Source and native preparation tests
+        run: |
+          # Runtime launcher is executed directly in the signed APK.
+          # Git mode must be 100755; fail before expensive native compilation.
+          test -x tools/android/bionic/run-bionic.sh
+          test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
+          python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_mali_framebuffer_extent.py' -v
+          python -m unittest discover -s tests -p 'test_mali_capture_readme_runtime.py' -v
+          python -m unittest discover -s tests -p 'test_mali_standalone_launcher.py' -v
+          python -m unittest discover -s tests -p 'test_mali_only_package.py' -v
+          python -m unittest discover -s tests -p 'test_mali_visual_provenance.py' -v
+          python -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
+          python -m unittest discover -s tests -p 'test_mali_parallel_draw_android.py' -v
+          python -m unittest discover -s tests -p 'test_mali_bachata_cached_pending_ticks.py' -v
+          python -m unittest discover -s tests -p 'test_mali_image_barrier_split.py' -v
+          python -m unittest discover -s tests -p 'test_mali_pm4_unused_checksum.py' -v
+          python -m unittest discover -s tests -p 'test_mali_pm4_unused_dirty.py' -v
+          python -m unittest discover -s tests -p 'test_mali_bc_image_pool.py' -v
+          python -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
+          python -m unittest discover -s tests -p 'test_mali_bc_alias_retirement.py' -v
+          python -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
+          python -m unittest discover -s tests -p 'test_g720_driver_2631_isolated.py' -v
+          python -m unittest discover -s tests -p 'test_mali_warmup_disable.py' -v
+          python -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v
+          python -m unittest discover -s tests -p 'test_mali_render_stage_capture.py' -v
+          python -m unittest discover -s tests -p 'test_mali_pass_attachment_capture.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_tiling_descriptors.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_blit_descriptors.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_postprocess_descriptors.py' -v
+          python -m unittest discover -s tests -p 'test_mali_no_push_predication_and_copy.py' -v
+          python -m unittest discover -s tests -p 'test_bachata_release_mali_shader_resources.py' -v
+          python -m unittest discover -s tests -p 'test_mali_physical_depth_bridge.py' -v
+          python -m unittest discover -s tests -p 'test_launch_env.py' -v
+          python -m unittest discover -s tests -p 'test_mali_panvk_compat_sources.py' -v
+          python -m unittest discover -s tests -p 'test_mali_robust_image_view.py' -v
+          python -m unittest discover -s tests -p 'test_bionic_eboot_source.py' -v
+          python -m unittest discover -s tests -p 'test_game_update.py' -v
+          python -m unittest discover -s tests -p 'test_android_*.py'
+          bash tools/android/bionic/build_prepare.sh host
+          python -m unittest discover -s tests -p 'test_bionic_*.py'
+          python -m compileall -q tools/android/bionic scripts
+          "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
+      - name: Check launcher compilation before building native runtime
+        run: bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2
+      - name: Build Android Python for existing patch validators
+        run: GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865" bash tools/android/bionic/build_python.sh
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Host headers and native tools
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build Android dependencies and audit GPU configuration before compilation
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh --configure-only
+      - name: Build and validate CPU, GPU and native runtime
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_runtime.sh
+      - name: Build pinned MIT Bloodframe 2x/3x/4x engine
+        if: env.GOW3_MALI_ONLY_BUILD != '1'
+        shell: bash
+        run: |
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          bash tools/android/build_framegen.sh
+          test -s out/bionic/lib/libbloodframe.so
+      - name: Build Android PKG extractor
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_pkg.sh
+      - name: Upload compiled Mali GPU renderer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoW3-Mali-graphics-native-verified
+          path: out/bionic/lib/libgow3gpu.so
+          if-no-files-found: error
+      - name: Package, sign and validate GoW3 2.1.8 APK
+        if: env.GOW3_CAN_SIGN == '1'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_apk.sh --package-only
+      - name: Build separately installable Mali diagnostic APK
+        if: env.GOW3_CAN_SIGN != '1'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          # Different package ID; no accidental override of the installed GoW3 app.
+          GOW3_MALI_TEST_APK=1 bash tools/android/bionic/build_apk.sh --package-only
+      - uses: actions/upload-artifact@v4
+        if: env.GOW3_CAN_SIGN != '1'
+        with:
+          name: God-of-War-III-Mali-Standalone-Diagnostic
+          path: |
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: env.GOW3_CAN_SIGN == '1'
+        with:
+          name: God-of-War-III-Daedalus-2.1.8-PanVK-VideoOut-Experimental
+          path: |
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Bionic-build-diagnostics
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/gpu/.cmake/api/v1/reply/target-gow3gpu-*.json
+            android-launcher/app/build/outputs/logs/
+          if-no-files-found: ignore

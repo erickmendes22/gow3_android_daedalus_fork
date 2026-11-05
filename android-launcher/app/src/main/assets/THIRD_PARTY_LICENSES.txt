@@ -1,0 +1,41 @@
+Native display and X11 input bridges: fexdroid
+https://github.com/cobrabm12/fexdroid
+Source revision 2b03ec73c3507b640fba1942fb8d99b43b88945a
+Reused unmodified from the verified fexdroid legacy APK. The developer-provided
+ARM64 extraction is recorded in tools/android/bridges/provenance.json; the
+source APK is not included in this repository. Verify the upstream fexdroid
+license before redistributing the extracted binaries.
+
+Turnip Vulkan driver: Mesa (MIT), https://gitlab.freedesktop.org/mesa/mesa
+commit 35b085c4c067f198ce0b6437d94678e47b9c645f, with fexdroid's Mesa patches
+0001, 0005, 0006 and 0007 (patches/mesa at fexdroid revision
+dbf9808b07570faf5aa912af16d4c4a1b5d0130f), under the fexdroid license below.
+Adreno 8xx variant: Mesa from https://github.com/whitebelyash/mesa-unified
+(turnip/gen8, commit 9c7e022677dfa3abb356c2b6732cbd2e25783d01, MIT), with
+upstream Mesa commits b889ab52, b7ad24ad, e984ef29, 6cb65e61 and the same
+fexdroid patches.
+
+FSR 3.1: AMD FidelityFX (MIT) through
+FireBurn/FSR-Vulkan.
+
+MIT License
+
+Copyright (c) 2026 Marius
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

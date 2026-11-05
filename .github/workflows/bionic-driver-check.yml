@@ -1,0 +1,38 @@
+name: Bionic driver check (experimental, no APK)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  driver-check:
+    if: github.ref == 'refs/heads/experimental-bionic'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Android source and Bionic input/driver paths
+        run: python -m unittest discover -s tests -p 'test_android_*.py'
+      - name: Verify native GoW preparation against the existing Python implementation
+        run: |
+          bash tools/android/bionic/build_prepare.sh host
+          python -m unittest discover -s tests -p 'test_bionic_prepare.py' -v
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android NDK
+        run: sdkmanager 'ndk;29.0.14206865'
+      - name: Build Android ARM64 driver checker and stage exact V37 patched
+        run: GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865" bash tools/android/bionic/build_driver_check.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Daedalus-Bionic-driver-check-arm64
+          path: |
+            out/bionic-driver-check/bin/
+            out/bionic-driver-check/drivers/
+            out/bionic-driver-check/check-driver.sh
+          if-no-files-found: error

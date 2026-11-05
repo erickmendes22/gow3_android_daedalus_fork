@@ -1,0 +1,24 @@
+name: GoW3 2.1.8 Mali PanVK source preflight (NO APK)
+
+on:
+  push:
+    branches: [fix/gow3-218-mali-panvk-20261031]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Mali fallback and native-independent Android tests
+        run: |
+          python -m unittest discover -s tests -p 'test_sparse_queue.py' -v
+          python -m unittest discover -s tests -p 'test_android_bionic_driver.py' -v
+          python -m unittest discover -s tests -p 'test_android_driver_selection.py' -v
+          python -m unittest discover -s tests -p 'test_bionic_ahb_acquire_wait.py' -v

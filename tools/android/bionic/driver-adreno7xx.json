@@ -1,0 +1,16 @@
+{
+  "id": "turnip-v27-r1",
+  "name": "Turnip v27.0.0-R1",
+  "author": "StevenMXZ",
+  "family": "adreno-6xx-7xx",
+  "archive": "Turnip_v27.0.0-R1.zip",
+  "url": "https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/download/v27.0.0-R1/Turnip_v27.0.0-R1.zip",
+  "archive_sha256": "07938ef843a73dd47ebb88ba9c2d3bca011667bd2b657e3b4a75d9ba8ed591a0",
+  "library": "libvulkan_freedreno.so",
+  "library_sha256": "65c95c05122a3c0528b8d5c9148633776a26eb9cde1c3440df1f9c66bcf6e6c8",
+  "entry": "HMI",
+  "min_api": 28,
+  "default_chip_id_prefix": "0x43",
+  "source": "https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/tag/v27.0.0-R1",
+  "patches": "https://github.com/WinNative-Emu/Drivers/tree/main/patches"
+}
