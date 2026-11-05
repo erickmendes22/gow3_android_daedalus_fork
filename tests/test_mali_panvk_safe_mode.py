@@ -37,7 +37,15 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
 
     def test_panvk_is_conservative(self):
         self.assertEqual(self.profile("/private/libvulkan_panfrost.so"),
-                         "1:0:2:1:0:0")
+                         "1:1:2:1:0:0")
+
+    def test_manual_warmup_opt_out_remains_supported(self):
+        # A known crash-prone cache can still disable preloading explicitly.
+        source = RUNNER.read_text()
+        self.assertIn("GOW3_BACKGROUND_WARMUP=${GOW3_BACKGROUND_WARMUP:-1}", source)
+        presenter = (ROOT /
+            "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
+        self.assertIn("*background_warmup == '0'", presenter)
 
     def test_other_drivers_keep_existing_settings(self):
         for lib in ("/private/libvulkan_freedreno.so", "/system/libvulkan.so"):
