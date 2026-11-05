@@ -74,6 +74,29 @@ public:
         callback();
     }
 
+    void WaitAll() {
+        // Original policy retained as default; the candidate must NOT
+        // change behavior until real Mali waits show a meaningful cost.
+        while (true) {
+            Task task;
+            {
+                std::scoped_lock lk{mutex};
+                if (pending == 0 && epochs.size() == 1 && !draining) {
+                    return;
+                }
+                if (!async_tasks.empty()) {
+                    task = std::move(async_tasks.front());
+                    async_tasks.pop_front();
+                }
+            }
+            if (task.run) {
+                RunAsync(task);
+            } else {
+                std::this_thread::yield();
+            }
+        }
+    }
+
     void WaitIssued() {
         // A submission only depends on the copies issued before this barrier.
         // Waiting for a globally empty pool also waits for unrelated later
@@ -309,7 +332,19 @@ void WaitAsync() {
         batch.items.clear();
         batch.bytes = 0;
     }
-    GetPool().WaitIssued();
+    // Real G615 steady-state logs bound the entire host-copy wait stage to
+    // ~0.10 ms/frame, so do not pay any new cost unless explicitly opted in.
+    static const bool prefix_only = [] {
+        const char* opt = std::getenv("GOW3_MALI_COPY_EPOCH_WAIT");
+        const char* cpu_present = std::getenv("GOW3_MALI_CPU_PRESENT");
+        return std::getenv("GOW3_ANDROID_PORT") && cpu_present &&
+               cpu_present[0] == '1' && opt && opt[0] == '1';
+    }();
+    if (prefix_only) {
+        GetPool().WaitIssued();
+    } else {
+        GetPool().WaitAll();
+    }
 }
 
 void ParallelFor(std::size_t count, const std::function<void(std::size_t)>& task) {
