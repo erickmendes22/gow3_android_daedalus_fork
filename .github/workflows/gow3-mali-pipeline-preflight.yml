@@ -14,6 +14,7 @@ on:
       - 'tests/test_mali_pm4_unused_checksum.py'
       - 'tests/test_mali_pm4_unused_dirty.py'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
+      - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
       - 'gpu/shim/gow3_copy.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.h'
@@ -64,6 +65,9 @@ jobs:
             echo 'ERROR: the measured semaphore throttle should not justify an APK' >&2
             exit 1
           fi
+      - name: Test opt-in PM4 coroutine blocked-state CPU yield and latency
+        run: |
+          python3 benchmarks/gow3_pm4_idle_coroutine_gate.py
       - name: Real Vulkan timeline semaphore before and after query elimination
         run: |
           python3 benchmarks/gow3_timeline_wait_gate.py
