@@ -11,7 +11,7 @@ class BackoffLaunchTests(unittest.TestCase):
         cls.gpu=(ROOT/"gpu/shadps4/video_core/amdgpu/liverpool.cpp").read_text()
 
     def test_opted_in_only_in_panfrost_launcher_case(self):
-        case=self.launcher.index('case "\${GOW3_VULKAN_DRIVER:-}" in')
+        case=self.launcher.index('case "' + chr(36) + '{GOW3_VULKAN_DRIVER:-}" in')
         driver=self.launcher.index('  */libvulkan_panfrost.so)',case)
         backoff=self.launcher.index('export GOW3_MALI_PM4_IDLE_BACKOFF_US=',driver)
         end=self.launcher.index('# End Mali PanVK safe profile.',backoff)
