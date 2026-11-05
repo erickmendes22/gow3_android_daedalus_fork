@@ -139,6 +139,14 @@ int main() {
         if (got != VK_SUCCESS) throw std::runtime_error("Pipeline cache snapshot incomplete");
         data.resize(count);
         auto restored = vk.cache(data);
+        // Directly test the candidate fix: seed an isolated worker cache from
+        // the (already populated) live cache BEFORE launching any worker.
+        // This deliberately does not touch GoW3 renderer production code.
+        auto seeded_worker = vk.cache();
+        CHECK_VK(vkMergePipelineCaches(vk.device, seeded_worker, 1, &live));
+        const double seeded_worker_ms = vk.compile(seeded_worker);
+        auto unseeded_worker = vk.cache();
+        const double unseeded_worker_ms = vk.compile(unseeded_worker);
 
         // Make a new VkPipeline with restored cache; Vulkan allows drivers to
         // ignore cache contents, so we report timings but do not claim speedup.
@@ -149,10 +157,14 @@ int main() {
         std::printf("GOW3_VK_CACHE_PREFLIGHT host=\"%s\" separate_cache_concurrent=ok "
                     "worker_merge=ok snapshot_restore=ok snapshot_bytes=%zu "
                     "live_cold_ms=%.5f worker_cold_ms=%.5f restored_ms=%.5f "
-                    "new_cache_ms=%.5f\n", vk.name, data.size(),
-                    live_cold_ms, worker_cold_ms, restored_ms, unrelated_cold_ms);
+                    "new_cache_ms=%.5f seeded_worker_ms=%.5f unseeded_worker_ms=%.5f "
+                    "has_cache_payload=%u\n", vk.name, data.size(),
+                    live_cold_ms, worker_cold_ms, restored_ms, unrelated_cold_ms,
+                    seeded_worker_ms, unseeded_worker_ms, unsigned(data.size() > 32));
         std::puts("LIMITATION: Host compute shader cache, NOT Mali/PanVK graphics "
                   "pipeline compile nor game FPS; no performance promotion from this test.");
+        vkDestroyPipelineCache(vk.device, unseeded_worker, nullptr);
+        vkDestroyPipelineCache(vk.device, seeded_worker, nullptr);
         vkDestroyPipelineCache(vk.device, untouched, nullptr);
         vkDestroyPipelineCache(vk.device, restored, nullptr);
         vkDestroyPipelineCache(vk.device, worker, nullptr);
