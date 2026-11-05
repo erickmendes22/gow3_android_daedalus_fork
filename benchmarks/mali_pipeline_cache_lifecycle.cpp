@@ -69,7 +69,7 @@ struct Device {
         if (!physical) throw std::runtime_error("No Vulkan compute queue");
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(physical, &props);
-        std::strncpy(name, props.deviceName, sizeof(name) - 1);
+        std::snprintf(name, sizeof(name), "%s", props.deviceName);
         const float priority = 1.0f;
         VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         qi.queueFamilyIndex = family;
@@ -123,8 +123,8 @@ int main() {
         // Cache handles must never be accessed concurrently by two threads.
         auto live = vk.cache();
         auto worker = vk.cache();
-        const auto run_live = std::async(std::launch::async, [&] { return vk.compile(live); });
-        const auto run_worker = std::async(std::launch::async, [&] { return vk.compile(worker); });
+        auto run_live = std::async(std::launch::async, [&] { return vk.compile(live); });
+        auto run_worker = std::async(std::launch::async, [&] { return vk.compile(worker); });
         const double live_cold_ms = run_live.get();
         const double worker_cold_ms = run_worker.get();
 
