@@ -47,6 +47,7 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_visual_trace.h'
       - 'tools/android/bionic/present/gow3present.c'
       - 'tools/android/bionic/build_runtime.sh'
+      - 'tools/android/bionic/build_deps.sh'
       - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
       - 'tools/android/bionic/build_apk.sh'
       - 'tools/android/bionic/sign_apk.sh'
@@ -134,6 +135,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify pinned FFmpeg source fallback syntax and expected SHA
+        run: |
+          bash -n tools/android/bionic/build_deps.sh
+          grep -F 'de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f' tools/android/bionic/build_deps.sh
+          grep -F 'distfiles.macports.org/ffmpeg/ffmpeg-7.1.5.tar.xz' tools/android/bionic/build_deps.sh
       - name: Require measured improvement preflight BEFORE native build or APK
         run: |
           if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 ]]; then
