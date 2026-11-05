@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+N = 1800
 FILE = "gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp"
 BASE = "0f919000565d556211eeefbf196bb1972fc65084"
 
