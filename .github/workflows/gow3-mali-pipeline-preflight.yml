@@ -68,6 +68,9 @@ jobs:
       - name: Test opt-in PM4 coroutine blocked-state CPU yield and latency
         run: |
           python3 benchmarks/gow3_pm4_idle_coroutine_gate.py
+      - name: Check significant PM4 CPU producer contention improvement before tester APK
+        run: |
+          python3 benchmarks/gow3_pm4_contended_producer_gate.py
       - name: Real Vulkan timeline semaphore before and after query elimination
         run: |
           python3 benchmarks/gow3_timeline_wait_gate.py
