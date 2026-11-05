@@ -44,7 +44,7 @@ struct Device {
     char name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE]{};
 
     Device() {
-        VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        VkInstanceCreateInfo ici{}; ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         CHECK_VK(vkCreateInstance(&ici, nullptr, &instance));
         std::uint32_t count = 0;
         CHECK_VK(vkEnumeratePhysicalDevices(instance, &count, nullptr));
@@ -71,22 +71,22 @@ struct Device {
         vkGetPhysicalDeviceProperties(physical, &props);
         std::snprintf(name, sizeof(name), "%s", props.deviceName);
         const float priority = 1.0f;
-        VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+        VkDeviceQueueCreateInfo qi{}; qi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         qi.queueFamilyIndex = family;
         qi.queueCount = 1;
         qi.pQueuePriorities = &priority;
-        VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        VkDeviceCreateInfo dci{}; dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qi;
         CHECK_VK(vkCreateDevice(physical, &dci, nullptr, &device));
-        VkShaderModuleCreateInfo sci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+        VkShaderModuleCreateInfo sci{}; sci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         sci.codeSize = sizeof(code);
         sci.pCode = code;
         CHECK_VK(vkCreateShaderModule(device, &sci, nullptr, &shader));
-        VkPipelineLayoutCreateInfo lci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        VkPipelineLayoutCreateInfo lci{}; lci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         CHECK_VK(vkCreatePipelineLayout(device, &lci, nullptr, &layout));
-        ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        ci.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        ci = {}; ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        ci.stage = {}; ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         ci.stage.module = shader;
         ci.stage.pName = "main";
@@ -100,7 +100,7 @@ struct Device {
         if (instance) vkDestroyInstance(instance, nullptr);
     }
     VkPipelineCache cache(const std::vector<std::uint8_t>& previous = {}) {
-        VkPipelineCacheCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+        VkPipelineCacheCreateInfo info{}; info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
         info.initialDataSize = previous.size();
         info.pInitialData = previous.empty() ? nullptr : previous.data();
         VkPipelineCache out = VK_NULL_HANDLE;
