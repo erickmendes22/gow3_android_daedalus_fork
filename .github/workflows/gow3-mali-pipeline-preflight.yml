@@ -14,6 +14,8 @@ on:
       - 'tests/test_mali_pm4_unused_dirty.py'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shim/gow3_copy.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.h'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
 
 permissions:
@@ -49,6 +51,9 @@ jobs:
       - name: Compare actual GoW3 copy pool baseline and bounded epoch wait
         run: |
           python3 benchmarks/gow3_copy_wait_epoch_preflight.py
+      - name: Real Vulkan timeline semaphore before and after query elimination
+        run: |
+          python3 benchmarks/gow3_timeline_wait_gate.py
       - name: Frame-budget gate for CPU-only steady FPS hypotheses
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_frame_budget_gate.py' -v
