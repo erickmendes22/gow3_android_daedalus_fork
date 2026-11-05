@@ -29,6 +29,7 @@ def method(source: str, signature: str) -> str:
 
 HEADER = r"""
 #define VULKAN_HPP_NO_EXCEPTIONS
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan.h>
 #include <atomic>
@@ -39,6 +40,7 @@ HEADER = r"""
 #include <utility>
 #include <limits>
 using u64 = std::uint64_t;
+#define WAIT_TIMEOUT std::numeric_limits<u64>::max()
 #define ASSERT_MSG(expr, ...) do { if (!(expr)) { \
     std::fprintf(stderr,"ASSERT FAILED line %d\n",__LINE__); std::abort(); \
 } } while (0)
