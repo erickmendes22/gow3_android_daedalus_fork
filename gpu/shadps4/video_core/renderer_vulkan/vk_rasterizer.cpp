@@ -1716,10 +1716,12 @@ bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
         Gow3Toggle::Disabled(Gow3Toggle::UpdateImageFastPath)) {
         return false;
     }
+    bool has_textures = false;
     for (const auto* stage : pipeline->GetStages()) {
         if (!stage) {
             continue;
         }
+        has_textures |= !stage->images.empty();
         // Mip arrays make the descriptor layout depend on the T#s.
         for (const auto& image : stage->images) {
             if (image.mip_fallback_mode != Shader::MipStorageFallbackMode::None) {
@@ -1733,7 +1735,10 @@ bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
             }
         }
     }
-    return true;
+    // No sampled/storage images: the worker would merely run through empty
+    // texture loops while Stage A still pays for Fork + Join on every draw.
+    // Samplers remain bound on the owning thread by BindTextures().
+    return has_textures;
 }
 
 bool Rasterizer::TexturesBindableOnHelper(const Shader::Info& stage,
@@ -2502,6 +2507,12 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
 void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* prepared,
                               Shader::Backend::Bindings& binding, u32& write_index,
                               bool& barrier, bool on_helper) {
+    // An image-free stage needs neither texture-cache lookups nor the
+    // TextureSet memo. Preserve any standalone sampler bindings.
+    if (stage.images.empty()) {
+        BindSamplers(stage, prepared, binding, write_index);
+        return;
+    }
     const u32 first_image_idx = image_infos.size();
     TextureSet* set_slot = nullptr;
     if (!on_helper && BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
