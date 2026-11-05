@@ -273,6 +273,10 @@ void FlushMaliBcImagePool(VmaAllocator allocator) {
     std::printf("GOW3_BC_IMAGE_POOL final_hits=%llu misses=%llu stored=%llu drop=%llu\n",
         (unsigned long long)pool.hits, (unsigned long long)pool.misses,
         (unsigned long long)pool.stored, (unsigned long long)pool.discarded);
+    auto& rgba = GetRgba128Pool();
+    std::printf("GOW3_RGBA128_IMAGE_POOL final_hits=%llu misses=%llu stored=%llu drop=%llu\n",
+        (unsigned long long)rgba.hits, (unsigned long long)rgba.misses,
+        (unsigned long long)rgba.stored, (unsigned long long)rgba.discarded);
 }
 
 UniqueImage::~UniqueImage() {

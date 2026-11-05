@@ -863,7 +863,9 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                 std::printf("GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT source=port_alias_guard "
                             "count=%u address=%#llx pitch=%u->%u tile=%u->%u "
                             "samples=%u->%u cached_format=%s requested_format=%s "
-                            "cached_block=%u requested_block=%u safe_to_delete=%u\n",
+                            "cached_block=%u requested_block=%u safe_to_delete=%u "
+                            "age_safe=%u gpu_modified=%u bound=%u target=%u last_tick=%llu "
+                            "current_tick=%llu\n",
                             rejected_overlap_layout,
                             static_cast<unsigned long long>(a.guest_address),
                             b.pitch, a.pitch, u32(b.tile_mode), u32(a.tile_mode),
@@ -871,7 +873,11 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                             vk::to_string(b.pixel_format).c_str(),
                             vk::to_string(a.pixel_format).c_str(),
                             u32(b.props.is_block), u32(a.props.is_block),
-                            u32(can_retire_alias));
+                            u32(can_retire_alias), u32(safe_to_delete),
+                            u32(True(cache_image.flags & ImageFlagBits::GpuModified)),
+                            u32(cache_image.binding.is_bound), u32(cache_image.binding.is_target),
+                            (unsigned long long)cache_image.tick_accessed_last,
+                            (unsigned long long)scheduler.CurrentTick());
             }
             if (clean_alias_retirable) {
                 static u32 fast_retire_count = 0;
