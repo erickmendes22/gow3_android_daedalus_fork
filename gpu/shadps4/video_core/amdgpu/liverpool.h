@@ -282,6 +282,9 @@ private:
     Vulkan::Rasterizer* rasterizer{};
     Libraries::VideoOut::VideoOutPort* vo_port{};
     const bool guest_markers_enabled;
+    // Only the PM4 GPU command thread reads or writes this flag. Set across
+    // coroutine suspension for memory/rewind/semaphore waits, never for draws.
+    bool gfx_blocked_fiber_wait = false;
     std::jthread process_thread{};
     std::atomic<u32> num_submits{};
     /// gow3: false from a submission until its draws and deferred fences are done (stage A
