@@ -1076,6 +1076,7 @@ struct PipelineCache::BackgroundWarmup {
     u32 loaded = 0, threads = 0;
     std::chrono::steady_clock::time_point started, last_batch;
     std::chrono::steady_clock::time_point last_pump{}, last_report{};
+    vk::UniquePipelineCache mali_worker_cache; ///< never share a live VkPipelineCache with draw thread
     std::unique_ptr<WarmupPool> pool; ///< last: its jobs use the members above
 };
 
@@ -1110,6 +1111,20 @@ bool PipelineCache::StartBackgroundWarmUp() {
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     warm.threads = mali ? 1u
         : WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    if (mali) {
+        // vkCreate*Pipelines accesses VkPipelineCache; the render thread can
+        // create pipelines concurrently. Give the precompiler its own handle
+        // instead of sharing the render cache with unsynchronized drivers.
+        auto [result, private_cache] = instance.GetDevice().createPipelineCacheUnique({});
+        if (result != vk::Result::eSuccess) {
+            std::printf("GOW3_MALI_PIPELINE_PREPASS status=record-only reason=private-cache-failed\n");
+            delete background;
+            background = nullptr;
+            Storage::DataBase::Instance().FinishPreload();
+            return true;
+        }
+        warm.mali_worker_cache = std::move(private_cache);
+    }
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     // The first job reads the whole store; with one thread the builds queue behind it.
     warm.pool->Push([this, &warm] {
@@ -1339,11 +1354,13 @@ void PipelineCache::PumpWarmUp() {
             if (compute) {
                 ComputePipeline::SerializationSupport compute_data{};
                 built.compute = std::make_unique<ComputePipeline>(
-                    instance, scheduler, desc_heap, profile, *pipeline_cache, compute_key,
-                    *infos[0], modules[0], compute_data, true);
+                    instance, scheduler, desc_heap, profile,
+                    warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache,
+                    compute_key, *infos[0], modules[0], compute_data, true);
             } else {
                 built.graphics = std::make_unique<GraphicsPipeline>(
-                    instance, scheduler, desc_heap, profile, graphics_key, *pipeline_cache, infos,
+                    instance, scheduler, desc_heap, profile, graphics_key,
+                    warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache, infos,
                     no_runtime_infos, fetch, modules, sdata, true);
             }
             warm.built.Push(std::move(built));
@@ -1362,6 +1379,14 @@ void PipelineCache::PumpWarmUp() {
 
     if (warm.reading || !warm.read.Empty() || !warm.pool->Idle() || !warm.built.Empty()) {
         return;
+    }
+    // Worker queue is idle and all Vulkan creations completed; merge on the
+    // GPU thread so the saved driver cache also contains warmed pipelines.
+    if (warm.mali_worker_cache) {
+        const auto result = instance.GetDevice().mergePipelineCaches(
+            *pipeline_cache, *warm.mali_worker_cache);
+        if (result != vk::Result::eSuccess)
+            LOG_WARNING(Render_Vulkan, "Mali warmup Vulkan cache merge failed");
     }
     std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
                 warm.loaded, warm.total.load(),

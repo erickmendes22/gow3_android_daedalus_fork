@@ -14,6 +14,9 @@ class MaliWarmupDisabledTests(unittest.TestCase):
         self.assertIn("PipelineCache::StartSafeMaliWarmUp()", source)
         self.assertIn("const bool compatible = CheckCacheProfile();", source)
         self.assertIn("warm.threads = mali ? 1u", source)
+        self.assertIn("vk::UniquePipelineCache mali_worker_cache;", source)
+        self.assertIn("warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache", source)
+        self.assertIn("mergePipelineCaches(", source)
         self.assertIn("mali_driver_cache_restored", source)
 
     def test_presenter_does_not_fall_through_to_sync_warmup(self):
