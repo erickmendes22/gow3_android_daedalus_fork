@@ -11,6 +11,8 @@
 #include "gow3_toggles.h"
 #include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include <cstdio>
+#include <cstring>
+#include <cstdlib>
 #include <boost/preprocessor/stringize.hpp>
 
 #include "common/assert.h"
