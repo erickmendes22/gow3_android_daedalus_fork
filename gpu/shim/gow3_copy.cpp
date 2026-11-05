@@ -80,7 +80,6 @@ public:
         // copies from other producer threads and can starve under continuous
         // uploads. Close the current epoch under the queue mutex, and help
         // only tasks belonging to that epoch or any earlier epoch.
-        std::atomic<bool> done{false};
         u64 last_required_epoch{};
         {
             std::unique_lock lk{mutex};
@@ -88,12 +87,12 @@ public:
                 return;
             }
             last_required_epoch = epoch_base + epochs.size() - 1;
-            epochs.back().callbacks.emplace_back([&done] {
-                done.store(true, std::memory_order_release);
-            });
+            // Close the required prefix. Complete() publishes retired_epoch
+            // only AFTER invoking all callbacks for those closed epochs.
+            // No heap-allocated callback is necessary on each submission.
             epochs.emplace_back();
         }
-        while (!done.load(std::memory_order_acquire)) {
+        while (retired_epoch.load(std::memory_order_acquire) <= last_required_epoch) {
             Task task;
             {
                 std::scoped_lock lk{mutex};
@@ -187,6 +186,9 @@ private:
             lk.lock();
         }
         draining = false;
+        // Release after all callback side effects and all preceding copies.
+        // A barrier awaiting the retired prefix must not see it earlier.
+        retired_epoch.store(epoch_base, std::memory_order_release);
     }
 
     static void Work(Job& job) {
@@ -235,6 +237,7 @@ private:
     std::deque<Task> async_tasks;
     std::deque<Epoch> epochs; ///< back() is open for new copies
     u64 epoch_base = 0;       ///< epoch number of epochs.front()
+    std::atomic<u64> retired_epoch{0}; ///< fully retired prefix; callbacks completed
     std::size_t pending = 0;
     bool draining = false;
 };
