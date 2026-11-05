@@ -96,7 +96,7 @@ static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usag
     return feature_flags;
 }
 
-// This is a GPU-image pool, not a BC3<->RGBA32 format alias. Every reuse
+// Two separate GPU-image pools, NEVER a BC3<->RGBA32 format alias. Every reuse
 // requires the identical VkImageCreateInfo and the same VMA allocator.
 // Scheduler::DeferOperation destroys retired Image objects only after the
 // Vulkan submission has completed, so returned images cannot be in flight.
@@ -121,9 +121,38 @@ BcPool& GetBcPool() {
     static auto* const pool = new BcPool{};
     return *pool;
 }
+BcPool& GetRgba128Pool() {
+    static auto* const pool = new BcPool{};
+    return *pool;
+}
 constexpr VkDeviceSize BcPoolLimit = 128ULL * 1024 * 1024;
 constexpr VkDeviceSize BcPoolEntryLimit = 64ULL * 1024 * 1024;
 constexpr size_t BcPoolMaxEntries = 24;
+// The 200 R32G32B32A32Uint creations/641 ms on G720 justify recycling
+// identically described, GPU-retired images. Separate quota means no BCn
+// eviction regression; 64 MiB maximum guards against OOM on unified memory.
+constexpr VkDeviceSize Rgba128PoolLimit = 64ULL * 1024 * 1024;
+constexpr VkDeviceSize Rgba128PoolEntryLimit = 32ULL * 1024 * 1024;
+constexpr size_t Rgba128PoolMaxEntries = 24;
+bool IsRgba128Image(const VkImageCreateInfo& ci) {
+    return ci.format == VK_FORMAT_R32G32B32A32_UINT;
+}
+BcPool& ImagePoolFor(const VkImageCreateInfo& ci) {
+    return IsRgba128Image(ci) ? GetRgba128Pool() : GetBcPool();
+}
+VkDeviceSize PoolLimit(const VkImageCreateInfo& ci) {
+    return IsRgba128Image(ci) ? Rgba128PoolLimit : BcPoolLimit;
+}
+size_t PoolMaxEntries(const VkImageCreateInfo& ci) {
+    return IsRgba128Image(ci) ? Rgba128PoolMaxEntries : BcPoolMaxEntries;
+}
+void ReportImagePool(const BcPool& pool, bool rgba128) {
+    std::printf("GOW3_%s_IMAGE_POOL hits=%llu misses=%llu stored=%llu drop=%llu retained_mib=%llu\n",
+                rgba128 ? "RGBA128" : "BC",
+                (unsigned long long)pool.hits, (unsigned long long)pool.misses,
+                (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
+                (unsigned long long)(pool.bytes >> 20));
+}
 
 bool SameBcCreate(const VkImageCreateInfo& a, const VkImageCreateInfo& b) {
     return !a.pNext && !b.pNext &&
@@ -158,9 +187,9 @@ void DestroyBcEntry(RetiredBcImage& e) {
     if (e.image) vmaDestroyImage(e.allocator, e.image, e.allocation);
     e.image = VK_NULL_HANDLE;
 }
-void TrimBcPool(BcPool& pool, VkDeviceSize need) {
+void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
     while (!pool.images.empty() &&
-           (pool.bytes + need > BcPoolLimit || pool.images.size() >= BcPoolMaxEntries)) {
+           (pool.bytes + need > PoolLimit(ci) || pool.images.size() >= PoolMaxEntries(ci))) {
         auto e = pool.images.front();
         pool.images.erase(pool.images.begin());
         pool.bytes -= e.bytes;
@@ -170,20 +199,17 @@ void TrimBcPool(BcPool& pool, VkDeviceSize need) {
 }
 bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
                  VkImage& image, VmaAllocation& allocation, VkDeviceSize& bytes) {
-    auto& pool = GetBcPool();
-    std::lock_guard lock{pool.mutex};
     const auto raw = static_cast<VkImageCreateInfo>(ci);
+    auto& pool = ImagePoolFor(raw);
+    std::lock_guard lock{pool.mutex};
     const auto it = std::find_if(pool.images.rbegin(), pool.images.rend(),
         [&](const RetiredBcImage& e) {
             return e.allocator == allocator && SameBcCreate(e.create, raw);
         });
     if (it == pool.images.rend()) {
         ++pool.misses;
-        if ((pool.misses + pool.hits) % 128 == 0)
-            std::printf("GOW3_BC_IMAGE_POOL hits=%llu misses=%llu stored=%llu drop=%llu retained_mib=%llu\n",
-                (unsigned long long)pool.hits, (unsigned long long)pool.misses,
-                (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
-                (unsigned long long)(pool.bytes >> 20));
+        if ((pool.misses + pool.hits) % (IsRgba128Image(raw) ? 64 : 128) == 0)
+            ReportImagePool(pool, IsRgba128Image(raw));
         return false;
     }
     auto e = *it;
@@ -193,19 +219,17 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     allocation = e.allocation;
     bytes = e.bytes;
     ++pool.hits;
-    if ((pool.misses + pool.hits) % 128 == 0)
-        std::printf("GOW3_BC_IMAGE_POOL hits=%llu misses=%llu stored=%llu drop=%llu retained_mib=%llu\n",
-            (unsigned long long)pool.hits, (unsigned long long)pool.misses,
-            (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
-            (unsigned long long)(pool.bytes >> 20));
+    if ((pool.misses + pool.hits) % (IsRgba128Image(raw) ? 64 : 128) == 0)
+        ReportImagePool(pool, IsRgba128Image(raw));
     return true;
 }
 bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
                    VkImage image, VmaAllocation allocation, VkDeviceSize bytes) {
-    if (!bytes || bytes > BcPoolEntryLimit) return false;
     auto raw = static_cast<VkImageCreateInfo>(ci);
+    const auto max_entry = IsRgba128Image(raw) ? Rgba128PoolEntryLimit : BcPoolEntryLimit;
+    if (!bytes || bytes > max_entry) return false;
     if (raw.pNext || raw.queueFamilyIndexCount) return false;
-    auto& pool = GetBcPool();
+    auto& pool = ImagePoolFor(raw);
     std::lock_guard lock{pool.mutex};
     if (!BcPoolHasBudget(allocator)) {
         // Image cache memory must never compete with live textures at high
@@ -220,8 +244,8 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
         }
         return false;
     }
-    TrimBcPool(pool, bytes);
-    if (pool.bytes + bytes > BcPoolLimit) return false;
+    TrimBcPool(pool, bytes, raw);
+    if (pool.bytes + bytes > PoolLimit(raw)) return false;
     raw.pNext = nullptr;
     raw.pQueueFamilyIndices = nullptr;
     pool.images.push_back({image, allocation, allocator, raw, bytes});
@@ -232,15 +256,20 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
 } // namespace
 
 void FlushMaliBcImagePool(VmaAllocator allocator) {
-    auto& pool = GetBcPool();
-    std::lock_guard lock{pool.mutex};
-    for (size_t i = pool.images.size(); i-- > 0;) {
-        if (pool.images[i].allocator != allocator) continue;
-        auto e = pool.images[i];
-        pool.images.erase(pool.images.begin() + i);
-        pool.bytes -= e.bytes;
-        DestroyBcEntry(e);
+    // Both pools are retired before VMA allocator teardown; each pool owns
+    // completely independent image handles, quotas and hit/miss counters.
+    for (auto* target : {&GetBcPool(), &GetRgba128Pool()}) {
+        auto& pool = *target;
+        std::lock_guard lock{pool.mutex};
+        for (size_t i = pool.images.size(); i-- > 0;) {
+            if (pool.images[i].allocator != allocator) continue;
+            auto e = pool.images[i];
+            pool.images.erase(pool.images.begin() + i);
+            pool.bytes -= e.bytes;
+            DestroyBcEntry(e);
+        }
     }
+    auto& pool = GetBcPool();
     std::printf("GOW3_BC_IMAGE_POOL final_hits=%llu misses=%llu stored=%llu drop=%llu\n",
         (unsigned long long)pool.hits, (unsigned long long)pool.misses,
         (unsigned long long)pool.stored, (unsigned long long)pool.discarded);
@@ -424,15 +453,23 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing = &backing_images.emplace_back();
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
-    // Pool only BC images on Mali. Do not reuse across format/extent/samples
-    // or PS4 tiling aliases, and never reuse an in-flight image.
+    // Recycle ONLY completed images with an identical VkImageCreateInfo.
+    // Two independent bounded pools: compressed BCn and the R32G32B32A32Uint
+    // image used by the PS4 guest's opposite-format layout. Not cross-format
+    // aliases: the existing guard and GPU-modified data rules stay unchanged.
     static const bool bc_pool_enabled = [] {
         const char* option = std::getenv("GOW3_MALI_BC_IMAGE_POOL");
         return !option || option[0] != '0';
     }();
-    backing->image.recycle_bc = bc_pool_enabled && info.props.is_block &&
-        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
-        std::getenv("GOW3_ANDROID_PORT") != nullptr;
+    static const bool rgba128_pool_enabled = [] {
+        const char* option = std::getenv("GOW3_MALI_RGBA128_IMAGE_POOL");
+        return !option || option[0] != '0';
+    }();
+    const bool is_mali = instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                         std::getenv("GOW3_ANDROID_PORT") != nullptr;
+    backing->image.recycle_bc = is_mali &&
+        ((bc_pool_enabled && info.props.is_block) ||
+         (rgba128_pool_enabled && image_ci.format == vk::Format::eR32G32B32A32Uint));
     backing->image.Create(image_ci);
     // A hit reuses existing driver/VMA memory and must not be counted as a
     // fresh image_alloc_bc_mib allocation in future performance logs.
