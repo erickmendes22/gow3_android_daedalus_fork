@@ -11,6 +11,7 @@ on:
       - 'tests/test_mali_frame_budget_gate.py'
       - 'tests/test_mali_zero_worker_checksum.py'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
+      - 'gpu/shim/gow3_copy.cpp'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
 
 permissions:
@@ -22,6 +23,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install native Vulkan development headers and software ICD
         run: |
           sudo apt-get update -qq
@@ -39,6 +42,9 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_zero_worker_checksum.py' -v
           python3 benchmarks/mali_pm4_checksum_gate.py
+      - name: Compare actual GoW3 copy pool baseline and bounded epoch wait
+        run: |
+          python3 benchmarks/gow3_copy_wait_epoch_preflight.py
       - name: Frame-budget gate for CPU-only steady FPS hypotheses
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_frame_budget_gate.py' -v
