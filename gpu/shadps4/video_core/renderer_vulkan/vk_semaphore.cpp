@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <limits>
+#include <cstdlib>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 
@@ -12,6 +13,15 @@ namespace Vulkan {
 constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
 
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
+#ifdef __ANDROID__
+    // The Mali bounded-submit scheduler calls Wait frequently. A completed
+    // vkWaitSemaphores(tick) already proves ALL <=tick GPU submissions retired;
+    // no extra vkGetSemaphoreCounterValue ioctl is needed.
+    const char* opt = std::getenv("GOW3_MALI_DIRECT_TIMELINE_WAIT");
+    direct_timeline_wait = std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+                           instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                           (!opt || opt[0] != '0');
+#endif
     const vk::StructureChain semaphore_chain = {
         vk::SemaphoreCreateInfo{},
         vk::SemaphoreTypeCreateInfo{
@@ -49,10 +59,14 @@ void Semaphore::Wait(u64 tick) {
     if (IsFree(tick)) {
         return;
     }
-    // Update the GPU tick and try again
-    Refresh();
-    if (IsFree(tick)) {
-        return;
+    // The original path queries vkGetSemaphoreCounterValue both before and
+    // after a wait. With a Mali direct wait, querying that same GPU tick is
+    // redundant: waitSemaphores success proves the requested completion.
+    if (!direct_timeline_wait) {
+        Refresh();
+        if (IsFree(tick)) {
+            return;
+        }
     }
 
     // If none of the above is hit, fallback to a regular wait
@@ -64,7 +78,17 @@ void Semaphore::Wait(u64 tick) {
 
     while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
     }
-    Refresh();
+    if (direct_timeline_wait) {
+        // Only publish ticks actually confirmed by Vulkan. Other threads may
+        // complete newer submissions meanwhile; never move the cache backward.
+        u64 known = gpu_tick.load(std::memory_order_relaxed);
+        while (known < tick &&
+               !gpu_tick.compare_exchange_weak(known, tick, std::memory_order_release,
+                                               std::memory_order_relaxed)) {
+        }
+    } else {
+        Refresh();
+    }
 }
 
 } // namespace Vulkan
