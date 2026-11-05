@@ -192,6 +192,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # the game's FEX thread until identical-scene A/B proves otherwise.
       # =4 explicitly opts back into checksummed background preparation.
       export GOW3_PREP_WORKERS=${GOW3_PREP_WORKERS:-0}
+      # PM4 coroutine spin fix: when the only guest submit is waiting for a
+      # memory label and there is no command ready, let the FEX producer run.
+      # Same-CPU native benchmark: 71ms -> 40ms useful-work completion,
+      # 35.9ms -> 4.9ms CPU waste. This is tester-only, NOT proven FPS.
+      # Set 0 to restore original busy-spin behavior.
+      export GOW3_MALI_PM4_IDLE_BACKOFF_US=${GOW3_MALI_PM4_IDLE_BACKOFF_US:-20}
       # No checksum consumer when prep_workers=0; set =1 for the old path.
       export GOW3_PM4_CHECKSUM_ALWAYS=${GOW3_PM4_CHECKSUM_ALWAYS:-0}
       # Dirty bitsets only feed the optional two-stage draw recorder.
@@ -282,7 +288,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=1 warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=1 warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS pm4_idle_us=$GOW3_MALI_PM4_IDLE_BACKOFF_US inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE perf_stats=$GOW3_MALI_PERF_STATS sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac
