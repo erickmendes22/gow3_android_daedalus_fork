@@ -23,6 +23,7 @@
 #include "ps4_overlay.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "shader_recompiler/info.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
@@ -33,9 +34,9 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 16u; // GCN NaN rules and exclusive float atomic fallbacks
-static constexpr u32 ShaderMetaVersion = 10u; // persisted uniform image guard recipes
-static constexpr u32 PipelineKeyVersion = 8u; // explicit inactive/active image specialization state
+static constexpr u32 ShaderBinaryVersion = 17u; // GCN NaN rules and exclusive float atomic fallbacks
+static constexpr u32 ShaderMetaVersion = 11u; // persisted uniform image guard recipes
+static constexpr u32 PipelineKeyVersion = 9u; // explicit inactive/active image specialization state
 } // namespace Serialization
 
 namespace Vulkan {
@@ -45,8 +46,11 @@ extern std::atomic<u64> g_ps4_pipeline_driver_ns;
 namespace {
 // Shader extension selection changes emitted SPIR-V.
 u32 CurrentShaderBinaryVersion() {
+    // Switching MSAA changes descriptor/image types consumed by translated
+    // shaders. Never reuse a cached MSAA module for single-sampled resources.
     return Serialization::ShaderBinaryVersion +
-           (AmdPathsOff::Current().shaderext ? 32u : 0u);
+           (AmdPathsOff::Current().shaderext ? 32u : 0u) +
+           (AmdGpu::NoMsaa() ? 64u : 0u);
 }
 } // namespace
 
@@ -602,6 +606,13 @@ void RegisterPipelineData(const ComputePipelineKey& key,
 
 void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
                           GraphicsPipeline::SerializationSupport& sdata) {
+#ifdef __ANDROID__
+    // These records cannot be safely replayed without the original runtime
+    // register context; avoid growing a disk store of unusable graphics keys.
+    if (AmdGpu::NoMsaa()) {
+        return;
+    }
+#endif
     if (!Storage::DataBase::Instance().IsOpened()) {
         return;
     }
@@ -800,6 +811,28 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     GraphicsPipeline::SerializationSupport sdata{};
     sdata.Deserialize(ar);
 
+#ifdef __ANDROID__
+    // Android Turnip lacks both native fragment barycentrics and AMD explicit
+    // vertex parameters. Live graphics compilation can reconstruct the
+    // VS/FS topology and inject the per-vertex auxiliary GS, but this archive
+    // loader has no live registers: sel.runtime_infos is not reconstructed.
+    // Replaying an archived pipeline without that GS silently drops the
+    // per-vertex interpolation needed by some The Order materials. Do not
+    // preload incomplete graphics stages; first use recompiles them with
+    // valid runtime info and the auxiliary geometry stage.
+    if (profile.supports_geometry_stage &&
+        !profile.supports_amd_shader_explicit_vertex_parameter &&
+        !profile.supports_fragment_shader_barycentric) {
+        static std::atomic_bool warned{false};
+        if (!warned.exchange(true, std::memory_order_relaxed)) {
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_CACHE_AUXGS: bypassing archived graphics pipelines; "
+                        "live runtime info required for correct per-vertex interpolation");
+        }
+        return false;
+    }
+#endif
+
     for (int stage_idx = 0; stage_idx < MaxShaderStages; ++stage_idx) {
         const auto& hash = sel.graphics_key.stage_hashes[stage_idx];
         if (!hash) {
@@ -960,6 +993,20 @@ bool PipelineCache::CheckCacheProfile() {
 }
 
 void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
+#ifdef __ANDROID__
+    // A resumed CUSA00785 session restores all archived graphics pipelines
+    // (373/373 in the black-screen log) with no live guest registers. Their
+    // runtime infos/attachments cannot be reconstructed from the serialized
+    // pipeline key, and the single-sample fix depends on that live state.
+    // Build graphics from current register values on first use. Do not clear
+    // any shader/game/save data or change the working MSAA configuration.
+    if (AmdGpu::NoMsaa()) {
+        std::printf("ORDER1886_CACHE_REPLAY graphics=live reason=single-msaa\n");
+        std::fflush(stdout);
+        StartOnDemand();
+        return;
+    }
+#endif
     if (!CheckCacheProfile()) {
         return;
     }
@@ -1113,6 +1160,12 @@ struct PipelineCache::BackgroundWarmup {
 };
 
 bool PipelineCache::StartBackgroundWarmUp() {
+#ifdef __ANDROID__
+    if (AmdGpu::NoMsaa()) {
+        // Use the same live path regardless of sync/background warm-up mode.
+        return false;
+    }
+#endif
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
         return false;
     }

@@ -111,11 +111,22 @@ public:
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];
         const u64 start = Common::FencedRDTSC();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
             if (spins < 4096) {
                 COMMON_CPU_RELAX();
             } else {
                 std::this_thread::yield();
+            }
+            // Do not spin forever when Vulkan pipeline creation or a Stage B
+            // driver call wedges. The old loop could occupy the phone's CPU
+            // indefinitely, even after our Vulkan semaphore watchdog fired.
+            if ((spins & 4095u) == 0 && std::chrono::steady_clock::now() > deadline) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_DRAW_PIPE_HANG drain head={} consumed={} worker_tid={}",
+                             head, consumed.load(std::memory_order_acquire),
+                             stage_b_tid.load(std::memory_order_acquire));
+                std::abort();
             }
         }
         const u64 waited = Common::FencedRDTSC() - start;
@@ -152,8 +163,20 @@ private:
     }
 
     void WaitForSpace(u64 at, u64 size) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        u32 spins = 0;
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
-            COMMON_CPU_RELAX();
+            if (++spins < 4096) {
+                COMMON_CPU_RELAX();
+            } else {
+                std::this_thread::yield();
+            }
+            if ((spins & 4095u) == 0 && std::chrono::steady_clock::now() > deadline) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_DRAW_PIPE_HANG ring full: head={} consumed={} bytes={}",
+                             at, consumed.load(std::memory_order_acquire), size);
+                std::abort();
+            }
         }
     }
 

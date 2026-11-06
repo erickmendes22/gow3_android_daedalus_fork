@@ -17,6 +17,7 @@
 #include "ps4_graphics.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_upscale_providers.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -32,6 +33,7 @@
 #include <cmath>
 #include <csetjmp>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -41,6 +43,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
@@ -583,6 +586,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
 
     Frame* frame = GetRenderFrame();
+    // The guest GPU must not wait for a present fence owned by another thread.
+    // A busy frame is deferred by VideoOutDriver, never dereferenced here.
+    if (!frame) return nullptr;
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -723,6 +729,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
+    if (!frame) return nullptr;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
     scheduler.EndRendering();
@@ -1037,41 +1044,47 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 }
 
 Frame* Presenter::GetRenderFrame() {
-    // Wait for free presentation frames
+    // Bachata S4 release behavior: never block Liverpool's GPU command
+    // processor on a presentation fence. That processor must continue
+    // submitting the work whose completion the present thread is waiting for.
+    const bool on_gpu_thread =
+        liverpool && std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread();
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
-        free_cv.wait(lock, [this] { return !free_queue.empty(); });
-        LOG_DEBUG(Render_Vulkan, "Got render frame, remaining {}", free_queue.size() - 1);
-
-        // Take the frame from the queue
+        if (on_gpu_thread) {
+            if (free_queue.empty()) return nullptr;
+        } else {
+            free_cv.wait(lock, [this] { return !free_queue.empty(); });
+        }
         frame = free_queue.front();
         free_queue.pop();
     }
 
     const vk::Device device = instance.GetDevice();
-    vk::Result result{};
-
-    const auto wait = [&]() {
-        result = device.waitForFences(frame->present_done, false, std::numeric_limits<u64>::max());
-        return result;
-    };
-
-    // Wait for the presentation to be finished so all frame resources are free
-    while (wait() != vk::Result::eSuccess) {
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
-        // Retry if the waiting times out
-        if (result == vk::Result::eTimeout) {
-            continue;
+    for (;;) {
+        const auto result = device.waitForFences(
+            frame->present_done, false,
+            on_gpu_thread ? 0ULL : std::numeric_limits<u64>::max());
+        if (result == vk::Result::eSuccess) break;
+        if (result == vk::Result::eTimeout && on_gpu_thread) {
+            // The frame is still owned by GPU presentation. Requeue it without
+            // resetting its fence or touching any of its Vulkan resources.
+            std::scoped_lock lock{free_mutex};
+            free_queue.push(frame);
+            free_cv.notify_one();
+            return nullptr;
         }
+        if (result == vk::Result::eTimeout) continue;
+        LOG_CRITICAL(Render_Vulkan, "GetRenderFrame fence wait failed: {}",
+                     vk::to_string(result));
+        std::abort(); // No legal use of frame resources after device loss.
     }
 
     if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
         frame->is_hdr != swapchain.GetHDR()) {
         RecreateFrame(frame, expected_frame_width, expected_frame_height);
     }
-
     return frame;
 }
 
