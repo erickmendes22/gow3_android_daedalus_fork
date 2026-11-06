@@ -23,6 +23,7 @@
 #include "ps4_overlay.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "shader_recompiler/info.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
@@ -45,8 +46,11 @@ extern std::atomic<u64> g_ps4_pipeline_driver_ns;
 namespace {
 // Shader extension selection changes emitted SPIR-V.
 u32 CurrentShaderBinaryVersion() {
+    // Switching MSAA changes descriptor/image types consumed by translated
+    // shaders. Never reuse a cached MSAA module for single-sampled resources.
     return Serialization::ShaderBinaryVersion +
-           (AmdPathsOff::Current().shaderext ? 32u : 0u);
+           (AmdPathsOff::Current().shaderext ? 32u : 0u) +
+           (AmdGpu::NoMsaa() ? 64u : 0u);
 }
 } // namespace
 
