@@ -606,6 +606,13 @@ void RegisterPipelineData(const ComputePipelineKey& key,
 
 void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
                           GraphicsPipeline::SerializationSupport& sdata) {
+#ifdef __ANDROID__
+    // These records cannot be safely replayed without the original runtime
+    // register context; avoid growing a disk store of unusable graphics keys.
+    if (AmdGpu::NoMsaa()) {
+        return;
+    }
+#endif
     if (!Storage::DataBase::Instance().IsOpened()) {
         return;
     }
@@ -986,6 +993,20 @@ bool PipelineCache::CheckCacheProfile() {
 }
 
 void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
+#ifdef __ANDROID__
+    // A resumed CUSA00785 session restores all archived graphics pipelines
+    // (373/373 in the black-screen log) with no live guest registers. Their
+    // runtime infos/attachments cannot be reconstructed from the serialized
+    // pipeline key, and the single-sample fix depends on that live state.
+    // Build graphics from current register values on first use. Do not clear
+    // any shader/game/save data or change the working MSAA configuration.
+    if (AmdGpu::NoMsaa()) {
+        std::printf("ORDER1886_CACHE_REPLAY graphics=live reason=single-msaa\n");
+        std::fflush(stdout);
+        StartOnDemand();
+        return;
+    }
+#endif
     if (!CheckCacheProfile()) {
         return;
     }
@@ -1139,6 +1160,12 @@ struct PipelineCache::BackgroundWarmup {
 };
 
 bool PipelineCache::StartBackgroundWarmUp() {
+#ifdef __ANDROID__
+    if (AmdGpu::NoMsaa()) {
+        // Use the same live path regardless of sync/background warm-up mode.
+        return false;
+    }
+#endif
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
         return false;
     }

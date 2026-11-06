@@ -29,6 +29,7 @@
 #include "shader_recompiler/runtime_info.h"
 #include "ps4_settings.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
@@ -368,6 +369,18 @@ struct PipelineCache::DriverCacheState {
 };
 
 std::vector<u8> PipelineCache::LoadDriverCache() {
+#ifdef __ANDROID__
+    // With the Adreno 830 single-sample renderer, a second launch was black
+    // even with the same Turnip. The native driver cache is keyed only by
+    // device/driver, not by the renderer's MSAA compatibility mode.
+    // Keep the in-memory VkPipelineCache but do not restore or checkpoint the
+    // disk snapshot until it has a complete render-state-specific identity.
+    if (AmdGpu::NoMsaa()) {
+        std::printf("ORDER1886_CACHE_REPLAY driver=disabled reason=single-msaa\n");
+        std::fflush(stdout);
+        return {};
+    }
+#endif
     // Complement the current shader cache only when pipeline binaries cannot persist the
     // driver's compiled code. Never replace or duplicate the pipeline-binary cache path.
     if (!std::getenv("GOW3_ANDROID_PORT") || !EmulatorSettings.IsPipelineCacheEnabled() ||
