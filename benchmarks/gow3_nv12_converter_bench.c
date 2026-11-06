@@ -40,12 +40,12 @@ int main(void) {
     assert(dst && ref);
     Decoder d={0}; d.frame=src; d.nv12=intermediate;
     FrameBuffer output={sizeof(FrameBuffer),dst,size};
-    PictureInfo picture={0}; picture.this_size=sizeof(picture);
+    PictureInfo frame_info={0}; frame_info.this_size=sizeof(frame_info);
     assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","0",1)==0);
-    assert(picture(&d,&output,&picture)==0);
+    assert(picture(&d,&output,&frame_info)==0);
     memcpy(ref,dst,size);
     assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","1",1)==0);
-    assert(picture(&d,&output,&picture)==0);
+    assert(picture(&d,&output,&frame_info)==0);
     assert(memcmp(ref,dst,size)==0);
 
     const char *labels[]={"swscale_tmp_copy","direct_guest_nv12"};
@@ -54,7 +54,7 @@ int main(void) {
         assert(setenv("GOW3_VIDEODEC_NV12_DIRECT",method ? "1":"0",1)==0);
         const double start=monotonic_ms();
         for (int i=0;i<frames;++i) {
-            const int32_t result=picture(&d,&output,&picture);
+            const int32_t result=picture(&d,&output,&frame_info);
             if (result) {
                 fprintf(stderr,"videodec picture() returned %#x at frame %d\n",result,i);
                 return 1;
