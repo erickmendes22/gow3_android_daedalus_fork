@@ -217,7 +217,11 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}
        # Separately recycle completed exact-match R32G32B32A32Uint images:
        # 64 MiB/24 entries, independent of the existing BC pool.
-       export GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-1}
+       # G720 20261106-192404: only 12 RGBA128 reuses versus 308 misses
+       # while retaining up to 90 MiB of retired textures. The reference
+       # Bachata core has no matching VkImage pool. Release these allocations
+       # directly; explicit =1 restores the old exact-create pool.
+       export GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-0}
       # Experimental G720 cold-scene retention: BC 128->192 MiB / 24->48 images,
       # RGBA128 64->96 MiB / 24->48; only *retired exact-matched* VkImages.
       # Actual VMA device-local 90% budget guard still flushes on pressure.
