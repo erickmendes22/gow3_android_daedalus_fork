@@ -122,10 +122,10 @@ concurrency:
 
 jobs:
   build:
-    # Cumulative Mali optimizations are ready for a controlled on-device test.
-    # Keep the existing preflight tests and use an isolated tester package if
-    # the original signing identity is absent; no unmeasured FPS claims.
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
+    # Hold the G720 analysis branch until sustained frame cost, not just cold
+    # allocation stalls, has a material source-backed reduction. Native-only
+    # verification remains enabled; no premature signed diagnostic APK.
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
