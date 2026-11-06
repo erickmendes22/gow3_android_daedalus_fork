@@ -232,6 +232,7 @@ private:
     // Bionic Mali: don't drop first-use graphics/depth draws for async compilation.
     // Determined once from the Vulkan device; independent of the live UI toggle.
     bool mali_sync_draws = false;
+    bool mali_async_draw_wait = false; // No-drop background shader/pipeline mode.
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
     /// gow3: GOW3_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.

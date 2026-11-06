@@ -231,13 +231,21 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
-      export GOW3_GPU_COMPILER_WORKERS=1
+      # Android Turnip's ordinary default is two shader-compiler workers.
+      # Use the same on PanVK; =1 restores the original experiment.
+      export GOW3_GPU_COMPILER_WORKERS=${GOW3_GPU_COMPILER_WORKERS:-2}
+      # Dispatch to worker, but never skip the draw awaiting its shader/pipeline.
+      # =0 restores first-use synchronous compilation on the graphics thread.
+      export GOW3_MALI_ASYNC_DRAW_WAIT=${GOW3_MALI_ASYNC_DRAW_WAIT:-1}
       export GOW3_BACKGROUND_WARMUP=${GOW3_BACKGROUND_WARMUP:-1}
       # The measured submit_throttle total was <1 ms over several seconds
       # even with cap=4. Restore the proven cap=2 to avoid changing two
       # variables while verifying parallel GPU draw preparation.
       # =4 remains available to benchmark the queue independently.
-      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-2}
+      # Android Adreno default is eight in-flight Vulkan submissions.
+      # Test parity on G720 without removing exact GPU completion waits.
+      # =2 restores the previously-tested shallow queue.
+      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-8}
       # Bachata-style pending GPU tick cache; set 0 for old polling behavior.
       export GOW3_MALI_CACHED_PENDING_TICKS=${GOW3_MALI_CACHED_PENDING_TICKS:-1}
       # Avoid a global buffer barrier on unrelated image layout transitions.

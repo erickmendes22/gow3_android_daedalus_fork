@@ -440,7 +440,12 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                       instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
                       (!complete_draws || complete_draws[0] != '0');
     if (mali_sync_draws) {
-        std::printf("PanVK Mali graphics: complete draws enabled; no async draw discard\n");
+        // Worker compilation is allowed only if the first consuming draw waits
+        // for its actual shader and pipeline. Never drop scene/depth draws.
+        const char* opt = std::getenv("GOW3_MALI_ASYNC_DRAW_WAIT");
+        mali_async_draw_wait = opt && opt[0] == '1';
+        std::printf("PanVK Mali graphics: complete draws enabled, worker_wait=%u\n",
+                    unsigned(mali_async_draw_wait));
     }
 #endif
     const auto& vk12_props = instance.GetVk12Properties();
@@ -791,7 +796,7 @@ void PipelineCache::FinishCompilations() {
 bool PipelineCache::AsyncCompilation() const {
     // AsyncCompilation returns nullptr on cache misses, and the rasterizer
     // drops the affected draw. Mali must construct the pipeline before drawing.
-    return !mali_sync_draws && compiler &&
+    return (!mali_sync_draws || mali_async_draw_wait) && compiler &&
            Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
@@ -914,8 +919,18 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_gow3_pending_draws;
-        return nullptr;
+        if (mali_async_draw_wait) {
+            // Worker compilation may continue asynchronously, but the draw
+            // depends on this exact pipeline. Wait for completion instead of
+            // permanently skipping it while the GPU is catching up.
+            PublishGraphics(true);
+            const auto ready = graphics_pipelines.find(sel.graphics_key);
+            if (ready != graphics_pipelines.end()) return ready->second.get();
+            // No worker slot or compilation failed: synchronous fallback.
+        } else {
+            ++g_gow3_pending_draws;
+            return nullptr;
+        }
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
@@ -1398,10 +1413,20 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     if (it_pgm == program_cache.end()) {
         auto new_program = std::make_unique<Program>(hw_stage, sw_stage, params);
         if (compile_async) {
-            QueueShader(*new_program, hw_stage, sw_stage, params, runtime_info, binding, 0, true);
-            std::unique_lock lock{programs_mutex};
-            program_cache.emplace(params.hash, std::move(new_program));
-            return {};
+            const bool queued = QueueShader(*new_program, hw_stage, sw_stage,
+                                            params, runtime_info, binding, 0, true);
+            if (queued || !mali_async_draw_wait) {
+                {
+                    std::unique_lock lock{programs_mutex};
+                    program_cache.emplace(params.hash, std::move(new_program));
+                }
+                if (mali_async_draw_wait) {
+                    PublishShaders(true);
+                    return GetProgram(sel, hw_stage, sw_stage, params, binding);
+                }
+                return {};
+            }
+            // Worker queue full on Mali: compile synchronously without dropping.
         }
         auto start = binding;
         const auto module =
@@ -1422,6 +1447,11 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
 
     auto& program = it_pgm.value();
+    if (mali_async_draw_wait && program->pending) {
+        // Another draw queued this shader: block here, preserving draw order.
+        PublishShaders(true);
+        return GetProgram(sel, hw_stage, sw_stage, params, binding);
+    }
     if (program->compilation_failed || (program->modules.empty() && program->pending)) {
         return {};
     }
@@ -1459,9 +1489,14 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             return {};
         }
         if (compile_async) {
-            QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, perm_idx, false,
-                        std::move(spec));
-            return {};
+            const bool queued = QueueShader(*program, hw_stage, sw_stage,
+                                            params, runtime_info, binding, perm_idx, false, spec);
+            if (mali_async_draw_wait && queued) {
+                PublishShaders(true);
+                return GetProgram(sel, hw_stage, sw_stage, params, binding);
+            }
+            if (!mali_async_draw_wait || queued) return {};
+            // Queue full: use the usual synchronous path for the permutation.
         }
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
