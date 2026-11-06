@@ -17,6 +17,8 @@
 #include <vk_mem_alloc.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstdio>
 #include <mutex>
 #include <vector>
 #include <cstdlib>
@@ -253,6 +255,66 @@ void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
         DestroyBcEntry(e);
     }
 }
+// If live Vulkan allocations approach the shared heap budget, previously
+// retired *incompatible* images still occupy VMA blocks while a fresh image
+// has to be created. Reclaim a bounded amount of this idle memory BEFORE
+// vmaCreateImage, rather than waiting for an eventual 90%-budget return guard.
+// Never touch live images, merge BC/RGBA formats or change GPU completion.
+void ReclaimIdleImagesBeforeAllocate(VmaAllocator allocator,
+                                     const VkImageCreateInfo& requested) {
+    if (!ScenePoolRetentionEnabled()) return;
+    const VkPhysicalDeviceMemoryProperties* properties{};
+    vmaGetMemoryProperties(allocator, &properties);
+    if (!properties) return;
+    std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+    vmaGetHeapBudgets(allocator, budgets.data());
+    uint64_t used = 0, budget = 0;
+    for (uint32_t i = 0; i < properties->memoryHeapCount; ++i) {
+        if (!(properties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ||
+            !budgets[i].budget)
+            continue;
+        if (budgets[i].usage * 100 >= budgets[i].budget * 82) {
+            used = std::max<uint64_t>(used, budgets[i].usage);
+            budget = std::max<uint64_t>(budget, budgets[i].budget);
+        }
+    }
+    if (!budget || used * 100 < budget * 82) return;
+    // Destroy at most 64 MiB of retired images per cold miss. A background
+    // pool hit always takes precedence, and no image still in use is touched.
+    auto& bc = GetBcPool();
+    auto& rgba = GetRgba128Pool();
+    std::scoped_lock lock{bc.mutex, rgba.mutex};
+    VkDeviceSize reclaimed = 0;
+    uint32_t retired = 0;
+    constexpr VkDeviceSize max_reclaim = 64ULL * 1024 * 1024;
+    for (auto* pool : {&rgba, &bc}) {
+        for (size_t i = 0; i < pool->images.size() && reclaimed < max_reclaim;) {
+            auto& candidate = pool->images[i];
+            if (candidate.allocator != allocator ||
+                SameBcCreate(candidate.create, requested)) {
+                ++i;
+                continue;
+            }
+            auto old = candidate;
+            pool->images.erase(pool->images.begin() + i);
+            pool->bytes -= old.bytes;
+            ++pool->discarded;
+            ++pool->purge_budget;
+            reclaimed += old.bytes;
+            ++retired;
+            DestroyBcEntry(old);
+        }
+        if (reclaimed >= max_reclaim) break;
+    }
+    if (retired) {
+        std::printf("GOW3_MALI_IMAGE_PREALLOC_RECLAIM images=%u retired_mib=%llu "
+                    "heap_mib=%llu budget_mib=%llu incoming_format=%d\\n",
+                    retired, (unsigned long long)(reclaimed >> 20),
+                    (unsigned long long)(used >> 20),
+                    (unsigned long long)(budget >> 20), int(requested.format));
+    }
+}
+
 bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
                  VkImage& image, VmaAllocation& allocation, VkDeviceSize& bytes) {
     const auto raw = static_cast<VkImageCreateInfo>(ci);
@@ -430,13 +492,33 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
         return;
     }
     reused_from_pool = false;
+    if (recycle_bc) {
+        // Cold BC/RGBA image creations can hit shared-memory pressure when
+        // the retained pool only holds incompatible image signatures.
+        ReclaimIdleImagesBeforeAllocate(allocator, image_ci_unsafe);
+    }
     VmaAllocationInfo alloc_info{};
     VkResult result{};
+    const auto allocation_started = std::chrono::steady_clock::now();
     {
         const Vulkan::MaliPerfStats::Scoped vk_image_alloc{
             Vulkan::MaliPerfStats::Stage::ImageVkAllocate, Vulkan::MaliPerfStats::Enabled()};
         result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
                                 &allocation, &alloc_info);
+    }
+    // A single PanVK allocation took 780 ms in the G720 capture. Record the
+    // actual image dimensions/bytes on abnormal allocations: pool hit/miss
+    // counters alone cannot distinguish driver stalls from oversized images.
+    const auto allocation_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - allocation_started).count();
+    if (recycle_bc && allocation_ms >= 25.0) {
+        std::printf("GOW3_MALI_SLOW_IMAGE_ALLOC ms=%.2f format=%d "
+                    "extent=%ux%ux%u mips=%u layers=%u bytes=%llu result=%d\\n",
+                    allocation_ms, int(image_ci_unsafe.format),
+                    image_ci_unsafe.extent.width, image_ci_unsafe.extent.height,
+                    image_ci_unsafe.extent.depth, image_ci_unsafe.mipLevels,
+                    image_ci_unsafe.arrayLayers,
+                    (unsigned long long)alloc_info.size, int(result));
     }
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
