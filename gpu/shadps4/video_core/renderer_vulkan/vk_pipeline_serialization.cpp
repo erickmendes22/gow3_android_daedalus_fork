@@ -1085,13 +1085,21 @@ bool PipelineCache::StartSafeMaliWarmUp() {
     // silently skipped ALL new shader/pipeline metadata. Even a large Vulkan
     // driver cache could not precompile those pipelines on the next launch.
     // A cold run opens the writer; a matching driver cache permits preloading.
-    if (!mali_driver_cache_restored || !Storage::DataBase::Instance().ConcurrentReads()) {
-        const bool compatible = CheckCacheProfile();
+    // A Vulkan pipeline-cache blob and our driver-keyed pipeline binaries are
+    // independent caches. Driver blobs can be absent after a runtime update
+    // while the shader metadata/SPIR-V and pipeline-binary cache are valid.
+    // Never skip preloading solely because the Vulkan blob was unavailable:
+    // the background worker has its own VkPipelineCache and preserves every draw.
+    // CheckCacheProfile rejects stale SPIR-V after an emulator/driver change.
+    const bool compatible = CheckCacheProfile();
+    if (!Storage::DataBase::Instance().ConcurrentReads() || !compatible) {
         Storage::DataBase::Instance().FinishPreload();
         std::printf("GOW3_MALI_PIPELINE_PREPASS status=record-only driver_cache=%u profile=%u\n",
                     unsigned(mali_driver_cache_restored), unsigned(compatible));
         return true;
     }
+    std::printf("GOW3_MALI_PIPELINE_PREPASS status=background driver_cache=%u profile=1\n",
+                unsigned(mali_driver_cache_restored));
     return StartBackgroundWarmUp();
 }
 
