@@ -51,9 +51,25 @@ class ImageBarrierTests(unittest.TestCase):
         self.assertIn("state.access_mask & legacy_hazard_mask",SRC)
         self.assertIn("last_state.access_mask & legacy_hazard_mask",SRC)
 
+    def test_contiguous_barrier_merging_keeps_hazard_identity(self):
+        self.assertIn("append_subresource_barrier(vk::ImageMemoryBarrier2{", SRC)
+        self.assertIn("const bool same_dependency =", SRC)
+        for guard in ("previous.image == barrier.image",
+                      "previous.srcStageMask == barrier.srcStageMask",
+                      "previous.srcAccessMask == barrier.srcAccessMask",
+                      "previous.dstStageMask == barrier.dstStageMask",
+                      "previous.dstAccessMask == barrier.dstAccessMask",
+                      "previous.oldLayout == barrier.oldLayout",
+                      "previous.newLayout == barrier.newLayout",
+                      "previous.subresourceRange.aspectMask == barrier.subresourceRange.aspectMask",
+                      "a.baseArrayLayer + a.layerCount == b.baseArrayLayer",
+                      "a.baseMipLevel + a.levelCount == b.baseMipLevel"):
+            self.assertIn(guard, SRC)
+        self.assertIn("if (mali_read_only_elision && !barriers.empty())", SRC)
+
     def test_opt_out_and_vendor(self):
         self.assertIn("vendorID == 0x13B5",SRC)
-        self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}",RUN)
+        self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}",RUN)
 
 if __name__ == "__main__":
     unittest.main()
