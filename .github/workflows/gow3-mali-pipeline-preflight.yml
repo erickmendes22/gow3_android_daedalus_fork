@@ -16,6 +16,9 @@ on:
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
       - 'gpu/shim/gow3_copy.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'tools/android/bionic/run-bionic.sh'
+      - 'tests/test_mali_scene_image_retention.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.h'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
@@ -57,6 +60,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_steady_state_cost_gate.py' -v
           python3 benchmarks/mali_steady_state_cost_gate.py --report-only
+          python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
           if python3 benchmarks/mali_steady_state_cost_gate.py --stage submit_host_copy_wait; then
             echo 'ERROR: the measured copy wait should not justify an APK' >&2
             exit 1
