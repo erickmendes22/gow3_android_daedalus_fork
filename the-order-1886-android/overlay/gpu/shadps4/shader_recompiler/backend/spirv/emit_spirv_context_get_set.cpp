@@ -199,14 +199,6 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         }
         return ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_nopersp,
                                                         ctx.ConstU32(comp)));
-    case IR::Attribute::BaryCoordNoPerspCentroid:
-        if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
-            return ctx.OpCompositeExtract(
-                ctx.F32[1],
-                ctx.OpInterpolateAtCentroid(ctx.F32[2], ctx.bary_coord_nopersp), comp);
-        }
-        // Without an auxiliary GS, the native centroid input is not implemented here.
-        return ctx.f32_zero_value;
     case IR::Attribute::BaryCoordNoPerspSample:
         if (CanPerVertexInterp(ctx.profile, ctx.runtime_info)) {
             return ctx.OpCompositeExtract(ctx.F32[1],

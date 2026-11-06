@@ -424,9 +424,7 @@ struct PassInfo {
     u16 dst_off_dw;
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
-        // Storage keys use GVN canonical instructions; a recursive walk may arrive
-        // via an equivalent ReadConst alias. Never lose its dependent pointer table.
-        auto it = pointer_uses.find(DeduplicateInstruction(inst));
+        auto it = pointer_uses.find(inst);
         if (it != pointer_uses.end()) {
             return &it->second;
         }

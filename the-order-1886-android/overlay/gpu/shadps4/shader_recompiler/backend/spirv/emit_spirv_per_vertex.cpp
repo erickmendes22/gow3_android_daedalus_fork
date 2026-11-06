@@ -20,8 +20,7 @@ bool CanPerVertexInterp(const Profile& profile, const RuntimeInfo& runtime_info)
     // The shader translation and GS creation must make this decision identically,
     // otherwise the FS expects 3 flat locations for an attribute with no producer.
     if (!profile.supports_geometry_stage || !fs_info.is_vs_direct ||
-        (fs_info.prim_type != AmdGpu::PrimitiveType::TriangleList &&
-         fs_info.prim_type != AmdGpu::PrimitiveType::TriangleStrip) ||
+        fs_info.prim_type != AmdGpu::PrimitiveType::TriangleList ||
         profile.supports_amd_shader_explicit_vertex_parameter ||
         profile.supports_fragment_shader_barycentric ||
         fs_info.clip_distance_emulation) {
@@ -56,7 +55,6 @@ bool NeedsPerVertexAuxGS(const Profile& profile, const Info& info, const Runtime
         info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
         info.loads.GetAny(IR::Attribute::BaryCoordPullModel) ||
         info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
-        info.loads.GetAny(IR::Attribute::BaryCoordNoPerspCentroid) ||
         info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample)) {
         return true;
     }
@@ -107,8 +105,7 @@ u64 ComputePerVertexAuxGSSignature(const Info& info, const RuntimeInfo& runtime_
         (u64(info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample)) << 2) |
         (u64(info.loads.GetAny(IR::Attribute::BaryCoordPullModel)) << 3) |
         (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPersp)) << 4) |
-        (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample)) << 5) |
-        (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPerspCentroid)) << 6);
+        (u64(info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample)) << 5);
     signature = HashCombine(signature, bary_flags);
     for (u32 i = 0; i < num_inputs; i++) {
         const auto& input = fs_info.inputs[i];
@@ -162,7 +159,6 @@ public:
                          info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
                          info.loads.GetAny(IR::Attribute::BaryCoordPullModel);
         has_linear_coord = info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
-                           info.loads.GetAny(IR::Attribute::BaryCoordNoPerspCentroid) ||
                            info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
     }
 

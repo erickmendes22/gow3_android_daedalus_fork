@@ -385,12 +385,10 @@ void EmitContext::DefineInputs() {
                                info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
                                info.loads.GetAny(IR::Attribute::BaryCoordPullModel);
             const bool linear = info.loads.GetAny(IR::Attribute::BaryCoordNoPersp) ||
-                                info.loads.GetAny(IR::Attribute::BaryCoordNoPerspCentroid) ||
                                 info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
             const bool sampled = info.loads.GetAny(IR::Attribute::BaryCoordSmoothSample) ||
                                  info.loads.GetAny(IR::Attribute::BaryCoordNoPerspSample);
-            const bool centroid = info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid) ||
-                                  info.loads.GetAny(IR::Attribute::BaryCoordNoPerspCentroid);
+            const bool centroid = info.loads.GetAny(IR::Attribute::BaryCoordSmoothCentroid);
             if (persp) {
                 bary_coord_smooth = DefineInput(F32[2], per_vertex_locs.bary_coord_loc);
             }
