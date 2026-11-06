@@ -19,7 +19,18 @@ class MaliWarmupDisabledTests(unittest.TestCase):
         self.assertIn("mergePipelineCaches(", source)
         self.assertIn("mali_driver_cache_restored", source)
 
+    def test_panfrost_driver_hash_prevents_cross_driver_profile_clears(self):
+        storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
+        self.assertIn('std::getenv("GOW3_VULKAN_DRIVER")', storage)
+        self.assertIn('driver_path.filename() == "libvulkan_panfrost.so"', storage)
+        self.assertIn('driver_id.size() == 64', storage)
+        self.assertIn('"panvk-" + driver_id', storage)
+        self.assertIn('std::filesystem::copy_options::skip_existing', storage)
+        self.assertIn('entry.path().filename() != "profile.bin"', storage)
+        self.assertIn('cache_path != legacy_path', storage)
+
     def test_presenter_does_not_fall_through_to_sync_warmup(self):
+
         src = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
         key = 'const char* background_warmup = std::getenv("GOW3_BACKGROUND_WARMUP");'
         self.assertEqual(src.count(key), 1)
