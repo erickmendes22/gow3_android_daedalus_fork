@@ -42,6 +42,21 @@ void CopyOpaqueRgbaRow(u8* dst, const u8* src, u32 pixels) {
 #if defined(__aarch64__) || defined(__ARM_NEON)
     const uint8x16_t opaque_alpha =
         vreinterpretq_u8_u32(vdupq_n_u32(0xff000000u));
+    // The PanVK presentation fallback is memory-bandwidth sensitive:
+    // process one cache line per iteration with four independent SIMD loads
+    // and stores instead of performing four loop/branch/address updates.
+    // Alpha normalization remains fused into the single copy pass.
+    for (; x + 16 <= pixels; x += 16) {
+        const size_t offset = size_t(x) * 4;
+        const auto c0 = vld1q_u8(src + offset);
+        const auto c1 = vld1q_u8(src + offset + 16);
+        const auto c2 = vld1q_u8(src + offset + 32);
+        const auto c3 = vld1q_u8(src + offset + 48);
+        vst1q_u8(dst + offset, vorrq_u8(c0, opaque_alpha));
+        vst1q_u8(dst + offset + 16, vorrq_u8(c1, opaque_alpha));
+        vst1q_u8(dst + offset + 32, vorrq_u8(c2, opaque_alpha));
+        vst1q_u8(dst + offset + 48, vorrq_u8(c3, opaque_alpha));
+    }
     for (; x + 4 <= pixels; x += 4) {
         const uint8x16_t colors = vld1q_u8(src + size_t(x) * 4);
         vst1q_u8(dst + size_t(x) * 4, vorrq_u8(colors, opaque_alpha));
@@ -603,10 +618,13 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
                 for (u32 x = 0; x < fit_w; ++x) {
                     const u8* src = input_row + size_t(mapped_x[x]) * 4;
                     u8* pixel = row + size_t(x) * 4;
-                    pixel[0] = src[0];
-                    pixel[1] = src[1];
-                    pixel[2] = src[2];
-                    pixel[3] = 255;
+                    // One naturally sized RGBA read and write instead of
+                    // three separate byte loads/stores. The Android arm64
+                    // output is little-endian (alpha in the top byte).
+                    u32 opaque_pixel;
+                    std::memcpy(&opaque_pixel, src, sizeof(opaque_pixel));
+                    opaque_pixel |= 0xff000000u;
+                    std::memcpy(pixel, &opaque_pixel, sizeof(opaque_pixel));
                 }
             }
             previous_src_y = src_y;
