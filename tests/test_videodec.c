@@ -64,6 +64,18 @@ static void test_direct_nv12_bit_exact(void) {
         assert(decoder.direct_nv12_frames==1);
         assert(memcmp(baseline,direct,n+32)==0);
         assert(memcmp(&old_info,&new_info,sizeof(old_info))==0);
+
+        /* Full-range YUVJ420P can need colorspace-range normalization.
+         * Never repack it directly: both toggle values must take swscale. */
+        frame->format=AV_PIX_FMT_YUVJ420P;
+        memset(baseline,0,n+32); memset(direct,0,n+32);
+        assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","0",1)==0);
+        assert(picture(&decoder,&old_buf,&old_info)==0);
+        assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","1",1)==0);
+        assert(picture(&decoder,&new_buf,&new_info)==0);
+        assert(memcmp(baseline,direct,n+32)==0);
+        assert(decoder.direct_nv12_frames==1);
+        assert(decoder.fallback_sws_frames==3);
         sws_freeContext(decoder.sws);
         av_frame_free(&frame);
         av_frame_free(&temporary);
