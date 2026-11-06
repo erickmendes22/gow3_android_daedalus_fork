@@ -20,8 +20,18 @@ class Rgba128Pool(unittest.TestCase):
   self.assertIn("a.format == b.format",S)
   self.assertIn("a.samples == b.samples",S)
   self.assertIn("e.allocator == allocator && SameBcCreate(e.create, raw)",S)
-  self.assertIn("scheduler.DeferOperation([this, image_id]",
-   (ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text())
+  texture=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
+  # Exact-image reuse is safe only after a completed GPU tick; the new
+  # copy-free alias path can retire immediately, all other paths are deferred.
+  for safeguard in (
+      "scheduler.DeferOperation(std::move(reclaim))",
+      "completed_layout_alias && mali_eager_completed_retire",
+      "scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last)",
+      "False(image.flags & (ImageFlagBits::GpuDirty | ImageFlagBits::GpuModified))",
+      "std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread()",
+      "reclaim();",
+  ):
+   self.assertIn(safeguard,texture)
   self.assertIn("for (auto* target : {&GetBcPool(), &GetRgba128Pool()})",S)
   self.assertLess(INST.index("FlushMaliBcImagePool(allocator)"),INST.index("vmaDestroyAllocator(allocator)"))
   self.assertIn("!backing->image.reused_from_pool",S)
