@@ -107,8 +107,9 @@ static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
     // Only the ordinary CPU-present Mali profile enables this by default;
     // explicit GOW3_VIDEODEC_NV12_DIRECT=0 restores FFmpeg swscale.
     const char *toggle=getenv("GOW3_VIDEODEC_NV12_DIRECT");
+    const char *mali_present=getenv("GOW3_MALI_CPU_PRESENT");
     const int direct_enabled=toggle ? toggle[0]=='1' :
-                             (getenv("GOW3_MALI_CPU_PRESENT")!=NULL);
+                             (mali_present && mali_present[0]=='1');
     const int direct_planar=direct_enabled &&
         (f->format==AV_PIX_FMT_YUV420P || f->format==AV_PIX_FMT_YUVJ420P) &&
         f->width>0 && f->height>0 && !(f->width&1) && !(f->height&1) &&
