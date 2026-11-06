@@ -843,10 +843,10 @@ void Instance::CreateAllocator() {
     // VkImages to the exact-shape pool (12 hits / 320 RGBA128 requests).
     // This is only a preferred block size: VMA retains Vulkan alignment,
     // dedicated-allocation requirements and the per-allocation budget gate.
-    // 0 restores VMA's original default (normally 256 MiB).
+    // Default 0 preserves VMA; 32 is opt-in until device gains are proved.
     VkDeviceSize preferred_block_size = 0;
     if (std::getenv("GOW3_ANDROID_PORT") && properties.vendorID == 0x13B5) {
-        unsigned long mib = 32;
+        unsigned long mib = 0;
         if (const char* selected = std::getenv("GOW3_MALI_VMA_BLOCK_MIB")) {
             char* end = nullptr;
             const auto parsed = std::strtoul(selected, &end, 10);
@@ -856,7 +856,7 @@ void Instance::CreateAllocator() {
                 mib = parsed;
             } else {
                 LOG_WARNING(Render_Vulkan,
-                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using 32",
+                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using VMA default",
                             selected);
             }
         }
