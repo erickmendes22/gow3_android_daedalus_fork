@@ -272,6 +272,60 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     ++pool.stored;
     return true;
 }
+
+struct CachedImageFormatProbe {
+    vk::Result result{vk::Result::eErrorFormatNotSupported};
+    vk::SampleCountFlags samples{vk::SampleCountFlagBits::e1};
+};
+// A Vulkan image-format answer is immutable for one physical device and
+// format/type/tiling/usage/flags signature. PanVK may reject optional storage
+// and extended usage for BCn. Cache both supported and explicitly unsupported
+// signatures to avoid redundant driver calls at every scene transition.
+// Only Mali uses this optimization; Turnip, pNext queries and other errors
+// preserve the original query path. Thread-local avoids extra hot-path locks.
+CachedImageFormatProbe ProbeImageFormat(const Vulkan::Instance& instance,
+                                       const vk::PhysicalDeviceImageFormatInfo2& info) {
+    const auto query = [&]() {
+        const Vulkan::MaliPerfStats::Scoped timer{
+            Vulkan::MaliPerfStats::Stage::ImageFormatQuery, Vulkan::MaliPerfStats::Enabled()};
+        const auto answer = instance.GetPhysicalDevice().getImageFormatProperties2(info);
+        CachedImageFormatProbe result{};
+        result.result = answer.result;
+        if (answer.result == vk::Result::eSuccess)
+            result.samples = answer.value.imageFormatProperties.sampleCounts;
+        return result;
+    };
+    const char* toggle = std::getenv("GOW3_MALI_IMAGE_FORMAT_QUERY_CACHE");
+    if (!std::getenv("GOW3_ANDROID_PORT") ||
+        instance.GetPhysicalDevice().getProperties().vendorID != 0x13B5 ||
+        (toggle && toggle[0] == '0') || info.pNext)
+        return query();
+    struct Entry {
+        VkPhysicalDevice device{};
+        vk::Format format{};
+        vk::ImageType type{};
+        vk::ImageTiling tiling{};
+        vk::ImageUsageFlags usage{};
+        vk::ImageCreateFlags flags{};
+        CachedImageFormatProbe probe{};
+    };
+    static thread_local std::vector<Entry> entries;
+    const auto device = static_cast<VkPhysicalDevice>(instance.GetPhysicalDevice());
+    for (const auto& entry : entries) {
+        if (entry.device == device && entry.format == info.format &&
+            entry.type == info.type && entry.tiling == info.tiling &&
+            entry.usage == info.usage && entry.flags == info.flags)
+            return entry.probe;
+    }
+    const auto answer = query();
+    if (answer.result == vk::Result::eSuccess ||
+        answer.result == vk::Result::eErrorFormatNotSupported) {
+        if (entries.size() >= 256) entries.erase(entries.begin());
+        entries.push_back({device, info.format, info.type, info.tiling,
+                           info.usage, info.flags, answer});
+    }
+    return answer;
+}
 } // namespace
 
 void FlushMaliBcImagePool(VmaAllocator allocator) {
@@ -336,8 +390,13 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     }
     reused_from_pool = false;
     VmaAllocationInfo alloc_info{};
-    VkResult result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
-                                     &allocation, &alloc_info);
+    VkResult result{};
+    {
+        const Vulkan::MaliPerfStats::Scoped vk_image_alloc{
+            Vulkan::MaliPerfStats::Stage::ImageVkAllocate, Vulkan::MaliPerfStats::Enabled()};
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
+                                &allocation, &alloc_info);
+    }
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};
@@ -398,14 +457,14 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         .flags = flags,
     };
     auto image_format_properties =
-        instance.GetPhysicalDevice().getImageFormatProperties2(format_info);
+        ProbeImageFormat(instance, format_info);
     // gow3: storage usage is speculative (see ImageUsageFlags). Drivers that refuse it for a
     // format (AMD's Windows driver for BC6H) get the image without it: creating the unsupported
     // combination anyway loses the device a few frames later.
     if (image_format_properties.result == vk::Result::eErrorFormatNotSupported &&
         (usage_flags & vk::ImageUsageFlagBits::eStorage)) {
         format_info.usage = usage_flags & ~vk::ImageUsageFlagBits::eStorage;
-        image_format_properties = instance.GetPhysicalDevice().getImageFormatProperties2(format_info);
+        image_format_properties = ProbeImageFormat(instance, format_info);
         if (image_format_properties.result == vk::Result::eSuccess) {
             usage_flags = format_info.usage;
             format_features = FormatFeatureFlags(usage_flags);
@@ -424,7 +483,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         (format_info.flags & vk::ImageCreateFlagBits::eExtendedUsage)) {
         const auto original_flags = format_info.flags;
         format_info.flags &= ~vk::ImageCreateFlagBits::eExtendedUsage;
-        const auto retry = instance.GetPhysicalDevice().getImageFormatProperties2(format_info);
+        const auto retry = ProbeImageFormat(instance, format_info);
         if (retry.result == vk::Result::eSuccess) {
             flags = format_info.flags;
             image_format_properties = retry;
@@ -453,7 +512,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
                   vk::to_string(format_info.flags), vk::to_string(format_info.usage));
     }
     supported_samples = image_format_properties.result == vk::Result::eSuccess
-                            ? image_format_properties.value.imageFormatProperties.sampleCounts
+                            ? image_format_properties.samples
                             : vk::SampleCountFlagBits::e1;
 
     const vk::ImageCreateInfo image_ci = {

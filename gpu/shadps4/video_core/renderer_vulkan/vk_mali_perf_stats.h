@@ -29,6 +29,7 @@ public:
         GpuDrawCpu, PipelineLookup,
         NewGraphicsPipeline, NewComputePipeline, NewShaderModule,
         NewBcImage, NewRgba128Image, NewOtherImage,
+        ImageFormatQuery, ImageVkAllocate, Pm4ResumeBlocked, Pm4ResumeWork,
         SubmitMutex, SubmitThrottle, SubmitHostCopies, SubmitQueueDriver,
         PendingTimelineQuery, Pm4SubmitWall,
         Count,
@@ -80,6 +81,21 @@ public:
         if (!Enabled()) return false;
         static thread_local uint32_t submits = 0;
         return (++submits & 31u) == 0;
+    }
+
+    static bool SamplePm4Resume() {
+        if (!Enabled()) return false;
+        static thread_local uint32_t resumes = 0;
+        return (++resumes & 255u) == 0;
+    }
+
+    enum class Pm4WaitReason : unsigned { MemorySemaphore, Rewind, WaitRegMem, Count };
+    static void CountPm4Wait(Pm4WaitReason reason) {
+        if (!Enabled()) return;
+        static thread_local uint32_t yields = 0;
+        if ((++yields & 255u) == 0)
+            Get().pm4_wait_sampled[static_cast<unsigned>(reason)].fetch_add(
+                1, std::memory_order_relaxed);
     }
 
     static void RecordImageAllocation(bool compressed, bool rgba128, uint64_t bytes) {
@@ -136,6 +152,7 @@ public:
             "gpu_draw_cpu", "pipeline_lookup",
             "graphics_pipeline_new", "compute_pipeline_new", "shader_module_new",
             "image_bc_new", "image_rgba128_new", "image_other_new",
+            "image_format_query", "image_vk_allocate", "pm4_resume_blocked", "pm4_resume_work",
             "submit_mutex", "submit_throttle", "submit_host_copy_wait",
             "submit_vk_queue", "pending_timeline_query", "pm4_submit_wall",
         };
@@ -156,6 +173,18 @@ public:
                 " %s=%llu/%.2f/%.2f/%.2f",
                 names[i], static_cast<unsigned long long>(count),
                 total / 1e6, total / (1e6 * count), maximum / 1e6);
+            if (written > 0)
+                used += std::min(static_cast<size_t>(written), sizeof(line) - used);
+        }
+        // Counts are sampled one out of 256 PM4 blocked yields, by reason.
+        constexpr const char* wait_names[]{
+            "pm4_yield_mem_semaphore_s256", "pm4_yield_rewind_s256", "pm4_yield_wait_regmem_s256"};
+        for (unsigned i = 0; i < state.pm4_wait_sampled.size(); ++i) {
+            const auto count = state.pm4_wait_sampled[i].exchange(0, std::memory_order_relaxed);
+            if (!count || used >= sizeof(line)) continue;
+            const int written = std::snprintf(line + used, sizeof(line) - used,
+                                               " %s=%llu", wait_names[i],
+                                               static_cast<unsigned long long>(count));
             if (written > 0)
                 used += std::min(static_cast<size_t>(written), sizeof(line) - used);
         }
@@ -183,6 +212,7 @@ private:
     struct State {
         std::array<Counter, static_cast<unsigned>(Stage::Count)> stages{};
         std::array<std::atomic<uint64_t>, 3> image_bytes{};
+        std::array<std::atomic<uint64_t>, 3> pm4_wait_sampled{};
         std::atomic<uint64_t> last_report_ms{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(

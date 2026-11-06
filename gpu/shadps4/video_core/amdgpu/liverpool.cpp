@@ -186,7 +186,16 @@ void Liverpool::Process(std::stop_token stoken) {
                 }
                 task = queue.submits.front();
             }
-            task.resume();
+            if (Vulkan::MaliPerfStats::SamplePm4Resume()) {
+                const auto resume_start = Vulkan::MaliPerfStats::Clock::now();
+                task.resume();
+                Vulkan::MaliPerfStats::Record(
+                    gfx_blocked_fiber_wait ? Vulkan::MaliPerfStats::Stage::Pm4ResumeBlocked
+                                           : Vulkan::MaliPerfStats::Stage::Pm4ResumeWork,
+                    resume_start);
+            } else {
+                task.resume();
+            }
 #ifdef __ANDROID__
             // An unresolved guest memory label can make this sole coroutine
             // yield immediately, over and over, spinning a CPU core while
@@ -1364,6 +1373,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 } else {
                     while (!mem_semaphore->Signaled()) {
                         gfx_blocked_fiber_wait = true;
+                        Vulkan::MaliPerfStats::CountPm4Wait(Vulkan::MaliPerfStats::Pm4WaitReason::MemorySemaphore);
                         YIELD_GFX();
                         gfx_blocked_fiber_wait = false;
                     }
@@ -1382,6 +1392,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const PM4CmdRewind* rewind = reinterpret_cast<const PM4CmdRewind*>(header);
                 while (!rewind->Valid()) {
                     gfx_blocked_fiber_wait = true;
+                    Vulkan::MaliPerfStats::CountPm4Wait(Vulkan::MaliPerfStats::Pm4WaitReason::Rewind);
                     YIELD_GFX();
                     gfx_blocked_fiber_wait = false;
                 }
@@ -1420,6 +1431,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         continue;
                     }
                     gfx_blocked_fiber_wait = true;
+                    Vulkan::MaliPerfStats::CountPm4Wait(Vulkan::MaliPerfStats::Pm4WaitReason::WaitRegMem);
                     YIELD_GFX();
                     gfx_blocked_fiber_wait = false;
                 }
