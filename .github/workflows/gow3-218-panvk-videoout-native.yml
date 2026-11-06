@@ -208,6 +208,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_pm4_unused_checksum.py' -v
           python -m unittest discover -s tests -p 'test_mali_pm4_unused_dirty.py' -v
           python -m unittest discover -s tests -p 'test_mali_bc_image_pool.py' -v
+          python -m unittest discover -s tests -p 'test_mali_gc_budget_and_layout.py' -v
           python -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
           python -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
           python -m unittest discover -s tests -p 'test_mali_bc_alias_retirement.py' -v

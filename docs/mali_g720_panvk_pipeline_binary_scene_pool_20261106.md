@@ -82,3 +82,38 @@ Keep at 0 for clean A/B on BC/RGBA128 retention and test workers separately.
 
 Tests: `tests/test_mali_scene_image_retention.py`, existing BC/RGBA128
 VMA/alias guards, and separate-install PanVK Android native build CI.
+
+## Follow-up: GC trigger was more restrictive than the pool limits
+
+A review of the user's same `GodOfWar3-Logs-20261106-064553.zip` shows
+`gc_trigger_pct=70`, `gc_pressure_pct=85` in the PanVK startup line.
+All **24** texture-cache reports are **routine eviction**, not memory
+pressure; the reported counts sum to **701 image evictions**, zero
+writebacks and zero dirty-kept. Logged usage was on average approximately
+**78% of the moving Vulkan memory budget**. The source uses a short
+`gc_tick - 16` LRU age for routine evictions, and `gc_tick - 80` for
+actual pressure, so threshold 70% systematically reclaims live reusable
+working sets before the pool even has a chance to prevent new allocations.
+
+The existing GPU cache code already permits an 85% trigger. Changed **only**
+the PanVK launcher's default `GOW3_MALI_GC_TRIGGER_PCT=70` to **85**,
+aligning routine GC start to the existing 85% pressure watermark and
+keeping the separate **95% critical watermark**. Explicit `=70` remains
+available for A/B. No GPU-dirty alias deletion rule was changed.
+
+**Public Bachata core comparison:** `zenithblue-oss/shadps4-arm64`,
+`src/video_core/texture_cache/texture_cache.h/.cpp` has no equivalent
+BC/RGBA128 recycled VkImage pools or matching pool-size cap.
+It computes GC watermarks from the Vulkan device-local budget with
+`DEFAULT_PRESSURE_GC_MEMORY=1.5 GiB`,
+`DEFAULT_CRITICAL_GC_MEMORY=3 GiB`,
+`TARGET_GC_THRESHOLD=8 GiB` and different LRU rules. Those are
+**watermarks**, not 1.5/3 GiB allocation or image-pool hard limits. The
+Bachata pressure watermark can be lower than Daedalus's 85%; the
+strategies cannot be ranked by comparing one percentage.
+
+This GC change targets texture churn rather than shader compilation.
+It **does not establish a quantified FPS gain**. Test the same scene
+after warming VK_KHR_pipeline_binary with A/B `GOW3_MALI_GC_TRIGGER_PCT=70`
+versus `=85`, pool-expansion toggle held fixed, and compare evictions,
+allocation latency, actual frame time and memory stability.

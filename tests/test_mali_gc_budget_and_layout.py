@@ -15,6 +15,24 @@ class MaliBudgetAndLayoutTests(unittest.TestCase):
         self.assertIn('pressure_gc_memory = budget / 100 * mali_pressure_pct;', TEX)
         self.assertIn('critical_gc_memory = budget / 100 * 95;', TEX)
 
+    def test_mali_early_gc_waits_for_memory_pressure_by_default(self):
+        # Device ZIP 20261106-064553: 701 routine deletions despite
+        # no memory-pressure reports. All 24 snapshots were below 85% of
+        # their then-current VMA budget; last was 2612 / (2811 / .85) MiB.
+        self.assertIn(
+            'GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-85}', SH
+        )
+        self.assertIn('GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}', SH)
+        self.assertIn('trigger_gc_memory = budget / 100 * std::min(mali_trigger_pct, mali_pressure_pct);', TEX)
+        self.assertIn('if (total_used_memory < trigger_gc_memory)', TEX)
+        self.assertIn('(parsed != 70 && (parsed < 75 || parsed > 86))', TEX)
+        self.assertIn('critical_gc_memory = budget / 100 * 95;', TEX)
+        # Device log example: new trigger waits for pressure; old 70% ran.
+        budget_mib=2837 / 0.85
+        used_mib=2615
+        self.assertGreaterEqual(used_mib, budget_mib*0.70)
+        self.assertLess(used_mib, budget_mib*0.85)
+
     def test_guard_stays_protective_and_reports_real_format(self):
         self.assertIn('GOW3_TEXTURE_OVERLAP_LAYOUT_REJECT source=port_alias_guard', TEX)
         self.assertIn('GOW3_TEXTURE_LAYOUT_REJECT source=port_exact_match_guard', TEX)

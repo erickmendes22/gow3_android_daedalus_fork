@@ -181,11 +181,13 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # 5 FPS and risks retaining extra memory on a memory-shared GPU.
       # Critical cleanup remains at 95%, and =88 is still available.
       export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}
-      # The 85% early-GC experiment had no demonstrated FPS gain. Restore
-      # the 70% baseline while testing threaded draw-preparation; =85 is
-      # available for a separate A/B if repeated image recreation is proven.
-      # Critical limit remains 95%.
-      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-70}
+      # G720 2026-11-06 runtime: GC trigger=70% while usage was only
+      # ~78% of budget and below 85% pressure. This caused 701 *routine*
+      # image evictions in 24 reports, with zero dirty downloads.
+      # Stop evicting healthy reusable images with no memory pressure.
+      # =70 reproduces the logged baseline for tester A/B.
+      # Pressure remains 85% and critical reclaim remains 95%.
+      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-85}
       # The source-project 68 vs 53 FPS worker result is NOT a G615/G720
       # measurement. Their 2026-11-04 device logs used zero preparation
       # workers. Restore this known Mali baseline and avoid competing with
