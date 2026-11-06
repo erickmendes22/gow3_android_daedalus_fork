@@ -2081,7 +2081,10 @@ void TextureCache::DeleteImage(ImageId image_id) {
          image.info.pixel_format == vk::Format::eR32G32B32A32Uint) &&
         image.tick_accessed_last != 0 &&
         !image.binding.is_target && !image.binding.is_bound &&
-        False(image.flags & (ImageFlagBits::Dirty | ImageFlagBits::GpuModified)) &&
+        // A guest-CPU-dirty image is disposable here: FreeImage already
+        // untracked/unregistered it and guest RAM remains authoritative.
+        // GPU-dirty or GPU-modified images still require deferred retirement.
+        False(image.flags & (ImageFlagBits::GpuDirty | ImageFlagBits::GpuModified)) &&
         scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last);
     if (clean_gpu_retired) {
         // UniqueImage::~UniqueImage returns the retired BC image to its exact
