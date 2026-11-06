@@ -890,7 +890,14 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                                 vk::to_string(image_info.pixel_format).c_str(),
                                 (unsigned long long)cache_image.tick_accessed_last);
             }
-            if (can_retire_alias) FreeImage(cache_image_id);
+            if (can_retire_alias) {
+                // This branch rejected a mismatched guest layout without
+                // scheduling any GPU copy. An already-completed, clean image
+                // may return its VkImage to the pool immediately. Every other
+                // FreeImage caller (notably ExpandImage/CopyImage) keeps the
+                // original deferred destruction semantics.
+                FreeImage(cache_image_id, clean_alias_retirable);
+            }
             return {merged_image_id, -1, -1};
         }
 
@@ -1999,7 +2006,7 @@ void TextureCache::TouchImage(const Image& image) {
     lru_cache.Touch(image.lru_id, gc_tick);
 }
 
-void TextureCache::DeleteImage(ImageId image_id) {
+void TextureCache::DeleteImage(ImageId image_id, bool completed_layout_alias) {
     Image& image = slot_images[image_id];
     CancelReadbacks(image.info.guest_address, image.info.guest_size, true);
     ASSERT_MSG(!image.IsTracked(), "Image was not untracked");
@@ -2059,9 +2066,12 @@ void TextureCache::DeleteImage(ImageId image_id) {
         }
         slot_images.erase(image_id);
     };
-    // Only the Android PanVK GPU command thread may take this fast path.
-    // The speculative draw pipeline must be off: it could retain image
-    // references asynchronously without updating the image access tick yet.
+    // Only an explicitly identified, copy-free BC/RGBA layout rejection
+    // can use this path. ExpandImage and other free sites may enqueue GPU
+    // copies after an image's last-access tick was recorded, so treating
+    // every completed old tick as proof of safe destruction was WRONG.
+    // The PanVK GPU command thread must be the caller, and the speculative
+    // draw pipeline must be off: it could retain unsubmitted references.
     // The regular Vulkan recording worker IS permitted. SubmitExecution
     // always calls SyncRecording() before submitting the command buffer and
     // signaling the matching timeline tick; a confirmed completed image tick
@@ -2077,7 +2087,7 @@ void TextureCache::DeleteImage(ImageId image_id) {
                instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     }();
     const bool clean_gpu_retired =
-        mali_eager_completed_retire && liverpool &&
+        completed_layout_alias && mali_eager_completed_retire && liverpool &&
         std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread() &&
         (image.info.props.is_block ||
          image.info.pixel_format == vk::Format::eR32G32B32A32Uint) &&
