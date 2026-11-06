@@ -932,6 +932,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
             const auto& b = barrier.subresourceRange;
             if (same_dependency && a.baseMipLevel == b.baseMipLevel &&
                 a.levelCount == 1 && b.levelCount == 1 &&
+                a.layerCount != VK_REMAINING_ARRAY_LAYERS && b.layerCount == 1 &&
                 a.baseArrayLayer + a.layerCount == b.baseArrayLayer) {
                 previous.subresourceRange.layerCount += b.layerCount;
                 return;
@@ -939,6 +940,8 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
             // Mip folding is valid only for identical whole layer ranges.
             if (same_dependency && a.baseArrayLayer == b.baseArrayLayer &&
                 a.layerCount == b.layerCount &&
+                a.layerCount != VK_REMAINING_ARRAY_LAYERS &&
+                a.levelCount != VK_REMAINING_MIP_LEVELS && b.levelCount == 1 &&
                 a.baseMipLevel + a.levelCount == b.baseMipLevel) {
                 previous.subresourceRange.levelCount += b.levelCount;
                 return;
