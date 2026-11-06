@@ -32,7 +32,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         # command-buffer tick. A BC image whose last submitted GPU use is
         # already complete can instead become available to exact-create
         # recycling immediately during a BC/RGBA guest-layout transition.
-        start = TEXTURE.index("void TextureCache::DeleteImage(ImageId image_id)")
+        start = TEXTURE.index("void TextureCache::DeleteImage(ImageId image_id, bool completed_layout_alias)")
         body = TEXTURE[start:]
         for condition in (
             'std::getenv("GOW3_MALI_EAGER_COMPLETED_RETIRE")',
@@ -48,6 +48,18 @@ class MaliSceneRetentionTests(unittest.TestCase):
             "scheduler.DeferOperation(std::move(reclaim))",
         ):
             self.assertIn(condition, body)
+        # The original unconditional fast path could free an image after
+        # CopyImage() recorded a NEW use on the current (unsubmitted) tick.
+        self.assertIn("completed_layout_alias && mali_eager_completed_retire", body)
+        self.assertIn("FreeImage(cache_image_id, clean_alias_retirable);", TEXTURE)
+        header = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.h").read_text()
+        self.assertIn("void FreeImage(ImageId image_id, bool completed_layout_alias = false)", header)
+        self.assertIn("DeleteImage(image_id, completed_layout_alias);", header)
+        expand = TEXTURE.split("ImageId TextureCache::ExpandImage", 1)[1].split(
+            "ImageId TextureCache::FindImage", 1)[0]
+        self.assertIn("runtime.CopyImage(&src_image, &new_image);", expand)
+        self.assertIn("FreeImage(image_id);", expand)
+        self.assertNotIn("FreeImage(image_id, true)", expand)
         self.assertIn('GOW3_MALI_EAGER_COMPLETED_RETIRE:-1', RUN)
         self.assertIn('eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE', RUN)
         self.assertLess(body.index("reclaim();"), body.index("scheduler.DeferOperation(std::move(reclaim))"))
