@@ -21,6 +21,12 @@ class MaliFormatCachePM4Tests(unittest.TestCase):
                   'image_format_properties.samples', 'ProbeImageFormat(instance, format_info)',
                   'MaliPerfStats::Stage::ImageVkAllocate', 'vmaCreateImage(allocator, &image_ci_unsafe'):
             self.assertIn(s,I)
+    def test_pool_miss_and_budget_reasons_are_distinct(self):
+        for key in ('GOW3_%s_IMAGE_POOL_DIAG', 'miss_empty', 'miss_incompatible',
+                    'trim_limit', 'purge_budget', 'reject_budget',
+                    '++pool.miss_empty;', '++pool.miss_incompatible;',
+                    '++pool.trim_limit;', '++pool.purge_budget;'):
+            self.assertIn(key, I)
     def test_pm4_profile_no_wait_removal(self):
         for s in ('SamplePm4Resume()', 'Pm4ResumeBlocked', 'Pm4ResumeWork',
                   'Pm4WaitReason::WaitRegMem','Pm4WaitReason::MemorySemaphore',

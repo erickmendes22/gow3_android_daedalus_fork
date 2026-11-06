@@ -114,6 +114,8 @@ struct BcPool {
     std::vector<RetiredBcImage> images;
     VkDeviceSize bytes = 0;
     uint64_t hits = 0, misses = 0, stored = 0, discarded = 0;
+    uint64_t miss_empty = 0, miss_incompatible = 0;
+    uint64_t trim_limit = 0, purge_budget = 0, reject_budget = 0;
 };
 BcPool& GetBcPool() {
     // Deliberately never destroyed by static teardown. Instance::~Instance()
@@ -171,6 +173,14 @@ void ReportImagePool(const BcPool& pool, bool rgba128) {
                 (unsigned long long)pool.hits, (unsigned long long)pool.misses,
                 (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
                 (unsigned long long)(pool.bytes >> 20));
+    std::printf("GOW3_%s_IMAGE_POOL_DIAG miss_empty=%llu miss_incompatible=%llu "
+                "trim_limit=%llu purge_budget=%llu reject_budget=%llu entries=%zu\n",
+                rgba128 ? "RGBA128" : "BC",
+                (unsigned long long)pool.miss_empty,
+                (unsigned long long)pool.miss_incompatible,
+                (unsigned long long)pool.trim_limit,
+                (unsigned long long)pool.purge_budget,
+                (unsigned long long)pool.reject_budget, pool.images.size());
 }
 
 bool SameBcCreate(const VkImageCreateInfo& a, const VkImageCreateInfo& b) {
@@ -213,6 +223,7 @@ void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
         pool.images.erase(pool.images.begin());
         pool.bytes -= e.bytes;
         ++pool.discarded;
+        ++pool.trim_limit;
         DestroyBcEntry(e);
     }
 }
@@ -227,6 +238,8 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
         });
     if (it == pool.images.rend()) {
         ++pool.misses;
+        if (pool.images.empty()) ++pool.miss_empty;
+        else ++pool.miss_incompatible;
         if ((pool.misses + pool.hits) % (IsRgba128Image(raw) ? 64 : 128) == 0)
             ReportImagePool(pool, IsRgba128Image(raw));
         return false;
@@ -253,12 +266,14 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     if (!BcPoolHasBudget(allocator)) {
         // Image cache memory must never compete with live textures at high
         // pressure; release all previously pooled entries on this allocator.
+        ++pool.reject_budget;
         for (size_t i = pool.images.size(); i-- > 0;) {
             if (pool.images[i].allocator != allocator) continue;
             auto e = pool.images[i];
             pool.images.erase(pool.images.begin() + i);
             pool.bytes -= e.bytes;
             ++pool.discarded;
+            ++pool.purge_budget;
             DestroyBcEntry(e);
         }
         return false;
