@@ -57,7 +57,9 @@ int main() { return 0; }
 
     def test_retired_vkimage_never_reused_on_different_create(self):
         self.assertIn("const auto create_result = device.createImage(requested_ci);", IMAGE)
-        self.assertIn("vmaGetAllocationInfo2(allocator, candidate.allocation, &info);", IMAGE)
+        self.assertIn("vmaGetAllocationInfo2(allocator, allocation, &memory_info);", IMAGE)
+        self.assertIn("const auto& info = candidate.memory_info;", IMAGE)
+        self.assertIn("pool.images.push_back({image, allocation, allocator, raw, bytes, memory_info});", IMAGE)
         self.assertIn("dedicated.requiresDedicatedAllocation", IMAGE)
         self.assertIn("CanRebindRetiredImageMemory(", IMAGE)
         self.assertIn("info.allocationInfo.memoryType, info.dedicatedMemory", IMAGE)
