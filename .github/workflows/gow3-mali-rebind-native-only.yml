@@ -1,0 +1,61 @@
+name: GoW3 Mali BC/RGBA image memory rebind - native compile only, NO APK
+
+on:
+  push:
+    branches:
+      - analysis/gow3-bachata-mali-memory-20261106
+    paths:
+      - '.github/workflows/gow3-mali-rebind-native-only.yml'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/retired_image_rebind_policy.h'
+      - 'tests/test_mali_retired_memory_rebind.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gow3-mali-rebind-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile C++ requirements guard with negative safety cases
+        run: |
+          python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Prepare ARM64 host headers
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build pinned Android dependencies
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_deps.sh
+      - name: Compile real ARM64 Vulkan renderer with new image rebind code
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_gpu.sh
+          test -s out/bionic/lib/libgow3gpu.so
+          echo 'Native libgow3gpu.so verified. No APK packaging, signing or upload.'
