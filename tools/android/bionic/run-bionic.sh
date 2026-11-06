@@ -243,10 +243,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # rather than deferring clean BC handles to an unrelated future tick.
       # =0 preserves the previous deferred-release policy for rollback.
       export GOW3_MALI_EAGER_COMPLETED_RETIRE=${GOW3_MALI_EAGER_COMPLETED_RETIRE:-1}
-      # 0 restores VMA's usual 256 MiB large-heap blocks; on Mali we
-      # prefer 32 MiB to bound single VkDeviceMemory allocation bursts.
-      # 16/32/64/128/256 MiB are accepted for same-device comparisons.
-      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-32}
+      # Keep VMA's original heap-block policy by default. A 32 MiB block
+      # preference has NOT proved less frame stutter or faster creation on G720
+      # and may increase memory calls. Explicit 16/32/64/128/256 opt in.
+      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-0}
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
