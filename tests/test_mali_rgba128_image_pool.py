@@ -26,7 +26,7 @@ class Rgba128Pool(unittest.TestCase):
   self.assertLess(INST.index("FlushMaliBcImagePool(allocator)"),INST.index("vmaDestroyAllocator(allocator)"))
   self.assertIn("!backing->image.reused_from_pool",S)
  def test_mali_only_reversible(self):
-  self.assertIn("GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-0}",RUN)
+  self.assertIn("GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-1}",RUN)
   self.assertIn("GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}",RUN)
   self.assertIn('rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL',RUN)
   self.assertIn("rgba128_pool_enabled && image_ci.format == vk::Format::eR32G32B32A32Uint",S)
