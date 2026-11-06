@@ -13,7 +13,7 @@ class MaliPanvkCompatSourceTests(unittest.TestCase):
     def test_mali_bcn_only_preserves_compressed_mip_layout(self):
         image=src("gpu/shadps4/video_core/texture_cache/image.cpp")
         self.assertIn("info.props.is_block",image)
-        self.assertIn("getImageFormatProperties2(format_info)",image)
+        # Capability queries still reach Vulkan, but reuse immutable Mali answers.\n        self.assertIn("ProbeImageFormat(instance, format_info)",image)\n        self.assertIn("instance.GetPhysicalDevice().getImageFormatProperties2(info)",image)
         self.assertIn("vk::ImageCreateFlagBits::eExtendedUsage",image)
         self.assertIn("getProperties().vendorID == 0x13B5",image)
         self.assertIn("flags = format_info.flags;",image)
