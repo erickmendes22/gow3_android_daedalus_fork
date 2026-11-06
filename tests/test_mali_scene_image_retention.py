@@ -55,6 +55,11 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("SameBcCreate(candidate.create, requested)",IMAGE)
         self.assertIn("max_reclaim = 64ULL * 1024 * 1024",IMAGE)
         self.assertIn("ReclaimIdleImagesBeforeAllocate(allocator, image_ci_unsafe);",IMAGE)
+        # Match the reference PanVK 100 ms memory-budget cadence without
+        # weakening the per-VkImage VMA WITHIN_BUDGET safety check.
+        self.assertIn("next_budget_check = now + std::chrono::milliseconds(100);",IMAGE)
+        self.assertIn("if (now < next_budget_check) return;",IMAGE)
+        self.assertIn("VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT",IMAGE)
         self.assertIn("GOW3_MALI_SLOW_IMAGE_ALLOC",IMAGE)
         self.assertIn("GOW3_MALI_IMAGE_PREALLOC_RECLAIM",IMAGE)
 
