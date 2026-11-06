@@ -17,6 +17,7 @@
 
 #include <vk_mem_alloc.h>
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -364,12 +365,13 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
 // The fallback is the original vmaCreateImage on any incompatibility/failure.
 // Only GOW3_MALI_REBIND_RETIRED_MEMORY=1 permits this experiment on Mali.
 bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
-                              const VkImageCreateInfo& requested, VkImage& image,
+                              const vk::ImageCreateInfo& requested_ci, VkImage& image,
                               VmaAllocation& allocation, VkDeviceSize& bytes) {
     static const bool enabled = [] {
         const char* option = std::getenv("GOW3_MALI_REBIND_RETIRED_MEMORY");
         return option && option[0] == '1';
     }();
+    const VkImageCreateInfo requested = static_cast<VkImageCreateInfo>(requested_ci);
     if (!enabled || requested.pNext || requested.queueFamilyIndexCount ||
         requested.sharingMode != VK_SHARING_MODE_EXCLUSIVE ||
         (requested.flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
@@ -383,7 +385,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
         std::scoped_lock lock{bc.mutex, rgba.mutex};
         if (bc.images.empty() && rgba.images.empty()) return false;
     }
-    const auto create_result = device.createImage(vk::ImageCreateInfo{requested});
+    const auto create_result = device.createImage(requested_ci);
     if (create_result.result != vk::Result::eSuccess) return false;
     const vk::Image new_image = create_result.value;
     const VkImage new_handle = static_cast<VkImage>(new_image);
@@ -451,12 +453,12 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     image = new_handle;
     allocation = retired.allocation;
     bytes = retired.bytes;
-    static uint64_t rebind_hits = 0;
-    ++rebind_hits;
-    if (rebind_hits <= 4 || (rebind_hits & 63u) == 0) {
+    static std::atomic<uint64_t> rebind_hits{0};
+    const auto hits = rebind_hits.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (hits <= 4 || (hits & 63u) == 0) {
         std::printf("GOW3_MALI_IMAGE_REBIND hits=%llu old_format=%d new_format=%d "
                     "bytes=%llu requested=%llu\\n",
-                    (unsigned long long)rebind_hits, int(retired.create.format),
+                    (unsigned long long)hits, int(retired.create.format),
                     int(requested.format), (unsigned long long)bytes,
                     (unsigned long long)requirements.size);
     }
@@ -615,7 +617,7 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     // incompatible retired image. It is re-bound to a fresh VkImage with
     // checked size/alignment/type; never recycle the old VkImage or its pixels.
     // This is opt-in and cannot affect the established Mali or Adreno paths.
-    if (recycle_bc && RebindRetiredImageMemory(device, allocator, image_ci_unsafe,
+    if (recycle_bc && RebindRetiredImageMemory(device, allocator, image_ci,
                                                unsafe_image, allocation, size_bytes)) {
         image = vk::Image{unsafe_image};
         reused_from_pool = true;
