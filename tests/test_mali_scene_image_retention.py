@@ -46,6 +46,18 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("BcPoolEntryLimit = 64ULL * 1024 * 1024",IMAGE)
         self.assertIn("Rgba128PoolEntryLimit = 32ULL * 1024 * 1024",IMAGE)
 
+    def test_pressure_reclaim_does_not_touch_live_or_compatible_images(self):
+        self.assertIn("void ReclaimIdleImagesBeforeAllocate(",IMAGE)
+        self.assertIn("if (!ScenePoolRetentionEnabled()) return;",IMAGE)
+        self.assertIn("budgets[i].usage * 100 >= budgets[i].budget * 82",IMAGE)
+        self.assertIn("std::scoped_lock lock{bc.mutex, rgba.mutex};",IMAGE)
+        self.assertIn("candidate.allocator != allocator ||",IMAGE)
+        self.assertIn("SameBcCreate(candidate.create, requested)",IMAGE)
+        self.assertIn("max_reclaim = 64ULL * 1024 * 1024",IMAGE)
+        self.assertIn("ReclaimIdleImagesBeforeAllocate(allocator, image_ci_unsafe);",IMAGE)
+        self.assertIn("GOW3_MALI_SLOW_IMAGE_ALLOC",IMAGE)
+        self.assertIn("GOW3_MALI_IMAGE_PREALLOC_RECLAIM",IMAGE)
+
     def test_launch_is_panvk_scoped_and_reversible(self):
         case=RUN.index('case "' + chr(36) + '{GOW3_VULKAN_DRIVER:-}" in')
         driver=RUN.index("*/libvulkan_panfrost.so)",case)
