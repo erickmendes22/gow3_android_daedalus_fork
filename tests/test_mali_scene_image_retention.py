@@ -121,7 +121,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertLess(setting,closing)
         self.assertIn("GOW3_MALI_SCENE_IMAGE_RETENTION:-1",RUN)
         self.assertIn("scene_retention=$GOW3_MALI_SCENE_IMAGE_RETENTION",RUN)
-        self.assertIn("GOW3_MALI_RGBA128_IMAGE_POOL:-0",RUN)
+        self.assertIn("GOW3_MALI_RGBA128_IMAGE_POOL:-1",RUN)
         self.assertIn("GOW3_MALI_BC_IMAGE_POOL:-1",RUN)
 
     def test_does_not_weaken_alias_gpu_modification_rules(self):
