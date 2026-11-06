@@ -7,6 +7,7 @@ on:
       - 'src/runtime_videodec.c'
       - 'src/video_nv12_packing.h'
       - 'tests/test_videodec.c'
+      - 'benchmarks/gow3_nv12_converter_bench.c'
       - '.github/workflows/gow3-videodec-nv12-preflight.yml'
   workflow_dispatch:
 
@@ -29,6 +30,12 @@ jobs:
              tests/test_videodec.c -o /tmp/gow3_nv12_equivalence \
              $(pkg-config --cflags --libs libavcodec libavutil libswscale)
           /tmp/gow3_nv12_equivalence tests/data/tiny.h264
+      - name: Benchmark same 1080p conversion path without Android or APK
+        run: |
+          cc -std=gnu11 -O3 -Wall -Wextra -Werror -Isrc \
+             benchmarks/gow3_nv12_converter_bench.c -o /tmp/gow3_nv12_benchmark \
+             $(pkg-config --cflags --libs libavcodec libavutil libswscale)
+          /tmp/gow3_nv12_benchmark
       - name: Verify ARM64 NEON interleave compiles for Android Bionic (no APK)
         run: |
           sudo mkdir -p /opt/ndk
