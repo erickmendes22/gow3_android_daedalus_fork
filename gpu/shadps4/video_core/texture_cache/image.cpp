@@ -13,6 +13,7 @@
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/read_barrier_policy.h"
+#include "video_core/texture_cache/retired_image_rebind_policy.h"
 
 #include <vk_mem_alloc.h>
 #include <algorithm>
@@ -352,6 +353,116 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
         ReportImagePool(pool, IsRgba128Image(raw));
     return true;
 }
+// An EXACT image-pool miss need not mean a fresh device-memory allocation.
+// BCn and RGBA128 have different Vulkan image descriptions, and MUST NEVER
+// share a live VkImage/view or its previous pixels. They may, however, use
+// the same completed, NON-DEDICATED VMA suballocation in succession when the
+// new Vulkan memory requirements explicitly allow it.
+//
+// We destroy the old retired image first, create/bind a NEW VkImage and let
+// the normal texture-upload and layout code initialize the new contents.
+// The fallback is the original vmaCreateImage on any incompatibility/failure.
+// Only GOW3_MALI_REBIND_RETIRED_MEMORY=1 permits this experiment on Mali.
+bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
+                              const VkImageCreateInfo& requested, VkImage& image,
+                              VmaAllocation& allocation, VkDeviceSize& bytes) {
+    static const bool enabled = [] {
+        const char* option = std::getenv("GOW3_MALI_REBIND_RETIRED_MEMORY");
+        return option && option[0] == '1';
+    }();
+    if (!enabled || requested.pNext || requested.queueFamilyIndexCount ||
+        requested.sharingMode != VK_SHARING_MODE_EXCLUSIVE ||
+        (requested.flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
+                            VK_IMAGE_CREATE_DISJOINT_BIT |
+                            VK_IMAGE_CREATE_PROTECTED_BIT)))
+        return false;
+
+    auto& bc = GetBcPool();
+    auto& rgba = GetRgba128Pool();
+    {
+        std::scoped_lock lock{bc.mutex, rgba.mutex};
+        if (bc.images.empty() && rgba.images.empty()) return false;
+    }
+    const auto create_result = device.createImage(vk::ImageCreateInfo{requested});
+    if (create_result.result != vk::Result::eSuccess) return false;
+    const vk::Image new_image = create_result.value;
+    const VkImage new_handle = static_cast<VkImage>(new_image);
+    vk::MemoryDedicatedRequirements dedicated{};
+    vk::MemoryRequirements2 requirements2{.pNext = &dedicated};
+    const vk::ImageMemoryRequirementsInfo2 request_info{.image = new_image};
+    device.getImageMemoryRequirements2(&request_info, &requirements2);
+    const auto& requirements = requirements2.memoryRequirements;
+    if (dedicated.requiresDedicatedAllocation || requirements.size == 0) {
+        device.destroyImage(new_image);
+        return false;
+    }
+
+    RetiredBcImage retired{};
+    {
+        std::scoped_lock lock{bc.mutex, rgba.mutex};
+        BcPool* best_pool = nullptr;
+        size_t best_index = 0;
+        VkDeviceSize best_bytes = ~VkDeviceSize{0};
+        for (auto* pool : {&rgba, &bc}) {
+            for (size_t i = 0; i < pool->images.size(); ++i) {
+                const auto& candidate = pool->images[i];
+                if (candidate.allocator != allocator ||
+                    candidate.bytes < requirements.size ||
+                    candidate.bytes - requirements.size > requirements.size / 4 ||
+                    candidate.bytes >= best_bytes)
+                    continue;
+                VmaAllocationInfo2 info{};
+                vmaGetAllocationInfo2(allocator, candidate.allocation, &info);
+                if (!CanRebindRetiredImageMemory(
+                        requirements.size, requirements.alignment,
+                        requirements.memoryTypeBits,
+                        dedicated.requiresDedicatedAllocation,
+                        info.allocationInfo.size, info.allocationInfo.offset,
+                        info.allocationInfo.memoryType, info.dedicatedMemory))
+                    continue;
+                best_pool = pool;
+                best_index = i;
+                best_bytes = candidate.bytes;
+            }
+        }
+        if (best_pool) {
+            retired = best_pool->images[best_index];
+            best_pool->images.erase(best_pool->images.begin() + best_index);
+            best_pool->bytes -= retired.bytes;
+        }
+    }
+    if (!retired.image) {
+        device.destroyImage(new_image);
+        return false;
+    }
+
+    // NEVER bind overlapping retired and new image objects. The old image
+    // has already completed on the GPU before entry to its recycling pool.
+    device.destroyImage(vk::Image{retired.image});
+    const VkResult bind_result = vmaBindImageMemory(allocator, retired.allocation, new_handle);
+    if (bind_result != VK_SUCCESS) {
+        device.destroyImage(new_image);
+        vmaFreeMemory(allocator, retired.allocation);
+        // Fallback below will create a fully independent image/allocation.
+        std::printf("GOW3_MALI_IMAGE_REBIND rejected=%d; falling back to VMA\\n",
+                    int(bind_result));
+        return false;
+    }
+    image = new_handle;
+    allocation = retired.allocation;
+    bytes = retired.bytes;
+    static uint64_t rebind_hits = 0;
+    ++rebind_hits;
+    if (rebind_hits <= 4 || (rebind_hits & 63u) == 0) {
+        std::printf("GOW3_MALI_IMAGE_REBIND hits=%llu old_format=%d new_format=%d "
+                    "bytes=%llu requested=%llu\\n",
+                    (unsigned long long)rebind_hits, int(retired.create.format),
+                    int(requested.format), (unsigned long long)bytes,
+                    (unsigned long long)requirements.size);
+    }
+    return true;
+}
+
 bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
                    VkImage image, VmaAllocation allocation, VkDeviceSize bytes) {
     auto raw = static_cast<VkImageCreateInfo>(ci);
@@ -496,6 +607,16 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     const VkImageCreateInfo image_ci_unsafe = static_cast<VkImageCreateInfo>(image_ci);
     VkImage unsafe_image{};
     if (recycle_bc && TakeBcImage(allocator, image_ci, unsafe_image, allocation, size_bytes)) {
+        image = vk::Image{unsafe_image};
+        reused_from_pool = true;
+        return;
+    }
+    // After a safe exact-image miss, try reclaiming the MEMORY of a completed
+    // incompatible retired image. It is re-bound to a fresh VkImage with
+    // checked size/alignment/type; never recycle the old VkImage or its pixels.
+    // This is opt-in and cannot affect the established Mali or Adreno paths.
+    if (recycle_bc && RebindRetiredImageMemory(device, allocator, image_ci_unsafe,
+                                               unsafe_image, allocation, size_bytes)) {
         image = vk::Image{unsafe_image};
         reused_from_pool = true;
         return;
