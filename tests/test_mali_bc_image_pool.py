@@ -8,7 +8,14 @@ I=(ROOT/"gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text()
 RUN=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
 class BcImagePoolTest(unittest.TestCase):
  def test_inflight_never_reused_and_device_match(self):
-  self.assertIn("scheduler.DeferOperation([this, image_id]",(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text())
+  texture=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
+  for safeguard in (
+      "scheduler.DeferOperation(std::move(reclaim))",
+      "completed_layout_alias && mali_eager_completed_retire",
+      "scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last)",
+      "False(image.flags & (ImageFlagBits::GpuDirty | ImageFlagBits::GpuModified))",
+  ):
+   self.assertIn(safeguard,texture)
   self.assertIn("e.allocator == allocator && SameBcCreate(e.create, raw)",S)
   self.assertIn("a.mipLevels == b.mipLevels",S)
   self.assertIn("a.samples == b.samples",S)
