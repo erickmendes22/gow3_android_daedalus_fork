@@ -861,7 +861,7 @@ void Instance::CreateAllocator() {
             }
         }
         preferred_block_size = static_cast<VkDeviceSize>(mib) * 1024 * 1024;
-        std::printf("GOW3_MALI_VMA_BLOCK preferred_mib=%lu (0=VMA default)\\n", mib);
+        std::printf("GOW3_MALI_VMA_BLOCK preferred_mib=%lu (0=VMA default)\n", mib);
     }
 
     const VmaAllocatorCreateInfo allocator_info = {
