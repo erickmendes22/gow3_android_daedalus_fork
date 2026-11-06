@@ -134,6 +134,21 @@ constexpr size_t BcPoolMaxEntries = 24;
 constexpr VkDeviceSize Rgba128PoolLimit = 64ULL * 1024 * 1024;
 constexpr VkDeviceSize Rgba128PoolEntryLimit = 32ULL * 1024 * 1024;
 constexpr size_t Rgba128PoolMaxEntries = 24;
+// G720 scene-transition logs: BC 148 hits / 492 misses, 264 evictions;
+// fresh BC/RGBA128 allocations had >400ms outliers. Existing limits remain
+// unchanged outside the dedicated Mali experimental profile. Additional live
+// memory is bounded to 96 MiB (+64 BC, +32 RGBA128) and still subject to
+// BcPoolHasBudget's device-local 90% VMA pressure guard.
+constexpr VkDeviceSize BcScenePoolLimit = 192ULL * 1024 * 1024;
+constexpr VkDeviceSize Rgba128ScenePoolLimit = 96ULL * 1024 * 1024;
+constexpr size_t ScenePoolMaxEntries = 48;
+bool ScenePoolRetentionEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("GOW3_MALI_SCENE_IMAGE_RETENTION");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
 bool IsRgba128Image(const VkImageCreateInfo& ci) {
     return ci.format == VK_FORMAT_R32G32B32A32_UINT;
 }
@@ -141,9 +156,13 @@ BcPool& ImagePoolFor(const VkImageCreateInfo& ci) {
     return IsRgba128Image(ci) ? GetRgba128Pool() : GetBcPool();
 }
 VkDeviceSize PoolLimit(const VkImageCreateInfo& ci) {
+    if (ScenePoolRetentionEnabled()) {
+        return IsRgba128Image(ci) ? Rgba128ScenePoolLimit : BcScenePoolLimit;
+    }
     return IsRgba128Image(ci) ? Rgba128PoolLimit : BcPoolLimit;
 }
 size_t PoolMaxEntries(const VkImageCreateInfo& ci) {
+    if (ScenePoolRetentionEnabled()) return ScenePoolMaxEntries;
     return IsRgba128Image(ci) ? Rgba128PoolMaxEntries : BcPoolMaxEntries;
 }
 void ReportImagePool(const BcPool& pool, bool rgba128) {
