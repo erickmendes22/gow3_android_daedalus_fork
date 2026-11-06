@@ -112,6 +112,10 @@ struct RetiredBcImage {
     VmaAllocator allocator{};
     VkImageCreateInfo create{};
     VkDeviceSize bytes{};
+    // VMA allocation is unchanged from pool retirement to reuse. Cache the
+    // expensive allocation-info lookup once, instead of for every candidate
+    // in each PanVK cold-image miss.
+    VmaAllocationInfo2 memory_info{};
 };
 struct BcPool {
     std::mutex mutex;
@@ -413,8 +417,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                     candidate.bytes - requirements.size > requirements.size / 4 ||
                     candidate.bytes >= best_bytes)
                     continue;
-                VmaAllocationInfo2 info{};
-                vmaGetAllocationInfo2(allocator, candidate.allocation, &info);
+                const auto& info = candidate.memory_info;
                 if (!CanRebindRetiredImageMemory(
                         requirements.size, requirements.alignment,
                         requirements.memoryTypeBits,
@@ -492,7 +495,17 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     if (pool.bytes + bytes > PoolLimit(raw)) return false;
     raw.pNext = nullptr;
     raw.pQueueFamilyIndices = nullptr;
-    pool.images.push_back({image, allocation, allocator, raw, bytes});
+    VmaAllocationInfo2 memory_info{};
+    // An exact-image pool hit does not need this info, but storing it once
+    // makes the cross-description rebind candidate scan O(n) cheap comparisons
+    // instead of O(n) VMA allocation-info API calls under both pool locks.
+    static const bool rebind_enabled = [] {
+        const char* option = std::getenv("GOW3_MALI_REBIND_RETIRED_MEMORY");
+        return option && option[0] == '1';
+    }();
+    if (rebind_enabled)
+        vmaGetAllocationInfo2(allocator, allocation, &memory_info);
+    pool.images.push_back({image, allocation, allocator, raw, bytes, memory_info});
     pool.bytes += bytes;
     ++pool.stored;
     return true;
