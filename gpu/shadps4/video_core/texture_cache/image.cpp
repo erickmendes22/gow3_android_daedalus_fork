@@ -501,9 +501,18 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
         return;
     }
     reused_from_pool = false;
-    if (recycle_bc) {
-        // Cold BC/RGBA image creations can hit shared-memory pressure when
-        // the retained pool only holds incompatible image signatures.
+    // The RGBA128 exact-image pool is disabled by default on G720 because
+    // only 12 of 320 requests reused an identical Vulkan image. That MUST
+    // NOT disable budget reclamation for the *new* RGBA128 allocations:
+    // during the 780ms spike the BC pool held up to 163 MiB of completed,
+    // incompatible images that could be freed before a new RGBA backing.
+    // Earlier code accidentally gated the reclaim on recycle_bc, so the
+    // reclaim never ran for RGBA128 with its pool disabled.
+    const bool mali_rgba_cold_allocation =
+        image_ci_unsafe.format == VK_FORMAT_R32G32B32A32_UINT &&
+        ScenePoolRetentionEnabled() &&
+        std::getenv("GOW3_MALI_CPU_PRESENT") != nullptr;
+    if (recycle_bc || mali_rgba_cold_allocation) {
         ReclaimIdleImagesBeforeAllocate(allocator, image_ci_unsafe);
     }
     VmaAllocationInfo alloc_info{};
