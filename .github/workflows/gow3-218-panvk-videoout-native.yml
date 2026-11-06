@@ -2,7 +2,7 @@ name: GoW3 2.1.8 Mali PanVK VideoOut isolated native verification
 
 on:
   push:
-    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031, analysis/gow3-mali-pipeline-preflight-20261105]
+    branches: [fix/gow3-218-panvk-videoout-label-retire-20261031, analysis/gow3-mali-pipeline-preflight-20261105, analysis/gow3-bachata-mali-memory-20261106]
     paths:
       - '.github/workflows/gow3-218-panvk-videoout-native.yml'
       - 'benchmarks/gow3_pm4_contended_producer_gate.py'
@@ -122,7 +122,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -143,11 +143,16 @@ jobs:
           grep -F 'distfiles.macports.org/ffmpeg/ffmpeg-7.1.5.tar.xz' tools/android/bionic/build_deps.sh
       - name: Require measured improvement preflight BEFORE native build or APK
         run: |
-          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 || "$GITHUB_REF" == refs/heads/analysis/gow3-bachata-mali-memory-20261106 ]]; then
             python3 -m unittest discover -s tests -p 'test_mali_pm4_backoff_launch.py' -v
             python3 -m unittest discover -s tests -p 'test_mali_steady_state_cost_gate.py' -v
             python3 benchmarks/gow3_pm4_idle_coroutine_gate.py
             python3 benchmarks/gow3_pm4_contended_producer_gate.py
+            if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-bachata-mali-memory-20261106 ]]; then
+              python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
+              python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
+              python3 -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
+            fi
           else
             python3 -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
             python3 benchmarks/mali_draw_perf_gate.py
@@ -168,9 +173,9 @@ jobs:
         run: |
           # This analysis branch must ALWAYS produce a separate-install test APK.
           # Never overwrite the signed production app from an experiment.
-          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/analysis/gow3-mali-pipeline-preflight-20261105 || "$GITHUB_REF" == refs/heads/analysis/gow3-bachata-mali-memory-20261106 ]]; then
             echo "GOW3_CAN_SIGN=0" >> "$GITHUB_ENV"
-            echo "Mali PM4 experiment: separate-install debug identity required"
+            echo "Mali isolated optimization build: separate-install debug identity required"
           elif test -s .local-deps/android/bionic-development.keystore; then
             echo "GOW3_CAN_SIGN=1" >> "$GITHUB_ENV"
           else
@@ -210,6 +215,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_mali_bc_image_pool.py' -v
           python -m unittest discover -s tests -p 'test_mali_gc_budget_and_layout.py' -v
           python -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
+          python -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
           python -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
           python -m unittest discover -s tests -p 'test_mali_bc_alias_retirement.py' -v
           python -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
