@@ -27,6 +27,35 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("return value && value[0] == '1';",IMAGE)
         self.assertIn("GOW3_MALI_SCENE_IMAGE_RETENTION",IMAGE)
 
+    def test_completed_clean_image_can_return_to_pool_without_an_extra_tick(self):
+        # The source previously queued ALL image frees against the current
+        # command-buffer tick. A BC image whose last submitted GPU use is
+        # already complete can instead become available to exact-create
+        # recycling immediately during a BC/RGBA guest-layout transition.
+        start = TEXTURE.index("void TextureCache::DeleteImage(ImageId image_id)")
+        body = TEXTURE[start:]
+        for condition in (
+            'std::getenv("GOW3_MALI_EAGER_COMPLETED_RETIRE")',
+            'std::getenv("GOW3_MALI_CPU_PRESENT")',
+            "vendorID == 0x13B5",
+            "std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread()",
+            "!scheduler.IsRecordingDeferred()",
+            "!image.binding.is_target && !image.binding.is_bound",
+            "image.tick_accessed_last != 0",
+            "ImageFlagBits::Dirty | ImageFlagBits::GpuModified",
+            "scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last)",
+            "reclaim();",
+            "scheduler.DeferOperation(std::move(reclaim))",
+        ):
+            self.assertIn(condition, body)
+        self.assertIn('GOW3_MALI_EAGER_COMPLETED_RETIRE:-1', RUN)
+        self.assertIn('eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE', RUN)
+        self.assertLess(body.index("reclaim();"), body.index("scheduler.DeferOperation(std::move(reclaim))"))
+        # Do not introduce blocking waits or GPU-wide drains in image cleanup.
+        self.assertNotIn("scheduler.Finish();", body)
+        self.assertNotIn("waitIdle()", body)
+        self.assertNotIn("GetWorkSemaphore()->Refresh()", body)
+
     def test_no_gpu_live_image_or_bad_format_reuse(self):
         self.assertIn("scheduler.DeferOperation([this, image_id]",TEXTURE)
         self.assertIn("e.allocator == allocator && SameBcCreate(e.create, raw)",IMAGE)
