@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - analysis/gow3-mali-pipeline-preflight-20261105
+      - analysis/gow3-bachata-mali-memory-20261106
     paths:
       - 'benchmarks/**'
       - 'tests/test_mali_draw_perf_gate.py'
@@ -19,6 +20,9 @@ on:
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
       - 'tools/android/bionic/run-bionic.sh'
       - 'tests/test_mali_scene_image_retention.py'
+      - 'tests/test_mali_vma_block_policy.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/texture_cache.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.h'
       - '.github/workflows/gow3-mali-pipeline-preflight.yml'
@@ -61,6 +65,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_steady_state_cost_gate.py' -v
           python3 benchmarks/mali_steady_state_cost_gate.py --report-only
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
           if python3 benchmarks/mali_steady_state_cost_gate.py --stage submit_host_copy_wait; then
             echo 'ERROR: the measured copy wait should not justify an APK' >&2
             exit 1
