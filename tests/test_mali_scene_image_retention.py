@@ -47,7 +47,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("Rgba128PoolEntryLimit = 32ULL * 1024 * 1024",IMAGE)
 
     def test_launch_is_panvk_scoped_and_reversible(self):
-        case=RUN.index('case "'''+chr(36)+'''{GOW3_VULKAN_DRIVER:-}" in')
+        case=RUN.index('case "' + chr(36) + '{GOW3_VULKAN_DRIVER:-}" in')
         driver=RUN.index("*/libvulkan_panfrost.so)",case)
         setting=RUN.index("export GOW3_MALI_SCENE_IMAGE_RETENTION=",driver)
         closing=RUN.index("# End Mali PanVK safe profile.",setting)
