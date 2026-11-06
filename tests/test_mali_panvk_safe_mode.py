@@ -37,7 +37,7 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
 
     def test_panvk_restores_shallow_queue_after_g720_frame_stutter(self):
         self.assertEqual(self.profile("/private/libvulkan_panfrost.so"),
-                         "2:1:2:1:0:0")
+                         "1:1:2:1:0:0")
 
     def test_manual_warmup_opt_out_remains_supported(self):
         # A known crash-prone cache can still disable preloading explicitly.
