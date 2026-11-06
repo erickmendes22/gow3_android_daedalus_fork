@@ -122,7 +122,9 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
+    # Do not build APKs from the ongoing 2026-11-06 analysis branch until a
+    # concrete performance correction passes its no-APK benchmarks.
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
