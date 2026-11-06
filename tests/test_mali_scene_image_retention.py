@@ -39,7 +39,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
             'std::getenv("GOW3_MALI_CPU_PRESENT")',
             "vendorID == 0x13B5",
             "std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread()",
-            "!scheduler.IsRecordingDeferred()",
+            'std::getenv("GOW3_DRAW_PIPE")',
             "!image.binding.is_target && !image.binding.is_bound",
             "image.tick_accessed_last != 0",
             "ImageFlagBits::GpuDirty | ImageFlagBits::GpuModified",
@@ -55,6 +55,15 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertNotIn("scheduler.Finish();", body)
         self.assertNotIn("waitIdle()", body)
         self.assertNotIn("GetWorkSemaphore()->Refresh()", body)
+        # The normal Vulkan recording worker is ON for the Android presenter.
+        # Its submission synchronizes recording before the GPU can signal the
+        # completed image tick, so the early-free path must not be disabled
+        # whenever IsRecordingDeferred() happens to be true.
+        self.assertNotIn("!scheduler.IsRecordingDeferred()", body)
+        scheduler = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text()
+        submit = scheduler.split("void Scheduler::SubmitExecution", 1)[1]
+        self.assertLess(submit.index("SyncRecording();"),
+                        submit.index("GetGraphicsQueue().submit("))
 
     def test_no_gpu_live_image_or_bad_format_reuse(self):
         self.assertIn("scheduler.DeferOperation(std::move(reclaim))",TEXTURE)
