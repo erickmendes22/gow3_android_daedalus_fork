@@ -251,12 +251,15 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
-      # Android Turnip's ordinary default is two shader-compiler workers.
-      # Use the same on PanVK; =1 restores the original experiment.
-      export GOW3_GPU_COMPILER_WORKERS=${GOW3_GPU_COMPILER_WORKERS:-2}
-      # Dispatch to worker, but never skip the draw awaiting its shader/pipeline.
-      # =0 restores first-use synchronous compilation on the graphics thread.
-      export GOW3_MALI_ASYNC_DRAW_WAIT=${GOW3_MALI_ASYNC_DRAW_WAIT:-1}
+      # G720 matched driver/960x540: the 2-worker + deep-queue experiment
+      # ran ~5 FPS vs ~6 FPS with the old 1-worker/2-submit baseline.
+      # This is a paired configuration regression, not a proof that the
+      # compiler worker alone caused it. Keep the known baseline; =2 opt in.
+      export GOW3_GPU_COMPILER_WORKERS=${GOW3_GPU_COMPILER_WORKERS:-1}
+      # Async worker-wait remains opt-in. G720's established warm-cache
+      # baseline compiles first-use graphics synchronously on the GPU thread;
+      # =1 enables worker compile with strict no-skipped-draw waiting.
+      export GOW3_MALI_ASYNC_DRAW_WAIT=${GOW3_MALI_ASYNC_DRAW_WAIT:-0}
       export GOW3_BACKGROUND_WARMUP=${GOW3_BACKGROUND_WARMUP:-1}
       # The measured submit_throttle total was <1 ms over several seconds
       # even with cap=4. Restore the proven cap=2 to avoid changing two
