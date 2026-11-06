@@ -242,10 +242,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # even with cap=4. Restore the proven cap=2 to avoid changing two
       # variables while verifying parallel GPU draw preparation.
       # =4 remains available to benchmark the queue independently.
-      # Android Adreno default is eight in-flight Vulkan submissions.
-      # Test parity on G720 without removing exact GPU completion waits.
-      # =2 restores the previously-tested shallow queue.
-      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-8}
+      # On the 0c61ef0c G720 capture, queue depth 8 did not reduce
+      # submit_throttle (0.07 ms over the 780 ms allocation spike window)
+      # and PM4 wall still regressed. Revert to the prior conservative
+      # PanVK queue depth of 2; Adreno remains unchanged.
+      # =8 explicitly re-enables the parity experiment.
+      export GOW3_VK_MAX_IN_FLIGHT=${GOW3_VK_MAX_IN_FLIGHT:-2}
       # Bachata-style pending GPU tick cache; set 0 for old polling behavior.
       export GOW3_MALI_CACHED_PENDING_TICKS=${GOW3_MALI_CACHED_PENDING_TICKS:-1}
       # Avoid a global buffer barrier on unrelated image layout transitions.
