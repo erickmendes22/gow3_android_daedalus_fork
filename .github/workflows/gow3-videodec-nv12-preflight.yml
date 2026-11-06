@@ -1,0 +1,44 @@
+name: GoW III NV12 cinematic conversion - verified C only (no APK)
+
+on:
+  push:
+    branches: [analysis/gow3-bachata-mali-memory-20261106]
+    paths:
+      - 'src/runtime_videodec.c'
+      - 'src/video_nv12_packing.h'
+      - 'tests/test_videodec.c'
+      - '.github/workflows/gow3-videodec-nv12-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decoder-pixel-equivalence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native FFmpeg development libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc pkg-config libavcodec-dev libavutil-dev libswscale-dev
+      - name: Compare swscale and direct NV12 at original and 1080p sizes
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Isrc \
+             tests/test_videodec.c -o /tmp/gow3_nv12_equivalence \
+             $(pkg-config --cflags --libs libavcodec libavutil libswscale)
+          /tmp/gow3_nv12_equivalence tests/data/tiny.h264
+      - name: Verify ARM64 NEON interleave compiles for Android Bionic (no APK)
+        run: |
+          sudo mkdir -p /opt/ndk
+          if [ ! -d "$ANDROID_HOME/ndk/29.0.14206865" ]; then
+            echo 'Android NDK missing, installing for aarch64 source-only syntax check'
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;29.0.14206865'
+          fi
+          CC="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang"
+          printf '#include "src/video_nv12_packing.h"\nvoid pack(uint8_t *d,const uint8_t *u,const uint8_t *v){gow3_interleave_uv_row(d,u,v,960);}\n' |
+            "$CC" -std=c11 -O3 -Wall -Wextra -Werror -I. -fsyntax-only -x c -
+      - name: Confirm no APK build or packaging is used
+        run: |
+          echo 'Only C decoder tests and ARM64 syntax check ran.'
