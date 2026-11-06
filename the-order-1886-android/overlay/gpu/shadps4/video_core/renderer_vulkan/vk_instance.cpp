@@ -383,8 +383,10 @@ bool Instance::CreateDevice() {
     const char* vertex_override = std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE");
     const bool adreno830 = properties.vendorID == 0x5143 &&
         std::string_view{properties.deviceName}.find("830") != std::string_view::npos;
-    const bool static_adreno830 = adreno830 && (!vertex_override || !*vertex_override);
-    const bool dynamic_vertex_input = !static_adreno830 &&
+    // The static-input experiment did not resolve the Adreno 830 scene and was
+    // followed by the same stalled GPU timeline. Preserve the original Vulkan
+    // feature policy unless the user explicitly requests an A/B override.
+    const bool dynamic_vertex_input =
         UseVertexInputDynamicState(properties.vendorID, vertex_override);
     if (adreno830) {
         std::printf("ORDER1886_VERTEX_INPUT Adreno830 mode=%s override=%s\n",

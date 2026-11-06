@@ -1050,23 +1050,6 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     DiagPassBoundary(false);
     const auto& regs = Regs();
-    // Bound MRT draws prove the geometry path reached Vulkan; no such draws
-    // points to pipeline/packet filtering, while present draws without 3D
-    // points to vertex buffers, attachments or shader resource contents.
-    if (std::popcount(pipeline->GetGraphicsKey().mrt_mask & 0xff) >= 2) {
-        static std::atomic<u32> order_mrt_draws{0};
-        if (order_mrt_draws.fetch_add(1, std::memory_order_relaxed) < 24) {
-            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
-            const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
-            LOG_WARNING(Render_Vulkan,
-                        "ORDER1886_GEOMETRY_DRAW vs={:#x} ps={:#x} mrt={:#x} "
-                        "indices={} instances={} indexed={} color0={:#x}",
-                        vs.pgm_hash, ps ? ps->pgm_hash : 0,
-                        pipeline->GetGraphicsKey().mrt_mask, regs.num_indices,
-                        regs.num_instances.NumInstances(), is_indexed,
-                        regs.color_buffers[0] ? regs.color_buffers[0].Address() : 0);
-        }
-    }
     // the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
     if (camera_motion->Enabled() && regs.color_buffers[0] &&
@@ -1117,6 +1100,31 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     EmitVertexBuffers();
     if (is_indexed) {
         EmitIndexBuffer();
+    }
+
+    // Unlike the old MRT>=2 test, a fullscreen triangle (3 unindexed vertices,
+    // no vertex streams) must not exhaust the diagnostic quota. Sample only draws
+    // with *actual* bound vertex buffers and a nontrivial primitive count.
+    const bool object_candidate = vertex_binds.num_buffers > 0 &&
+        (is_indexed || regs.num_indices > 6 || regs.num_instances.NumInstances() > 1);
+    if (object_candidate) {
+        static std::atomic<u32> object_samples{0};
+        const u32 index = object_samples.fetch_add(1, std::memory_order_relaxed);
+        if (index < 32) {
+            const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
+            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_OBJECT_DRAW sample={} vs={:#x} ps={:#x} "
+                        "mrt={:#x} prim={} indices={} instances={} indexed={} vb={} "
+                        "cb0={:#x} db={:#x}",
+                        index, vs.pgm_hash, ps ? ps->pgm_hash : 0,
+                        pipeline->GetGraphicsKey().mrt_mask,
+                        static_cast<u32>(regs.primitive_type), regs.num_indices,
+                        regs.num_instances.NumInstances(), is_indexed,
+                        vertex_binds.num_buffers,
+                        regs.color_buffers[0] ? regs.color_buffers[0].Address() : 0,
+                        regs.depth_buffer.DepthAddress());
+        }
     }
 
     if (needs_barrier) {

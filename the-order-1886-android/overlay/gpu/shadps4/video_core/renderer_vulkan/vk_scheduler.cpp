@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
+#include <string_view>
 #include <unordered_map>
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -28,8 +30,21 @@ namespace Vulkan {
 
 std::mutex Scheduler::submit_mutex;
 
+namespace {
+// The Adreno 830 has repeatedly stopped advancing its timeline after scene
+// startup on CUSA00785. The port already has a full render-pass barrier path;
+// enable this conservative path on this device alone, and retain the explicit
+// ORDER1886_FULL_BARRIERS=0/1 override for a controlled comparison.
+std::atomic<bool> adreno830_conservative_barriers{false};
+}
+
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
+    const auto gpu_properties = instance.GetPhysicalDevice().getProperties();
+    const bool adreno830 =
+        gpu_properties.vendorID == 0x5143 &&
+        std::string_view{gpu_properties.deviceName.data()}.find("830") != std::string_view::npos;
+    adreno830_conservative_barriers.store(adreno830, std::memory_order_release);
     // ORDER1886_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("ORDER1886_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
@@ -60,11 +75,14 @@ Scheduler::~Scheduler() {
 bool Scheduler::FullBarriers() {
     static const bool enabled = [] {
         const char* env = std::getenv("ORDER1886_FULL_BARRIERS");
-        const bool on = env && env[0] == '1';
-        if (on) {
-            // In last_run.log whatever the GPU log level, so a tester's log shows the mode.
-            std::printf("GPU: full barriers on (ORDER1886_FULL_BARRIERS=1)\n");
-        }
+        const bool on = env && *env
+            ? env[0] == '1'
+            : adreno830_conservative_barriers.load(std::memory_order_acquire);
+        // In the user log regardless of the renderer's info-level filtering.
+        std::printf("ORDER1886_RENDER_BARRIERS mode=%s source=%s\n",
+                    on ? "full" : "normal",
+                    env && *env ? "override" : "adreno830-compatibility");
+        std::fflush(stdout);
         return on;
     }();
     return enabled;
