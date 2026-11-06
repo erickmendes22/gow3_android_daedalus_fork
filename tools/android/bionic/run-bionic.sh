@@ -235,7 +235,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # reuse the old VkImage, its layout, image view or GPU pixels.
       # Hardware benefit is not measured yet: default remains 0.
       # =1 enables the independently rollbackable PanVK experiment.
-      export GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-0}
+      export GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-1}
       # Experimental G720 cold-scene retention: BC 128->192 MiB / 24->48 images,
       # RGBA128 64->96 MiB / 24->48; only *retired exact-matched* VkImages.
       # Actual VMA device-local 90% budget guard still flushes on pressure.
@@ -284,10 +284,10 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Buffer tracking survives until RAW/WAR/WAW or the next queue submit.
       # =0 reverts to the previously verified all-in-one barrier path.
       export GOW3_MALI_IMAGE_BARRIER_SPLIT=${GOW3_MALI_IMAGE_BARRIER_SPLIT:-1}
-      # Vulkan same-layout image READ->READ requires no barrier; preserve
-      # all read stage/access scopes until a later write or layout change.
-      # =0 retains old always-barrier behavior for identical-scene A/B.
-      export GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}
+      # Read-after-read same-layout images require no Vulkan barrier.  Preserve
+      # all read stage/access scopes and merge contiguous identical image
+      # subresource barriers. =0 restores the original barrier path.
+      export GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
       # Bachata S4 completes Present() before publishing a guest flip event.
       # Do not acknowledge a Mali guest framebuffer while swap work is queued
