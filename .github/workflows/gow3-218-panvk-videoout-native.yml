@@ -122,9 +122,10 @@ concurrency:
 
 jobs:
   build:
-    # Do not build APKs from the ongoing 2026-11-06 analysis branch until a
-    # concrete performance correction passes its no-APK benchmarks.
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
+    # Cumulative Mali optimizations are ready for a controlled on-device test.
+    # Keep the existing preflight tests and use an isolated tester package if
+    # the original signing identity is absent; no unmeasured FPS claims.
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -154,6 +155,8 @@ jobs:
               python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
               python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
               python3 -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
+              python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
+              python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
             fi
           else
             python3 -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
