@@ -110,8 +110,11 @@ static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
     const char *mali_present=getenv("GOW3_MALI_CPU_PRESENT");
     const int direct_enabled=toggle ? toggle[0]=='1' :
                              (mali_present && mali_present[0]=='1');
+    // YUVJ420P may be full range. Keep swscale's range conversion for
+    // YUVJ420P and all unusual formats: direct packing is byte-equivalent
+    // only for the normal 8-bit limited-range YUV420P path.
     const int direct_planar=direct_enabled &&
-        (f->format==AV_PIX_FMT_YUV420P || f->format==AV_PIX_FMT_YUVJ420P) &&
+        f->format==AV_PIX_FMT_YUV420P &&
         f->width>0 && f->height>0 && !(f->width&1) && !(f->height&1) &&
         f->data[0] && f->data[1] && f->data[2] &&
         f->linesize[0]>=f->width &&
