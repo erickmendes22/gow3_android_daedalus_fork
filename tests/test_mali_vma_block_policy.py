@@ -20,7 +20,7 @@ class MaliVkAllocationPolicy(unittest.TestCase):
         self.assertIn('preferred_block_size = 0;', INSTANCE)
         self.assertIn('properties.vendorID == 0x13B5', INSTANCE)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")', INSTANCE)
-        self.assertIn('unsigned long mib = 32;', INSTANCE)
+        self.assertIn('unsigned long mib = 0;', INSTANCE)
         self.assertIn('std::getenv("GOW3_MALI_VMA_BLOCK_MIB")', INSTANCE)
         self.assertIn('parsed == 0 || parsed == 16 || parsed == 32', INSTANCE)
         self.assertIn('.preferredLargeHeapBlockSize = preferred_block_size', INSTANCE)
