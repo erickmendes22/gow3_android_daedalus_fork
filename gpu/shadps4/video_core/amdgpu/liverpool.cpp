@@ -170,17 +170,24 @@ void Liverpool::Process(std::stop_token stoken) {
         VideoCore::StartCapture();
 
         curr_qid = -1;
-        // Most GoW3 frames have one active graphics submission. When its PM4
-        // coroutine yields, scanning every empty mapped queue adds mutex and
-        // scheduling overhead on every resume. Remember that queue ONLY while
-        // the global submit count is exactly one. Multiple submissions retain
-        // the original round-robin order and command priority.
+        // PanVK-only: most GoW3 frames have one graphics submission. Avoid
+        // scanning empty mapped queues on every coroutine resume. Keep the
+        // previous Adreno and desktop scheduling semantics unchanged.
+#ifdef __ANDROID__
+        static const bool mali_single_queue_fastpath = [] {
+            const char* driver = std::getenv("GOW3_VULKAN_DRIVER");
+            return std::getenv("GOW3_ANDROID_PORT") && driver &&
+                   std::strstr(driver, "panfrost") != nullptr;
+        }();
+#else
+        constexpr bool mali_single_queue_fastpath = false;
+#endif
         int single_submit_qid = -1;
 
         while (num_submits || num_commands) {
             ProcessCommands();
 
-            const bool single_ready =
+            const bool single_ready = mali_single_queue_fastpath &&
                 num_submits.load(std::memory_order_relaxed) == 1 &&
                 num_commands.load(std::memory_order_relaxed) == 0;
             if (single_ready && single_submit_qid >= 0) {
