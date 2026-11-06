@@ -8,7 +8,9 @@ class AliasRetireTest(unittest.TestCase):
  def test_alias_guard_never_overridden(self):
   self.assertIn("a.pitch != b.pitch || a.tile_mode != b.tile_mode",S)
   self.assertIn("return {merged_image_id, -1, -1};",S)
-  self.assertIn("if (can_retire_alias) FreeImage(cache_image_id);",S)
+  self.assertIn("if (can_retire_alias) {",S)
+  self.assertIn("FreeImage(cache_image_id, clean_alias_retirable);",S)
+  self.assertIn("const bool can_retire_alias = safe_to_delete || clean_alias_retirable;",S)
   self.assertIn("cache_image.tick_accessed_last != 0",S)
   self.assertIn("scheduler.IsFree(cache_image.tick_accessed_last)",S)
   self.assertIn("!cache_image.binding.is_target && !cache_image.binding.is_bound",S)
