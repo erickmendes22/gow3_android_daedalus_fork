@@ -314,8 +314,20 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     }();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_DYNAMICL1CACHE,
                          dynamic_l1 ? "1" : "0");
-    std::printf("GOW3_FEX_CACHE dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
-                int(dynamic_l1));
+    // The pinned FEX defaults DisableL2Cache=true to save memory. A large
+    // x86-64 game's hot code can churn through the fixed L1; using the L2
+    // lookup preserves already-compiled code across L1 misses without changing
+    // guest instructions, the ARM64 TSO barriers or synchronization semantics.
+    // Only the PanVK launcher opts in. =0 restores FEX's previous L2 default.
+    const char* l2_opt = std::getenv("GOW3_FEX_L2_CACHE");
+    const bool change_l2 = l2_opt && (l2_opt[0] == '0' || l2_opt[0] == '1');
+    const bool enable_l2 = change_l2 && l2_opt[0] == '1';
+    if (change_l2) {
+        FEXCore::Config::Set(FEXCore::Config::CONFIG_DISABLEL2CACHE,
+                             enable_l2 ? "0" : "1");
+    }
+    std::printf("GOW3_FEX_CACHE dynamic_l1=%d l2_lookup=%s disk_cache=unchanged tso=unchanged\n",
+                int(dynamic_l1), change_l2 ? (enable_l2 ? "on" : "off") : "unchanged");
     const auto features = FEX::FetchHostFeatures();
     wide_xmm = features.SupportsAVX && features.SupportsSVE256;
     ctx = FEXCore::Context::Context::CreateNewContext(features).release();
