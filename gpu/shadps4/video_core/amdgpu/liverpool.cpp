@@ -170,11 +170,25 @@ void Liverpool::Process(std::stop_token stoken) {
         VideoCore::StartCapture();
 
         curr_qid = -1;
+        // Most GoW3 frames have one active graphics submission. When its PM4
+        // coroutine yields, scanning every empty mapped queue adds mutex and
+        // scheduling overhead on every resume. Remember that queue ONLY while
+        // the global submit count is exactly one. Multiple submissions retain
+        // the original round-robin order and command priority.
+        int single_submit_qid = -1;
 
         while (num_submits || num_commands) {
             ProcessCommands();
 
-            curr_qid = (curr_qid + 1) % num_mapped_queues;
+            const bool single_ready =
+                num_submits.load(std::memory_order_relaxed) == 1 &&
+                num_commands.load(std::memory_order_relaxed) == 0;
+            if (single_ready && single_submit_qid >= 0) {
+                curr_qid = single_submit_qid;
+            } else {
+                curr_qid = (curr_qid + 1) % num_mapped_queues;
+                single_submit_qid = -1;
+            }
 
             auto& queue = mapped_queues[curr_qid];
 
@@ -182,10 +196,14 @@ void Liverpool::Process(std::stop_token stoken) {
             {
                 std::scoped_lock lock{queue.m_access};
                 if (queue.submits.empty()) {
+                    // Another thread can finish or enqueue between the atomic
+                    // count and this lock. Re-scan instead of pinning a dead qid.
+                    single_submit_qid = -1;
                     continue;
                 }
                 task = queue.submits.front();
             }
+            if (single_ready) single_submit_qid = curr_qid;
             if (Vulkan::MaliPerfStats::SamplePm4Resume()) {
                 const auto resume_start = Vulkan::MaliPerfStats::Clock::now();
                 task.resume();
@@ -219,6 +237,7 @@ void Liverpool::Process(std::stop_token stoken) {
             }
 #endif
             if (task.done()) {
+                single_submit_qid = -1;
                 gfx_blocked_fiber_wait = false;
                 task.destroy();
 
