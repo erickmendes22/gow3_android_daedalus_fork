@@ -1,5 +1,6 @@
 /* libSceVideodec: H.264 access units to NV12 pictures (tests/data/tiny.h264: 6 frames of
  * 64x48 testsrc, made with ffmpeg -c:v libx264 -profile:v main -f h264). */
+#define _POSIX_C_SOURCE 200809L
 #undef NDEBUG /* the checks are asserts; release builds define NDEBUG */
 #include "../src/runtime_videodec.c"
 #include <assert.h>
@@ -19,7 +20,61 @@ static void check_picture(const PictureInfo *p) {
     if (!pictures++) for (int i=0;i<64*48;++i) first_luma_sum+=frame_buffer[i];
 }
 
+
+/* Picture() is the only remaining difference between the old sws_scale
+ * conversion and Mali's optimized direct YUV420P -> game-owned NV12 path.
+ * Compare EVERY output byte, including repeated padded luma/chroma rows.
+ * 1920x1080 matches the 4 MiB cinematic buffers from the G720 capture. */
+static void test_direct_nv12_bit_exact(void) {
+    const int widths[]={64,80,1920};
+    const int heights[]={48,50,1080};
+    for (int k=0;k<3;++k) {
+        const int width=widths[k],height=heights[k];
+        AVFrame *frame=av_frame_alloc(), *temporary=av_frame_alloc();
+        assert(frame && temporary);
+        frame->format=AV_PIX_FMT_YUV420P;
+        frame->width=width;
+        frame->height=height;
+        assert(av_frame_get_buffer(frame,32)==0);
+        for (int plane=0;plane<3;++plane) {
+            int w=plane ? width/2 : width;
+            int h=plane ? height/2 : height;
+            for (int y=0;y<h;++y) {
+                uint8_t *row=frame->data[plane]+y*frame->linesize[plane];
+                for (int x=0;x<w;++x) row[x]=(uint8_t)(x*17+y*11+plane*61);
+            }
+        }
+        Decoder decoder={0};
+        decoder.frame=frame;
+        decoder.nv12=temporary;
+        uint32_t pitch=align((uint32_t)width,64);
+        uint32_t rows=align((uint32_t)height,16);
+        size_t n=(size_t)pitch*rows*3/2;
+        uint8_t *baseline=calloc(1,n+32),*direct=calloc(1,n+32);
+        assert(baseline && direct);
+        FrameBuffer old_buf={sizeof(FrameBuffer),baseline,n};
+        FrameBuffer new_buf={sizeof(FrameBuffer),direct,n};
+        PictureInfo old_info={0},new_info={0};
+        old_info.this_size=new_info.this_size=sizeof(PictureInfo);
+        assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","0",1)==0);
+        assert(picture(&decoder,&old_buf,&old_info)==0);
+        assert(decoder.fallback_sws_frames==1);
+        assert(setenv("GOW3_VIDEODEC_NV12_DIRECT","1",1)==0);
+        assert(picture(&decoder,&new_buf,&new_info)==0);
+        assert(decoder.direct_nv12_frames==1);
+        assert(memcmp(baseline,direct,n+32)==0);
+        assert(memcmp(&old_info,&new_info,sizeof(old_info))==0);
+        sws_freeContext(decoder.sws);
+        av_frame_free(&frame);
+        av_frame_free(&temporary);
+        free(baseline);
+        free(direct);
+    }
+    assert(unsetenv("GOW3_VIDEODEC_NV12_DIRECT")==0);
+}
+
 int main(int argc, char **argv) {
+    test_direct_nv12_bit_exact();
     FILE *f=fopen(argc>1 ? argv[1] : "tests/data/tiny.h264","rb");
     assert(f);
     static unsigned char stream[1<<16];
