@@ -995,6 +995,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
                          prepared->reg_checksum == liverpool->gfx_reg_checksum);
     }
     if (!pipeline) {
+        // An empty scene is very different when draws are rejected here than
+        // when successful draw commands produce no color/depth output.
+        static std::atomic<u32> order_missing_pipeline{0};
+        if (order_missing_pipeline.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_DRAW_NO_PIPELINE indices={} indexed={} draw_pipe={}",
+                        liverpool->regs.num_indices, is_indexed, pipelined);
+        }
         return;
     }
     if (pipelined && FilterDrawPasses()) {
@@ -1042,6 +1050,23 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     DiagPassBoundary(false);
     const auto& regs = Regs();
+    // Bound MRT draws prove the geometry path reached Vulkan; no such draws
+    // points to pipeline/packet filtering, while present draws without 3D
+    // points to vertex buffers, attachments or shader resource contents.
+    if (std::popcount(pipeline->GetGraphicsKey().mrt_mask & 0xff) >= 2) {
+        static std::atomic<u32> order_mrt_draws{0};
+        if (order_mrt_draws.fetch_add(1, std::memory_order_relaxed) < 24) {
+            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_GEOMETRY_DRAW vs={:#x} ps={:#x} mrt={:#x} "
+                        "indices={} instances={} indexed={} color0={:#x}",
+                        vs.pgm_hash, ps ? ps->pgm_hash : 0,
+                        pipeline->GetGraphicsKey().mrt_mask, regs.num_indices,
+                        regs.num_instances.NumInstances(), is_indexed,
+                        regs.color_buffers[0] ? regs.color_buffers[0].Address() : 0);
+        }
+    }
     // the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
     if (camera_motion->Enabled() && regs.color_buffers[0] &&

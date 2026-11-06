@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -375,8 +376,22 @@ bool Instance::CreateDevice() {
     custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
     depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-    const bool dynamic_vertex_input = UseVertexInputDynamicState(
-        properties.vendorID, std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE"));
+    // The PC port already uses the static vertex-input fallback for Intel missing
+    // meshes. Adreno 830 can advertise dynamic vertex input while failing to
+    // render PS4 geometry through that route. Keep this change limited to the
+    // affected hardware and allow an explicit override for an A/B comparison.
+    const char* vertex_override = std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE");
+    const bool adreno830 = properties.vendorID == 0x5143 &&
+        std::string_view{properties.deviceName}.find("830") != std::string_view::npos;
+    const bool static_adreno830 = adreno830 && (!vertex_override || !*vertex_override);
+    const bool dynamic_vertex_input = !static_adreno830 &&
+        UseVertexInputDynamicState(properties.vendorID, vertex_override);
+    if (adreno830) {
+        std::printf("ORDER1886_VERTEX_INPUT Adreno830 mode=%s override=%s\n",
+                    dynamic_vertex_input ? "dynamic" : "static",
+                    vertex_override && *vertex_override ? vertex_override : "none");
+        std::fflush(stdout);
+    }
     vertex_input_dynamic_state = dynamic_vertex_input &&
         add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     if (!dynamic_vertex_input) {
