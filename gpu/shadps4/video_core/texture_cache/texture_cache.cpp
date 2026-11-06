@@ -2045,16 +2045,60 @@ void TextureCache::DeleteImage(ImageId image_id) {
         }
     }
 
-    // Reclaim image and any image views it references.
-    scheduler.DeferOperation([this, image_id] {
-        Image& image = slot_images[image_id];
-        for (auto& backing : image.backing_images) {
+    // Reclaim image and any image views it references. The old path always
+    // deferred to CurrentTick(), even when this image's LAST submitted GPU
+    // use had already completed. During GoW3's BC3/RGBA128 layout switch this
+    // left reusable BC images unavailable through the next scene-transition
+    // image burst, so the exact-create pool reported hundreds of empty misses.
+    auto reclaim = [this, image_id] {
+        Image& retired = slot_images[image_id];
+        for (auto& backing : retired.backing_images) {
             for (const ImageViewId image_view_id : backing.image_view_ids) {
                 slot_image_views.erase(image_view_id);
             }
         }
         slot_images.erase(image_id);
-    });
+    };
+    // Only the Android PanVK GPU command thread may take this fast path.
+    // The graphics draw pipeline and threaded command recording must be off:
+    // otherwise CPU-side work could still be preparing a reference to this
+    // image even though its previous GPU tick has completed. The check uses
+    // ONLY the already-confirmed completed tick: no new Vulkan semaphore
+    // query, CPU spin, flush, or GPU wait is added on this hot path.
+    static const bool mali_eager_completed_retire = [this] {
+        const char* on = std::getenv("GOW3_MALI_EAGER_COMPLETED_RETIRE");
+        const char* cpu = std::getenv("GOW3_MALI_CPU_PRESENT");
+        const char* pipe = std::getenv("GOW3_DRAW_PIPE");
+        return cpu && cpu[0] == '1' && (!on || on[0] != '0') &&
+               !(pipe && pipe[0] == '1') &&
+               instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    }();
+    const bool clean_gpu_retired =
+        mali_eager_completed_retire && liverpool &&
+        std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread() &&
+        !scheduler.IsRecordingDeferred() &&
+        (image.info.props.is_block ||
+         image.info.pixel_format == vk::Format::eR32G32B32A32Uint) &&
+        image.tick_accessed_last != 0 &&
+        !image.binding.is_target && !image.binding.is_bound &&
+        False(image.flags & (ImageFlagBits::Dirty | ImageFlagBits::GpuModified)) &&
+        scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last);
+    if (clean_gpu_retired) {
+        // UniqueImage::~UniqueImage returns the retired BC image to its exact
+        // Vulkan-descriptor pool *now*, instead of after another submission.
+        // RGBA128 without pooling is freed now, reducing live memory pressure.
+        static u64 early_count = 0;
+        if ((++early_count & 127u) == 0) {
+            std::printf("GOW3_MALI_EAGER_IMAGE_RETIRE count=%llu completed_tick=%llu\\n",
+                        (unsigned long long)early_count,
+                        (unsigned long long)image.tick_accessed_last);
+        }
+        reclaim();
+        return;
+    }
+    // Dirty, GPU-modified, still-submitted, async or non-Mali images retain
+    // the original deferred destruction path and synchronization guarantees.
+    scheduler.DeferOperation(std::move(reclaim));
 }
 
 } // namespace VideoCore
