@@ -1,4 +1,4 @@
-name: GoW3 Mali BC/RGBA image memory rebind - native compile only, NO APK
+name: GoW3 Mali CPU JIT and Vulkan performance - native compile only, NO APK
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
       - 'gpu/shadps4/video_core/texture_cache/retired_image_rebind_policy.h'
       - 'tests/test_mali_retired_memory_rebind.py'
+      - 'cpu/guest_cpu_fex.cpp'
+      - 'tests/test_mali_fex_l2_cache.py'
+      - 'tools/android/bionic/run-bionic.sh'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +39,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_fex_l2_cache.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
@@ -56,6 +61,8 @@ jobs:
       - name: Compile real ARM64 Vulkan renderer with new image rebind code
         shell: bash -el {0}
         run: |
+          bash tools/android/bionic/build_cpu.sh
+          test -s out/bionic/lib/libgow3cpu.so
           bash tools/android/bionic/build_gpu.sh
           test -s out/bionic/lib/libgow3gpu.so
-          echo 'Native libgow3gpu.so verified. No APK packaging, signing or upload.'
+          echo 'Native libgow3cpu.so and libgow3gpu.so verified. No APK packaging, signing or upload.'
