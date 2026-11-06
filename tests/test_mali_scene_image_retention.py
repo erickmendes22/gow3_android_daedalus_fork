@@ -57,7 +57,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertNotIn("GetWorkSemaphore()->Refresh()", body)
 
     def test_no_gpu_live_image_or_bad_format_reuse(self):
-        self.assertIn("scheduler.DeferOperation([this, image_id]",TEXTURE)
+        self.assertIn("scheduler.DeferOperation(std::move(reclaim))",TEXTURE)
         self.assertIn("e.allocator == allocator && SameBcCreate(e.create, raw)",IMAGE)
         for field in ("a.format == b.format","a.samples == b.samples",
                       "a.tiling == b.tiling","a.mipLevels == b.mipLevels",
