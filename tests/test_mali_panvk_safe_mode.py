@@ -35,9 +35,9 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
                              capture_output=True, check=True)
         return run.stdout.split("RESULT=", 1)[1]
 
-    def test_panvk_is_conservative(self):
+    def test_panvk_experimental_adreno_queue_compiler_parity(self):
         self.assertEqual(self.profile("/private/libvulkan_panfrost.so"),
-                         "1:1:2:1:0:0")
+                         "2:1:8:1:0:0")
 
     def test_manual_warmup_opt_out_remains_supported(self):
         # A known crash-prone cache can still disable preloading explicitly.
@@ -70,7 +70,11 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         self.assertIn("vendorID == 0x13B5", cache)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")', cache)
         self.assertIn('std::getenv("GOW3_MALI_COMPLETE_DRAWS")', cache)
-        self.assertIn("return !mali_sync_draws && compiler &&", cache)
+        self.assertIn("(!mali_sync_draws || mali_async_draw_wait) && compiler &&", cache)
+        self.assertIn("GOW3_MALI_ASYNC_DRAW_WAIT", cache)
+        self.assertIn("PublishShaders(true);", cache)
+        self.assertIn("PublishGraphics(true);", cache)
+        self.assertIn("if (ready != graphics_pipelines.end()) return ready->second.get();", cache)
         self.assertIn("if (!pipeline) {", rasterizer)
         self.assertIn("event=draw_skipped", rasterizer)
         self.assertIn("++g_gow3_pending_draws", cache)
