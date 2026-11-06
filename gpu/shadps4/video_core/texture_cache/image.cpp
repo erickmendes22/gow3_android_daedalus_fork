@@ -529,7 +529,7 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     // counters alone cannot distinguish driver stalls from oversized images.
     const auto allocation_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - allocation_started).count();
-    if (recycle_bc && allocation_ms >= 25.0) {
+    if ((recycle_bc || mali_rgba_cold_allocation) && allocation_ms >= 25.0) {
         std::printf("GOW3_MALI_SLOW_IMAGE_ALLOC ms=%.2f format=%d "
                     "extent=%ux%ux%u mips=%u layers=%u bytes=%llu result=%d\\n",
                     allocation_ms, int(image_ci_unsafe.format),
