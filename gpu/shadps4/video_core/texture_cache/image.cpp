@@ -116,6 +116,7 @@ struct BcPool {
     uint64_t hits = 0, misses = 0, stored = 0, discarded = 0;
     uint64_t miss_empty = 0, miss_incompatible = 0;
     uint64_t trim_limit = 0, purge_budget = 0, reject_budget = 0;
+    uint64_t trim_duplicate = 0;
 };
 BcPool& GetBcPool() {
     // Deliberately never destroyed by static teardown. Instance::~Instance()
@@ -174,13 +175,14 @@ void ReportImagePool(const BcPool& pool, bool rgba128) {
                 (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
                 (unsigned long long)(pool.bytes >> 20));
     std::printf("GOW3_%s_IMAGE_POOL_DIAG miss_empty=%llu miss_incompatible=%llu "
-                "trim_limit=%llu purge_budget=%llu reject_budget=%llu entries=%zu\n",
+                "trim_limit=%llu purge_budget=%llu reject_budget=%llu duplicate_evict=%llu entries=%zu\n",
                 rgba128 ? "RGBA128" : "BC",
                 (unsigned long long)pool.miss_empty,
                 (unsigned long long)pool.miss_incompatible,
                 (unsigned long long)pool.trim_limit,
                 (unsigned long long)pool.purge_budget,
-                (unsigned long long)pool.reject_budget, pool.images.size());
+                (unsigned long long)pool.reject_budget,
+                (unsigned long long)pool.trim_duplicate, pool.images.size());
 }
 
 bool SameBcCreate(const VkImageCreateInfo& a, const VkImageCreateInfo& b) {
@@ -219,11 +221,35 @@ void DestroyBcEntry(RetiredBcImage& e) {
 void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
     while (!pool.images.empty() &&
            (pool.bytes + need > PoolLimit(ci) || pool.images.size() >= PoolMaxEntries(ci))) {
-        auto e = pool.images.front();
-        pool.images.erase(pool.images.begin());
+        // In scene changes an FIFO pool can evict the only retained copy of
+        // one image shape while keeping 4+ copies of another. Keep up to
+        // three completed exact-match images per shape for triple buffering;
+        // preferentially reclaim the *oldest surplus duplicate* before
+        // evicting a unique image. This never reinterprets BC as RGBA128,
+        // alters the GPU completion rule or expands the VMA memory budget.
+        size_t victim = 0;
+        bool surplus_duplicate = false;
+        for (size_t i = 0; i < pool.images.size(); ++i) {
+            unsigned newer_copies = 0;
+            const auto& candidate = pool.images[i];
+            for (size_t j = i + 1; j < pool.images.size(); ++j) {
+                if (candidate.allocator == pool.images[j].allocator &&
+                    SameBcCreate(candidate.create, pool.images[j].create)) {
+                    if (++newer_copies >= 3) break;
+                }
+            }
+            if (newer_copies >= 3) {
+                victim = i;
+                surplus_duplicate = true;
+                break;
+            }
+        }
+        auto e = pool.images[victim];
+        pool.images.erase(pool.images.begin() + victim);
         pool.bytes -= e.bytes;
         ++pool.discarded;
         ++pool.trim_limit;
+        if (surplus_duplicate) ++pool.trim_duplicate;
         DestroyBcEntry(e);
     }
 }
