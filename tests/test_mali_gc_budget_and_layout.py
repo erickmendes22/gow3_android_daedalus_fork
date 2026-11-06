@@ -39,7 +39,9 @@ class MaliBudgetAndLayoutTests(unittest.TestCase):
         self.assertIn('cached_format=%s requested_format=%s', TEX)
         self.assertIn('vk::to_string(b.pixel_format).c_str()', TEX)
         self.assertIn('vk::to_string(a.pixel_format).c_str()', TEX)
-        self.assertIn('if (safe_to_delete) FreeImage(cache_image_id)', TEX)
+        # The original one-line branch is now braced. Keep the actual
+        # GPU-modified image guard rather than testing obsolete whitespace.
+        self.assertIn('if (safe_to_delete) {\n                FreeImage(cache_image_id);', TEX)
         self.assertIn('a.pitch != b.pitch || a.tile_mode != b.tile_mode', TEX)
         self.assertIn('b.num_samples, a.num_samples', TEX)
 
