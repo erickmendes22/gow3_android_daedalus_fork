@@ -2060,11 +2060,14 @@ void TextureCache::DeleteImage(ImageId image_id) {
         slot_images.erase(image_id);
     };
     // Only the Android PanVK GPU command thread may take this fast path.
-    // The graphics draw pipeline and threaded command recording must be off:
-    // otherwise CPU-side work could still be preparing a reference to this
-    // image even though its previous GPU tick has completed. The check uses
-    // ONLY the already-confirmed completed tick: no new Vulkan semaphore
-    // query, CPU spin, flush, or GPU wait is added on this hot path.
+    // The speculative draw pipeline must be off: it could retain image
+    // references asynchronously without updating the image access tick yet.
+    // The regular Vulkan recording worker IS permitted. SubmitExecution
+    // always calls SyncRecording() before submitting the command buffer and
+    // signaling the matching timeline tick; a confirmed completed image tick
+    // therefore also proves that worker's recorded uses have finished.
+    // This uses ONLY the already-confirmed completed tick: no additional
+    // Vulkan semaphore query, CPU spin, flush, or GPU wait is introduced.
     static const bool mali_eager_completed_retire = [this] {
         const char* on = std::getenv("GOW3_MALI_EAGER_COMPLETED_RETIRE");
         const char* cpu = std::getenv("GOW3_MALI_CPU_PRESENT");
@@ -2076,7 +2079,6 @@ void TextureCache::DeleteImage(ImageId image_id) {
     const bool clean_gpu_retired =
         mali_eager_completed_retire && liverpool &&
         std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread() &&
-        !scheduler.IsRecordingDeferred() &&
         (image.info.props.is_block ||
          image.info.pixel_format == vk::Format::eR32G32B32A32Uint) &&
         image.tick_accessed_last != 0 &&
