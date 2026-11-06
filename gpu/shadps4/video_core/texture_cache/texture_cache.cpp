@@ -2048,8 +2048,8 @@ void TextureCache::DeleteImage(ImageId image_id) {
     // Reclaim image and any image views it references. The old path always
     // deferred to CurrentTick(), even when this image's LAST submitted GPU
     // use had already completed. During GoW3's BC3/RGBA128 layout switch this
-    // left reusable BC images unavailable through the next scene-transition
-    // image burst, so the exact-create pool reported hundreds of empty misses.
+    // can leave eligible BC images unavailable during subsequent allocation
+    // bursts. The empty-miss count alone cannot prove this explains every miss.
     auto reclaim = [this, image_id] {
         Image& retired = slot_images[image_id];
         for (auto& backing : retired.backing_images) {
@@ -2088,8 +2088,9 @@ void TextureCache::DeleteImage(ImageId image_id) {
         // Vulkan-descriptor pool *now*, instead of after another submission.
         // RGBA128 without pooling is freed now, reducing live memory pressure.
         static u64 early_count = 0;
-        if ((++early_count & 127u) == 0) {
-            std::printf("GOW3_MALI_EAGER_IMAGE_RETIRE count=%llu completed_tick=%llu\\n",
+        ++early_count;
+        if (early_count <= 4 || (early_count & 127u) == 0) {
+            std::printf("GOW3_MALI_EAGER_IMAGE_RETIRE count=%llu completed_tick=%llu\n",
                         (unsigned long long)early_count,
                         (unsigned long long)image.tick_accessed_last);
         }
