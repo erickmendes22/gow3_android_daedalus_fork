@@ -909,6 +909,44 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                         (unsigned long long)total, (unsigned long long)subresource);
     };
 
+    // PanVK is a tile renderer: N separate barriers for the same image layout
+    // transition incur N synchronization entries and may split tile work.
+    // Only fold consecutive *identical* subresource hazards, preserving every
+    // src/dst stage, access, layout, aspect and image handle. Never fold a
+    // different mip/layer, layout or buffer dependency into the same barrier.
+    const auto append_subresource_barrier = [&](vk::ImageMemoryBarrier2 barrier) {
+        if (mali_read_only_elision && !barriers.empty()) {
+            auto& previous = barriers.back();
+            const bool same_dependency =
+                previous.image == barrier.image &&
+                previous.srcStageMask == barrier.srcStageMask &&
+                previous.srcAccessMask == barrier.srcAccessMask &&
+                previous.dstStageMask == barrier.dstStageMask &&
+                previous.dstAccessMask == barrier.dstAccessMask &&
+                previous.oldLayout == barrier.oldLayout &&
+                previous.newLayout == barrier.newLayout &&
+                previous.srcQueueFamilyIndex == barrier.srcQueueFamilyIndex &&
+                previous.dstQueueFamilyIndex == barrier.dstQueueFamilyIndex &&
+                previous.subresourceRange.aspectMask == barrier.subresourceRange.aspectMask;
+            const auto& a = previous.subresourceRange;
+            const auto& b = barrier.subresourceRange;
+            if (same_dependency && a.baseMipLevel == b.baseMipLevel &&
+                a.levelCount == 1 && b.levelCount == 1 &&
+                a.baseArrayLayer + a.layerCount == b.baseArrayLayer) {
+                previous.subresourceRange.layerCount += b.layerCount;
+                return;
+            }
+            // Mip folding is valid only for identical whole layer ranges.
+            if (same_dependency && a.baseArrayLayer == b.baseArrayLayer &&
+                a.layerCount == b.layerCount &&
+                a.baseMipLevel + a.levelCount == b.baseMipLevel) {
+                previous.subresourceRange.levelCount += b.levelCount;
+                return;
+            }
+        }
+        barriers.emplace_back(barrier);
+    };
+
     if (needs_partial_transition || partially_transited) {
         if (!partially_transited) {
             subresource_states.resize(info.resources.levels * info.resources.layers);
@@ -955,7 +993,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                 }
                 if (state.layout != dst_layout || state.access_mask != dst_mask ||
                     static_cast<bool>(state.access_mask & legacy_hazard_mask)) {
-                    barriers.emplace_back(vk::ImageMemoryBarrier2{
+                    append_subresource_barrier(vk::ImageMemoryBarrier2{
                         .srcStageMask = state.pl_stage,
                         .srcAccessMask = state.access_mask,
                         .dstStageMask = dst_stage,
