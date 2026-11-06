@@ -13,6 +13,9 @@
 
 #include <miniz.h>
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <condition_variable>
 #include <functional>
 #include <future>
@@ -110,9 +113,48 @@ void DataBase::Open() {
             mz_zip_writer_init_file(&zip_ar, cache_path.string().c_str(), 0);
         }
     } else {
-        cache_path = GetUserPath(PathType::CacheDir) / game_info.GameSerial();
-        if (!std::filesystem::exists(cache_path)) {
-            std::filesystem::create_directories(cache_path);
+        const auto legacy_path = GetUserPath(PathType::CacheDir) / game_info.GameSerial();
+        cache_path = legacy_path;
+        // The uploaded G720 log switches between different PanVK driver
+        // archives. Their Shader::Profile capabilities differ; a single
+        // shared cache directory caused CheckCacheProfile() to erase hundreds
+        // of the other driver's cached SPIR-V and pipeline keys each switch.
+        // Use the import's 64-hex SHA-256 folder name as a stable namespace.
+        // No arbitrary environment path is appended to the user cache path.
+        if (const char* driver = std::getenv("GOW3_VULKAN_DRIVER")) {
+            const std::filesystem::path driver_path{driver};
+            const auto driver_id = driver_path.parent_path().filename().string();
+            const bool panvk = driver_path.filename() == "libvulkan_panfrost.so";
+            const bool valid_id = driver_id.size() == 64 &&
+                std::all_of(driver_id.begin(), driver_id.end(), [](unsigned char c) {
+                    return std::isxdigit(c) != 0;
+                });
+            if (panvk && valid_id) {
+                cache_path = legacy_path / ("panvk-" + driver_id);
+            }
+        }
+        const bool first_driver_open = cache_path != legacy_path &&
+                                       !std::filesystem::exists(cache_path);
+        std::filesystem::create_directories(cache_path);
+        if (first_driver_open && std::filesystem::exists(legacy_path)) {
+            // Copy legacy metadata once, never move it: CheckCacheProfile()
+            // will discard incompatible profiles but can preserve a valid
+            // matching cache after updating from the previous APK.
+            u32 migrated = 0;
+            std::error_code error;
+            for (const auto& entry : std::filesystem::directory_iterator{legacy_path, error}) {
+                if (error || !entry.is_regular_file(error)) continue;
+                const auto ext = entry.path().extension();
+                if (ext != ".spv" && ext != ".key" && ext != ".meta" &&
+                    entry.path().filename() != "profile.bin")
+                    continue;
+                std::filesystem::copy_file(entry.path(),
+                    cache_path / entry.path().filename(),
+                    std::filesystem::copy_options::skip_existing, error);
+                if (!error) ++migrated;
+                error.clear();
+            }
+            LOG_INFO(Render, "PanVK per-driver shader cache: migrated {} legacy blobs", migrated);
         }
     }
 
