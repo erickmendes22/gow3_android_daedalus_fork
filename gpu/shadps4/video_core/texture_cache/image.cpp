@@ -263,6 +263,15 @@ void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
 void ReclaimIdleImagesBeforeAllocate(VmaAllocator allocator,
                                      const VkImageCreateInfo& requested) {
     if (!ScenePoolRetentionEnabled()) return;
+    // The reference PanVK memory-budget path caches its system-memory
+    // availability query for 100 ms. Do not add an independent budget
+    // ioctl on each of the hundreds of unmatched VkImage allocations in a
+    // GoW3 transition. VMA's WITHIN_BUDGET guard still applies to every
+    // allocation; only this optional retired-image reclamation is sampled.
+    static thread_local std::chrono::steady_clock::time_point next_budget_check{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now < next_budget_check) return;
+    next_budget_check = now + std::chrono::milliseconds(100);
     const VkPhysicalDeviceMemoryProperties* properties{};
     vmaGetMemoryProperties(allocator, &properties);
     if (!properties) return;
