@@ -42,7 +42,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
             "!scheduler.IsRecordingDeferred()",
             "!image.binding.is_target && !image.binding.is_bound",
             "image.tick_accessed_last != 0",
-            "ImageFlagBits::Dirty | ImageFlagBits::GpuModified",
+            "ImageFlagBits::GpuDirty | ImageFlagBits::GpuModified",
             "scheduler.GetWorkSemaphore()->IsFree(image.tick_accessed_last)",
             "reclaim();",
             "scheduler.DeferOperation(std::move(reclaim))",
