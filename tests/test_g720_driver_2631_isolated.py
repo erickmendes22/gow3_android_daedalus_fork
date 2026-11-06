@@ -26,7 +26,7 @@ class G720DriverABTests(unittest.TestCase):
   self.assertIn('if ("panvk".equals(selection) || "panvk-next".equals(selection)',JAVA)
   self.assertIn('drv = bundledPanvk(context, false);',JAVA)
   self.assertIn('if (!"auto".equals(selection) || !wantNext)',JAVA)
-  self.assertIn('GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-0}',LAUNCH)
+  self.assertIn('GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}',LAUNCH)
  def test_driver_log_identity(self):
   self.assertIn('GOW3_GPU_AUTO_REASON',JAVA)
   self.assertIn('PanVK 26.3.1 (default Mali G720/G615)',JAVA)
