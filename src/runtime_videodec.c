@@ -2,6 +2,7 @@
  * Structures, sizes and the resource estimate follow shadPS4's videodec (GPL-2.0-or-later);
  * pictures larger than the game's frame buffer are an error code instead of an overflow. */
 #include "runtime.h"
+#include "video_nv12_packing.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,7 +51,13 @@ typedef struct { uint64_t this_size; void *au_data; uint64_t au_size, pts_data, 
 _Static_assert(sizeof(ConfigInfo)==40 && sizeof(ResourceInfo)==56 && sizeof(Ctrl)==24 && sizeof(FrameBuffer)==24 &&
                sizeof(PictureInfo)==112 && sizeof(InputData)==48,"Videodec guest layouts");
 
-typedef struct { AVCodecContext *codec; AVPacket *packet; AVFrame *frame, *nv12; struct SwsContext *sws; } Decoder;
+typedef struct {
+    AVCodecContext *codec;
+    AVPacket *packet;
+    AVFrame *frame, *nv12;
+    struct SwsContext *sws;
+    uint64_t direct_nv12_frames, fallback_sws_frames;
+} Decoder;
 static uint32_t align(uint32_t value, uint32_t to) { return (value+to-1)&~(to-1); }
 
 static ABI int32_t videodec_query(const ConfigInfo *config, ResourceInfo *out) {
@@ -91,7 +98,24 @@ static ABI int32_t videodec_create(const ConfigInfo *config, const ResourceInfo 
  * of the width aligned to 64 and the height aligned to 16 (the last rows repeated). */
 static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
     AVFrame *f=d->frame;
-    if (f->format!=AV_PIX_FMT_NV12) {
+    // G720 log 2026-11-06: three my_decode_thread initializations coincide
+    // with the decline from ~50 to ~5 FPS. H.264 normally yields 8-bit
+    // YUV420P; the old path allocated a full temporary NV12 AVFrame,
+    // sws_scale() copied/converted its entire 1080p picture, then copied
+    // the result AGAIN into the game's aligned NV12 buffer every frame.
+    // Pack the same planar YUV420P chroma directly into that guest buffer.
+    // Only the ordinary CPU-present Mali profile enables this by default;
+    // explicit GOW3_VIDEODEC_NV12_DIRECT=0 restores FFmpeg swscale.
+    const char *toggle=getenv("GOW3_VIDEODEC_NV12_DIRECT");
+    const int direct_enabled=toggle ? toggle[0]=='1' :
+                             (getenv("GOW3_MALI_CPU_PRESENT")!=NULL);
+    const int direct_planar=direct_enabled &&
+        (f->format==AV_PIX_FMT_YUV420P || f->format==AV_PIX_FMT_YUVJ420P) &&
+        f->width>0 && f->height>0 && !(f->width&1) && !(f->height&1) &&
+        f->data[0] && f->data[1] && f->data[2] &&
+        f->linesize[0]>=f->width &&
+        f->linesize[1]>=f->width/2 && f->linesize[2]>=f->width/2;
+    if (!direct_planar && f->format!=AV_PIX_FMT_NV12) {
         av_frame_unref(d->nv12);
         d->nv12->format=AV_PIX_FMT_NV12; d->nv12->width=f->width; d->nv12->height=f->height;
         d->sws=sws_getCachedContext(d->sws,f->width,f->height,(enum AVPixelFormat)f->format,
@@ -100,7 +124,9 @@ static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
             sws_scale(d->sws,(const uint8_t *const *)f->data,f->linesize,0,f->height,d->nv12->data,d->nv12->linesize)<0)
             return ERR_API_FAIL;
         f=d->nv12;
+        ++d->fallback_sws_frames;
     }
+    if (f->width<=0 || f->height<=0) return ERR_API_FAIL;
     uint32_t width=(uint32_t)f->width, height=(uint32_t)f->height;
     uint32_t pitch=align(width,64), rows=align(height,16);
     if ((uint64_t)pitch*rows*3/2>buffer->frame_buffer_size) return ERR_FRAME_BUFFER_SIZE;
@@ -110,7 +136,22 @@ static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
         memcpy(luma+(size_t)y*pitch,f->data[0]+(size_t)from*(size_t)f->linesize[0],width);
         if (y<rows/2) {
             uint32_t c=y<height/2 ? y : height/2-1;
-            memcpy(chroma+(size_t)y*pitch,f->data[1]+(size_t)c*(size_t)f->linesize[1],width);
+            unsigned char *dst=chroma+(size_t)y*pitch;
+            if (direct_planar) {
+                const uint8_t *u=f->data[1]+(size_t)c*(size_t)f->linesize[1];
+                const uint8_t *v=f->data[2]+(size_t)c*(size_t)f->linesize[2];
+                gow3_interleave_uv_row(dst,u,v,width/2);
+            } else {
+                memcpy(dst,f->data[1]+(size_t)c*(size_t)f->linesize[1],width);
+            }
+        }
+    }
+    if (direct_planar) {
+        ++d->direct_nv12_frames;
+        if (d->direct_nv12_frames==1 || !(d->direct_nv12_frames & 255)) {
+            printf("GOW3_VIDEODEC_NV12_DIRECT frames=%llu size=%ux%u sws=%llu\n",
+                   (unsigned long long)d->direct_nv12_frames,width,height,
+                   (unsigned long long)d->fallback_sws_frames);
         }
     }
     info->is_valid=1; info->codec_type=0;
@@ -171,6 +212,9 @@ static ABI int32_t videodec_delete(Ctrl *ctrl) {
     if (!ctrl) return ERR_ARGUMENT_POINTER;
     Decoder *d=ctrl->handle;
     if (!d) return ERR_HANDLE;
+    printf("GOW3_VIDEODEC_SUMMARY direct_nv12=%llu sws=%llu\n",
+           (unsigned long long)d->direct_nv12_frames,
+           (unsigned long long)d->fallback_sws_frames);
     avcodec_free_context(&d->codec); av_packet_free(&d->packet); av_frame_free(&d->frame); av_frame_free(&d->nv12);
     sws_freeContext(d->sws);
     free(d);
