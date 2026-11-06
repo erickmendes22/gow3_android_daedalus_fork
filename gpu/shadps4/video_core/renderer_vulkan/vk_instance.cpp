@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstdio>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -834,10 +836,39 @@ void Instance::CreateAllocator() {
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
 
+    // VMA defaults to 256 MiB blocks for Vulkan heaps >1 GiB. The G720
+    // capture allocated 334.8 MiB of RGBA128 images across 192 creations
+    // and had a 780.47 ms stall entirely inside vmaCreateImage. Limit the
+    // size of NEW VkDeviceMemory blocks instead of adding more retired
+    // VkImages to the exact-shape pool (12 hits / 320 RGBA128 requests).
+    // This is only a preferred block size: VMA retains Vulkan alignment,
+    // dedicated-allocation requirements and the per-allocation budget gate.
+    // 0 restores VMA's original default (normally 256 MiB).
+    VkDeviceSize preferred_block_size = 0;
+    if (std::getenv("GOW3_ANDROID_PORT") && properties.vendorID == 0x13B5) {
+        unsigned long mib = 32;
+        if (const char* selected = std::getenv("GOW3_MALI_VMA_BLOCK_MIB")) {
+            char* end = nullptr;
+            const auto parsed = std::strtoul(selected, &end, 10);
+            if (end != selected && *end == '\0' &&
+                (parsed == 0 || parsed == 16 || parsed == 32 ||
+                 parsed == 64 || parsed == 128 || parsed == 256)) {
+                mib = parsed;
+            } else {
+                LOG_WARNING(Render_Vulkan,
+                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using 32",
+                            selected);
+            }
+        }
+        preferred_block_size = static_cast<VkDeviceSize>(mib) * 1024 * 1024;
+        std::printf("GOW3_MALI_VMA_BLOCK preferred_mib=%lu (0=VMA default)\\n", mib);
+    }
+
     const VmaAllocatorCreateInfo allocator_info = {
         .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = physical_device,
         .device = *device,
+        .preferredLargeHeapBlockSize = preferred_block_size,
         .pVulkanFunctions = &functions,
         .instance = *instance,
         .vulkanApiVersion = TargetVulkanApiVersion,
