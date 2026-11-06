@@ -416,18 +416,18 @@ private:
     void MarkAsMaybeDirty(ImageId image_id, Image& image);
 
     /// Removes the image and any views/surface metas that reference it.
-    void DeleteImage(ImageId image_id);
+    void DeleteImage(ImageId image_id, bool completed_layout_alias = false);
 
     /// Touch the image in the LRU cache.
     void TouchImage(const Image& image);
 
-    void FreeImage(ImageId image_id) {
+    void FreeImage(ImageId image_id, bool completed_layout_alias = false) {
         const auto& image = slot_images[image_id];
         ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                          ReadbackSource::ImageFree);
         UntrackImage(image_id);
         UnregisterImage(image_id);
-        DeleteImage(image_id);
+        DeleteImage(image_id, completed_layout_alias);
     }
 
     void GarbageCollectImages();
