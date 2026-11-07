@@ -26,6 +26,27 @@ class FexL2CacheTests(unittest.TestCase):
         self.assertNotIn('export GOW3_FEX_L2_CACHE', LAUNCH.split(
             '  */libvulkan_panfrost.so)', 1)[0])
 
+    def test_bachata_same_game_jit_block_policy_and_rollback(self):
+        # Bachata G720 capture: multiblock=1 / maxInst=10000.
+        # Our pinned FEX source defaults multiblock=1 / maxInst=5000.
+        self.assertIn('CONFIG_MULTIBLOCK', CPU)
+        self.assertIn('CONFIG_MAXINST', CPU)
+        self.assertIn('std::getenv("GOW3_FEX_MULTIBLOCK")', CPU)
+        self.assertIn('std::getenv("GOW3_FEX_MAX_INST")', CPU)
+        self.assertIn('std::strcmp(max_inst_opt, "5000") == 0', CPU)
+        self.assertIn('std::strcmp(max_inst_opt, "10000") == 0', CPU)
+        self.assertIn('if (max_inst_valid)', CPU)
+        self.assertIn('if (multiblock_valid)', CPU)
+        profile = LAUNCH.split('  */libvulkan_panfrost.so)', 1)[1].split(
+            '# End Mali PanVK safe profile.', 1)[0]
+        self.assertIn('export GOW3_FEX_MULTIBLOCK=${GOW3_FEX_MULTIBLOCK:-1}', profile)
+        self.assertIn('export GOW3_FEX_MAX_INST=${GOW3_FEX_MAX_INST:-10000}', profile)
+        self.assertNotIn('export GOW3_FEX_MAX_INST', LAUNCH.split(
+            '  */libvulkan_panfrost.so)', 1)[0])
+        # Never import smc=none or disable TSO simply because Bachata does.
+        self.assertNotIn('CONFIG_SMCCHECKS', CPU)
+        self.assertNotIn('CONFIG_TSOENABLED', CPU)
+
     def test_never_changes_guest_memory_ordering_or_codegen(self):
         self.assertNotIn('CONFIG_TSOENABLED', CPU)
         self.assertNotIn('CONFIG_VECTORTSOENABLED', CPU)
