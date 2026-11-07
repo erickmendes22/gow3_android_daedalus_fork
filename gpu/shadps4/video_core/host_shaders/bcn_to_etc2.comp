@@ -95,11 +95,11 @@ void main() {
     // The two-pass Bachata encoder is more elaborate; this bounded single-pass
     // fast encoder avoids an intermediate 4x RGBA image/large staging buffer.
     uint high = 0u, low = 0u;
-    for (uint half = 0u; half < 2u; ++half) {
+    for (uint subblock = 0u; subblock < 2u; ++subblock) {
         uvec3 sum = uvec3(0u);
         for (uint y = 0u; y < 4u; ++y)
             for (uint x = 0u; x < 2u; ++x)
-                sum += pixels[4u * y + 2u * half + x];
+                sum += pixels[4u * y + 2u * subblock + x];
         uvec3 base4 = min((sum / 8u + 8u) / 17u, uvec3(15u));
         uvec3 base8 = base4 * 17u;
         uint best_table = 0u, best_indices[8];
@@ -108,7 +108,7 @@ void main() {
             uint trial_indices[8];
             int total_error = 0;
             for (uint n = 0u; n < 8u; ++n) {
-                uint x = (n & 1u) + 2u * half;
+                uint x = (n & 1u) + 2u * subblock;
                 uint y = n >> 1u;
                 uvec3 original = pixels[4u * y + x];
                 int error = 2147483647;
@@ -128,7 +128,7 @@ void main() {
                 for (uint n = 0u; n < 8u; ++n) best_indices[n] = trial_indices[n];
             }
         }
-        if (half == 0u) {
+        if (subblock == 0u) {
             high |= (base4.r << 28u) | (base4.g << 20u) | (base4.b << 12u);
             high |= best_table << 5u;
         } else {
@@ -136,7 +136,7 @@ void main() {
             high |= best_table << 2u;
         }
         for (uint n = 0u; n < 8u; ++n) {
-            uint x = (n & 1u) + 2u * half, y = n >> 1u;
+            uint x = (n & 1u) + 2u * subblock, y = n >> 1u;
             uint bit = x * 4u + y;
             low |= (best_indices[n] & 1u) << bit;
             low |= ((best_indices[n] >> 1u) & 1u) << (16u + bit);
