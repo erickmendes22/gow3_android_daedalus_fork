@@ -163,4 +163,6 @@
     <string name="folder_choose_update">选择升级补丁目录</string>
     <string name="folder_choose_game">选择游戏目录</string>
     <string name="no_folder_picker_fmt">没有目录选择器：%1$s</string>
+    <string name="settings_mali_bcn_etc2_title">Mali：GPU BC1/BC3 转 ETC2（实验性）</string>
+    <string name="settings_mali_bcn_etc2_desc">在 GPU 上直接转码压缩纹理，仅适用于 PanVK。默认关闭；请比较同一游戏场景开启前后的效果。</string>
 </resources>
