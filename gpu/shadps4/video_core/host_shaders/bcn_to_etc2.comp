@@ -1,0 +1,174 @@
+// SPDX-License-Identifier: MIT
+// GoW III Mali BC1/BC3 -> ETC2 RGBA8, one 4x4 block per compute invocation.
+// ETC2 individual-mode packing and EAC alpha follow the Vulkan/Khronos layout.
+// This path runs only for sampled 2D textures; no guest BC bytes are rewritten.
+#version 450
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer BcInput { uint bc[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer EtcOutput { uint etc[]; };
+layout(push_constant) uniform Args {
+    uint blocks_x;
+    uint blocks_y;
+    uint input_row_blocks;
+    uint input_base_words;
+    uint bc_words; // BC1 = 2, BC3 = 4
+} pc;
+
+const int SMALL_MOD[8] = int[8](2,5,9,13,18,24,33,47);
+const int BIG_MOD[8]   = int[8](8,17,29,42,60,80,106,183);
+const int ALPHA_MOD[8] = int[8](-3,-6,-9,-15,2,5,8,14);
+
+uint swap32(uint v) {
+    return ((v & 0x000000ffu) << 24u) | ((v & 0x0000ff00u) << 8u) |
+           ((v & 0x00ff0000u) >> 8u) | ((v & 0xff000000u) >> 24u);
+}
+uvec3 unpack565(uint p) {
+    uint r = (p >> 11u) & 31u, g = (p >> 5u) & 63u, b = p & 31u;
+    return uvec3((r << 3u) | (r >> 2u),
+                 (g << 2u) | (g >> 4u),
+                 (b << 3u) | (b >> 2u));
+}
+uint alphaIndexBC3(uint lo, uint hi, uint px) {
+    uint bit = 16u + 3u * px;
+    if (bit >= 32u) return (hi >> (bit - 32u)) & 7u;
+    uint bits = lo >> bit;
+    if (bit > 29u) bits |= hi << (32u - bit);
+    return bits & 7u;
+}
+int errorRGB(uvec3 desired, uvec3 quantized, int modifier) {
+    ivec3 c = clamp(ivec3(quantized) + ivec3(modifier), ivec3(0), ivec3(255));
+    ivec3 d = ivec3(desired) - c;
+    return dot(d, d);
+}
+
+void main() {
+    uvec2 block = gl_GlobalInvocationID.xy;
+    if (block.x >= pc.blocks_x || block.y >= pc.blocks_y) return;
+    uint input_idx = pc.input_base_words +
+                     (block.y * pc.input_row_blocks + block.x) * pc.bc_words;
+    uint alpha_lo = 0u, alpha_hi = 0u;
+    uint colors0, colors1;
+    if (pc.bc_words == 4u) {
+        alpha_lo = bc[input_idx];
+        alpha_hi = bc[input_idx + 1u];
+        colors0 = bc[input_idx + 2u];
+        colors1 = bc[input_idx + 3u];
+    } else {
+        colors0 = bc[input_idx];
+        colors1 = bc[input_idx + 1u];
+    }
+
+    uint c0 = colors0 & 65535u, c1 = colors0 >> 16u;
+    uvec3 rgb0 = unpack565(c0), rgb1 = unpack565(c1);
+    uvec3 palette[4];
+    palette[0] = rgb0;
+    palette[1] = rgb1;
+    bool three_color = (pc.bc_words == 2u && c0 <= c1);
+    palette[2] = three_color ? ((rgb0 + rgb1) / 2u) : ((2u * rgb0 + rgb1) / 3u);
+    palette[3] = three_color ? uvec3(0u) : ((rgb0 + 2u * rgb1) / 3u);
+
+    uint endpoint0 = alpha_lo & 255u, endpoint1 = (alpha_lo >> 8u) & 255u;
+    uint indices = colors1;
+    uvec3 pixels[16];
+    uint alphas[16];
+    uint min_alpha = 255u, max_alpha = 0u;
+    for (uint i = 0u; i < 16u; ++i) {
+        uint selector = (indices >> (2u * i)) & 3u;
+        pixels[i] = palette[selector];
+        uint a = 255u;
+        if (pc.bc_words == 4u) {
+            uint ai = alphaIndexBC3(alpha_lo, alpha_hi, i);
+            if (ai == 0u) a = endpoint0;
+            else if (ai == 1u) a = endpoint1;
+            else if (endpoint0 > endpoint1) {
+                a = ((8u - ai) * endpoint0 + (ai - 1u) * endpoint1) / 7u;
+            } else if (ai <= 5u) {
+                a = ((6u - ai) * endpoint0 + (ai - 1u) * endpoint1) / 5u;
+            } else a = ai == 6u ? 0u : 255u;
+        } else if (three_color && selector == 3u) a = 0u;
+        alphas[i] = a;
+        min_alpha = min(min_alpha, a);
+        max_alpha = max(max_alpha, a);
+    }
+
+    // ETC2 RGB individual mode (ETC1-compatible): two independent 2x4 halves.
+    // The two-pass Bachata encoder is more elaborate; this bounded single-pass
+    // fast encoder avoids an intermediate 4x RGBA image/large staging buffer.
+    uint high = 0u, low = 0u;
+    for (uint half = 0u; half < 2u; ++half) {
+        uvec3 sum = uvec3(0u);
+        for (uint y = 0u; y < 4u; ++y)
+            for (uint x = 0u; x < 2u; ++x)
+                sum += pixels[4u * y + 2u * half + x];
+        uvec3 base4 = min((sum / 8u + 8u) / 17u, uvec3(15u));
+        uvec3 base8 = base4 * 17u;
+        uint best_table = 0u, best_indices[8];
+        int best_error = 2147483647;
+        for (uint table = 0u; table < 8u; ++table) {
+            uint trial_indices[8];
+            int total_error = 0;
+            for (uint n = 0u; n < 8u; ++n) {
+                uint x = (n & 1u) + 2u * half;
+                uint y = n >> 1u;
+                uvec3 original = pixels[4u * y + x];
+                int error = 2147483647;
+                uint best = 0u;
+                for (uint s = 0u; s < 4u; ++s) {
+                    int m = ((s & 1u) != 0u ? BIG_MOD[table] : SMALL_MOD[table]);
+                    if ((s & 2u) != 0u) m = -m;
+                    int candidate = errorRGB(original, base8, m);
+                    if (candidate < error) { error = candidate; best = s; }
+                }
+                total_error += error;
+                trial_indices[n] = best;
+            }
+            if (total_error < best_error) {
+                best_error = total_error;
+                best_table = table;
+                for (uint n = 0u; n < 8u; ++n) best_indices[n] = trial_indices[n];
+            }
+        }
+        if (half == 0u) {
+            high |= (base4.r << 28u) | (base4.g << 20u) | (base4.b << 12u);
+            high |= best_table << 5u;
+        } else {
+            high |= (base4.r << 24u) | (base4.g << 16u) | (base4.b << 8u);
+            high |= best_table << 2u;
+        }
+        for (uint n = 0u; n < 8u; ++n) {
+            uint x = (n & 1u) + 2u * half, y = n >> 1u;
+            uint bit = x * 4u + y;
+            low |= (best_indices[n] & 1u) << bit;
+            low |= ((best_indices[n] >> 1u) & 1u) << (16u + bit);
+        }
+    }
+
+    // EAC alpha: table zero supports both negative and positive modifiers.
+    // Center the base, select a range-fitting multiplier and nearest index.
+    int alpha_base = int((min_alpha + max_alpha) / 2u);
+    uint multiplier = clamp((max_alpha - min_alpha + 28u) / 29u, 1u, 15u);
+    uint alpha_words[2];
+    alpha_words[0] = uint(alpha_base) | (multiplier << 8u);
+    alpha_words[1] = 0u;
+    for (uint i = 0u; i < 16u; ++i) {
+        uint best = 0u;
+        int best_error = 2147483647;
+        for (uint j = 0u; j < 8u; ++j) {
+            int candidate = clamp(alpha_base + ALPHA_MOD[j] * int(multiplier), 0, 255);
+            int error = abs(int(alphas[i]) - candidate);
+            if (error < best_error) { best = j; best_error = error; }
+        }
+        uint bit = 16u + 3u * i;
+        if (bit <= 29u) alpha_words[0] |= best << bit;
+        else if (bit < 32u) {
+            alpha_words[0] |= best << bit;
+            alpha_words[1] |= best >> (32u - bit);
+        } else alpha_words[1] |= best << (bit - 32u);
+    }
+
+    uint out_idx = (block.y * pc.blocks_x + block.x) * 4u;
+    etc[out_idx] = alpha_words[0];
+    etc[out_idx + 1u] = alpha_words[1];
+    etc[out_idx + 2u] = swap32(high);
+    etc[out_idx + 3u] = swap32(low);
+}
