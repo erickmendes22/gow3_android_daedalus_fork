@@ -116,11 +116,7 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('ASSERT_MSG(recorded', RUNTIME)
 
     def test_automatic_default_supported_mali_only_no_user_toggle(self):
-        self.assertIn('GOW3_MALI_BCN_TO_ETC2=' + '
-
-if __name__ == "__main__":
-    unittest.main()
- + '{GOW3_MALI_BCN_TO_ETC2:-1}', RUN)
+        self.assertIn('GOW3_MALI_BCN_TO_ETC2:-1}', RUN)
         self.assertIn("(!etc2_opt || etc2_opt[0] != '0')", IMAGE)
         self.assertIn('vendorID == 0x13B5', IMAGE)
         self.assertIn('instance.IsFormatSupported(target, required)', IMAGE)
