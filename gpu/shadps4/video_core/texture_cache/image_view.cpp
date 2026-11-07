@@ -184,6 +184,17 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
             usage_ci.usage &= shader_usage;
         }
         const auto backing_format = image.backing->image.image_ci.format;
+        // A transcoded image keeps the PS4's BC1/BC3 metadata but its Vulkan
+        // pixels really are ETC2. Only remap the matching guest sample view;
+        // unrelated BC/RGBA aliases must still fail RobustImage validation.
+        if (image.transcoded_bc_to_etc2 && format == image.info.pixel_format) {
+            view_format = backing_format;
+        }
+        if (image.transcoded_bc_to_etc2 && shader_storage) {
+            LOG_WARNING(Render_Vulkan,
+                        "Refusing writable shader view on ETC2-transcoded BC texture");
+            return;
+        }
         // Same physical backing for the D16S8/R8-sRGB fallback resolved by
         // Image::Image; doing so on an unrelated format is not legal.
         if (format == image.info.pixel_format && backing_format != format &&
