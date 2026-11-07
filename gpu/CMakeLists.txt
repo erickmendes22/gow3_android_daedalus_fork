@@ -136,6 +136,8 @@ add_host_shader(taa.comp taa_comp)
 add_host_shader(taa_sharpen.comp taa_sharpen_comp)
 add_host_shader(taa_sharpen.comp taa_sharpen_ldr_comp LDR_OUTPUT=1)
 add_host_shader(buffer_multi_copy.comp buffer_multi_copy_comp)
+# PanVK optional compressed-texture fallback; emitted as embedded SPIR-V.
+add_host_shader(bcn_to_etc2.comp bcn_to_etc2_comp)
 add_host_shader(depth_resample.frag depth_resample_frag)
 add_host_shader(depth_resample.frag depth_stencil_resample_frag HAS_STENCIL=1)
 add_host_shader(depth_resample.frag depth_stencil_bits_frag STENCIL_BITS=1)
