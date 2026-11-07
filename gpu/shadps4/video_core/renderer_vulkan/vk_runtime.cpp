@@ -133,8 +133,13 @@ struct BcnTranscodeState {
                     in_range > limits.maxStorageBufferRange ||
                     source_start - base > std::numeric_limits<u32>::max())
                     return false;
+                // Small transcodes use the existing 16 MiB device-local stream ring,
+                // avoiding one VMA buffer allocation per BC texture. Reserve()
+                // marks every range with the current GPU completion tick, so
+                // queued dispatches cannot be overwritten before retirement.
+                // Larger-than-16 MiB requests use the pool's tick-guarded cache.
                 const auto scratch = staging.Request(output_bytes, VideoCore::MemoryType::DeviceLocal,
-                                                     alignment, true);
+                                                     alignment);
                 const vk::DescriptorBufferInfo in{
                     .buffer = src->Handle(), .offset = base, .range = in_range,
                 };
@@ -186,7 +191,8 @@ struct BcnTranscodeState {
                     cb.copyBufferToImage(scratch_buffer, image,
                                          vk::ImageLayout::eTransferDstOptimal, out_copy);
                 });
-                staging.FreeDeferred(scratch);
+                // StreamBuffer::Reserve and RequestLarge both retain storage
+                // until scheduler.IsFree(tick); there is no deferred hold to release.
             }
         }
         return true;
