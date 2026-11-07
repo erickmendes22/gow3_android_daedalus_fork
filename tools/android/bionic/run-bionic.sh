@@ -233,6 +233,11 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Reuse only retired identical VkImages after GPU completion; cap 128 MiB
       # and purge before pressure (90% budget). 0 restores vmaCreateImage each time.
       export GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}
+      # Experimental single-pass GPU BC1/BC3 -> physical ETC2 RGBA8.
+      # Explicitly off until native shader validation and hardware A/B.
+      # Does NOT change the guest's BC bytes, mip addresses or GoW III patches.
+      # =1 enables; =0 restores the existing PanVK BC image route.
+      export GOW3_MALI_BCN_TO_ETC2=${GOW3_MALI_BCN_TO_ETC2:-0}
        # Separately recycle completed exact-match R32G32B32A32Uint images:
        # 64 MiB/24 entries, independent of the existing BC pool.
        # G720 20261106-192404: 12 RGBA128 exact-image reuses / 320
