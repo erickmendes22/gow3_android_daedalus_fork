@@ -34,16 +34,19 @@ jobs:
           bash android-launcher/gradlew -p android-launcher \
             :app:compileReleaseKotlin :app:compileReleaseJavaWithJavac \
             -Pgow3Bionic=true --no-daemon --max-workers=2
-      - name: Verify experimental toggle is wired without affecting Adreno
+      - name: Verify automatic Mali ETC2 selection without a launcher switch
         run: |
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
           python3 - <<'PY'
           from pathlib import Path
           ui = Path('android-launcher/app/src/main/java/com/gow3/android/feature/settings/GeneralSettingsScreen.kt').read_text()
           script = Path('tools/android/bionic/run-bionic.sh').read_text()
-          assert 'ini["mali_bcn_to_etc2"] == "1"' in ui
-          assert 'Gow3Ini.write(iniFile, mapOf("mali_bcn_to_etc2" to value))' in ui
-          assert 'setting mali_bcn_to_etc2' in script
-          assert script.index('setting mali_bcn_to_etc2') > script.index('*/libvulkan_panfrost.so)')
-          assert 'export GOW3_MALI_BCN_TO_ETC2=' in script
-          print('Bionic-only A/B toggle connected; no APK produced.')
+          native = Path('gpu/shadps4/video_core/texture_cache/image.cpp').read_text()
+          assert 'mali_bcn_to_etc2' not in ui
+          assert 'setting mali_bcn_to_etc2' not in script
+          assert 'export GOW3_MALI_BCN_TO_ETC2=${GOW3_MALI_BCN_TO_ETC2:-1}' in script
+          assert "(!etc2_opt || etc2_opt[0] != '0')" in native
+          assert 'instance.IsFormatSupported(target, required)' in native
+          assert 'ProbeImageFormat(instance, etc2_info)' in native
+          print('Automatic supported-Mali ETC2 selection verified; no UI toggle or APK produced.')
           PY
