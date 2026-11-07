@@ -26,7 +26,39 @@ def bc3_selector_emulation(word0: int, word1: int, pixel: int) -> int:
     return bits & 7
 
 
+def pack_eac_alpha_indices(selectors, base=137, multiplier=5):
+    """Reimplements the GLSL 2x32-bit EAC MSB-first column-major packing."""
+    hi = (base << 24) | (multiplier << 20)
+    lo = 0
+    for i in range(16):
+        x, y = i // 4, i % 4
+        sel = selectors[4 * y + x]
+        bit = 45 - 3 * i
+        if bit >= 32:
+            hi |= sel << (bit - 32)
+        elif bit >= 30:
+            hi |= sel >> (32 - bit)
+            lo |= sel << bit
+        else:
+            lo |= sel << bit
+    return hi.to_bytes(4, "big") + lo.to_bytes(4, "big")
+
+
 class TestMaliBcnToEtc2(unittest.TestCase):
+    def test_etc2_alpha_is_big_endian_column_major(self):
+        rnd = random.Random(480)
+        for _ in range(200):
+            selectors = [rnd.randrange(8) for _ in range(16)]
+            payload = pack_eac_alpha_indices(selectors)
+            self.assertEqual(payload[0], 137)
+            self.assertEqual(payload[1], 0x50)  # multiplier=5, modifier table=0
+            encoded = int.from_bytes(payload[2:8], "big")
+            extracted = [((encoded >> (45 - 3 * i)) & 7)
+                         for i in range(16)]
+            expected = [selectors[4 * (i % 4) + (i // 4)]
+                        for i in range(16)]
+            self.assertEqual(extracted, expected)
+
     def test_bc3_alpha_selector_cross_word_boundary(self):
         rand = random.Random(173)
         for _ in range(200):
@@ -45,6 +77,10 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('ALPHA_MOD[8]', SHADER)
         self.assertIn('swap32(high)', SHADER)
         self.assertIn('swap32(low)', SHADER)
+        self.assertIn('swap32(alpha_be_hi)', SHADER)
+        self.assertIn('swap32(alpha_be_lo)', SHADER)
+        self.assertIn('uint x = i / 4u, y = i % 4u;', SHADER)
+        self.assertIn('uint bit = 45u - 3u * i;', SHADER)
         self.assertIn('if (block.x >= pc.blocks_x || block.y >= pc.blocks_y) return;', SHADER)
         self.assertIn('add_host_shader(bcn_to_etc2.comp bcn_to_etc2_comp)', CMAKE)
 
