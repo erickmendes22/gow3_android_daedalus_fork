@@ -233,18 +233,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Reuse only retired identical VkImages after GPU completion; cap 128 MiB
       # and purge before pressure (90% budget). 0 restores vmaCreateImage each time.
       export GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}
-      # Experimental single-pass GPU BC1/BC3 -> physical ETC2 RGBA8.
-      # Explicitly off until native shader validation and hardware A/B.
-      # Does NOT change the guest's BC bytes, mip addresses or GoW III patches.
-      # =1 enables; =0 restores the existing PanVK BC image route.
-      # The Bionic settings UI writes this persistent experiment flag.
-      # A deliberately supplied process environment value (including 0)
-      # wins over the UI, allowing independent on-device A/B rollback.
-      if [ -z "${GOW3_MALI_BCN_TO_ETC2+x}" ] &&
-         [ "$(setting mali_bcn_to_etc2)" = 1 ]; then
-        export GOW3_MALI_BCN_TO_ETC2=1
-      fi
-      export GOW3_MALI_BCN_TO_ETC2=${GOW3_MALI_BCN_TO_ETC2:-0}
+      # Native ETC2 is automatically preferred for compatible BC1/BC3
+      # textures on PanVK. No user-facing performance switch or INI flag:
+      # the runtime selects ETC2 only if Vulkan advertises all required
+      # features and the texture is sampled-only. Preserve a hidden
+      # developer rollback for troubleshooting an unexpected driver regression.
+      export GOW3_MALI_BCN_TO_ETC2=${GOW3_MALI_BCN_TO_ETC2:-1}
        # Separately recycle completed exact-match R32G32B32A32Uint images:
        # 64 MiB/24 entries, independent of the existing BC pool.
        # G720 20261106-192404: 12 RGBA128 exact-image reuses / 320
