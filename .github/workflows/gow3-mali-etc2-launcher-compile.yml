@@ -1,0 +1,49 @@
+name: GoW3 Mali ETC2 launcher and localization - compile only, NO APK
+
+on:
+  push:
+    branches:
+      - analysis/gow3-bachata-mali-memory-20261106
+    paths:
+      - 'android-launcher/app/src/main/java/com/gow3/android/feature/settings/GeneralSettingsScreen.kt'
+      - 'android-launcher/app/src/main/res/values/strings.xml'
+      - 'android-launcher/app/src/main/res/values-pt-rBR/strings.xml'
+      - 'android-launcher/app/src/main/res/values-zh-rCN/strings.xml'
+      - 'tools/android/bionic/run-bionic.sh'
+      - '.github/workflows/gow3-mali-etc2-launcher-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+      - name: Compile resources and Kotlin Bionic launcher, without APK
+        run: |
+          bash android-launcher/gradlew -p android-launcher \
+            :app:compileReleaseKotlin :app:compileReleaseJavaWithJavac \
+            -Pgow3Bionic=true --no-daemon --max-workers=2
+      - name: Verify experimental toggle is wired without affecting Adreno
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          ui = Path('android-launcher/app/src/main/java/com/gow3/android/feature/settings/GeneralSettingsScreen.kt').read_text()
+          script = Path('tools/android/bionic/run-bionic.sh').read_text()
+          assert 'ini["mali_bcn_to_etc2"] == "1"' in ui
+          assert 'Gow3Ini.write(iniFile, mapOf("mali_bcn_to_etc2" to value))' in ui
+          assert 'setting mali_bcn_to_etc2' in script
+          assert script.index('setting mali_bcn_to_etc2') > script.index('*/libvulkan_panfrost.so)')
+          assert 'export GOW3_MALI_BCN_TO_ETC2=' in script
+          print('Bionic-only A/B toggle connected; no APK produced.')
+          PY
