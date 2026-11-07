@@ -205,6 +205,13 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # compiled blocks in L2 on Mali only; no change to guest TSO semantics.
       # =0 restores the previous cache behavior for a controlled A/B.
       export GOW3_FEX_L2_CACHE=${GOW3_FEX_L2_CACHE:-1}
+      # Same God of War III on Bachata glibc/PanVK: FEX performance profile
+      # multiblock=1, maxInst=10000; pinned FEX defaults 1/5000.
+      # Match only the code-block policy on Mali; do NOT copy Bachata's
+      # smc=none because disabling self-modifying-code checks can break games.
+      # 0/5000 independently restore the upstream FEX policy for A/B.
+      export GOW3_FEX_MULTIBLOCK=${GOW3_FEX_MULTIBLOCK:-1}
+      export GOW3_FEX_MAX_INST=${GOW3_FEX_MAX_INST:-10000}
       # PM4 coroutine spin fix: when the only guest submit is waiting for a
       # memory label and there is no command ready, let the FEX producer run.
       # Same-CPU native benchmark: 71ms -> 40ms useful-work completion,
