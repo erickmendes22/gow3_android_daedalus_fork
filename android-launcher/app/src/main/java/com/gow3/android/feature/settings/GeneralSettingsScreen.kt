@@ -48,7 +48,8 @@ import com.gow3.android.ui.components.ScreenColumn
 internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
     onChangeLanguage: (String) -> Unit) {
     val context = LocalContext.current
-    val bionic = context.packageName == "com.gow3.android.bionic"
+    val bionic = context.packageName == "com.gow3.android.bionic" ||
+        context.packageName == "com.gow3.android.bionic.malitest"
     val iniFile = remember(context) { java.io.File(context.filesDir, "gow3port/gow3.ini") }
     var ini by remember { mutableStateOf(Gow3Ini.read(iniFile)) }
     val gameplayPrefs = remember(context) {
