@@ -104,7 +104,31 @@ void main() {
         uvec3 base8 = base4 * 17u;
         uint best_table = 0u, best_indices[8];
         int best_error = 2147483647;
-        for (uint table = 0u; table < 8u; ++table) {
+        // Table candidates are centered on the largest luminance distance
+        // from the quantized endpoint. ETC modifiers grow monotonically,
+        // so evaluating the nearest table and its neighbours avoids the
+        // 8 * 8 * 4 exhaustive RGB error loop on each 4x4 BC block.
+        // Three candidates retain local quality while reducing the number
+        // of expensive RGB-error evaluations by 62.5%.
+        int peak_error = 0;
+        for (uint n = 0u; n < 8u; ++n) {
+            uint x = (n & 1u) + 2u * subblock, y = n >> 1u;
+            ivec3 delta = ivec3(pixels[4u * y + x]) - ivec3(base8);
+            int luminosity_delta = abs((delta.r + delta.g + delta.b) / 3);
+            peak_error = max(peak_error, luminosity_delta);
+        }
+        uint center_table = 0u;
+        int nearest_error = 2147483647;
+        for (uint candidate = 0u; candidate < 8u; ++candidate) {
+            int magnitude_error = abs(BIG_MOD[candidate] - peak_error);
+            if (magnitude_error < nearest_error) {
+                nearest_error = magnitude_error;
+                center_table = candidate;
+            }
+        }
+        uint first_table = center_table == 0u ? 0u : center_table - 1u;
+        uint last_table = min(first_table + 2u, 7u);
+        for (uint table = first_table; table <= last_table; ++table) {
             uint trial_indices[8];
             int total_error = 0;
             for (uint n = 0u; n < 8u; ++n) {
@@ -154,21 +178,26 @@ void main() {
     // Do not copy BC3's little-endian row-major selector packing here.
     uint alpha_be_hi = (uint(alpha_base) << 24u) | (multiplier << 20u);
     uint alpha_be_lo = 0u;
-    for (uint i = 0u; i < 16u; ++i) {
-        uint x = i / 4u, y = i % 4u;
-        uint best = 0u;
-        int best_error = 2147483647;
-        for (uint j = 0u; j < 8u; ++j) {
-            int candidate = clamp(alpha_base + ALPHA_MOD[j] * int(multiplier), 0, 255);
-            int error = abs(int(alphas[4u * y + x]) - candidate);
-            if (error < best_error) { best = j; best_error = error; }
+    // Opaque BC1 and constant-alpha BC3 need no per-texel EAC search.
+    // EAC multiplier 0 means all eight modifiers are zero; every selector
+    // decodes identically to alpha_base. Preserve these blocks exactly.
+    if (min_alpha != max_alpha) {
+        for (uint i = 0u; i < 16u; ++i) {
+            uint x = i / 4u, y = i % 4u;
+            uint best = 0u;
+            int best_error = 2147483647;
+            for (uint j = 0u; j < 8u; ++j) {
+                int candidate = clamp(alpha_base + ALPHA_MOD[j] * int(multiplier), 0, 255);
+                int error = abs(int(alphas[4u * y + x]) - candidate);
+                if (error < best_error) { best = j; best_error = error; }
+            }
+            uint bit = 45u - 3u * i;
+            if (bit >= 32u) alpha_be_hi |= best << (bit - 32u);
+            else if (bit >= 30u) {
+                alpha_be_hi |= best >> (32u - bit);
+                alpha_be_lo |= best << bit;
+            } else alpha_be_lo |= best << bit;
         }
-        uint bit = 45u - 3u * i;
-        if (bit >= 32u) alpha_be_hi |= best << (bit - 32u);
-        else if (bit >= 30u) {
-            alpha_be_hi |= best >> (32u - bit);
-            alpha_be_lo |= best << bit;
-        } else alpha_be_lo |= best << bit;
     }
 
     uint out_idx = (block.y * pc.blocks_x + block.x) * 4u;
