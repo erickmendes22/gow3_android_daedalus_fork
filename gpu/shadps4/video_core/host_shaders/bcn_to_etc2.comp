@@ -146,7 +146,9 @@ void main() {
     // EAC alpha: table zero supports both negative and positive modifiers.
     // Center the base, select a range-fitting multiplier and nearest index.
     int alpha_base = int((min_alpha + max_alpha) / 2u);
-    uint multiplier = clamp((max_alpha - min_alpha + 28u) / 29u, 1u, 15u);
+    // Zero multiplier is legal and preserves constant alpha exactly.
+    uint multiplier = max_alpha == min_alpha ? 0u
+                      : clamp((max_alpha - min_alpha + 28u) / 29u, 1u, 15u);
     // EAC selectors are 48 bits MSB-first, in COLUMN-major pixel order.
     // Two big-endian 32-bit words: [base,mult|table,indices0..] and [indices..].
     // Do not copy BC3's little-endian row-major selector packing here.
