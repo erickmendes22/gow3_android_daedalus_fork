@@ -736,11 +736,14 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     // Mali-only *host* BC1/BC3 -> ETC2 transcode. The guest image format,
     // guest_size, tiling and mip metadata remain BCn; only the physical image
     // format changes. Never use this for storage/attachment, 3D or MSAA.
-    // Default OFF until same-scene PanVK correctness and FPS are verified.
+    // Automatic PanVK path, not an end-user switch. ETC2 requires the
+    // native format/usage capability query below; unsupported drivers always
+    // keep their original BC backing. Only a developer env override can
+    // disable this path for regression isolation.
     const char* etc2_opt = std::getenv("GOW3_MALI_BCN_TO_ETC2");
     const bool want_etc2 = std::getenv("GOW3_ANDROID_PORT") &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
-                           etc2_opt && etc2_opt[0] == '1' &&
+                           (!etc2_opt || etc2_opt[0] != '0') &&
                            info.props.is_block && !info.props.is_volume &&
                            info.type == AmdGpu::ImageType::Color2D &&
                            info.resources.layers == 1 && info.num_samples == 1;
