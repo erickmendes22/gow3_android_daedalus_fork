@@ -12,6 +12,14 @@ on:
       - 'cpu/guest_cpu_fex.cpp'
       - 'tests/test_mali_fex_l2_cache.py'
       - 'tools/android/bionic/run-bionic.sh'
+      - 'gpu/shadps4/video_core/host_shaders/bcn_to_etc2.comp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.h'
+      - 'gpu/shadps4/video_core/texture_cache/image.h'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
+      - 'gpu/CMakeLists.txt'
+      - 'tests/test_mali_bcn_to_etc2.py'
   workflow_dispatch:
 
 permissions:
@@ -41,6 +49,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_fex_l2_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
@@ -58,7 +67,13 @@ jobs:
       - name: Build pinned Android dependencies
         shell: bash -el {0}
         run: bash tools/android/bionic/build_deps.sh
-      - name: Compile real ARM64 Vulkan renderer with new image rebind code
+      - name: Compile Vulkan BC1/BC3 to ETC2 shader to SPIR-V
+        shell: bash -el {0}
+        run: |
+          glslangValidator --target-env vulkan1.3 -o /tmp/gow3_bc_to_etc2.spv \
+            gpu/shadps4/video_core/host_shaders/bcn_to_etc2.comp
+          test -s /tmp/gow3_bc_to_etc2.spv
+      - name: Compile real ARM64 Vulkan renderer including transcode
         shell: bash -el {0}
         run: |
           bash tools/android/bionic/build_cpu.sh
