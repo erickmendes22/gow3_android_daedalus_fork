@@ -10,6 +10,7 @@ on:
       - 'android-launcher/app/src/main/res/values-pt-rBR/strings.xml'
       - 'android-launcher/app/src/main/res/values-zh-rCN/strings.xml'
       - 'tools/android/bionic/run-bionic.sh'
+      - 'tests/test_mali_bcn_to_etc2.py'
       - '.github/workflows/gow3-mali-etc2-launcher-compile.yml'
   workflow_dispatch:
 
