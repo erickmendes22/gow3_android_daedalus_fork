@@ -41,7 +41,7 @@ def pack_eac_alpha_indices(selectors, base=137, multiplier=5):
             lo |= sel << bit
         else:
             lo |= sel << bit
-    return hi.to_bytes(4, "big") + lo.to_bytes(4, "big")
+    return (hi & 0xffffffff).to_bytes(4, "big") + (lo & 0xffffffff).to_bytes(4, "big")
 
 
 class TestMaliBcnToEtc2(unittest.TestCase):
