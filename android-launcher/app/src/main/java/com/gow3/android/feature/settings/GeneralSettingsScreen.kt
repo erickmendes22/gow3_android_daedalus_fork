@@ -153,6 +153,18 @@ internal fun GeneralSettingsScreen(saves: SaveManager, logs: LogManager,
         }
         Text(stringResource(R.string.settings_driver_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         GpuDriverCard()
+        if (bionic) {
+            GameplayPreferenceSwitch(
+                stringResource(R.string.settings_mali_bcn_etc2_title),
+                stringResource(R.string.settings_mali_bcn_etc2_desc),
+                ini["mali_bcn_to_etc2"] == "1"
+            ) { enabled ->
+                val value = if (enabled) "1" else "0"
+                if (Gow3Ini.write(iniFile, mapOf("mali_bcn_to_etc2" to value)))
+                    ini = ini + ("mali_bcn_to_etc2" to value)
+                else showResult(context.getString(R.string.settings_save_failed))
+            }
+        }
         Text(stringResource(R.string.settings_saves_section), color = LauncherColors.gold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         SaveCard(
             hasSaves = hasSaves,
