@@ -237,6 +237,13 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Explicitly off until native shader validation and hardware A/B.
       # Does NOT change the guest's BC bytes, mip addresses or GoW III patches.
       # =1 enables; =0 restores the existing PanVK BC image route.
+      # The Bionic settings UI writes this persistent experiment flag.
+      # A deliberately supplied process environment value (including 0)
+      # wins over the UI, allowing independent on-device A/B rollback.
+      if [ -z "${GOW3_MALI_BCN_TO_ETC2+x}" ] &&
+         [ "$(setting mali_bcn_to_etc2)" = 1 ]; then
+        export GOW3_MALI_BCN_TO_ETC2=1
+      fi
       export GOW3_MALI_BCN_TO_ETC2=${GOW3_MALI_BCN_TO_ETC2:-0}
        # Separately recycle completed exact-match R32G32B32A32Uint images:
        # 64 MiB/24 entries, independent of the existing BC pool.
