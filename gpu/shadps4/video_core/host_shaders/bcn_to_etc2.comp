@@ -147,28 +147,31 @@ void main() {
     // Center the base, select a range-fitting multiplier and nearest index.
     int alpha_base = int((min_alpha + max_alpha) / 2u);
     uint multiplier = clamp((max_alpha - min_alpha + 28u) / 29u, 1u, 15u);
-    uint alpha_words[2];
-    alpha_words[0] = uint(alpha_base) | (multiplier << 8u);
-    alpha_words[1] = 0u;
+    // EAC selectors are 48 bits MSB-first, in COLUMN-major pixel order.
+    // Two big-endian 32-bit words: [base,mult|table,indices0..] and [indices..].
+    // Do not copy BC3's little-endian row-major selector packing here.
+    uint alpha_be_hi = (uint(alpha_base) << 24u) | (multiplier << 20u);
+    uint alpha_be_lo = 0u;
     for (uint i = 0u; i < 16u; ++i) {
+        uint x = i / 4u, y = i % 4u;
         uint best = 0u;
         int best_error = 2147483647;
         for (uint j = 0u; j < 8u; ++j) {
             int candidate = clamp(alpha_base + ALPHA_MOD[j] * int(multiplier), 0, 255);
-            int error = abs(int(alphas[i]) - candidate);
+            int error = abs(int(alphas[4u * y + x]) - candidate);
             if (error < best_error) { best = j; best_error = error; }
         }
-        uint bit = 16u + 3u * i;
-        if (bit <= 29u) alpha_words[0] |= best << bit;
-        else if (bit < 32u) {
-            alpha_words[0] |= best << bit;
-            alpha_words[1] |= best >> (32u - bit);
-        } else alpha_words[1] |= best << (bit - 32u);
+        uint bit = 45u - 3u * i;
+        if (bit >= 32u) alpha_be_hi |= best << (bit - 32u);
+        else if (bit >= 30u) {
+            alpha_be_hi |= best >> (32u - bit);
+            alpha_be_lo |= best << bit;
+        } else alpha_be_lo |= best << bit;
     }
 
     uint out_idx = (block.y * pc.blocks_x + block.x) * 4u;
-    etc[out_idx] = alpha_words[0];
-    etc[out_idx + 1u] = alpha_words[1];
+    etc[out_idx] = swap32(alpha_be_hi);
+    etc[out_idx + 1u] = swap32(alpha_be_lo);
     etc[out_idx + 2u] = swap32(high);
     etc[out_idx + 3u] = swap32(low);
 }
