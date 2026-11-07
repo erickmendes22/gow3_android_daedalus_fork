@@ -326,6 +326,27 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
         FEXCore::Config::Set(FEXCore::Config::CONFIG_DISABLEL2CACHE,
                              enable_l2 ? "0" : "1");
     }
+    // Bachata's *same-game* PanVK capture runs FEX multiblock=1 and MaxInst=10000,
+    // whereas our pinned FEX defaults MaxInst=5000. Match its JIT block-size
+    // policy on the Mali profile without touching x86 TSO or SMC invalidation.
+    // Each option has an independent explicit rollback (0 / 5000).
+    const char* multiblock_opt = std::getenv("GOW3_FEX_MULTIBLOCK");
+    const bool multiblock_valid = multiblock_opt &&
+        (std::strcmp(multiblock_opt, "0") == 0 ||
+         std::strcmp(multiblock_opt, "1") == 0);
+    if (multiblock_valid) {
+        FEXCore::Config::Set(FEXCore::Config::CONFIG_MULTIBLOCK, multiblock_opt);
+    }
+    const char* max_inst_opt = std::getenv("GOW3_FEX_MAX_INST");
+    const bool max_inst_valid = max_inst_opt &&
+        (std::strcmp(max_inst_opt, "5000") == 0 ||
+         std::strcmp(max_inst_opt, "10000") == 0);
+    if (max_inst_valid) {
+        FEXCore::Config::Set(FEXCore::Config::CONFIG_MAXINST, max_inst_opt);
+    }
+    std::printf("GOW3_FEX_BACHATA_PARITY multiblock=%s max_inst=%s smc=unchanged tso=unchanged\\n",
+                multiblock_valid ? multiblock_opt : "unchanged",
+                max_inst_valid ? max_inst_opt : "unchanged");
     std::printf("GOW3_FEX_CACHE dynamic_l1=%d l2_lookup=%s disk_cache=unchanged tso=unchanged\n",
                 int(dynamic_l1), change_l2 ? (enable_l2 ? "on" : "off") : "unchanged");
     const auto features = FEX::FetchHostFeatures();
