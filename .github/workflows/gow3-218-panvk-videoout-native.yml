@@ -122,10 +122,11 @@ concurrency:
 
 jobs:
   build:
-    # Hold the G720 analysis branch until sustained frame cost, not just cold
-    # allocation stalls, has a material source-backed reduction. Native-only
-    # verification remains enabled; no premature signed diagnostic APK.
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105'
+    # One isolated cumulative Mali APK is required to measure actual device FPS:
+    # CPU L2 JIT + retired image reuse + image barriers + BC3/BC1 ETC2 compute.
+    # Real-world performance cannot be proved by CI synthetic tests alone.
+    # Separate package/signing identity keeps the installed stable port safe.
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -157,6 +158,7 @@ jobs:
               python3 -m unittest discover -s tests -p 'test_mali_rgba128_image_pool.py' -v
               python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
               python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
+              python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
             fi
           else
             python3 -m unittest discover -s tests -p 'test_mali_draw_perf_gate.py' -v
