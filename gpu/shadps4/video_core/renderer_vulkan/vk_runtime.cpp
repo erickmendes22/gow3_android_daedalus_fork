@@ -11,12 +11,187 @@
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
+#include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/host_shaders/bcn_to_etc2_comp.h"
+#include <array>
+#include <algorithm>
+#include <limits>
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace Vulkan {
+
+// Pipeline and descriptor lifetime are owned by Runtime. All scratch buffers are
+// allocated from the existing GPU-tick-aware staging pool, not CPU-mapped RGBA.
+struct BcnTranscodeState {
+    const Instance& instance;
+    Scheduler& scheduler;
+    const std::array<vk::DescriptorPoolSize, 1> sizes{{
+        {vk::DescriptorType::eStorageBuffer, 256},
+    }};
+    DescriptorHeap descriptor_heap;
+    vk::UniqueDescriptorSetLayout descriptor_layout;
+    vk::UniquePipelineLayout pipeline_layout;
+    vk::UniquePipeline pipeline;
+
+    struct Params {
+        u32 blocks_x;
+        u32 blocks_y;
+        u32 input_row_blocks;
+        u32 input_base_words;
+        u32 bc_words;
+    };
+    static_assert(sizeof(Params) == 20);
+
+    BcnTranscodeState(const Instance& inst, Scheduler& sched)
+        : instance{inst}, scheduler{sched},
+          descriptor_heap{inst, sched.GetWorkSemaphore(), sizes, 128} {
+        const auto device = instance.GetDevice();
+        const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+            {.binding = 0, .descriptorType = vk::DescriptorType::eStorageBuffer,
+             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+            {.binding = 1, .descriptorType = vk::DescriptorType::eStorageBuffer,
+             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        }};
+        const vk::DescriptorSetLayoutCreateInfo descriptor_ci{
+            .bindingCount = static_cast<u32>(bindings.size()),
+            .pBindings = bindings.data(),
+        };
+        auto [layout_result, layout] = device.createDescriptorSetLayoutUnique(descriptor_ci);
+        ASSERT_MSG(layout_result == vk::Result::eSuccess,
+                   "Mali ETC2 descriptor layout failed: {}", vk::to_string(layout_result));
+        descriptor_layout = std::move(layout);
+        const vk::DescriptorSetLayout raw_layout = *descriptor_layout;
+        const vk::PushConstantRange pc_range{
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            .offset = 0, .size = sizeof(Params),
+        };
+        const vk::PipelineLayoutCreateInfo pipeline_layout_ci{
+            .setLayoutCount = 1,
+            .pSetLayouts = &raw_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &pc_range,
+        };
+        auto [pl_result, pl] = device.createPipelineLayoutUnique(pipeline_layout_ci);
+        ASSERT_MSG(pl_result == vk::Result::eSuccess,
+                   "Mali ETC2 pipeline layout failed: {}", vk::to_string(pl_result));
+        pipeline_layout = std::move(pl);
+        const auto shader = CompileSPV(std::span<const u32>{BCN_TO_ETC2_COMP}, device);
+        const vk::PipelineShaderStageCreateInfo shader_ci{
+            .stage = vk::ShaderStageFlagBits::eCompute, .module = shader, .pName = "main",
+        };
+        const vk::ComputePipelineCreateInfo pipeline_ci{
+            .stage = shader_ci, .layout = *pipeline_layout,
+        };
+        auto [p_result, p] = device.createComputePipelineUnique(VK_NULL_HANDLE, pipeline_ci);
+        device.destroyShaderModule(shader);
+        ASSERT_MSG(p_result == vk::Result::eSuccess,
+                   "Mali BCn-to-ETC2 compute pipeline failed: {}", vk::to_string(p_result));
+        pipeline = std::move(p);
+        std::printf("GOW3_MALI_BCN_TO_ETC2 compute pipeline ready\n");
+    }
+
+    bool Record(VideoCore::Image* dst, const VideoCore::Buffer* src,
+                std::span<const vk::BufferImageCopy> copies, StagingBufferPool& staging) {
+        const vk::Format guest = dst->info.pixel_format;
+        const bool bc1 = guest == vk::Format::eBc1RgbaUnormBlock ||
+                         guest == vk::Format::eBc1RgbaSrgbBlock;
+        const bool bc3 = guest == vk::Format::eBc3UnormBlock ||
+                         guest == vk::Format::eBc3SrgbBlock;
+        if (!bc1 && !bc3) return false;
+        const u32 words = bc1 ? 2u : 4u;
+        const auto& limits = instance.GetPhysicalDevice().getProperties().limits;
+        const u64 alignment = std::max<u64>(16, limits.minStorageBufferOffsetAlignment);
+        const auto device = instance.GetDevice();
+        for (const auto& copy : copies) {
+            if (copy.imageExtent.depth != 1 || !copy.imageExtent.width ||
+                !copy.imageExtent.height || !copy.imageSubresource.layerCount ||
+                copy.imageOffset.z != 0 || copy.imageOffset.x < 0 || copy.imageOffset.y < 0)
+                return false;
+            const u32 blocks_x = (copy.imageExtent.width + 3u) / 4u;
+            const u32 blocks_y = (copy.imageExtent.height + 3u) / 4u;
+            const u32 row_texels = copy.bufferRowLength ? copy.bufferRowLength : copy.imageExtent.width;
+            const u32 rows_texels = copy.bufferImageHeight ? copy.bufferImageHeight : copy.imageExtent.height;
+            if (row_texels < copy.imageExtent.width || rows_texels < copy.imageExtent.height)
+                return false;
+            const u32 src_row_blocks = (row_texels + 3u) / 4u;
+            const u32 src_rows_blocks = (rows_texels + 3u) / 4u;
+            const u64 layer_stride = u64(src_row_blocks) * src_rows_blocks * words * 4;
+            const u64 last_bytes = (u64(blocks_y - 1u) * src_row_blocks + blocks_x) * words * 4;
+            const u64 output_bytes = u64(blocks_x) * blocks_y * 16;
+            if (output_bytes > limits.maxStorageBufferRange ||
+                last_bytes > limits.maxStorageBufferRange)
+                return false;
+            for (u32 layer = 0; layer < copy.imageSubresource.layerCount; ++layer) {
+                const u64 source_start = copy.bufferOffset + u64(layer) * layer_stride;
+                const u64 base = (source_start / alignment) * alignment;
+                const u64 in_range = source_start - base + last_bytes;
+                if (base > src->SizeBytes() || in_range > src->SizeBytes() - base ||
+                    in_range > limits.maxStorageBufferRange ||
+                    source_start - base > std::numeric_limits<u32>::max())
+                    return false;
+                const auto scratch = staging.Request(output_bytes, VideoCore::MemoryType::DeviceLocal,
+                                                     alignment, true);
+                const vk::DescriptorBufferInfo in{
+                    .buffer = src->Handle(), .offset = base, .range = in_range,
+                };
+                const vk::DescriptorBufferInfo out{
+                    .buffer = scratch.buffer->Handle(), .offset = scratch.offset,
+                    .range = output_bytes,
+                };
+                const vk::DescriptorSet set = descriptor_heap.Commit(*descriptor_layout);
+                const std::array<vk::WriteDescriptorSet, 2> writes{{
+                    {.dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &in},
+                    {.dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &out},
+                }};
+                device.updateDescriptorSets(writes, {});
+                const Params params{
+                    blocks_x, blocks_y, src_row_blocks,
+                    static_cast<u32>((source_start - base) / 4u), words,
+                };
+                vk::BufferImageCopy out_copy = copy;
+                out_copy.bufferOffset = scratch.offset;
+                out_copy.bufferRowLength = 0;
+                out_copy.bufferImageHeight = 0;
+                out_copy.imageSubresource.baseArrayLayer += layer;
+                out_copy.imageSubresource.layerCount = 1;
+                const vk::BufferMemoryBarrier2 scratch_barrier{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                    .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                    .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+                    .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .buffer = scratch.buffer->Handle(),
+                    .offset = scratch.offset,
+                    .size = output_bytes,
+                };
+                scheduler.Record([pipeline = *pipeline, layout = *pipeline_layout,
+                                  image = dst->GetImage(), scratch_buffer = scratch.buffer->Handle(),
+                                  set, params, out_copy, scratch_barrier](vk::CommandBuffer cb) {
+                    cb.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+                    cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, set, {});
+                    cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute,
+                                     0, sizeof(Params), &params);
+                    cb.dispatch((params.blocks_x + 7u) / 8u, (params.blocks_y + 7u) / 8u, 1);
+                    const vk::DependencyInfo barrier{
+                        .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &scratch_barrier,
+                    };
+                    cb.pipelineBarrier2(barrier);
+                    cb.copyBufferToImage(scratch_buffer, image,
+                                         vk::ImageLayout::eTransferDstOptimal, out_copy);
+                });
+                staging.FreeDeferred(scratch);
+            }
+        }
+        return true;
+    }
+};
 
 static vk::ImageType ConvertImageType(AmdGpu::ImageType type) noexcept {
     switch (type) {
@@ -118,6 +293,8 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
         (!split || split[0] != '0');
 #endif
 }
+
+Runtime::~Runtime() = default;
 
 void Runtime::TickFrame() {
     staging_pool.TickFrame();
@@ -253,6 +430,20 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
     }
     if (needs_flush) {
         FlushBarriers();
+    }
+
+    if (dst->transcoded_bc_to_etc2) {
+        if (!bcn_transcode) bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler);
+        const bool recorded = bcn_transcode->Record(dst, src, upload_copies, staging_pool);
+        ASSERT_MSG(recorded, "Mali BC1/BC3 -> ETC2 upload region is not supported");
+        for (const auto& copy : upload_copies) {
+            const auto copy_size = BufferImageCopySize(copy, dst->info.pixel_format);
+            AccessBuffer(src, copy.bufferOffset, copy_size,
+                         vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderRead);
+        }
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+        return;
     }
 
     scheduler.Record([src_handle = src->Handle(), image = dst->GetImage(),
