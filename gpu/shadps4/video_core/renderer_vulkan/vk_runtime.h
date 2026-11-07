@@ -19,6 +19,7 @@ namespace Vulkan {
 
 class GpuProfiler;
 class SceneTargets;
+struct BcnTranscodeState;
 
 class Instance;
 class Scheduler;
@@ -26,7 +27,7 @@ class Scheduler;
 class Runtime {
 public:
     explicit Runtime(const Instance& instance, Scheduler& scheduler);
-    ~Runtime() = default;
+    ~Runtime();
 
     Scheduler& GetScheduler() {
         return scheduler;
@@ -120,6 +121,7 @@ private:
     Scheduler& scheduler;
     std::unique_ptr<VideoCore::BlitHelper> blit_helper;
     StagingBufferPool staging_pool;
+    std::unique_ptr<BcnTranscodeState> bcn_transcode;
     BarrierTracker barrier_tracker;
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};
