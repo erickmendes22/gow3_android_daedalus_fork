@@ -725,7 +725,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     }
 
     constexpr auto tiling = vk::ImageTiling::eOptimal;
-    const auto supported_format = instance.GetSupportedFormat(info.pixel_format, format_features);
+    auto supported_format = instance.GetSupportedFormat(info.pixel_format, format_features);
     vk::PhysicalDeviceImageFormatInfo2 format_info{
         .format = supported_format,
         .type = ConvertImageType(info.type),
@@ -733,6 +733,55 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         .usage = usage_flags,
         .flags = flags,
     };
+    // Mali-only *host* BC1/BC3 -> ETC2 transcode. The guest image format,
+    // guest_size, tiling and mip metadata remain BCn; only the physical image
+    // format changes. Never use this for storage/attachment, 3D or MSAA.
+    // Default OFF until same-scene PanVK correctness and FPS are verified.
+    const char* etc2_opt = std::getenv("GOW3_MALI_BCN_TO_ETC2");
+    const bool want_etc2 = std::getenv("GOW3_ANDROID_PORT") &&
+                           instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                           etc2_opt && etc2_opt[0] == '1' &&
+                           info.props.is_block && !info.props.is_volume &&
+                           info.type == AmdGpu::ImageType::Color2D &&
+                           info.resources.layers == 1 && info.num_samples == 1;
+    const bool bc1 = info.pixel_format == vk::Format::eBc1RgbaUnormBlock ||
+                     info.pixel_format == vk::Format::eBc1RgbaSrgbBlock;
+    const bool bc3 = info.pixel_format == vk::Format::eBc3UnormBlock ||
+                     info.pixel_format == vk::Format::eBc3SrgbBlock;
+    if (want_etc2 && (bc1 || bc3)) {
+        const bool srgb = info.pixel_format == vk::Format::eBc1RgbaSrgbBlock ||
+                          info.pixel_format == vk::Format::eBc3SrgbBlock;
+        const vk::Format target = srgb ? vk::Format::eEtc2R8G8B8A8SrgbBlock
+                                       : vk::Format::eEtc2R8G8B8A8UnormBlock;
+        constexpr auto required = vk::FormatFeatureFlagBits2::eSampledImage |
+                                  vk::FormatFeatureFlagBits2::eTransferSrc |
+                                  vk::FormatFeatureFlagBits2::eTransferDst;
+        const auto target_usage = vk::ImageUsageFlagBits::eSampled |
+                                  vk::ImageUsageFlagBits::eTransferDst |
+                                  vk::ImageUsageFlagBits::eTransferSrc;
+        // ETC2 storage images do not exist. BCn's speculative storage and
+        // Mutable/ExtendedUsage flags cannot be carried to the ETC2 backing.
+        auto etc2_info = format_info;
+        etc2_info.format = target;
+        etc2_info.usage = target_usage;
+        etc2_info.flags = {};
+        if (instance.IsFormatSupported(target, required) &&
+            ProbeImageFormat(instance, etc2_info).result == vk::Result::eSuccess) {
+            format_info = etc2_info;
+            supported_format = target;
+            usage_flags = target_usage;
+            format_features = FormatFeatureFlags(usage_flags);
+            flags = {};
+            transcoded_bc_to_etc2 = true;
+            static std::atomic<u32> selected{0};
+            if (selected.fetch_add(1, std::memory_order_relaxed) < 12)
+                std::printf("GOW3_MALI_BCN_TO_ETC2 guest=%s host=%s %ux%u mips=%u\\n",
+                            vk::to_string(info.pixel_format).c_str(),
+                            vk::to_string(target).c_str(), info.size.width,
+                            info.size.height, info.resources.levels);
+        }
+    }
+
     auto image_format_properties =
         ProbeImageFormat(instance, format_info);
     // gow3: storage usage is speculative (see ImageUsageFlags). Drivers that refuse it for a
