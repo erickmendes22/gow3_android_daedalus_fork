@@ -26,6 +26,7 @@ on:
       - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
       - 'tests/test_mali_pm4_unused_dirty.py'
       - 'tests/test_mali_bc_image_pool.py'
+      - 'tests/test_mali_bcn_to_etc2.py'
       - 'tests/test_mali_scene_image_retention.py'
       - 'tests/test_mali_rgba128_image_pool.py'
       - 'tests/test_mali_bc_alias_retirement.py'
