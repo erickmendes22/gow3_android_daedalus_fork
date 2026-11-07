@@ -18,6 +18,12 @@ on:
       - 'gpu/shadps4/video_core/amdgpu/liverpool.h'
       - 'gpu/shim/gow3_copy.cpp'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'gpu/shadps4/video_core/host_shaders/bcn_to_etc2.comp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_runtime.h'
+      - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/image.h'
+      - 'tests/test_mali_bcn_to_etc2.py'
       - 'tools/android/bionic/run-bionic.sh'
       - 'tests/test_mali_scene_image_retention.py'
       - 'tests/test_mali_vma_block_policy.py'
@@ -44,6 +50,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends g++ libvulkan-dev libvulkan1 mesa-vulkan-drivers
+      - name: Validate actual GPU BC1/BC3 to ETC2 shader and EAC bitstream
+        run: |
+          sudo apt-get install -y --no-install-recommends glslang-tools spirv-tools
+          glslangValidator -V --target-env vulkan1.3 -o /tmp/gow3_bcn_etc2.spv \
+            gpu/shadps4/video_core/host_shaders/bcn_to_etc2.comp
+          spirv-val --target-env vulkan1.3 /tmp/gow3_bcn_etc2.spv
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
       - name: Compile and run real Vulkan worker-cache, merge and restore experiment
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread \
