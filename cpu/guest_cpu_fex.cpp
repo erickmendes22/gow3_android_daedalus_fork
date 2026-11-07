@@ -344,7 +344,7 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     if (max_inst_valid) {
         FEXCore::Config::Set(FEXCore::Config::CONFIG_MAXINST, max_inst_opt);
     }
-    std::printf("GOW3_FEX_BACHATA_PARITY multiblock=%s max_inst=%s smc=unchanged tso=unchanged\\n",
+    std::printf("GOW3_FEX_BACHATA_PARITY multiblock=%s max_inst=%s smc=unchanged tso=unchanged\n",
                 multiblock_valid ? multiblock_opt : "unchanged",
                 max_inst_valid ? max_inst_opt : "unchanged");
     std::printf("GOW3_FEX_CACHE dynamic_l1=%d l2_lookup=%s disk_cache=unchanged tso=unchanged\n",
