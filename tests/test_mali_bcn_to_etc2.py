@@ -115,13 +115,28 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('vk::AccessFlagBits2::eShaderRead', RUNTIME)
         self.assertIn('ASSERT_MSG(recorded', RUNTIME)
 
-    def test_disabled_by_default_no_adreno_change(self):
-        self.assertIn('GOW3_MALI_BCN_TO_ETC2=' + '$' + '{GOW3_MALI_BCN_TO_ETC2:-0}', RUN)
+    def test_automatic_default_supported_mali_only_no_user_toggle(self):
+        self.assertIn('GOW3_MALI_BCN_TO_ETC2=' + '
+
+if __name__ == "__main__":
+    unittest.main()
+ + '{GOW3_MALI_BCN_TO_ETC2:-1}', RUN)
+        self.assertIn("(!etc2_opt || etc2_opt[0] != '0')", IMAGE)
+        self.assertIn('vendorID == 0x13B5', IMAGE)
+        self.assertIn('instance.IsFormatSupported(target, required)', IMAGE)
+        self.assertIn('ProbeImageFormat(instance, etc2_info)', IMAGE)
+        self.assertIn('transcoded_bc_to_etc2 = true', IMAGE)
         mali = RUN.split('  */libvulkan_panfrost.so)', 1)[1].split(
             '# End Mali PanVK safe profile.', 1)[0]
         self.assertIn('export GOW3_MALI_BCN_TO_ETC2=', mali)
         self.assertNotIn('export GOW3_MALI_BCN_TO_ETC2=', RUN.split(
             '  */libvulkan_panfrost.so)', 1)[0])
+        ui = (ROOT / "android-launcher/app/src/main/java/com/gow3/android/feature/settings/GeneralSettingsScreen.kt").read_text()
+        self.assertNotIn('mali_bcn_to_etc2', ui)
+        for locale in ("values", "values-pt-rBR", "values-zh-rCN"):
+            strings = (ROOT / "android-launcher/app/src/main/res" / locale / "strings.xml").read_text()
+            self.assertNotIn("settings_mali_bcn_etc2", strings)
+        self.assertNotIn('setting mali_bcn_to_etc2', RUN)
 
 
 if __name__ == "__main__":
