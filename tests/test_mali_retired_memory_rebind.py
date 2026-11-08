@@ -29,6 +29,27 @@ static_assert(CanRebindRetiredImageMemory(8*1024*1024, 65536, 0x02, false,
     9*1024*1024, 0, 1, false));
 static_assert(!CanRebindRetiredImageMemory(8*1024*1024, 65536, 0x02, false,
     12*1024*1024, 0, 1, false));
+// ETC2-only policy: reuse already-retired compatible Vulkan memory with
+// up to 100% slack, maximum 8 MiB. This does not invent extra cached textures.
+static_assert(CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, false,
+    12*1024*1024, 0, 1, false, true));
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, false,
+    12*1024*1024, 0, 1, false));
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, false,
+    13*1024*1024, 0, 1, false, true));
+static_assert(CanRebindRetiredImageMemory(24*1024*1024, 65536, 0x02, false,
+    32*1024*1024, 0, 1, false, true));
+static_assert(!CanRebindRetiredImageMemory(24*1024*1024, 65536, 0x02, false,
+    33*1024*1024, 0, 1, false, true));
+// Relaxation does not weaken safety for Vulkan requirements.
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, false,
+    12*1024*1024, 0, 1, true, true));
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, true,
+    12*1024*1024, 0, 1, false, true));
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x04, false,
+    12*1024*1024, 0, 1, false, true));
+static_assert(!CanRebindRetiredImageMemory(6*1024*1024, 65536, 0x02, false,
+    12*1024*1024, 4096, 1, false, true));
 // Dedicated VMA allocation can be bound only to its original VkImage.
 static_assert(!CanRebindRetiredImageMemory(8*1024*1024, 65536, 0x02, false,
     8*1024*1024, 0, 1, true));
@@ -62,6 +83,9 @@ int main() { return 0; }
         self.assertIn("pool.images.push_back({image, allocation, allocator, raw, bytes, memory_info});", IMAGE)
         self.assertIn("dedicated.requiresDedicatedAllocation", IMAGE)
         self.assertIn("CanRebindRetiredImageMemory(", IMAGE)
+        self.assertIn("const bool etc2_target = IsEtc2Image(requested);", IMAGE)
+        self.assertIn("etc2_target))", IMAGE)
+        self.assertNotIn("candidate.bytes - requirements.size > requirements.size / 4", IMAGE)
         self.assertIn("info.allocationInfo.memoryType, info.dedicatedMemory", IMAGE)
         old_destroy = IMAGE.index("device.destroyImage(vk::Image{retired.image});")
         new_bind = IMAGE.index("vmaBindImageMemory(allocator, retired.allocation, new_handle)")
