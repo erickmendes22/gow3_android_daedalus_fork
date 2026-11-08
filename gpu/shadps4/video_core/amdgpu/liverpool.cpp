@@ -190,12 +190,21 @@ void Liverpool::Process(std::stop_token stoken) {
                 task = queue.submits.front();
             }
             if (Vulkan::MaliPerfStats::SamplePm4Resume()) {
+                const auto cpu_before = Vulkan::MaliPerfStats::ThreadCpuNs();
                 const auto resume_start = Vulkan::MaliPerfStats::Clock::now();
                 task.resume();
+                const auto cpu_after = Vulkan::MaliPerfStats::ThreadCpuNs();
+                const bool still_blocked = gfx_blocked_fiber_wait;
                 Vulkan::MaliPerfStats::Record(
-                    gfx_blocked_fiber_wait ? Vulkan::MaliPerfStats::Stage::Pm4ResumeBlocked
-                                           : Vulkan::MaliPerfStats::Stage::Pm4ResumeWork,
+                    still_blocked ? Vulkan::MaliPerfStats::Stage::Pm4ResumeBlocked
+                                  : Vulkan::MaliPerfStats::Stage::Pm4ResumeWork,
                     resume_start);
+                if (cpu_before && cpu_after >= cpu_before) {
+                    Vulkan::MaliPerfStats::RecordDuration(
+                        still_blocked ? Vulkan::MaliPerfStats::Stage::Pm4ResumeCpuBlocked
+                                      : Vulkan::MaliPerfStats::Stage::Pm4ResumeCpuWork,
+                        cpu_after - cpu_before);
+                }
             } else {
                 task.resume();
             }
