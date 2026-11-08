@@ -32,7 +32,11 @@ class MaliVkAllocationPolicy(unittest.TestCase):
         self.assertIn('if (recycle_bc || mali_rgba_cold_allocation)', IMAGE)
         self.assertIn('ReclaimIdleImagesBeforeAllocate(allocator, image_ci_unsafe)', IMAGE)
         self.assertIn('VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT', IMAGE)
-        self.assertIn('if ((recycle_bc || mali_rgba_cold_allocation) && allocation_ms >= 25.0)', IMAGE)
+        # G615's 78ms non-BC/non-RGBA allocation must also be reported,
+        # but VMA reclamation itself remains restricted to safe pool classes.
+        self.assertIn('if ((recycle_bc || mali_rgba_cold_allocation ||', IMAGE)
+        self.assertIn('Vulkan::MaliPerfStats::Enabled()) && allocation_ms >= 25.0)', IMAGE)
+        self.assertIn('GOW3_MALI_SLOW_IMAGE_ALLOC ms=', IMAGE)
         self.assertIn('GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-1}', RUN)
 
     def test_immediate_free_only_for_copy_free_completed_alias(self):
