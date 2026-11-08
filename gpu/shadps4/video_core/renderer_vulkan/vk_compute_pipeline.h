@@ -50,6 +50,12 @@ public:
                     vk::ShaderModule module, SerializationSupport& sdata, bool preloading);
     ~ComputePipeline();
 
+    // Warmup builds with a private snapshot, then attaches the stable live
+    // shader metadata before the pipeline is exposed to gameplay.
+    void PublishStage(const Shader::Info* info) {
+        stages[static_cast<size_t>(Shader::SwStage::Compute)] = info;
+    }
+
 private:
     ComputePipelineKey compute_key;
 };
