@@ -12,6 +12,7 @@ SHADER = (ROOT / "gpu/shadps4/video_core/host_shaders/bcn_to_etc2.comp").read_te
 IMAGE = (ROOT / "gpu/shadps4/video_core/texture_cache/image.cpp").read_text()
 VIEW = (ROOT / "gpu/shadps4/video_core/texture_cache/image_view.cpp").read_text()
 RUNTIME = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp").read_text()
+TEXTURE_CACHE = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
 RUN = (ROOT / "tools/android/bionic/run-bionic.sh").read_text()
 CMAKE = (ROOT / "gpu/CMakeLists.txt").read_text()
 
@@ -114,6 +115,20 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('vk::PipelineStageFlagBits2::eComputeShader', RUNTIME)
         self.assertIn('vk::AccessFlagBits2::eShaderRead', RUNTIME)
         self.assertIn('ASSERT_MSG(recorded', RUNTIME)
+
+    def test_tlou_first_page_exact_lookup_preserves_alias_selection(self):
+        start = TEXTURE_CACHE.index("ImageId TextureCache::FindImageFromRange(")
+        end = TEXTURE_CACHE.index("ImageView& TextureCache::FindTexture(", start)
+        fn = TEXTURE_CACHE[start:end]
+        # Only images with exactly this base address can match, so extra
+        # pages of a large requested size can never add a valid candidate.
+        self.assertIn("ForEachImageInRegion(address, 1,", fn)
+        self.assertNotIn("ForEachImageInRegion(address, size,", fn)
+        self.assertIn("image.info.guest_address != address", fn)
+        self.assertIn("ensure_valid && !image.SafeToDownload()", fn)
+        self.assertIn("image.info.guest_size == size", fn)
+        self.assertIn("image.alias_generation > slot_images[newest].alias_generation", fn)
+        self.assertIn("if (image_ids.size() == 1)", fn)
 
     def test_tlou_gpu_decode_push_descriptor_fastpath_with_fallback(self):
         # The universal TLOU decoder records push descriptors directly into
