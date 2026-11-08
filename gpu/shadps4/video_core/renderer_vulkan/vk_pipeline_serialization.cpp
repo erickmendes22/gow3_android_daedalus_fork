@@ -1060,6 +1060,9 @@ struct PipelineCache::BackgroundWarmup {
         ComputePipelineKey compute_key{};
         std::unique_ptr<GraphicsPipeline> graphics;
         std::unique_ptr<ComputePipeline> compute;
+        // Keep the snapshot alive until stages are rebound on the GPU thread.
+        std::shared_ptr<std::array<Shader::Info, MaxShaderStages>> info_snapshot;
+        std::array<const Shader::Info*, MaxShaderStages> live_infos{};
     };
 
     std::unordered_map<u64, std::shared_ptr<WarmStage>> stages; ///< read job only
@@ -1240,6 +1243,10 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
 
 bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     stage.merged = true;
+    // Cached permutation indexes must never force an unbounded vector resize.
+    if (!stage.program || !stage.module || stage.perm_idx >= Program::MaxPermutations) {
+        return false;
+    }
     const u64 hash = stage.program->info.pgm_hash;
     const auto it_pgm = program_cache.find(hash);
     if (it_pgm == program_cache.end()) {
@@ -1296,6 +1303,13 @@ void PipelineCache::PumpWarmUp() {
 
     // Built pipelines: the first one ready for a key wins (the game may have compiled it).
     for (auto& built : warm.built.Take(64)) {
+        // The worker owns private Shader::Info snapshots. Publish only after
+        // restoring stable live stage pointers.
+        if (built.graphics) {
+            built.graphics->PublishStages(built.live_infos);
+        } else if (built.compute) {
+            built.compute->PublishStage(built.live_infos[0]);
+        }
         const bool kept =
             built.graphics
                 ? PublishFirst(graphics_pipelines, built.graphics_key, std::move(built.graphics))
@@ -1343,6 +1357,13 @@ void PipelineCache::PumpWarmUp() {
         }
         // Background warmup uses serialized metadata too, not live guest SHARPs.
         // Both compute and graphics must skip dynamic-mip layouts here.
+        if (usable && entry.compute && (!infos[0] || !modules[0])) {
+            usable = false;
+        }
+        if (usable && !entry.compute &&
+            std::ranges::none_of(modules, [](vk::ShaderModule module) { return bool(module); })) {
+            usable = false;
+        }
         if (usable && std::ranges::any_of(infos, NeedsLiveImageSharpForLayout)) {
             usable = false;
         }
@@ -1350,25 +1371,39 @@ void PipelineCache::PumpWarmUp() {
             warm.done.fetch_add(1, std::memory_order_relaxed);
             continue;
         }
+        // Program::info is modified by the GPU thread every draw. Building
+        // pipelines against it on a separate worker was a data race.
+        auto snapshot = std::make_shared<std::array<Shader::Info, MaxShaderStages>>();
+        std::array<const Shader::Info*, MaxShaderStages> build_infos{};
+        for (u32 i = 0; i < MaxShaderStages; ++i) {
+            if (infos[i]) {
+                (*snapshot)[i] = *infos[i];
+                (*snapshot)[i].user_data = {};
+                build_infos[i] = &(*snapshot)[i];
+            }
+        }
         ++warm.submitted;
         warm.pool->Push([this, &warm, queued = std::chrono::steady_clock::now(),
                           compute = entry.compute, graphics_key = entry.graphics_key,
-                         compute_key = entry.compute_key, sdata = entry.sdata, infos, modules,
-                         fetch]() mutable {
+                          compute_key = entry.compute_key, sdata = entry.sdata,
+                          live_infos = infos, build_infos, snapshot, modules,
+                          fetch]() mutable {
             const auto build_started = std::chrono::steady_clock::now();
             warm.build_queue_ns += ElapsedNs(queued);
             SCOPE_EXIT { warm.build_ns += ElapsedNs(build_started); ++warm.completed; };
             BackgroundWarmup::Built built{graphics_key, compute_key};
+            built.info_snapshot = snapshot;
+            built.live_infos = live_infos;
             if (compute) {
                 ComputePipeline::SerializationSupport compute_data{};
                 built.compute = std::make_unique<ComputePipeline>(
                     instance, scheduler, desc_heap, profile,
                     warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache,
-                    compute_key, *infos[0], modules[0], compute_data, true);
+                    compute_key, *build_infos[0], modules[0], compute_data, true);
             } else {
                 built.graphics = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, graphics_key,
-                    warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache, infos,
+                    warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache, build_infos,
                     no_runtime_infos, fetch, modules, sdata, true);
             }
             warm.built.Push(std::move(built));
