@@ -84,7 +84,10 @@ int main() { return 0; }
         self.assertIn("dedicated.requiresDedicatedAllocation", IMAGE)
         self.assertIn("CanRebindRetiredImageMemory(", IMAGE)
         self.assertIn("const bool etc2_target = IsEtc2Image(requested);", IMAGE)
-        self.assertIn("etc2_target))", IMAGE)
+        self.assertIn("etc2_target && pool == &bc))", IMAGE)
+        # The relaxed size policy MUST NOT steal RGBA128 cached VMA blocks.
+        # RGBA allocations were independently slow (345 ms) in this log.
+        self.assertIn("pool == &bc", IMAGE)
         self.assertNotIn("candidate.bytes - requirements.size > requirements.size / 4", IMAGE)
         self.assertIn("info.allocationInfo.memoryType, info.dedicatedMemory", IMAGE)
         old_destroy = IMAGE.index("device.destroyImage(vk::Image{retired.image});")
