@@ -122,6 +122,8 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn("copies.size() < 2", batch)
         self.assertIn("copies.size() > 24", batch)
         self.assertIn("MaxBatchBytes = 8ULL * 1024 * 1024", batch)
+        self.assertIn("boost::container::small_vector<BatchPass, 14> passes", batch)
+        self.assertIn("std::span<const BatchPass>{passes.data(), passes.size()}", batch)
         self.assertIn("copy.imageSubresource.layerCount != 1", batch)
         self.assertIn("limits.maxComputeWorkGroupCount[0]", batch)
         self.assertIn("limits.maxComputeWorkGroupCount[1]", batch)
