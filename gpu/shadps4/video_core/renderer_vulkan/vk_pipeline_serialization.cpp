@@ -1079,6 +1079,7 @@ struct PipelineCache::BackgroundWarmup {
     u64 pump_ns = 0, pump_max_ns = 0, pump_gap_max_ns = 0;
     u32 batches = 0;
     bool finished = false;
+    bool mali = false; // interactive GPU thread: throttle cache publication and stage merges
     u32 loaded = 0, threads = 0;
     std::chrono::steady_clock::time_point started, last_batch;
     std::chrono::steady_clock::time_point last_pump{}, last_report{};
@@ -1123,6 +1124,7 @@ bool PipelineCache::StartBackgroundWarmUp() {
     // available. Desktop compilation retains its established thread count.
     const bool mali = std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    warm.mali = mali;
     warm.threads = mali ? 1u
         : WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
     if (mali) {
@@ -1294,6 +1296,14 @@ void PipelineCache::PumpWarmUp() {
     auto& warm = *background;
     using namespace std::chrono_literals;
     const auto pump_started = std::chrono::steady_clock::now();
+    // A draw calls PumpWarmUp on every pipeline lookup. The former path
+    // acquired the built-queue mutex every draw and could publish 64
+    // pipelines in a single draw, competing with the PM4 thread.
+    // Mali batches both ready publications and stage merges every 4 ms.
+    // Desktop retains its previous eager pipeline publication behavior.
+    if (warm.mali && pump_started - warm.last_batch < 4ms) {
+        return;
+    }
     if (warm.last_pump.time_since_epoch().count()) {
         warm.pump_gap_max_ns = std::max(warm.pump_gap_max_ns,
             u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1307,7 +1317,7 @@ void PipelineCache::PumpWarmUp() {
     };
 
     // Built pipelines: the first one ready for a key wins (the game may have compiled it).
-    for (auto& built : warm.built.Take(64)) {
+    for (auto& built : warm.built.Take(warm.mali ? 8 : 64)) {
         // The worker owns private Shader::Info snapshots. Publish only after
         // restoring stable live stage pointers.
         if (built.graphics) {
@@ -1333,7 +1343,9 @@ void PipelineCache::PumpWarmUp() {
     Gow3Overlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
 
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
-    for (auto& entry : warm.read.Take(32)) {
+    // Limit the GPU thread's serialized shader metadata merging to eight
+    // entries per Mali batch. Work remains queued; it is not discarded.
+    for (auto& entry : warm.read.Take(warm.mali ? 8 : 32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key)) {
