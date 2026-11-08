@@ -43,6 +43,9 @@ jobs:
       # On this analysis branch, build a separately installable Mali app.
       # Never change the established main Bionic APK signing identity.
       GOW3_MALI_TEST_APK: ${{ github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106' && '1' || '0' }}
+      # Mali-only packaging explicitly excludes the optional Bloodframe runtime.
+      # It is an independent app, signed with its existing test keystore.
+      GOW3_MALI_ONLY_BUILD: ${{ github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,6 +113,9 @@ jobs:
         shell: bash -el {0}
         run: bash tools/android/bionic/build_runtime.sh
       - name: Build pinned MIT Bloodframe 2x/3x/4x engine
+        # Not used or packaged by standalone Mali test; the third-party
+        # Bloodframe submodule dxbc is inaccessible in this CI environment.
+        if: env.GOW3_MALI_ONLY_BUILD != '1'
         shell: bash
         run: |
           export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
@@ -122,6 +128,10 @@ jobs:
       - name: Package, sign and validate GoW3 2.1.8 APK
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
+          if [[ "$GOW3_MALI_TEST_APK" == '1' ]]; then
+            [[ "$GOW3_MALI_ONLY_BUILD" == '1' ]] || { echo 'Mali diagnostic packaging flag missing' >&2; exit 1; }
+            [[ ! -e out/bionic/lib/libbloodframe.so ]] || { echo 'Unexpected Bloodframe in Mali-only runtime' >&2; exit 1; }
+          fi
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
