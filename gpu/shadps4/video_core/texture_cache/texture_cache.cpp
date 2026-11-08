@@ -1365,7 +1365,11 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
 
 ImageId TextureCache::FindImageFromRange(VAddr address, size_t size, bool ensure_valid) {
     ImageIds image_ids;
-    ForEachImageInRegion(address, size, [&](ImageId image_id, Image& image) {
+    // An exact guest-base match must appear in the first tracked page.
+    // Visiting every page of a multi-MiB transfer scans unrelated images
+    // repeatedly; the full requested size is still used to match candidates.
+    // Ported from the universal TLOU texture cache; valid for all backends.
+    ForEachImageInRegion(address, 1, [&](ImageId image_id, Image& image) {
         if (image.info.guest_address != address) {
             return;
         }
@@ -1380,11 +1384,18 @@ ImageId TextureCache::FindImageFromRange(VAddr address, size_t size, bool ensure
         return image_ids.back();
     }
     if (!image_ids.empty()) {
+        // When several guest aliases have the same address and byte size,
+        // use the newest GPU writer rather than an arbitrary earlier image.
+        ImageId newest{};
         for (s32 i = 0; i < image_ids.size(); ++i) {
             Image& image = slot_images[image_ids[i]];
-            if (image.info.guest_size == size) {
-                return image_ids[i];
+            if (image.info.guest_size == size &&
+                (!newest || image.alias_generation > slot_images[newest].alias_generation)) {
+                newest = image_ids[i];
             }
+        }
+        if (newest) {
+            return newest;
         }
         LOG_WARNING(Render_Vulkan,
                     "Failed to find exact image match for copy addr={:#x}, size={:#x}", address,
