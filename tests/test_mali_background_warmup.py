@@ -19,11 +19,11 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         cls.compute_code = COMPUTE.read_text(encoding="utf-8")
 
     def test_background_build_reads_snapshot_not_live_program(self):
-        self.assertIn("std::make_shared<std::array<Shader::Info, MaxShaderStages>>()", self.code)
-        self.assertIn("(*snapshot)[i] = *infos[i]", self.code)
-        self.assertIn("(*snapshot)[i].user_data = {}", self.code)
-        self.assertIn("build_infos[i] = &(*snapshot)[i]", self.code)
-        self.assertIn("built.info_snapshot = snapshot;", self.code)
+        self.assertIn("stage->compile_info = std::make_unique<Shader::Info>(stage->program->info)", self.code)
+        self.assertIn("stage->compile_info->user_data = {}", self.code)
+        self.assertIn("const auto stage_refs = entry.stages;", self.code)
+        self.assertIn("build_infos[i] = stage_refs[i]->compile_info.get()", self.code)
+        self.assertIn("built.stage_refs = stage_refs;", self.code)
         self.assertIn("compute_key, *build_infos[0], modules[0]", self.code)
         self.assertIn("pipeline_cache, build_infos,", self.code)
 
