@@ -13,19 +13,35 @@ RUN=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
 TEXTURE=(ROOT/"gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
 
 class MaliSceneRetentionTests(unittest.TestCase):
-    def test_scene_cap_is_only_a_controlled_96_mib_expansion(self):
-        bc_old=128;rgba_old=64;bc_new=192;rgba_new=96
-        self.assertEqual((bc_new+rgba_new)-(bc_old+rgba_old),96)
+    def test_scene_cap_is_bounded_160_mib_expansion_with_etc2_retention(self):
+        # Nov 8 ETC2 pool retained 15 MiB with ZERO trim_limit and
+        # ZERO purge_budget. 256 MiB is ceiling, not observed occupancy.
+        bc_old=128;rgba_old=64;bc_new=256;rgba_new=96
+        self.assertEqual((bc_new+rgba_new)-(bc_old+rgba_old),160)
         self.assertIn("BcPoolLimit = 128ULL * 1024 * 1024",IMAGE)
         self.assertIn("Rgba128PoolLimit = 64ULL * 1024 * 1024",IMAGE)
-        self.assertIn("BcScenePoolLimit = 192ULL * 1024 * 1024",IMAGE)
+        self.assertIn("BcScenePoolLimit = 256ULL * 1024 * 1024",IMAGE)
         self.assertIn("Rgba128ScenePoolLimit = 96ULL * 1024 * 1024",IMAGE)
-        self.assertIn("ScenePoolMaxEntries = 48",IMAGE)
+        self.assertIn("ScenePoolMaxEntries = 64",IMAGE)
         self.assertIn("BcPoolMaxEntries = 24",IMAGE)
         self.assertIn("Rgba128PoolMaxEntries = 24",IMAGE)
         self.assertIn("if (ScenePoolRetentionEnabled())",IMAGE)
         self.assertIn("return value && value[0] == '1';",IMAGE)
         self.assertIn("GOW3_MALI_SCENE_IMAGE_RETENTION",IMAGE)
+
+    def test_etc2_is_already_in_bc_pool_and_reports_current_retained_memory(self):
+        self.assertIn("((bc_pool_enabled && info.props.is_block)", IMAGE)
+        self.assertIn("bool IsEtc2Image(const VkImageCreateInfo& ci)", IMAGE)
+        self.assertIn("VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK", IMAGE)
+        self.assertIn("VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK", IMAGE)
+        self.assertIn("GOW3_ETC2_IMAGE_POOL hits=", IMAGE)
+        self.assertIn("pool.etc2_hits", IMAGE)
+        self.assertIn("pool.etc2_misses", IMAGE)
+        self.assertIn("pool.etc2_stored", IMAGE)
+        self.assertIn("pool.bytes >> 20", IMAGE)
+        self.assertIn("if (pool.bytes + bytes > PoolLimit(raw)) return false;", IMAGE)
+        self.assertIn("BcPoolHasBudget(allocator)", IMAGE)
+        self.assertIn("budgets[i].usage * 10 > budgets[i].budget * 9", IMAGE)
 
     def test_completed_clean_image_can_return_to_pool_without_an_extra_tick(self):
         # The source previously queued ALL image frees against the current
