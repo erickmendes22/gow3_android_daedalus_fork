@@ -116,6 +116,57 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('vk::AccessFlagBits2::eShaderRead', RUNTIME)
         self.assertIn('ASSERT_MSG(recorded', RUNTIME)
 
+    def test_tlou_mip_batch_uses_one_safe_ring_allocation_and_barrier(self):
+        batch = RUNTIME.split("bool RecordBatch(", 1)[1].split("\n    bool Record(", 1)[0]
+        legacy = RUNTIME.split("\n    bool Record(", 1)[1]
+        self.assertIn("copies.size() < 2", batch)
+        self.assertIn("copies.size() > 24", batch)
+        self.assertIn("MaxBatchBytes = 8ULL * 1024 * 1024", batch)
+        self.assertIn("copy.imageSubresource.layerCount != 1", batch)
+        self.assertIn("limits.maxComputeWorkGroupCount[0]", batch)
+        self.assertIn("limits.maxComputeWorkGroupCount[1]", batch)
+        self.assertIn("const u64 aligned = (total + alignment - 1u)", batch)
+        self.assertIn("output_bytes > MaxBatchBytes - aligned", batch)
+        self.assertIn("staging.Request(total, VideoCore::MemoryType::DeviceLocal", batch)
+        self.assertIn("passes = scheduler.RecordData(", batch)
+        self.assertIn("if (!use_push_descriptors)", batch)
+        self.assertIn("cb.pushDescriptorSetKHR(", batch)
+        self.assertIn("cb.bindDescriptorSets(", batch)
+        self.assertIn("cb.bindPipeline(", batch)
+        self.assertIn("cb.dispatch(", batch)
+        self.assertIn("cb.pipelineBarrier2(barrier);", batch)
+        self.assertIn("cb.copyBufferToImage(buffer, image", batch)
+        # Compute must finish across ALL passes before the first mip copy.
+        self.assertLess(batch.index("cb.dispatch("), batch.index("cb.pipelineBarrier2(barrier);"))
+        self.assertLess(batch.index("cb.pipelineBarrier2(barrier);"),
+                        batch.index("cb.copyBufferToImage(buffer, image"))
+        # Fall back only after validating the entire chain and before writing to scratch.
+        self.assertLess(batch.index("for (const auto& copy : copies)"),
+                        batch.index("const auto scratch = staging.Request(total"))
+        self.assertIn("if (RecordBatch(dst, src, copies, staging, words, limits, alignment))", legacy)
+        self.assertIn("staging.Request(output_bytes, VideoCore::MemoryType::DeviceLocal", legacy)
+
+    def test_batched_etc2_offsets_do_not_overlap_and_use_less_staging_calls(self):
+        # Exercise the exact integer layout used in RecordBatch for BC3 mips.
+        alignment, max_bytes = 256, 8 * 1024 * 1024
+        mip_extents = [(2048 >> n, 1024 >> n) for n in range(9)]
+        output = []
+        total = 0
+        for width, height in mip_extents:
+            blocks_x, blocks_y = (width + 3) // 4, (height + 3) // 4
+            size = blocks_x * blocks_y * 16
+            offset = (total + alignment - 1) // alignment * alignment
+            self.assertLessEqual(offset + size, max_bytes)
+            self.assertEqual(offset % alignment, 0)
+            if output:
+                self.assertGreaterEqual(offset, output[-1][1])
+            output.append((offset, offset + size))
+            total = offset + size
+        self.assertEqual(len(output), 9)
+        self.assertEqual(total, output[-1][1])
+        # Nine legacy ring requests and barriers are reduced to one each.
+        self.assertEqual(len(output) - 1, 8)
+
     def test_tlou_first_page_exact_lookup_preserves_alias_selection(self):
         start = TEXTURE_CACHE.index("ImageId TextureCache::FindImageFromRange(")
         end = TEXTURE_CACHE.index("ImageView& TextureCache::FindTexture(", start)
