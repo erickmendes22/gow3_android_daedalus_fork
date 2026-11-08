@@ -28,7 +28,7 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn("pipeline_cache, build_infos,", self.code)
 
     def test_published_pipelines_restore_live_stage_pointers(self):
-        publish = self.code.index("for (auto& built : warm.built.Take(64))")
+        publish = self.code.index("for (auto& built : warm.built.Take(warm.mali ? 8 : 64))")
         rebind_graphics = self.code.index("built.graphics->PublishStages(built.live_infos)", publish)
         rebind_compute = self.code.index("built.compute->PublishStage(built.live_infos[0])", publish)
         insert = self.code.index("PublishFirst(graphics_pipelines", publish)
