@@ -101,6 +101,154 @@ struct BcnTranscodeState {
                     use_push_descriptors ? "push" : "pool");
     }
 
+    // TLOU-style multi-mip batching. One GPU-tick-protected scratch reservation
+    // and one recorded command encode many independent mip uploads. The guest
+    // BC data, mip order and exact ETC2 copy offsets are unchanged. Keep the
+    // original per-mip path as a fallback for large or unusual transfers.
+    struct BatchPass {
+        Params params{};
+        vk::DescriptorBufferInfo input{};
+        vk::DescriptorBufferInfo output{};
+        vk::BufferImageCopy copy{};
+        vk::DescriptorSet set{};
+        u64 local_offset{};
+        u64 output_bytes{};
+    };
+
+    bool RecordBatch(VideoCore::Image* dst, const VideoCore::Buffer* src,
+                     std::span<const vk::BufferImageCopy> copies, StagingBufferPool& staging,
+                     u32 words, const vk::PhysicalDeviceLimits& limits, u64 alignment) {
+        // Bound both command-record storage and the staging ring footprint.
+        // A single-mip or oversized request uses the previously verified path.
+        constexpr u64 MaxBatchBytes = 8ULL * 1024 * 1024;
+        if (copies.size() < 2 || copies.size() > 24) return false;
+        std::vector<BatchPass> passes;
+        passes.reserve(copies.size());
+        u64 total = 0;
+        const u64 source_size = src->SizeBytes();
+        for (const auto& copy : copies) {
+            if (copy.imageExtent.depth != 1 || copy.imageSubresource.layerCount != 1 ||
+                !copy.imageExtent.width || !copy.imageExtent.height ||
+                copy.imageOffset.x < 0 || copy.imageOffset.y < 0 || copy.imageOffset.z != 0)
+                return false;
+            const u32 width = (copy.imageExtent.width + 3u) / 4u;
+            const u32 height = (copy.imageExtent.height + 3u) / 4u;
+            if ((u64(width) + 7u) / 8u > limits.maxComputeWorkGroupCount[0] ||
+                (u64(height) + 7u) / 8u > limits.maxComputeWorkGroupCount[1])
+                return false;
+            const u32 row_texels = copy.bufferRowLength ? copy.bufferRowLength
+                                                       : copy.imageExtent.width;
+            const u32 rows_texels = copy.bufferImageHeight ? copy.bufferImageHeight
+                                                           : copy.imageExtent.height;
+            if (row_texels < copy.imageExtent.width || rows_texels < copy.imageExtent.height)
+                return false;
+            const u64 row_blocks = (u64(row_texels) + 3u) / 4u;
+            const u64 last_bytes = ((u64(height) - 1u) * row_blocks + width) * words * 4u;
+            const u64 output_bytes = u64(width) * height * 16u;
+            if (output_bytes > limits.maxStorageBufferRange ||
+                last_bytes > limits.maxStorageBufferRange ||
+                copy.bufferOffset > source_size)
+                return false;
+            const u64 base = (copy.bufferOffset / alignment) * alignment;
+            const u64 relative = copy.bufferOffset - base;
+            const u64 in_range = relative + last_bytes;
+            if (relative % 4u || relative > std::numeric_limits<u32>::max() ||
+                in_range > limits.maxStorageBufferRange || base > source_size ||
+                in_range > source_size - base)
+                return false;
+            // Every copy destination needs 16-byte block alignment and a
+            // storage-buffer-aligned start. No two passes overlap in scratch.
+            const u64 aligned = (total + alignment - 1u) / alignment * alignment;
+            if (aligned > MaxBatchBytes || output_bytes > MaxBatchBytes - aligned)
+                return false;
+            BatchPass pass{};
+            pass.params = Params{width, height, static_cast<u32>(row_blocks),
+                                 static_cast<u32>(relative / 4u), words};
+            pass.input.offset = base;
+            pass.input.range = in_range;
+            pass.local_offset = aligned;
+            pass.output_bytes = output_bytes;
+            pass.copy = copy;
+            pass.copy.bufferRowLength = 0;
+            pass.copy.bufferImageHeight = 0;
+            passes.push_back(pass);
+            total = aligned + output_bytes;
+        }
+        if (!total) return false;
+
+        // Reserve only after every region validates; never partially record a
+        // transcode and then fall back to re-uploading half the mip chain.
+        const auto scratch = staging.Request(total, VideoCore::MemoryType::DeviceLocal,
+                                             alignment);
+        const auto buffer = scratch.buffer->Handle();
+        const auto device = instance.GetDevice();
+        for (auto& pass : passes) {
+            pass.input.buffer = src->Handle();
+            pass.output.buffer = buffer;
+            pass.output.offset = scratch.offset + pass.local_offset;
+            pass.output.range = pass.output_bytes;
+            pass.copy.bufferOffset = pass.output.offset;
+            if (!use_push_descriptors) {
+                pass.set = descriptor_heap.Commit(*descriptor_layout);
+                const std::array<vk::WriteDescriptorSet, 2> writes{{
+                    {.dstSet = pass.set, .dstBinding = 0, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer,
+                     .pBufferInfo = &pass.input},
+                    {.dstSet = pass.set, .dstBinding = 1, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer,
+                     .pBufferInfo = &pass.output},
+                }};
+                device.updateDescriptorSets(writes, {});
+            }
+        }
+        const vk::BufferMemoryBarrier2 all_compute_to_copy{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = buffer, .offset = scratch.offset, .size = total,
+        };
+        scheduler.Record([pipeline = *pipeline, layout = *pipeline_layout,
+                          image = dst->GetImage(), buffer,
+                          push = use_push_descriptors, all_compute_to_copy,
+                          passes = scheduler.RecordData(std::span<const BatchPass>{passes})](
+                             vk::CommandBuffer cb) {
+            cb.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+            for (const auto& pass : passes) {
+                if (push) {
+                    const std::array<vk::WriteDescriptorSet, 2> writes{{
+                        {.dstBinding = 0, .descriptorCount = 1,
+                         .descriptorType = vk::DescriptorType::eStorageBuffer,
+                         .pBufferInfo = &pass.input},
+                        {.dstBinding = 1, .descriptorCount = 1,
+                         .descriptorType = vk::DescriptorType::eStorageBuffer,
+                         .pBufferInfo = &pass.output},
+                    }};
+                    cb.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+                } else {
+                    cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, pass.set, {});
+                }
+                cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0,
+                                 sizeof(Params), &pass.params);
+                cb.dispatch((pass.params.blocks_x + 7u) / 8u,
+                            (pass.params.blocks_y + 7u) / 8u, 1);
+            }
+            // One barrier covers all disjoint writes. Only then copy the
+            // completed compressed data into each original mip subresource.
+            const vk::DependencyInfo barrier{
+                .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &all_compute_to_copy,
+            };
+            cb.pipelineBarrier2(barrier);
+            for (const auto& pass : passes) {
+                cb.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal,
+                                     pass.copy);
+            }
+        });
+        return true;
+    }
+
     bool Record(VideoCore::Image* dst, const VideoCore::Buffer* src,
                 std::span<const vk::BufferImageCopy> copies, StagingBufferPool& staging) {
         const vk::Format guest = dst->info.pixel_format;
@@ -112,6 +260,8 @@ struct BcnTranscodeState {
         const u32 words = bc1 ? 2u : 4u;
         const auto& limits = instance.GetPhysicalDevice().getProperties().limits;
         const u64 alignment = std::max<u64>(16, limits.minStorageBufferOffsetAlignment);
+        if (RecordBatch(dst, src, copies, staging, words, limits, alignment))
+            return true;
         const auto device = instance.GetDevice();
         for (const auto& copy : copies) {
             if (copy.imageExtent.depth != 1 || !copy.imageExtent.width ||
