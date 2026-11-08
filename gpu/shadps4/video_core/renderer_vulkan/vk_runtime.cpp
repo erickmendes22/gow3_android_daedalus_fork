@@ -29,6 +29,9 @@ namespace Vulkan {
 struct BcnTranscodeState {
     const Instance& instance;
     Scheduler& scheduler;
+    // Same fast path as the universal TLOU GPU BC decoder where supported.
+    // When VK_KHR_push_descriptor is missing, keep the tick-safe descriptor heap.
+    bool use_push_descriptors{};
     const std::array<vk::DescriptorPoolSize, 1> sizes{{
         {vk::DescriptorType::eStorageBuffer, 256},
     }};
@@ -48,6 +51,7 @@ struct BcnTranscodeState {
 
     BcnTranscodeState(const Instance& inst, Scheduler& sched)
         : instance{inst}, scheduler{sched},
+          use_push_descriptors{inst.MaxPushDescriptors() >= 2},
           descriptor_heap{inst, sched.GetWorkSemaphore(), sizes, 128} {
         const auto device = instance.GetDevice();
         const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
@@ -57,6 +61,8 @@ struct BcnTranscodeState {
              .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
         }};
         const vk::DescriptorSetLayoutCreateInfo descriptor_ci{
+            .flags = use_push_descriptors ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+                                          : vk::DescriptorSetLayoutCreateFlags{},
             .bindingCount = static_cast<u32>(bindings.size()),
             .pBindings = bindings.data(),
         };
@@ -91,7 +97,8 @@ struct BcnTranscodeState {
         ASSERT_MSG(p_result == vk::Result::eSuccess,
                    "Mali BCn-to-ETC2 compute pipeline failed: {}", vk::to_string(p_result));
         pipeline = std::move(p);
-        std::printf("GOW3_MALI_BCN_TO_ETC2 compute pipeline ready\n");
+        std::printf("GOW3_MALI_BCN_TO_ETC2 compute pipeline ready descriptor_mode=%s\n",
+                    use_push_descriptors ? "push" : "pool");
     }
 
     bool Record(VideoCore::Image* dst, const VideoCore::Buffer* src,
@@ -147,14 +154,15 @@ struct BcnTranscodeState {
                     .buffer = scratch.buffer->Handle(), .offset = scratch.offset,
                     .range = output_bytes,
                 };
-                const vk::DescriptorSet set = descriptor_heap.Commit(*descriptor_layout);
+                const vk::DescriptorSet set = use_push_descriptors
+                    ? vk::DescriptorSet{} : descriptor_heap.Commit(*descriptor_layout);
                 const std::array<vk::WriteDescriptorSet, 2> writes{{
                     {.dstSet = set, .dstBinding = 0, .descriptorCount = 1,
                      .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &in},
                     {.dstSet = set, .dstBinding = 1, .descriptorCount = 1,
                      .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &out},
                 }};
-                device.updateDescriptorSets(writes, {});
+                if (!use_push_descriptors) device.updateDescriptorSets(writes, {});
                 const Params params{
                     blocks_x, blocks_y, src_row_blocks,
                     static_cast<u32>((source_start - base) / 4u), words,
@@ -178,9 +186,27 @@ struct BcnTranscodeState {
                 };
                 scheduler.Record([pipeline = *pipeline, layout = *pipeline_layout,
                                   image = dst->GetImage(), scratch_buffer = scratch.buffer->Handle(),
-                                  set, params, out_copy, scratch_barrier](vk::CommandBuffer cb) {
+                                  set, in, out, use_push_descriptors = use_push_descriptors,
+                                  params, out_copy, scratch_barrier](vk::CommandBuffer cb) {
                     cb.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
-                    cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, set, {});
+                    if (use_push_descriptors) {
+                        // Push descriptors are recorded inline with the dispatch:
+                        // no descriptor-set allocation or vkUpdateDescriptorSets on
+                        // the texture-upload CPU thread. Capture buffer infos by
+                        // value so asynchronous command recording is safe.
+                        const std::array<vk::WriteDescriptorSet, 2> push_writes{{
+                            {.dstBinding = 0, .descriptorCount = 1,
+                             .descriptorType = vk::DescriptorType::eStorageBuffer,
+                             .pBufferInfo = &in},
+                            {.dstBinding = 1, .descriptorCount = 1,
+                             .descriptorType = vk::DescriptorType::eStorageBuffer,
+                             .pBufferInfo = &out},
+                        }};
+                        cb.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0,
+                                                push_writes);
+                    } else {
+                        cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, set, {});
+                    }
                     cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute,
                                      0, sizeof(Params), &params);
                     cb.dispatch((params.blocks_x + 7u) / 8u, (params.blocks_y + 7u) / 8u, 1);
