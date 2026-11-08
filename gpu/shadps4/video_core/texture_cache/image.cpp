@@ -210,7 +210,7 @@ void ReportImagePool(const BcPool& pool, bool rgba128) {
         }
         std::printf("GOW3_ETC2_IMAGE_POOL hits=%llu misses=%llu stored=%llu "
                     "retained_mib=%llu entries=%zu limit_mib=%llu "
-                    "bc_total_retained_mib=%llu\\n",
+                    "bc_total_retained_mib=%llu\n",
                     (unsigned long long)pool.etc2_hits,
                     (unsigned long long)pool.etc2_misses,
                     (unsigned long long)pool.etc2_stored,
