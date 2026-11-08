@@ -21,6 +21,9 @@ on:
       - 'gpu/shadps4/video_core/texture_cache/image.h'
       - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_compute_pipeline.h'
+      - 'tests/test_mali_background_warmup.py'
       - 'gpu/CMakeLists.txt'
       - 'tests/test_mali_bcn_to_etc2.py'
   workflow_dispatch:
@@ -53,6 +56,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_fex_l2_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
