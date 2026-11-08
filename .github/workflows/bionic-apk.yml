@@ -40,6 +40,9 @@ jobs:
     env:
       GOW3_JOBS: '2'
       GOW3_BUILD_TOOLS: '36.0.0'
+      # On this analysis branch, build a separately installable Mali app.
+      # Never change the established main Bionic APK signing identity.
+      GOW3_MALI_TEST_APK: ${{ github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,12 +58,19 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
       - name: Restore established APK upgrade signing key
+        if: env.GOW3_MALI_TEST_APK != '1'
         uses: actions/cache@v4
         with:
           path: .local-deps/android/bionic-development.keystore
           key: bionic-development-signing-v1
       - name: Require the established signing key (never replace the installed identity)
+        if: env.GOW3_MALI_TEST_APK != '1'
         run: test -s .local-deps/android/bionic-development.keystore
+      - name: Verify fixed, separately installable Mali test signing key
+        if: env.GOW3_MALI_TEST_APK == '1'
+        run: |
+          test -s tools/android/debug/gow3-debug.keystore
+          keytool -list -keystore tools/android/debug/gow3-debug.keystore -storepass android >/dev/null
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
@@ -119,6 +129,8 @@ jobs:
           path: |
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
             out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
