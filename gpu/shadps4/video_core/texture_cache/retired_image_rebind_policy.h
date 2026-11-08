@@ -12,7 +12,8 @@ constexpr bool CanRebindRetiredImageMemory(
     std::uint64_t requested_size, std::uint64_t required_alignment,
     std::uint32_t supported_memory_types, bool requires_dedicated,
     std::uint64_t allocation_size, std::uint64_t allocation_offset,
-    std::uint32_t allocation_memory_type, bool allocated_dedicated) {
+    std::uint32_t allocation_memory_type, bool allocated_dedicated,
+    bool bounded_etc2_slack = false) {
     if (!requested_size || !required_alignment || requires_dedicated ||
         allocated_dedicated || allocation_memory_type >= 32)
         return false;
@@ -20,9 +21,16 @@ constexpr bool CanRebindRetiredImageMemory(
         allocation_offset % required_alignment != 0 ||
         allocation_size < requested_size)
         return false;
-    // Avoid retaining an oversized allocation for a tiny image. This is a
-    // bounded resource-budget decision, not a guess about driver performance.
-    const auto max_waste = requested_size / 4;
+    // The normal RGBA/BC path retains the strict 25% limit.
+    // ETC2 compressed images on Mali can reuse a *completed* allocation
+    // from a different texture shape with up to 100% size slack, capped at
+    // 8 MiB absolute waste. This avoids an expensive fresh VMA allocation
+    // when an already-idle compatible block is available. No extra memory
+    // is reserved, and the VMA memory-type/alignment/dedication rules above
+    // remain mandatory. The original pixels are never reused in this path.
+    const auto max_waste = bounded_etc2_slack
+        ? (requested_size < (8ull << 20) ? requested_size : (8ull << 20))
+        : requested_size / 4;
     return allocation_size - requested_size <= max_waste;
 }
 
