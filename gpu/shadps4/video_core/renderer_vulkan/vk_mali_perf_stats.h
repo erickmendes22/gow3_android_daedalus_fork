@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <time.h>
 
 namespace Vulkan {
 
@@ -32,6 +33,7 @@ public:
         ImageFormatQuery, ImageVkAllocate, Pm4ResumeBlocked, Pm4ResumeWork,
         SubmitMutex, SubmitThrottle, SubmitHostCopies, SubmitQueueDriver,
         PendingTimelineQuery, Pm4SubmitWall,
+        Pm4ResumeCpuWork, Pm4ResumeCpuBlocked,
         Count,
     };
 
@@ -104,18 +106,32 @@ public:
             bytes, std::memory_order_relaxed);
     }
 
-    static void Record(Stage stage, TimePoint start) {
-        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            Clock::now() - start).count();
-        if (ns < 0) return;
+    // CPU time excludes sleeping, preemption and blocking Vulkan waits.
+    // It is sampled only alongside an existing 1/256 PM4 coroutine resume.
+    // Never use this clock as a substitute for GPU timestamps.
+    static uint64_t ThreadCpuNs() {
+#if defined(__linux__) || defined(__ANDROID__)
+        timespec ts{};
+        if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0)
+            return uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
+#endif
+        return 0;
+    }
+
+    static void RecordDuration(Stage stage, uint64_t elapsed) {
         auto& row = Get().stages[static_cast<unsigned>(stage)];
-        const uint64_t elapsed = static_cast<uint64_t>(ns);
         row.count.fetch_add(1, std::memory_order_relaxed);
         row.total_ns.fetch_add(elapsed, std::memory_order_relaxed);
         uint64_t old_max = row.max_ns.load(std::memory_order_relaxed);
         while (old_max < elapsed &&
                !row.max_ns.compare_exchange_weak(old_max, elapsed,
                                                  std::memory_order_relaxed)) {}
+    }
+
+    static void Record(Stage stage, TimePoint start) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            Clock::now() - start).count();
+        if (ns >= 0) RecordDuration(stage, static_cast<uint64_t>(ns));
     }
 
     struct Scoped {
@@ -155,6 +171,7 @@ public:
             "image_format_query", "image_vk_allocate", "pm4_resume_blocked", "pm4_resume_work",
             "submit_mutex", "submit_throttle", "submit_host_copy_wait",
             "submit_vk_queue", "pending_timeline_query", "pm4_submit_wall",
+            "pm4_resume_cpu_work", "pm4_resume_cpu_blocked",
         };
         char line[2048]{};
         size_t used = static_cast<size_t>(std::snprintf(
