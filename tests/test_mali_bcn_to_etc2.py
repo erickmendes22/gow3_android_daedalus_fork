@@ -115,6 +115,24 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('vk::AccessFlagBits2::eShaderRead', RUNTIME)
         self.assertIn('ASSERT_MSG(recorded', RUNTIME)
 
+    def test_tlou_gpu_decode_push_descriptor_fastpath_with_fallback(self):
+        # The universal TLOU decoder records push descriptors directly into
+        # the command buffer. Match its optimization only when the device
+        # advertises at least two push descriptors; older PanVK keeps the
+        # original Vulkan descriptor pool and lifetime semantics.
+        self.assertIn("use_push_descriptors{inst.MaxPushDescriptors() >= 2}", RUNTIME)
+        self.assertIn("vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR", RUNTIME)
+        self.assertIn("if (!use_push_descriptors) device.updateDescriptorSets(writes, {});", RUNTIME)
+        self.assertIn("cb.pushDescriptorSetKHR(", RUNTIME)
+        self.assertIn("cb.bindDescriptorSets(", RUNTIME)
+        self.assertIn("descriptor_heap.Commit(*descriptor_layout)", RUNTIME)
+        self.assertIn("set, in, out, use_push_descriptors = use_push_descriptors", RUNTIME)
+        self.assertIn("scratch.buffer->Handle()", RUNTIME)
+        self.assertIn("cb.pipelineBarrier2(barrier)", RUNTIME)
+        self.assertIn("cb.copyBufferToImage(scratch_buffer, image", RUNTIME)
+        self.assertLess(RUNTIME.index("cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute"),
+                        RUNTIME.index("cb.dispatch((params.blocks_x + 7u) / 8u"))
+
     def test_automatic_default_supported_mali_only_no_user_toggle(self):
         self.assertIn('GOW3_MALI_BCN_TO_ETC2:-1}', RUN)
         self.assertIn("(!etc2_opt || etc2_opt[0] != '0')", IMAGE)
