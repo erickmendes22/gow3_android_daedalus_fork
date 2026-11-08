@@ -1027,6 +1027,9 @@ void PipelineCache::StartOnDemand() {
 struct PipelineCache::WarmStage {
     vk::Device device;
     std::unique_ptr<Program> program;
+    // Immutable metadata created once per cached shader and reused by every
+    // background pipeline that refers to this stage.
+    std::unique_ptr<Shader::Info> compile_info;
     Shader::StageSpecialization spec{};
     std::optional<Shader::Gcn::FetchShaderData> fetch;
     size_t perm_idx{};
@@ -1060,8 +1063,8 @@ struct PipelineCache::BackgroundWarmup {
         ComputePipelineKey compute_key{};
         std::unique_ptr<GraphicsPipeline> graphics;
         std::unique_ptr<ComputePipeline> compute;
-        // Keep the snapshot alive until stages are rebound on the GPU thread.
-        std::shared_ptr<std::array<Shader::Info, MaxShaderStages>> info_snapshot;
+        // Retain stage-owned immutable shader metadata until GPU publication.
+        std::array<std::shared_ptr<WarmStage>, MaxShaderStages> stage_refs{};
         std::array<const Shader::Info*, MaxShaderStages> live_infos{};
     };
 
@@ -1216,6 +1219,8 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
                 Serialization::Archive meta_ar{std::move(meta_blob)};
                 if (LoadShaderMeta(meta_ar, stage->program->info, stage->fetch, stage->spec,
                                    stage->perm_idx)) {
+                    stage->compile_info = std::make_unique<Shader::Info>(stage->program->info);
+                    stage->compile_info->user_data = {};
                     std::vector<u32> spv;
                     db.Load(Storage::BlobType::ShaderBinary,
                             fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
@@ -1371,28 +1376,36 @@ void PipelineCache::PumpWarmUp() {
             warm.done.fetch_add(1, std::memory_order_relaxed);
             continue;
         }
-        // Program::info is modified by the GPU thread every draw. Building
-        // pipelines against it on a separate worker was a data race.
-        auto snapshot = std::make_shared<std::array<Shader::Info, MaxShaderStages>>();
+        // Program::info is rewritten every draw. Cache one read-only copy per
+        // shader, not one expensive copy per pipeline, and retain each stage
+        // through the asynchronous build and its publication.
+        const auto stage_refs = entry.stages;
         std::array<const Shader::Info*, MaxShaderStages> build_infos{};
         for (u32 i = 0; i < MaxShaderStages; ++i) {
-            if (infos[i]) {
-                (*snapshot)[i] = *infos[i];
-                (*snapshot)[i].user_data = {};
-                build_infos[i] = &(*snapshot)[i];
+            if (!infos[i]) {
+                continue;
             }
+            if (!stage_refs[i] || !stage_refs[i]->compile_info) {
+                usable = false;
+                break;
+            }
+            build_infos[i] = stage_refs[i]->compile_info.get();
+        }
+        if (!usable) {
+            warm.done.fetch_add(1, std::memory_order_relaxed);
+            continue;
         }
         ++warm.submitted;
         warm.pool->Push([this, &warm, queued = std::chrono::steady_clock::now(),
                           compute = entry.compute, graphics_key = entry.graphics_key,
                           compute_key = entry.compute_key, sdata = entry.sdata,
-                          live_infos = infos, build_infos, snapshot, modules,
+                          live_infos = infos, build_infos, stage_refs, modules,
                           fetch]() mutable {
             const auto build_started = std::chrono::steady_clock::now();
             warm.build_queue_ns += ElapsedNs(queued);
             SCOPE_EXIT { warm.build_ns += ElapsedNs(build_started); ++warm.completed; };
             BackgroundWarmup::Built built{graphics_key, compute_key};
-            built.info_snapshot = snapshot;
+            built.stage_refs = stage_refs;
             built.live_infos = live_infos;
             if (compute) {
                 ComputePipeline::SerializationSupport compute_data{};
