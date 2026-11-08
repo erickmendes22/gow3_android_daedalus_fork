@@ -41,6 +41,14 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn("entry.compute && (!infos[0] || !modules[0])", self.code)
         self.assertIn("std::ranges::none_of(modules", self.code)
 
+    def test_mali_warmup_is_batched_without_dropping_entries(self):
+        self.assertIn("warm.mali = mali;", self.code)
+        self.assertIn("warm.mali && pump_started - warm.last_batch < 4ms", self.code)
+        self.assertIn("warm.built.Take(warm.mali ? 8 : 64)", self.code)
+        self.assertIn("warm.read.Take(warm.mali ? 8 : 32)", self.code)
+        self.assertIn("warm.done.fetch_add(1, std::memory_order_relaxed)", self.code)
+        self.assertIn("warm.pool->Push(", self.code)
+
     def test_keeps_background_warmup_and_private_mali_driver_cache(self):
         self.assertIn("return StartBackgroundWarmUp();", self.code)
         self.assertIn("warm.mali_worker_cache", self.code)
