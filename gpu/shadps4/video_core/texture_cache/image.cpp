@@ -125,6 +125,7 @@ struct BcPool {
     uint64_t miss_empty = 0, miss_incompatible = 0;
     uint64_t trim_limit = 0, purge_budget = 0, reject_budget = 0;
     uint64_t trim_duplicate = 0;
+    uint64_t etc2_hits = 0, etc2_misses = 0, etc2_stored = 0;
 };
 BcPool& GetBcPool() {
     // Deliberately never destroyed by static teardown. Instance::~Instance()
@@ -145,14 +146,16 @@ constexpr size_t BcPoolMaxEntries = 24;
 constexpr VkDeviceSize Rgba128PoolLimit = 64ULL * 1024 * 1024;
 constexpr VkDeviceSize Rgba128PoolEntryLimit = 32ULL * 1024 * 1024;
 constexpr size_t Rgba128PoolMaxEntries = 24;
-// G720 scene-transition logs: BC 148 hits / 492 misses, 264 evictions;
-// fresh BC/RGBA128 allocations had >400ms outliers. Existing limits remain
-// unchanged outside the dedicated Mali experimental profile. Additional live
-// memory is bounded to 96 MiB (+64 BC, +32 RGBA128) and still subject to
-// BcPoolHasBudget's device-local 90% VMA pressure guard.
-constexpr VkDeviceSize BcScenePoolLimit = 192ULL * 1024 * 1024;
+// The November 8 ETC2 log reports 15 MiB CURRENT retained occupancy, NOT a
+// 15 MiB cap: 67 exact-image hits, 445 misses and zero limit/budget evictions.
+// We allow up to 256 MiB for retired BC/ETC2 images during scene transitions,
+// while preserving a separate 96 MiB RGBA128 ceiling and the mandatory live
+// device-memory budget guard (reject at 90%, reclaim incompatible at 82%).
+// This higher ceiling is headroom for other scenes, NOT an explanation or
+// guaranteed cure for the logged cold/shape-incompatible allocation misses.
+constexpr VkDeviceSize BcScenePoolLimit = 256ULL * 1024 * 1024;
 constexpr VkDeviceSize Rgba128ScenePoolLimit = 96ULL * 1024 * 1024;
-constexpr size_t ScenePoolMaxEntries = 48;
+constexpr size_t ScenePoolMaxEntries = 64;
 bool ScenePoolRetentionEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("GOW3_MALI_SCENE_IMAGE_RETENTION");
@@ -162,6 +165,10 @@ bool ScenePoolRetentionEnabled() {
 }
 bool IsRgba128Image(const VkImageCreateInfo& ci) {
     return ci.format == VK_FORMAT_R32G32B32A32_UINT;
+}
+bool IsEtc2Image(const VkImageCreateInfo& ci) {
+    return ci.format == VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK ||
+           ci.format == VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
 }
 BcPool& ImagePoolFor(const VkImageCreateInfo& ci) {
     return IsRgba128Image(ci) ? GetRgba128Pool() : GetBcPool();
@@ -191,6 +198,26 @@ void ReportImagePool(const BcPool& pool, bool rgba128) {
                 (unsigned long long)pool.purge_budget,
                 (unsigned long long)pool.reject_budget,
                 (unsigned long long)pool.trim_duplicate, pool.images.size());
+    // 'retained_mib' is CURRENT free-list occupancy, not its quota. Report
+    // ETC2 separately so a low value is not confused with a 15 MiB limit.
+    if (!rgba128) {
+        VkDeviceSize etc2_bytes = 0;
+        size_t etc2_entries = 0;
+        for (const auto& entry : pool.images) {
+            if (!IsEtc2Image(entry.create)) continue;
+            etc2_bytes += entry.bytes;
+            ++etc2_entries;
+        }
+        std::printf("GOW3_ETC2_IMAGE_POOL hits=%llu misses=%llu stored=%llu "
+                    "retained_mib=%llu entries=%zu limit_mib=%llu "
+                    "bc_total_retained_mib=%llu\\n",
+                    (unsigned long long)pool.etc2_hits,
+                    (unsigned long long)pool.etc2_misses,
+                    (unsigned long long)pool.etc2_stored,
+                    (unsigned long long)(etc2_bytes >> 20), etc2_entries,
+                    (unsigned long long)(BcScenePoolLimit >> 20),
+                    (unsigned long long)(pool.bytes >> 20));
+    }
 }
 
 bool SameBcCreate(const VkImageCreateInfo& a, const VkImageCreateInfo& b) {
@@ -341,6 +368,7 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
         });
     if (it == pool.images.rend()) {
         ++pool.misses;
+        if (IsEtc2Image(raw)) ++pool.etc2_misses;
         if (pool.images.empty()) ++pool.miss_empty;
         else ++pool.miss_incompatible;
         if ((pool.misses + pool.hits) % (IsRgba128Image(raw) ? 64 : 128) == 0)
@@ -354,6 +382,7 @@ bool TakeBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     allocation = e.allocation;
     bytes = e.bytes;
     ++pool.hits;
+    if (IsEtc2Image(raw)) ++pool.etc2_hits;
     if ((pool.misses + pool.hits) % (IsRgba128Image(raw) ? 64 : 128) == 0)
         ReportImagePool(pool, IsRgba128Image(raw));
     return true;
@@ -403,6 +432,9 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
         return false;
     }
 
+    // ETC2 can consume a modest surplus from already-retired VMA blocks,
+    // but never evict or reinterpret an in-flight Vulkan image.
+    const bool etc2_target = IsEtc2Image(requested);
     RetiredBcImage retired{};
     {
         std::scoped_lock lock{bc.mutex, rgba.mutex};
@@ -414,7 +446,6 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                 const auto& candidate = pool->images[i];
                 if (candidate.allocator != allocator ||
                     candidate.bytes < requirements.size ||
-                    candidate.bytes - requirements.size > requirements.size / 4 ||
                     candidate.bytes >= best_bytes)
                     continue;
                 const auto& info = candidate.memory_info;
@@ -423,7 +454,8 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                         requirements.memoryTypeBits,
                         dedicated.requiresDedicatedAllocation,
                         info.allocationInfo.size, info.allocationInfo.offset,
-                        info.allocationInfo.memoryType, info.dedicatedMemory))
+                        info.allocationInfo.memoryType, info.dedicatedMemory,
+                        etc2_target))
                     continue;
                 best_pool = pool;
                 best_index = i;
@@ -508,6 +540,7 @@ bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
     pool.images.push_back({image, allocation, allocator, raw, bytes, memory_info});
     pool.bytes += bytes;
     ++pool.stored;
+    if (IsEtc2Image(raw)) ++pool.etc2_stored;
     return true;
 }
 
