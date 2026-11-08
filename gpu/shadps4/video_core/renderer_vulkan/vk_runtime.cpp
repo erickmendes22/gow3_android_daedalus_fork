@@ -122,8 +122,9 @@ struct BcnTranscodeState {
         // A single-mip or oversized request uses the previously verified path.
         constexpr u64 MaxBatchBytes = 8ULL * 1024 * 1024;
         if (copies.size() < 2 || copies.size() > 24) return false;
-        std::vector<BatchPass> passes;
-        passes.reserve(copies.size());
+        // Normal PS4 mip chains fit the inline 14-pass array, avoiding an
+        // additional heap allocation in the texture-upload CPU hot path.
+        boost::container::small_vector<BatchPass, 14> passes;
         u64 total = 0;
         const u64 source_size = src->SizeBytes();
         for (const auto& copy : copies) {
@@ -213,7 +214,7 @@ struct BcnTranscodeState {
         scheduler.Record([pipeline = *pipeline, layout = *pipeline_layout,
                           image = dst->GetImage(), buffer,
                           push = use_push_descriptors, all_compute_to_copy,
-                          passes = scheduler.RecordData(std::span<const BatchPass>{passes})](
+                          passes = scheduler.RecordData(std::span<const BatchPass>{passes.data(), passes.size()})](
                              vk::CommandBuffer cb) {
             cb.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
             for (const auto& pass : passes) {
