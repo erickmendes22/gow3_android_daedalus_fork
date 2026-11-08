@@ -455,7 +455,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                         dedicated.requiresDedicatedAllocation,
                         info.allocationInfo.size, info.allocationInfo.offset,
                         info.allocationInfo.memoryType, info.dedicatedMemory,
-                        etc2_target))
+                        etc2_target && pool == &bc))
                     continue;
                 best_pool = pool;
                 best_index = i;
