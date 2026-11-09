@@ -26,6 +26,7 @@
 #include "core/memory.h"
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/pm4_wait_backoff_policy.h"
 #include "gow3_write_log.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderdoc.h"
@@ -148,6 +149,10 @@ void Liverpool::Process(std::stop_token stoken) {
     Gow3Stats::gpu_thread_id.store(GetCurrentThreadId());
 #endif
     gpu_id = std::this_thread::get_id();
+#ifdef __ANDROID__
+    Task::Handle previous_blocked_task{};
+    u32 blocked_resumes = 0;
+#endif
 #if defined(__linux__) || defined(_WIN32)
     gpu_tid = gettid();
 #endif
@@ -223,11 +228,34 @@ void Liverpool::Process(std::stop_token stoken) {
                 const int us = std::atoi(opt);
                 return us >= 1 && us <= 100 ? unsigned(us) : 0u;
             }();
+            // The old nanosleep(20us) ran on EVERY blocked coroutine
+            // resume. At PanVK startup this is over 30k WAIT_REG_MEM yields
+            // per five-second sample. Preserve all guest predicate tests and
+            // queue fairness, but avoid a full Android scheduling quantum on
+            // seven out of eight resumptions. =1 restores legacy behavior.
+            static const unsigned blocked_yield_batch = [] {
+                const char* opt = std::getenv("GOW3_MALI_PM4_YIELD_BATCH");
+                if (!std::getenv("GOW3_ANDROID_PORT") || !opt) return 1u;
+                const int parsed = std::atoi(opt);
+                return parsed >= 1 && parsed <= 32 ? unsigned(parsed) : 1u;
+            }();
             if (idle_backoff_us && gfx_blocked_fiber_wait &&
                 num_submits.load(std::memory_order_relaxed) == 1 &&
                 num_commands.load(std::memory_order_relaxed) == 0 &&
                 !task.done()) {
-                std::this_thread::sleep_for(std::chrono::microseconds(idle_backoff_us));
+                if (previous_blocked_task != task) {
+                    previous_blocked_task = task;
+                    blocked_resumes = 0;
+                }
+                if (blocked_resumes != std::numeric_limits<u32>::max()) ++blocked_resumes;
+                if (SleepOnBlockedPm4Resume(blocked_resumes, blocked_yield_batch)) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(idle_backoff_us));
+                } else {
+                    std::this_thread::yield();
+                }
+            } else {
+                previous_blocked_task = {};
+                blocked_resumes = 0;
             }
 #endif
             if (task.done()) {
