@@ -32,7 +32,10 @@ class Rgba128Pool(unittest.TestCase):
       "reclaim();",
   ):
    self.assertIn(safeguard,texture)
-  self.assertIn("for (auto* target : {&GetBcPool(), &GetRgba128Pool()})",S)
+  # All three pools must be flushed before the VMA allocator is destroyed.
+  self.assertIn("for (auto* target : {&GetBcPool(), &GetRgba128Pool(), &GetTransientPool()})",S)
+  self.assertIn("TransientPoolLimit = 48ULL * 1024 * 1024",S)
+  self.assertIn("TransientPoolMaxEntries = 16",S)
   self.assertLess(INST.index("FlushMaliBcImagePool(allocator)"),INST.index("vmaDestroyAllocator(allocator)"))
   self.assertIn("!backing->image.reused_from_pool",S)
  def test_mali_only_reversible(self):
