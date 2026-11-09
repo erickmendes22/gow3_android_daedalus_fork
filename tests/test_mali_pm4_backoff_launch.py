@@ -48,10 +48,20 @@ class BackoffLaunchTests(unittest.TestCase):
         snippet = r"""
 #include "gpu/shadps4/video_core/amdgpu/pm4_wait_backoff_policy.h"
 using AmdGpu::SleepOnBlockedPm4Resume;
-static_assert([] { unsigned sleeps=0; for(unsigned n=1;n<=4096;++n)
-    sleeps += SleepOnBlockedPm4Resume(n,8); return sleeps==512; }());
-static_assert([] { unsigned sleeps=0; for(unsigned n=1;n<=4096;++n)
-    sleeps += SleepOnBlockedPm4Resume(n,1); return sleeps==4096; }());
+static_assert([] {
+    unsigned sleeps=0;
+    for(unsigned n=1;n<=4096;++n) {
+        sleeps += SleepOnBlockedPm4Resume(n,8);
+    }
+    return sleeps==512;
+}());
+static_assert([] {
+    unsigned sleeps=0;
+    for(unsigned n=1;n<=4096;++n) {
+        sleeps += SleepOnBlockedPm4Resume(n,1);
+    }
+    return sleeps==4096;
+}());
 int main(){return 0;}
 """
         with tempfile.TemporaryDirectory() as tmp:
