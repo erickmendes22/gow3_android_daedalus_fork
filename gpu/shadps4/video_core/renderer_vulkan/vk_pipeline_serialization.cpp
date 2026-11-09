@@ -891,18 +891,39 @@ bool PipelineCache::CheckCacheProfile() {
         return false;
     }
 
-    Storage::DataBase::Instance().Open();
+    auto& db = Storage::DataBase::Instance();
+    db.Open();
 
-    // Check if cache is compatible
+    // A matching Shader::Profile does not imply compatible serialized
+    // resources: v7 raw-copied Boost small_vector internal pointers, and
+    // v8 correctly reconstructs them. Old v7 .meta + .key files caused
+    // 276 reads with ZERO warmed pipelines despite a compatible driver cache.
+    // Rotate only the metadata/key/SPIR-V database; do not touch the
+    // independent, already restored Vulkan driver pipeline cache.
+    const bool mali_schema = !EmulatorSettings.IsPipelineCacheArchived() &&
+        std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    constexpr std::array<u32, 3> schema{
+        Serialization::ShaderMetaVersion,
+        Serialization::ShaderBinaryVersion,
+        Serialization::PipelineKeyVersion,
+    };
+    const auto save_profile_and_schema = [&] {
+        db.FinishPreload();
+        std::vector<u8> refreshed_profile(sizeof(profile));
+        std::memcpy(refreshed_profile.data(), &profile, sizeof(profile));
+        db.Save(Storage::BlobType::ShaderProfile, "profile", std::move(refreshed_profile));
+        if (mali_schema) {
+            std::vector<u8> bytes(sizeof(schema));
+            std::memcpy(bytes.data(), schema.data(), sizeof(schema));
+            db.Save(Storage::BlobType::ShaderProfile, "gow3-cache-schema", std::move(bytes));
+        }
+    };
+
     std::vector<u8> profile_data{};
-    Storage::DataBase::Instance().Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
+    db.Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
-        Storage::DataBase::Instance().FinishPreload();
-
-        profile_data.resize(sizeof(profile));
-        std::memcpy(profile_data.data(), &profile, sizeof(profile));
-        Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
-                                           std::move(profile_data));
+        save_profile_and_schema();
         return false;
     }
     if (profile_data.size() != sizeof(Shader::Profile)) {
@@ -914,17 +935,22 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(&cached_profile, profile_data.data(), sizeof(cached_profile));
     }
     if (profile_data.size() != sizeof(Shader::Profile) || cached_profile != profile) {
-        // gow3: upstream closed the cache for the session here, so it was never rewritten
-        // and every later session compiled every shader again (stutters on each new area).
-        // Start a fresh cache for this build and GPU instead.
         LOG_WARNING(Render, "Pipeline cache isn't compatible with current system: rebuilding it");
-        Storage::DataBase::Instance().Clear();
-        Storage::DataBase::Instance().FinishPreload();
-        profile_data.resize(sizeof(profile));
-        std::memcpy(profile_data.data(), &profile, sizeof(profile));
-        Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
-                                           std::move(profile_data));
+        db.Clear();
+        save_profile_and_schema();
         return false;
+    }
+    if (mali_schema) {
+        std::vector<u8> stored_schema{};
+        db.Load(Storage::BlobType::ShaderProfile, "gow3-cache-schema", stored_schema);
+        if (stored_schema.size() != sizeof(schema) ||
+            std::memcmp(stored_schema.data(), schema.data(), sizeof(schema)) != 0) {
+            std::printf("GOW3_MALI_SHADER_SCHEMA status=reset-old-cache meta=%u binary=%u key=%u\n",
+                        schema[0], schema[1], schema[2]);
+            db.Clear();
+            save_profile_and_schema();
+            return false;
+        }
     }
     return true;
 }

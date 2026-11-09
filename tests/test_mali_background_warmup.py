@@ -67,6 +67,17 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn("read_list(fmasks, NUM_FMASKS)", self.code)
         self.assertIn("!ar.CanRead(flat_size * sizeof(u32))", self.code)
 
+    def test_cache_schema_migration_rejects_old_v7_boost_metadata(self):
+        self.assertIn('Serialization::ShaderMetaVersion,', self.code)
+        self.assertIn('Serialization::ShaderBinaryVersion,', self.code)
+        self.assertIn('Serialization::PipelineKeyVersion,', self.code)
+        self.assertIn('"gow3-cache-schema"', self.code)
+        self.assertIn('GOW3_MALI_SHADER_SCHEMA status=reset-old-cache', self.code)
+        self.assertIn('db.Clear();', self.code)
+        self.assertIn('save_profile_and_schema();', self.code)
+        self.assertIn('db.Save(Storage::BlobType::ShaderProfile, "profile"', self.code)
+        self.assertIn('mali_schema = !EmulatorSettings.IsPipelineCacheArchived()', self.code)
+
     def test_keeps_background_warmup_and_private_mali_driver_cache(self):
         self.assertIn("return StartBackgroundWarmUp();", self.code)
         self.assertIn("warm.mali_worker_cache", self.code)
