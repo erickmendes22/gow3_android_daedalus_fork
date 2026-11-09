@@ -22,7 +22,7 @@ class MaliBudgetAndLayoutTests(unittest.TestCase):
         self.assertIn(
             'GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-87}', SH
         )
-        self.assertIn('GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}', SH)
+        self.assertIn('GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-87}', SH)
         self.assertIn('trigger_gc_memory = budget / 100 * std::min(mali_trigger_pct, mali_pressure_pct);', TEX)
         self.assertIn('if (total_used_memory < trigger_gc_memory)', TEX)
         self.assertIn('(parsed != 70 && (parsed < 75 || parsed > 90))', TEX)
