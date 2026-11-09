@@ -49,6 +49,24 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn("warm.done.fetch_add(1, std::memory_order_relaxed)", self.code)
         self.assertIn("warm.pool->Push(", self.code)
 
+
+    def test_cache_serialization_rejects_old_pointer_bearing_format(self):
+        self.assertIn("ShaderMetaVersion = 8u", self.code)
+        self.assertNotIn("info.Write(this, sizeof(InfoPersistent))", self.code)
+        self.assertNotIn("info.Read(this, sizeof(Shader::InfoPersistent))", self.code)
+        for name in ("buffers", "images", "samplers", "fmasks"):
+            self.assertIn(f"info.Write({name});", self.code)
+            self.assertIn(f"read_list({name},", self.code)
+        self.assertIn("!spec.Deserialize(ar) || !info.Deserialize(ar)", self.code)
+
+    def test_bad_cache_lengths_cannot_overflow_boost_resource_lists(self):
+        self.assertIn("!ar.CanRead(count * sizeof(Item))", self.code)
+        self.assertIn("read_list(buffers, NUM_BUFFERS)", self.code)
+        self.assertIn("read_list(images, NUM_IMAGES * 4)", self.code)
+        self.assertIn("read_list(samplers, NUM_SAMPLERS * 4)", self.code)
+        self.assertIn("read_list(fmasks, NUM_FMASKS)", self.code)
+        self.assertIn("!ar.CanRead(flat_size * sizeof(u32))", self.code)
+
     def test_keeps_background_warmup_and_private_mali_driver_cache(self):
         self.assertIn("return StartBackgroundWarmUp();", self.code)
         self.assertIn("warm.mali_worker_cache", self.code)

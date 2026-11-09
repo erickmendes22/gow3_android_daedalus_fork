@@ -10,6 +10,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <fstream>
 #include <map>
@@ -33,7 +34,7 @@
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 static constexpr u32 ShaderBinaryVersion = 7u; // gow3: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 7u; // gow3: ImageResource::needs_native
+static constexpr u32 ShaderMetaVersion = 8u; // gow3: explicit resource-list serialization; v7 stored stale small_vector pointers
 static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResource::needs_native)
 } // namespace Serialization
 
@@ -649,8 +650,9 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
     meta.Read(perm_hash_ar);
     meta.Read(perm_idx);
 
-    spec.Deserialize(ar);
-    info.Deserialize(ar);
+    if (!spec.Deserialize(ar) || !info.Deserialize(ar)) {
+        return false;
+    }
 
     // Motion vertex shaders embed session-local buffer device addresses. They must be
     // recompiled for the current allocation, never loaded from a previous process.
@@ -1518,17 +1520,90 @@ namespace Shader {
 void Info::Serialize(Serialization::Archive& ar) const {
     Serialization::Writer info{ar};
 
-    info.Write(this, sizeof(InfoPersistent));
+    // Never memcpy InfoPersistent as a whole: images/samplers are Boost
+    // small_vectors, containing process-local heap/inline-storage pointers.
+    // The former raw format deserialized stale pointers and crashed when
+    // ReadWarmEntry copied the ImageResource list on a subsequent launch.
+    static_assert(std::is_trivially_copyable_v<BufferResource>);
+    static_assert(std::is_trivially_copyable_v<ImageResource>);
+    static_assert(std::is_trivially_copyable_v<SamplerResource>);
+    static_assert(std::is_trivially_copyable_v<FMaskResource>);
+    info.Write(buffers);
+    info.Write(images);
+    info.Write(samplers);
+    info.Write(fmasks);
+    info.Write(ud_mask);
+    info.Write(fetch_shader_sgpr_base);
+    info.Write(shared_memory_scratch_size);
+    info.Write(pgm_hash);
+    info.Write(tess_consts_dword_offset);
+    info.Write(tess_consts_ptr_base);
+    info.Write(hw_stage);
+    info.Write(sw_stage);
+    info.Write(mrt_mask);
+    info.Write(has_fetch_shader);
+    info.Write(has_bitwise_xor);
+    info.Write(uses_dma);
     info.Write(flattened_ud_buf);
     srt_info.Serialize(ar);
 }
 
 bool Info::Deserialize(Serialization::Archive& ar) {
     Serialization::Reader info{ar};
-
-    info.Read(this, sizeof(Shader::InfoPersistent));
-    info.Read(flattened_ud_buf);
-
+    const auto read_field = [&](auto& value) -> bool {
+        if (!ar.CanRead(sizeof(value))) {
+            return false;
+        }
+        info.Read(value);
+        return true;
+    };
+    const auto read_list = [&](auto& list, size_t max_count) -> bool {
+        using Item = typename std::decay_t<decltype(list)>::value_type;
+        static_assert(std::is_trivially_copyable_v<Item>);
+        size_t count{};
+        if (!read_field(count) || count > max_count ||
+            !ar.CanRead(count * sizeof(Item))) {
+            return false;
+        }
+        list.clear();
+        for (size_t i = 0; i < count; ++i) {
+            Item element{};
+            info.Read(element);
+            list.push_back(std::move(element));
+        }
+        return true;
+    };
+    // Limit cached resource counts even for small_vector (which can grow
+    // beyond inline capacity). Reject malformed caches instead of crashing.
+    if (!read_list(buffers, NUM_BUFFERS) ||
+        !read_list(images, NUM_IMAGES * 4) ||
+        !read_list(samplers, NUM_SAMPLERS * 4) ||
+        !read_list(fmasks, NUM_FMASKS)) {
+        return false;
+    }
+    if (!read_field(ud_mask) ||
+        !read_field(fetch_shader_sgpr_base) ||
+        !read_field(shared_memory_scratch_size) ||
+        !read_field(pgm_hash) ||
+        !read_field(tess_consts_dword_offset) ||
+        !read_field(tess_consts_ptr_base) ||
+        !read_field(hw_stage) ||
+        !read_field(sw_stage) ||
+        !read_field(mrt_mask) ||
+        !read_field(has_fetch_shader) ||
+        !read_field(has_bitwise_xor) ||
+        !read_field(uses_dma)) {
+        return false;
+    }
+    size_t flat_size{};
+    if (!read_field(flat_size) || flat_size > (1u << 16) ||
+        !ar.CanRead(flat_size * sizeof(u32))) {
+        return false;
+    }
+    flattened_ud_buf.resize(flat_size);
+    if (flat_size) {
+        info.Read(flattened_ud_buf.data(), flat_size * sizeof(u32));
+    }
     return srt_info.Deserialize(ar);
 }
 
@@ -1573,11 +1648,18 @@ void PersistentSrtInfo::Serialize(Serialization::Archive& ar) const {
 bool PersistentSrtInfo::Deserialize(Serialization::Archive& ar) {
     Serialization::Reader srt{ar};
 
+    if (!ar.CanRead(sizeof(*this))) {
+        return false;
+    }
     srt.Read(this, sizeof(*this));
     // The stored function/object belonged to the process that wrote the cache.
     walker_func = {};
 
     if (walker_func_size) {
+        if (walker_func_size > (1u << 20) || !ar.CanRead(walker_func_size)) {
+            walker_func_size = 0;
+            return false;
+        }
         const auto code = ar.CurrPtr();
         ar.Advance(walker_func_size);
         walker_func = RegisterWalkerCode(code, walker_func_size);

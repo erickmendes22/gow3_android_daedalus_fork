@@ -56,6 +56,10 @@ struct Archive {
         return offset >= container.size();
     }
 
+    [[nodiscard]] bool CanRead(size_t size) const {
+        return offset <= container.size() && size <= container.size() - offset;
+    }
+
     Archive() = default;
     explicit Archive(std::vector<u8>&& v) : container{v} {}
 
