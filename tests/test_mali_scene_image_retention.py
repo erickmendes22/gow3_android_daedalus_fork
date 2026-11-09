@@ -93,6 +93,31 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertLess(submit.index("SyncRecording();"),
                         submit.index("GetGraphicsQueue().submit("))
 
+    def test_mali_transient_images_have_independent_caps_and_retirement(self):
+        for marker in (
+            "TransientPoolLimit = 48ULL * 1024 * 1024",
+            "TransientPoolEntryLimit = 16ULL * 1024 * 1024",
+            "TransientPoolMaxEntries = 16",
+            "VK_FORMAT_R8_UNORM",
+            "VK_FORMAT_R8G8B8A8_UINT",
+            "VK_FORMAT_R8G8B8A8_SRGB",
+            "return GetTransientPool();",
+            "ScenePoolRetentionEnabled()",
+            "IsTransientImage(static_cast<VkImageCreateInfo>(image_ci))",
+            "info.resources.layers == 1",
+            "info.resources.levels == 1",
+            "for (auto* target : {&GetBcPool(), &GetRgba128Pool(), &GetTransientPool()})",
+            "ProtectLastRetiredEtc2(copies)",
+            "++best_pool->rebind_out;",
+        ):
+            self.assertIn(marker, IMAGE)
+        self.assertIn("GOW3_MALI_TRANSIENT_IMAGE_POOL:-1", RUN)
+        self.assertIn("transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL", RUN)
+        # Pooling cannot bypass GPU-completion checks or the VMA fallback.
+        self.assertIn("SameBcCreate(e.create, raw)", IMAGE)
+        self.assertIn("VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT", IMAGE)
+        self.assertIn("vmaCreateImage(allocator, &image_ci_unsafe", IMAGE)
+
     def test_no_gpu_live_image_or_bad_format_reuse(self):
         self.assertIn("scheduler.DeferOperation(std::move(reclaim))",TEXTURE)
         self.assertIn("e.allocator == allocator && SameBcCreate(e.create, raw)",IMAGE)
@@ -116,7 +141,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("void ReclaimIdleImagesBeforeAllocate(",IMAGE)
         self.assertIn("if (!ScenePoolRetentionEnabled()) return;",IMAGE)
         self.assertIn("budgets[i].usage * 100 >= budgets[i].budget * 82",IMAGE)
-        self.assertIn("std::scoped_lock lock{bc.mutex, rgba.mutex};",IMAGE)
+        self.assertIn("std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};",IMAGE)
         self.assertIn("candidate.allocator != allocator ||",IMAGE)
         self.assertIn("SameBcCreate(candidate.create, requested)",IMAGE)
         self.assertIn("max_reclaim = 64ULL * 1024 * 1024",IMAGE)

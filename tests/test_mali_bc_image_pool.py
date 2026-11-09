@@ -33,6 +33,17 @@ class BcImagePoolTest(unittest.TestCase):
   self.assertIn("reused_from_pool = std::exchange(other.reused_from_pool, false);",H)
   self.assertIn("!backing->image.reused_from_pool",S)
   self.assertIn("GOW3_MALI_BC_IMAGE_POOL=${GOW3_MALI_BC_IMAGE_POOL:-1}",RUN)
+ def test_exact_mali_transient_pool_and_etc2_rebind_protection(self):
+  for marker in ("GetTransientPool()", "VK_FORMAT_R8_UNORM",
+                 "VK_FORMAT_R8G8B8A8_UINT", "VK_FORMAT_R8G8B8A8_SRGB",
+                 "TransientPoolEntryLimit = 16ULL * 1024 * 1024",
+                 "TransientPoolMaxEntries = 16",
+                 "ProtectLastRetiredEtc2(copies)",
+                 "++best_pool->rebind_out;"):
+   self.assertIn(marker, S)
+  policy=(ROOT/"gpu/shadps4/video_core/texture_cache/retired_image_rebind_policy.h").read_text()
+  self.assertIn("static_assert(ProtectLastRetiredEtc2(1));",policy)
+  self.assertIn("static_assert(!ProtectLastRetiredEtc2(2));",policy)
  def test_original_path_is_recoverable(self):
   self.assertIn("(!option || option[0] != '0')",S) if False else None
   self.assertIn("return !option || option[0] != '0';",S)
