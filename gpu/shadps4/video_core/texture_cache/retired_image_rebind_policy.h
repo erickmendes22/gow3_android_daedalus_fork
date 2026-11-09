@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include <cstdint>
+#include <cstddef>
 
 namespace VideoCore {
+
+// Keep at least one retired VkImage per distinct ETC2 description; a memory
+// rebind would destroy that image despite no pool trim or memory pressure.
+constexpr bool ProtectLastRetiredEtc2(std::size_t identical_retired_entries) {
+    return identical_retired_entries <= 1;
+}
+static_assert(ProtectLastRetiredEtc2(1));
+static_assert(!ProtectLastRetiredEtc2(2));
 
 // This is MEMORY reuse, not an image/view/guest-format alias. Only GPU-retired
 // allocations may be considered, and the old VkImage is destroyed before

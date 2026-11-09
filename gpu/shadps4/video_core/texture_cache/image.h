@@ -89,7 +89,7 @@ public:
     vk::Image image{};
     vk::ImageCreateInfo image_ci{};
     vk::DeviceSize size_bytes{};
-    bool recycle_bc = false; ///< Mali: exact-create BCn and R32 images (separate quotas).
+    bool recycle_bc = false; ///< Mali: GPU-retired exact VkImage reuse, separate BC, RGBA128 and transient pools.
     bool reused_from_pool = false; ///< Exclude recycled bytes from newly allocated VRAM stats.
 };
 

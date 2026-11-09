@@ -126,6 +126,7 @@ struct BcPool {
     uint64_t trim_limit = 0, purge_budget = 0, reject_budget = 0;
     uint64_t trim_duplicate = 0;
     uint64_t etc2_hits = 0, etc2_misses = 0, etc2_stored = 0;
+    uint64_t rebind_out = 0; // withdrawals for VMA rebind, not trim or purge
 };
 BcPool& GetBcPool() {
     // Deliberately never destroyed by static teardown. Instance::~Instance()
@@ -134,6 +135,10 @@ BcPool& GetBcPool() {
     return *pool;
 }
 BcPool& GetRgba128Pool() {
+    static auto* const pool = new BcPool{};
+    return *pool;
+}
+BcPool& GetTransientPool() {
     static auto* const pool = new BcPool{};
     return *pool;
 }
@@ -146,6 +151,11 @@ constexpr size_t BcPoolMaxEntries = 24;
 constexpr VkDeviceSize Rgba128PoolLimit = 64ULL * 1024 * 1024;
 constexpr VkDeviceSize Rgba128PoolEntryLimit = 32ULL * 1024 * 1024;
 constexpr size_t Rgba128PoolMaxEntries = 24;
+// These formats caused slow native PanVK allocations in the G720 logs.
+// Keep them separate from ETC2/BC and RGBA128, with a strict RAM ceiling.
+constexpr VkDeviceSize TransientPoolLimit = 48ULL * 1024 * 1024;
+constexpr VkDeviceSize TransientPoolEntryLimit = 16ULL * 1024 * 1024;
+constexpr size_t TransientPoolMaxEntries = 16;
 // The November 8 ETC2 log reports 15 MiB CURRENT retained occupancy, NOT a
 // 15 MiB cap: 67 exact-image hits, 445 misses and zero limit/budget evictions.
 // We allow up to 256 MiB for retired BC/ETC2 images during scene transitions,
@@ -166,41 +176,55 @@ bool ScenePoolRetentionEnabled() {
 bool IsRgba128Image(const VkImageCreateInfo& ci) {
     return ci.format == VK_FORMAT_R32G32B32A32_UINT;
 }
+bool IsTransientImage(const VkImageCreateInfo& ci) {
+    return ci.format == VK_FORMAT_R8_UNORM ||
+           ci.format == VK_FORMAT_R8G8B8A8_UINT ||
+           ci.format == VK_FORMAT_R8G8B8A8_SRGB;
+}
 bool IsEtc2Image(const VkImageCreateInfo& ci) {
     return ci.format == VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK ||
            ci.format == VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
 }
 BcPool& ImagePoolFor(const VkImageCreateInfo& ci) {
-    return IsRgba128Image(ci) ? GetRgba128Pool() : GetBcPool();
+    if (IsRgba128Image(ci)) return GetRgba128Pool();
+    if (IsTransientImage(ci)) return GetTransientPool();
+    return GetBcPool();
 }
 VkDeviceSize PoolLimit(const VkImageCreateInfo& ci) {
+    if (IsTransientImage(ci)) return TransientPoolLimit;
     if (ScenePoolRetentionEnabled()) {
         return IsRgba128Image(ci) ? Rgba128ScenePoolLimit : BcScenePoolLimit;
     }
     return IsRgba128Image(ci) ? Rgba128PoolLimit : BcPoolLimit;
 }
 size_t PoolMaxEntries(const VkImageCreateInfo& ci) {
+    if (IsTransientImage(ci)) return TransientPoolMaxEntries;
     if (ScenePoolRetentionEnabled()) return ScenePoolMaxEntries;
     return IsRgba128Image(ci) ? Rgba128PoolMaxEntries : BcPoolMaxEntries;
 }
 void ReportImagePool(const BcPool& pool, bool rgba128) {
+    const bool transient = &pool == &GetTransientPool();
     std::printf("GOW3_%s_IMAGE_POOL hits=%llu misses=%llu stored=%llu drop=%llu retained_mib=%llu\n",
-                rgba128 ? "RGBA128" : "BC",
+                transient ? "TRANSIENT" : rgba128 ? "RGBA128" : "BC",
                 (unsigned long long)pool.hits, (unsigned long long)pool.misses,
                 (unsigned long long)pool.stored, (unsigned long long)pool.discarded,
                 (unsigned long long)(pool.bytes >> 20));
     std::printf("GOW3_%s_IMAGE_POOL_DIAG miss_empty=%llu miss_incompatible=%llu "
                 "trim_limit=%llu purge_budget=%llu reject_budget=%llu duplicate_evict=%llu entries=%zu\n",
-                rgba128 ? "RGBA128" : "BC",
+                transient ? "TRANSIENT" : rgba128 ? "RGBA128" : "BC",
                 (unsigned long long)pool.miss_empty,
                 (unsigned long long)pool.miss_incompatible,
                 (unsigned long long)pool.trim_limit,
                 (unsigned long long)pool.purge_budget,
                 (unsigned long long)pool.reject_budget,
                 (unsigned long long)pool.trim_duplicate, pool.images.size());
+    if (pool.rebind_out)
+        std::printf("GOW3_%s_IMAGE_POOL_REBIND_OUT count=%llu\n",
+                    transient ? "TRANSIENT" : rgba128 ? "RGBA128" : "BC",
+                    (unsigned long long)pool.rebind_out);
     // 'retained_mib' is CURRENT free-list occupancy, not its quota. Report
     // ETC2 separately so a low value is not confused with a 15 MiB limit.
-    if (!rgba128) {
+    if (!rgba128 && !transient) {
         VkDeviceSize etc2_bytes = 0;
         size_t etc2_entries = 0;
         for (const auto& entry : pool.images) {
@@ -325,11 +349,12 @@ void ReclaimIdleImagesBeforeAllocate(VmaAllocator allocator,
     // pool hit always takes precedence, and no image still in use is touched.
     auto& bc = GetBcPool();
     auto& rgba = GetRgba128Pool();
-    std::scoped_lock lock{bc.mutex, rgba.mutex};
+    auto& transient = GetTransientPool();
+    std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
     VkDeviceSize reclaimed = 0;
     uint32_t retired = 0;
     constexpr VkDeviceSize max_reclaim = 64ULL * 1024 * 1024;
-    for (auto* pool : {&rgba, &bc}) {
+    for (auto* pool : {&transient, &rgba, &bc}) {
         for (size_t i = 0; i < pool->images.size() && reclaimed < max_reclaim;) {
             auto& candidate = pool->images[i];
             if (candidate.allocator != allocator ||
@@ -414,9 +439,10 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
 
     auto& bc = GetBcPool();
     auto& rgba = GetRgba128Pool();
+    auto& transient = GetTransientPool();
     {
-        std::scoped_lock lock{bc.mutex, rgba.mutex};
-        if (bc.images.empty() && rgba.images.empty()) return false;
+        std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
+        if (bc.images.empty() && rgba.images.empty() && transient.images.empty()) return false;
     }
     const auto create_result = device.createImage(requested_ci);
     if (create_result.result != vk::Result::eSuccess) return false;
@@ -437,17 +463,26 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     const bool etc2_target = IsEtc2Image(requested);
     RetiredBcImage retired{};
     {
-        std::scoped_lock lock{bc.mutex, rgba.mutex};
+        std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
         BcPool* best_pool = nullptr;
         size_t best_index = 0;
         VkDeviceSize best_bytes = ~VkDeviceSize{0};
-        for (auto* pool : {&rgba, &bc}) {
+        for (auto* pool : {&transient, &rgba, &bc}) {
             for (size_t i = 0; i < pool->images.size(); ++i) {
                 const auto& candidate = pool->images[i];
                 if (candidate.allocator != allocator ||
                     candidate.bytes < requirements.size ||
                     candidate.bytes >= best_bytes)
                     continue;
+                // Rebinding permanently consumes the retired VkImage.
+                // Keep one exact ETC2 copy of each shape for scene reuse.
+                if (IsEtc2Image(candidate.create)) {
+                    size_t copies = 0;
+                    for (const auto& other : pool->images)
+                        if (other.allocator == allocator &&
+                            SameBcCreate(other.create, candidate.create)) ++copies;
+                    if (ProtectLastRetiredEtc2(copies)) continue;
+                }
                 const auto& info = candidate.memory_info;
                 if (!CanRebindRetiredImageMemory(
                         requirements.size, requirements.alignment,
@@ -466,6 +501,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
             retired = best_pool->images[best_index];
             best_pool->images.erase(best_pool->images.begin() + best_index);
             best_pool->bytes -= retired.bytes;
+            ++best_pool->rebind_out;
         }
     }
     if (!retired.image) {
@@ -503,7 +539,8 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
 bool ReturnBcImage(VmaAllocator allocator, const vk::ImageCreateInfo& ci,
                    VkImage image, VmaAllocation allocation, VkDeviceSize bytes) {
     auto raw = static_cast<VkImageCreateInfo>(ci);
-    const auto max_entry = IsRgba128Image(raw) ? Rgba128PoolEntryLimit : BcPoolEntryLimit;
+    const auto max_entry = IsTransientImage(raw) ? TransientPoolEntryLimit :
+                           IsRgba128Image(raw) ? Rgba128PoolEntryLimit : BcPoolEntryLimit;
     if (!bytes || bytes > max_entry) return false;
     if (raw.pNext || raw.queueFamilyIndexCount) return false;
     auto& pool = ImagePoolFor(raw);
@@ -602,7 +639,7 @@ CachedImageFormatProbe ProbeImageFormat(const Vulkan::Instance& instance,
 void FlushMaliBcImagePool(VmaAllocator allocator) {
     // Both pools are retired before VMA allocator teardown; each pool owns
     // completely independent image handles, quotas and hit/miss counters.
-    for (auto* target : {&GetBcPool(), &GetRgba128Pool()}) {
+    for (auto* target : {&GetBcPool(), &GetRgba128Pool(), &GetTransientPool()}) {
         auto& pool = *target;
         std::lock_guard lock{pool.mutex};
         for (size_t i = pool.images.size(); i-- > 0;) {
@@ -621,6 +658,11 @@ void FlushMaliBcImagePool(VmaAllocator allocator) {
     std::printf("GOW3_RGBA128_IMAGE_POOL final_hits=%llu misses=%llu stored=%llu drop=%llu\n",
         (unsigned long long)rgba.hits, (unsigned long long)rgba.misses,
         (unsigned long long)rgba.stored, (unsigned long long)rgba.discarded);
+    auto& transient = GetTransientPool();
+    std::printf("GOW3_TRANSIENT_IMAGE_POOL final_hits=%llu misses=%llu stored=%llu drop=%llu rebind_out=%llu\n",
+        (unsigned long long)transient.hits, (unsigned long long)transient.misses,
+        (unsigned long long)transient.stored, (unsigned long long)transient.discarded,
+        (unsigned long long)transient.rebind_out);
 }
 
 UniqueImage::~UniqueImage() {
@@ -703,9 +745,10 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     // the existing Mali perf sampler is enabled, without changing pool policy.
     if ((recycle_bc || mali_rgba_cold_allocation ||
          Vulkan::MaliPerfStats::Enabled()) && allocation_ms >= 25.0) {
-        std::printf("GOW3_MALI_SLOW_IMAGE_ALLOC ms=%.2f format=%d "
+        std::printf("GOW3_MALI_SLOW_IMAGE_ALLOC ms=%.2f format=%d vk_format=%s "
                     "extent=%ux%ux%u mips=%u layers=%u bytes=%llu result=%d\n",
                     allocation_ms, int(image_ci_unsafe.format),
+                    vk::to_string(image_ci.format).c_str(),
                     image_ci_unsafe.extent.width, image_ci_unsafe.extent.height,
                     image_ci_unsafe.extent.depth, image_ci_unsafe.mipLevels,
                     image_ci_unsafe.arrayLayers,
@@ -913,11 +956,21 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         const char* option = std::getenv("GOW3_MALI_RGBA128_IMAGE_POOL");
         return !option || option[0] != '0';
     }();
+    static const bool transient_pool_enabled = [] {
+        const char* option = std::getenv("GOW3_MALI_TRANSIENT_IMAGE_POOL");
+        return !option || option[0] != '0';
+    }();
     const bool is_mali = instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
                          std::getenv("GOW3_ANDROID_PORT") != nullptr;
+    const bool transient_color = transient_pool_enabled && ScenePoolRetentionEnabled() &&
+        info.type == AmdGpu::ImageType::Color2D && !info.props.is_depth &&
+        info.num_samples == 1 && info.resources.layers == 1 &&
+        info.resources.levels == 1 &&
+        IsTransientImage(static_cast<VkImageCreateInfo>(image_ci));
     backing->image.recycle_bc = is_mali &&
         ((bc_pool_enabled && info.props.is_block) ||
-         (rgba128_pool_enabled && image_ci.format == vk::Format::eR32G32B32A32Uint));
+         (rgba128_pool_enabled && image_ci.format == vk::Format::eR32G32B32A32Uint) ||
+         transient_color);
     backing->image.Create(image_ci);
     // A hit reuses existing driver/VMA memory and must not be counted as a
     // fresh image_alloc_bc_mib allocation in future performance logs.
