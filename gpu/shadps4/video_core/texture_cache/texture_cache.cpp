@@ -1838,7 +1838,7 @@ void TextureCache::GarbageCollectImages() {
                     char* end = nullptr;
                     const unsigned long parsed = std::strtoul(requested, &end, 10);
                     if (end == requested || *end != '\0' ||
-                        (parsed != 70 && (parsed < 75 || parsed > 86)))
+                        (parsed != 70 && (parsed < 75 || parsed > 90)))
                         return 85u;
                     return static_cast<u32>(parsed);
                 }();

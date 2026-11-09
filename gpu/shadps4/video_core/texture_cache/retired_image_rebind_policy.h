@@ -13,6 +13,13 @@ constexpr bool ProtectLastRetiredEtc2(std::size_t identical_retired_entries) {
 static_assert(ProtectLastRetiredEtc2(1));
 static_assert(!ProtectLastRetiredEtc2(2));
 
+// Keep one completed R8/RGBA8 image of each exact Vulkan description.
+constexpr bool ProtectLastRetiredTransient(std::size_t identical_retired_entries) {
+    return identical_retired_entries <= 1;
+}
+static_assert(ProtectLastRetiredTransient(1));
+static_assert(!ProtectLastRetiredTransient(2));
+
 // This is MEMORY reuse, not an image/view/guest-format alias. Only GPU-retired
 // allocations may be considered, and the old VkImage is destroyed before
 // the new VkImage is bound. The candidate must be a non-dedicated suballocation

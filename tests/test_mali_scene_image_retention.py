@@ -95,9 +95,9 @@ class MaliSceneRetentionTests(unittest.TestCase):
 
     def test_mali_transient_images_have_independent_caps_and_retirement(self):
         for marker in (
-            "TransientPoolLimit = 48ULL * 1024 * 1024",
+            "TransientPoolLimit = 96ULL * 1024 * 1024",
             "TransientPoolEntryLimit = 16ULL * 1024 * 1024",
-            "TransientPoolMaxEntries = 16",
+            "TransientPoolMaxEntries = 32",
             "VK_FORMAT_R8_UNORM",
             "VK_FORMAT_R8G8B8A8_UINT",
             "VK_FORMAT_R8G8B8A8_SRGB",
@@ -107,12 +107,15 @@ class MaliSceneRetentionTests(unittest.TestCase):
             "info.resources.layers == 1",
             "info.resources.levels == 1",
             "for (auto* target : {&GetBcPool(), &GetRgba128Pool(), &GetTransientPool()})",
-            "ProtectLastRetiredEtc2(copies)",
+            "ProtectLastRetiredEtc2(identical)",
+            "ProtectLastRetiredTransient(identical)",
             "++best_pool->rebind_out;",
         ):
             self.assertIn(marker, IMAGE)
         self.assertIn("GOW3_MALI_TRANSIENT_IMAGE_POOL:-1", RUN)
         self.assertIn("transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL", RUN)
+        self.assertIn("GOW3_MALI_TRANSIENT_REBIND_LAST:-0", RUN)
+        self.assertIn("GOW3_FRAME_STATS:-1", RUN)
         # Pooling cannot bypass GPU-completion checks or the VMA fallback.
         self.assertIn("SameBcCreate(e.create, raw)", IMAGE)
         self.assertIn("VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT", IMAGE)

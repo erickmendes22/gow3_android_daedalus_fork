@@ -37,8 +37,10 @@ class BcImagePoolTest(unittest.TestCase):
   for marker in ("GetTransientPool()", "VK_FORMAT_R8_UNORM",
                  "VK_FORMAT_R8G8B8A8_UINT", "VK_FORMAT_R8G8B8A8_SRGB",
                  "TransientPoolEntryLimit = 16ULL * 1024 * 1024",
-                 "TransientPoolMaxEntries = 16",
-                 "ProtectLastRetiredEtc2(copies)",
+                 "TransientPoolMaxEntries = 32",
+                 "ProtectLastRetiredEtc2(identical)",
+                 "ProtectLastRetiredTransient(identical)",
+                 "rebind_shape_reserved",
                  "++best_pool->rebind_out;"):
    self.assertIn(marker, S)
   policy=(ROOT/"gpu/shadps4/video_core/texture_cache/retired_image_rebind_policy.h").read_text()

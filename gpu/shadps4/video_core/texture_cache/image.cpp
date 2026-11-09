@@ -127,6 +127,7 @@ struct BcPool {
     uint64_t trim_duplicate = 0;
     uint64_t etc2_hits = 0, etc2_misses = 0, etc2_stored = 0;
     uint64_t rebind_out = 0; // withdrawals for VMA rebind, not trim or purge
+    uint64_t rebind_shape_reserved = 0; // exact images protected from rebind
 };
 BcPool& GetBcPool() {
     // Deliberately never destroyed by static teardown. Instance::~Instance()
@@ -153,9 +154,9 @@ constexpr VkDeviceSize Rgba128PoolEntryLimit = 32ULL * 1024 * 1024;
 constexpr size_t Rgba128PoolMaxEntries = 24;
 // These formats caused slow native PanVK allocations in the G720 logs.
 // Keep them separate from ETC2/BC and RGBA128, with a strict RAM ceiling.
-constexpr VkDeviceSize TransientPoolLimit = 48ULL * 1024 * 1024;
+constexpr VkDeviceSize TransientPoolLimit = 96ULL * 1024 * 1024;
 constexpr VkDeviceSize TransientPoolEntryLimit = 16ULL * 1024 * 1024;
-constexpr size_t TransientPoolMaxEntries = 16;
+constexpr size_t TransientPoolMaxEntries = 32;
 // The November 8 ETC2 log reports 15 MiB CURRENT retained occupancy, NOT a
 // 15 MiB cap: 67 exact-image hits, 445 misses and zero limit/budget evictions.
 // We allow up to 256 MiB for retired BC/ETC2 images during scene transitions,
@@ -218,10 +219,11 @@ void ReportImagePool(const BcPool& pool, bool rgba128) {
                 (unsigned long long)pool.purge_budget,
                 (unsigned long long)pool.reject_budget,
                 (unsigned long long)pool.trim_duplicate, pool.images.size());
-    if (pool.rebind_out)
-        std::printf("GOW3_%s_IMAGE_POOL_REBIND_OUT count=%llu\n",
+    if (pool.rebind_out || pool.rebind_shape_reserved)
+        std::printf("GOW3_%s_IMAGE_POOL_REBIND_OUT count=%llu unique_shape_preserved=%llu\n",
                     transient ? "TRANSIENT" : rgba128 ? "RGBA128" : "BC",
-                    (unsigned long long)pool.rebind_out);
+                    (unsigned long long)pool.rebind_out,
+                    (unsigned long long)pool.rebind_shape_reserved);
     // 'retained_mib' is CURRENT free-list occupancy, not its quota. Report
     // ETC2 separately so a low value is not confused with a 15 MiB limit.
     if (!rgba128 && !transient) {
@@ -440,9 +442,40 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     auto& bc = GetBcPool();
     auto& rgba = GetRgba128Pool();
     auto& transient = GetTransientPool();
+    // G720: 125 transient images were consumed for VMA rebind in one scene.
+    // Preserve the final exact image of each R8/RGBA8 shape, like ETC2.
+    // Set GOW3_MALI_TRANSIENT_REBIND_LAST=1 for the previous behavior.
+    static const bool protect_transient = [] {
+        const char* opt = std::getenv("GOW3_MALI_TRANSIENT_REBIND_LAST");
+        return !opt || opt[0] != '1';
+    }();
+    const auto reserved_shape = [&](const BcPool& pool, const RetiredBcImage& candidate) {
+        const bool etc2 = IsEtc2Image(candidate.create);
+        const bool transient_image = protect_transient && IsTransientImage(candidate.create);
+        if (!etc2 && !transient_image) return false;
+        size_t identical = 0;
+        for (const auto& other : pool.images) {
+            if (other.allocator == allocator &&
+                SameBcCreate(other.create, candidate.create)) ++identical;
+        }
+        return etc2 ? ProtectLastRetiredEtc2(identical)
+                    : ProtectLastRetiredTransient(identical);
+    };
     {
         std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
-        if (bc.images.empty() && rgba.images.empty() && transient.images.empty()) return false;
+        // Avoid vkCreateImage/getImageMemoryRequirements2 when the pool
+        // contains no candidate allowed for rebind; exact-reuse remains first.
+        bool has_candidate = false;
+        for (const auto* pool : {&transient, &rgba, &bc}) {
+            for (const auto& entry : pool->images) {
+                if (entry.allocator == allocator && !reserved_shape(*pool, entry)) {
+                    has_candidate = true;
+                    break;
+                }
+            }
+            if (has_candidate) break;
+        }
+        if (!has_candidate) return false;
     }
     const auto create_result = device.createImage(requested_ci);
     if (create_result.result != vk::Result::eSuccess) return false;
@@ -474,14 +507,9 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                     candidate.bytes < requirements.size ||
                     candidate.bytes >= best_bytes)
                     continue;
-                // Rebinding permanently consumes the retired VkImage.
-                // Keep one exact ETC2 copy of each shape for scene reuse.
-                if (IsEtc2Image(candidate.create)) {
-                    size_t copies = 0;
-                    for (const auto& other : pool->images)
-                        if (other.allocator == allocator &&
-                            SameBcCreate(other.create, candidate.create)) ++copies;
-                    if (ProtectLastRetiredEtc2(copies)) continue;
+                if (reserved_shape(*pool, candidate)) {
+                    ++pool->rebind_shape_reserved;
+                    continue;
                 }
                 const auto& info = candidate.memory_info;
                 if (!CanRebindRetiredImageMemory(

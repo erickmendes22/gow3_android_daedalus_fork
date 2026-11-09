@@ -185,14 +185,14 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Restore stable 85% pressure threshold. 88% was unproven for steady
       # 5 FPS and risks retaining extra memory on a memory-shared GPU.
       # Critical cleanup remains at 95%, and =88 is still available.
-      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-85}
+      export GOW3_MALI_GC_PRESSURE_PCT=${GOW3_MALI_GC_PRESSURE_PCT:-87}
       # G720 2026-11-06 runtime: GC trigger=70% while usage was only
       # ~78% of budget and below 85% pressure. This caused 701 *routine*
       # image evictions in 24 reports, with zero dirty downloads.
       # Stop evicting healthy reusable images with no memory pressure.
       # =70 reproduces the logged baseline for tester A/B.
       # Pressure remains 85% and critical reclaim remains 95%.
-      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-85}
+      export GOW3_MALI_GC_TRIGGER_PCT=${GOW3_MALI_GC_TRIGGER_PCT:-87}
       # The source-project 68 vs 53 FPS worker result is NOT a G615/G720
       # measurement. Their 2026-11-04 device logs used zero preparation
       # workers. Restore this known Mali baseline and avoid competing with
@@ -251,6 +251,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
        # images under real pressure. =0 explicitly disables this pool.
        export GOW3_MALI_RGBA128_IMAGE_POOL=${GOW3_MALI_RGBA128_IMAGE_POOL:-1}
       export GOW3_MALI_TRANSIENT_IMAGE_POOL=${GOW3_MALI_TRANSIENT_IMAGE_POOL:-1}
+      export GOW3_MALI_TRANSIENT_REBIND_LAST=${GOW3_MALI_TRANSIENT_REBIND_LAST:-0}
       # Memory-only recycling: on an exact VkImage miss, a completed
       # non-dedicated VMA suballocation may be rebound to a DIFFERENT new
       # VkImage after Vulkan size/alignment/type/dedicated guards. Never
@@ -280,6 +281,8 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
+      # Lightweight five-second per-frame workload and GPU-thread wait statistics.
+      export GOW3_FRAME_STATS=${GOW3_FRAME_STATS:-1}
       # G720 matched driver/960x540: the 2-worker + deep-queue experiment
       # ran ~5 FPS vs ~6 FPS with the old 1-worker/2-submit baseline.
       # This is a paired configuration regression, not a proof that the
@@ -357,7 +360,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=$GOW3_GPU_COMPILER_WORKERS async_worker_wait=$GOW3_MALI_ASYNC_DRAW_WAIT warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS fex_l2=$GOW3_FEX_L2_CACHE pm4_idle_us=$GOW3_MALI_PM4_IDLE_BACKOFF_US pm4_yield_batch=$GOW3_MALI_PM4_YIELD_BATCH inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL memory_rebind=$GOW3_MALI_REBIND_RETIRED_MEMORY scene_retention=$GOW3_MALI_SCENE_IMAGE_RETENTION bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE vma_block_mib=$GOW3_MALI_VMA_BLOCK_MIB perf_stats=$GOW3_MALI_PERF_STATS videodec_nv12_direct=$GOW3_VIDEODEC_NV12_DIRECT sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=$GOW3_GPU_COMPILER_WORKERS async_worker_wait=$GOW3_MALI_ASYNC_DRAW_WAIT warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS fex_l2=$GOW3_FEX_L2_CACHE pm4_idle_us=$GOW3_MALI_PM4_IDLE_BACKOFF_US pm4_yield_batch=$GOW3_MALI_PM4_YIELD_BATCH inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL transient_rebind_last=$GOW3_MALI_TRANSIENT_REBIND_LAST memory_rebind=$GOW3_MALI_REBIND_RETIRED_MEMORY scene_retention=$GOW3_MALI_SCENE_IMAGE_RETENTION bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE vma_block_mib=$GOW3_MALI_VMA_BLOCK_MIB perf_stats=$GOW3_MALI_PERF_STATS frame_stats=$GOW3_FRAME_STATS videodec_nv12_direct=$GOW3_VIDEODEC_NV12_DIRECT sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac
