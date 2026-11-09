@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - analysis/gow3-bachata-mali-memory-20261106
+      - analysis/gow3-mali-draw-criticalpath-20261109
     paths:
       - '.github/workflows/gow3-mali-rebind-native-only.yml'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
@@ -12,6 +13,8 @@ on:
       - 'tests/test_mali_vma_block_policy.py'
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'tests/test_mali_draw_phase_profile.py'
       - 'cpu/guest_cpu_fex.cpp'
       - 'tests/test_mali_fex_l2_cache.py'
       - 'tools/android/bionic/run-bionic.sh'
@@ -57,6 +60,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_draw_phase_profile.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
