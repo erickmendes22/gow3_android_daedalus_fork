@@ -1032,11 +1032,16 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
 
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset, const DrawPredication& pred) {
+    const bool draw_phase_sample = MaliPerfStats::SampleDrawPhases();
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
         scheduler.PopPendingOperations();
     }
     const auto& regs = Regs();
+    // Record zero-index/zero-instance candidates, but DO NOT suppress the
+    // draw: occlusion queries/predication must first be audited.
+    if (!regs.num_indices || !regs.num_instances.NumInstances())
+        MaliPerfStats::CountEmptyDrawCandidate();
     // gow3: the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
     // A display buffer can receive dozens of draw calls after one completed
@@ -1101,7 +1106,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
     motion_geometry = 0;
 
-    PrepareRenderState(pipeline);
+    {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawTargets, draw_phase_sample};
+        PrepareRenderState(pipeline);
+    }
     if (defer_gsr2_boundary_to_flip && is_display_draw && scene_started &&
         cb_descs[0].first) {
         // Snapshot AFTER the first display-copy draw, BEFORE the next
@@ -1149,24 +1157,35 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // gow3: vertex and index buffers are resolved while the helper binds textures (their
     // commands are recorded after BeginRendering, as before).
     draw_inputs = {pipeline, draw_prepared, index_offset, is_indexed, true, false};
-    const bool bound = BindResources(pipeline);
+    const bool bound = [&] {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawBindings,
+                                          draw_phase_sample};
+        return BindResources(pipeline);
+    }();
     bind_prepared = nullptr; // indirect draws and dispatches bind without prepared sharps
     const bool inputs_resolved = draw_inputs.resolved;
     draw_inputs.pending = false;
     if (!bound) {
         return;
     }
-    const auto state = BeginRendering(pipeline);
+    const auto state = [&] {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawBeginPass,
+                                          draw_phase_sample};
+        return BeginRendering(pipeline);
+    }();
 
-    if (!inputs_resolved) {
-        ResolveVertexBuffers(pipeline, draw_prepared);
-        if (is_indexed) {
-            ResolveIndexBuffer(index_offset);
+    {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawInputs, draw_phase_sample};
+        if (!inputs_resolved) {
+            ResolveVertexBuffers(pipeline, draw_prepared);
+            if (is_indexed) {
+                ResolveIndexBuffer(index_offset);
+            }
         }
-    }
-    EmitVertexBuffers();
-    if (is_indexed) {
-        EmitIndexBuffer();
+        EmitVertexBuffers();
+        if (is_indexed) {
+            EmitIndexBuffer();
+        }
     }
 
     if (needs_barrier) {
@@ -1260,7 +1279,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             });
         }
     }
-    pipeline->BindResources(set_writes, push_data);
+    {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawDescriptors,
+                                          draw_phase_sample};
+        pipeline->BindResources(set_writes, push_data);
+    }
     // gow3: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
@@ -1272,7 +1295,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
     }
-    UpdateDynamicState(pipeline, is_indexed);
+    {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawDynamic,
+                                          draw_phase_sample};
+        UpdateDynamicState(pipeline, is_indexed);
+    }
     MarkPass(pipeline, state);
     const auto zpass_query = predication.PrepareDrawQuery();
     const auto predicate_state = predication.CapturePredicate();
@@ -1288,7 +1315,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
-    scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+    {
+        const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawCommands,
+                                          draw_phase_sample};
+        scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         const auto draw = [&] {
             if (is_indexed) {
                 cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),
@@ -1305,7 +1335,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             draw();
         }
         predication.EndDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
-    });
+        });
+    }
+    // Vulkan command records, not guest PM4 packets. The MIN/MAX square
+    // workaround emits two draws; no operation is deduplicated here.
+    MaliPerfStats::CountDrawRecorded(square ? 2u : 1u);
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);
