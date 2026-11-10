@@ -29,24 +29,23 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
         IsCompute() ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics;
     const auto stage_flags = IsCompute() ? vk::ShaderStageFlagBits::eCompute : AllGraphicsStageBits;
     const vk::PipelineLayout layout = *pipeline_layout;
-    scheduler.Record([layout, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
-        cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
-    });
 
-    // Bind descriptor set.
-    if (set_writes.empty()) {
-        return;
-    }
-
-    if (uses_push_descriptors) {
+    // The push-descriptor path has two consecutive Vulkan commands:
+    // pushConstants followed by pushDescriptorSetKHR. Record them as one
+    // ordered command instead of two RecordChunk virtual commands per draw.
+    // This retains every descriptor update and every constant write; only
+    // the host-side command/queue allocation is removed.
+    if (uses_push_descriptors && !set_writes.empty()) {
         if (!scheduler.IsRecordingDeferred()) {
+            // The nondeferred Record() executes immediately; set_writes remains valid.
             scheduler.Record([&](vk::CommandBuffer cmdbuf) {
+                cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
                 cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, set_writes);
             });
             return;
         }
-        // Writes and the infos they point to are laid out in the recording chunk, with the
-        // pointers already aimed at those copies: the command only carries a span.
+        // Capture all descriptor payloads in the recording chunk. The final
+        // combined closure must stay in the SAME chunk as those payloads.
         size_t bytes = set_writes.size() * sizeof(vk::WriteDescriptorSet) + 64;
         for (const auto& write : set_writes) {
             bytes += write.descriptorCount *
@@ -60,23 +59,34 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
         for (size_t i = 0; i < writes.size(); ++i) {
             auto& write = patched[i];
             if (write.pBufferInfo) {
-                write.pBufferInfo = scheduler.RecordData(std::span{write.pBufferInfo, write.descriptorCount}).data();
+                write.pBufferInfo =
+                    scheduler.RecordData(std::span{write.pBufferInfo, write.descriptorCount}).data();
             }
             if (write.pImageInfo) {
-                write.pImageInfo = scheduler.RecordData(std::span{write.pImageInfo, write.descriptorCount}).data();
+                write.pImageInfo =
+                    scheduler.RecordData(std::span{write.pImageInfo, write.descriptorCount}).data();
             }
             if (write.pTexelBufferView) {
                 write.pTexelBufferView =
                     scheduler.RecordData(std::span{write.pTexelBufferView, write.descriptorCount}).data();
             }
         }
-        scheduler.Record([bind_point, layout, writes](vk::CommandBuffer cmdbuf) {
+        scheduler.Record([bind_point, layout, writes, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
+            cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
             cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, writes);
         });
         return;
     }
 
-    // Descriptor set updates are device calls: they stay on this thread.
+    scheduler.Record([layout, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
+        cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
+    });
+
+    if (set_writes.empty()) {
+        return;
+    }
+    // The non-push path must update descriptors on the calling thread before
+    // binding the new set; no allocation/host update is moved to the recorder.
     const auto desc_set = desc_heap.Commit(*desc_layout);
     for (auto& set_write : set_writes) {
         set_write.dstSet = desc_set;
