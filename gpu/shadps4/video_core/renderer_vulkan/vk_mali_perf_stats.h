@@ -86,6 +86,12 @@ public:
     static void CountDrawRecorded(uint32_t count) {
         if (Enabled()) Get().draw_commands_recorded.fetch_add(count, std::memory_order_relaxed);
     }
+    static void CountGraphicsPipelineBind(bool redundant) {
+        if (!Enabled()) return;
+        (redundant ? Get().graphics_pipeline_binds_skipped :
+                     Get().graphics_pipeline_binds_executed)
+            .fetch_add(1, std::memory_order_relaxed);
+    }
     static void CountEmptyDrawCandidate() {
         if (Enabled()) Get().empty_draw_candidates.fetch_add(1, std::memory_order_relaxed);
     }
@@ -241,11 +247,18 @@ public:
         }
         const auto recorded = state.draw_commands_recorded.exchange(0, std::memory_order_relaxed);
         const auto empty = state.empty_draw_candidates.exchange(0, std::memory_order_relaxed);
-        if (used + 128 < sizeof(line))
+        const auto binds = state.graphics_pipeline_binds_executed.exchange(
+            0, std::memory_order_relaxed);
+        const auto skipped = state.graphics_pipeline_binds_skipped.exchange(
+            0, std::memory_order_relaxed);
+        if (used + 240 < sizeof(line))
             std::snprintf(line + used, sizeof(line) - used,
-                          " vk_draw_commands_recorded=%llu empty_draw_candidates=%llu",
+                          " vk_draw_commands_recorded=%llu empty_draw_candidates=%llu"
+                          " gfx_pipeline_binds=%llu gfx_pipeline_binds_skipped=%llu",
                           static_cast<unsigned long long>(recorded),
-                          static_cast<unsigned long long>(empty));
+                          static_cast<unsigned long long>(empty),
+                          static_cast<unsigned long long>(binds),
+                          static_cast<unsigned long long>(skipped));
         std::printf("%s\n", line);
     }
 
@@ -259,6 +272,7 @@ private:
         std::array<std::atomic<uint64_t>, 3> pm4_wait_sampled{};
         std::atomic<uint64_t> last_report_ms{0};
         std::atomic<uint64_t> draw_commands_recorded{0}, empty_draw_candidates{0};
+        std::atomic<uint64_t> graphics_pipeline_binds_executed{0}, graphics_pipeline_binds_skipped{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(

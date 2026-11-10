@@ -716,6 +716,10 @@ public:
         return dynamic_state;
     }
 
+    /// Skip only exact redundant graphics pipeline binds in the same command buffer.
+    /// Compute binds do not invalidate graphics state; raw CommandBuffer() does.
+    void BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipeline pipeline);
+
     /// Returns the current command buffer for recording on the calling thread. With threaded
     /// recording this first waits until all commands passed to Record() are recorded, then
     /// records directly (Record() included, so callers may mix both) until the next
@@ -727,6 +731,10 @@ public:
             direct_recordings.fetch_add(1, std::memory_order_relaxed);
             TraceDirectRecording(__builtin_return_address(0));
         }
+        // A raw caller may record its own graphics pipeline binds (ImGui,
+        // post-processing, overlays). Invalidate before exposing the buffer.
+        last_graphics_bind_cmd = {};
+        last_graphics_bind_pipeline = {};
         return current_cmdbuf;
     }
 
@@ -910,6 +918,9 @@ private:
     DynamicState dynamic_state;
     SubmitFunc on_submit{};
     vk::CommandBuffer current_cmdbuf;
+    vk::CommandBuffer last_graphics_bind_cmd{}; // accessed only by active recorder
+    vk::Pipeline last_graphics_bind_pipeline{};
+    bool graphics_pipeline_bind_cache_enabled = false;
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;

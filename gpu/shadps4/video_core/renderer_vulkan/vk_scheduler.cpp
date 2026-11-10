@@ -31,6 +31,13 @@ std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
+    // Per-renderer bind cache (never global across Vulkan command buffers).
+    // GOW3_MALI_PIPELINE_BIND_CACHE=0 restores all legacy vkCmdBindPipeline calls.
+    const char* bind_cache = std::getenv("GOW3_MALI_PIPELINE_BIND_CACHE");
+    graphics_pipeline_bind_cache_enabled =
+        std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!bind_cache || bind_cache[0] != '0');
     // gow3: GOW3_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("GOW3_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
@@ -419,12 +426,29 @@ void Scheduler::PopPendingOperations() {
     }
 }
 
+void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipeline pipeline) {
+    const bool same = graphics_pipeline_bind_cache_enabled &&
+        cmdbuf == last_graphics_bind_cmd && pipeline == last_graphics_bind_pipeline;
+    if (same) {
+        MaliPerfStats::CountGraphicsPipelineBind(true);
+        return;
+    }
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+    if (graphics_pipeline_bind_cache_enabled) {
+        last_graphics_bind_cmd = cmdbuf;
+        last_graphics_bind_pipeline = pipeline;
+    }
+    MaliPerfStats::CountGraphicsPipelineBind(false);
+}
+
 void Scheduler::AllocateWorkerCommandBuffers() {
     const vk::CommandBufferBeginInfo begin_info = {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
     };
 
     current_cmdbuf = command_pool.Commit();
+    last_graphics_bind_cmd = {};
+    last_graphics_bind_pipeline = {};
     Check(current_cmdbuf.begin(begin_info));
 
     // Invalidate dynamic state so it gets applied to the new command buffer.
