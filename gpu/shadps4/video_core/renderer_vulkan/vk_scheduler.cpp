@@ -447,8 +447,8 @@ void Scheduler::AllocateWorkerCommandBuffers() {
     };
 
     current_cmdbuf = command_pool.Commit();
-    last_graphics_bind_cmd = {};
-    last_graphics_bind_pipeline = {};
+    last_graphics_bind_cmd = vk::CommandBuffer{};
+    last_graphics_bind_pipeline = vk::Pipeline{};
     Check(current_cmdbuf.begin(begin_info));
 
     // Invalidate dynamic state so it gets applied to the new command buffer.

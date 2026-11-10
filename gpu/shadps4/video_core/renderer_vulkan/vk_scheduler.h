@@ -733,8 +733,8 @@ public:
         }
         // A raw caller may record its own graphics pipeline binds (ImGui,
         // post-processing, overlays). Invalidate before exposing the buffer.
-        last_graphics_bind_cmd = {};
-        last_graphics_bind_pipeline = {};
+        last_graphics_bind_cmd = vk::CommandBuffer{};
+        last_graphics_bind_pipeline = vk::Pipeline{};
         return current_cmdbuf;
     }
 

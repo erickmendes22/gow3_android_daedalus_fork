@@ -14,12 +14,12 @@ class BindCache(unittest.TestCase):
         self.assertIn("cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);",S)
         self.assertIn("GOW3_MALI_PIPELINE_BIND_CACHE",S)
         self.assertIn("graphics_pipeline_bind_cache_enabled",H)
-        self.assertIn("last_graphics_bind_cmd = {};",S)
-        self.assertIn("last_graphics_bind_pipeline = {};",S)
+        self.assertIn("last_graphics_bind_cmd = vk::CommandBuffer{};",S)
+        self.assertIn("last_graphics_bind_pipeline = vk::Pipeline{};",S)
     def test_external_raw_commandbuffer_invalidates_cache(self):
         direct=H.split("vk::CommandBuffer CommandBuffer()",1)[1].split("/// GOW3_RECORDER_TRACE",1)[0]
-        self.assertIn("last_graphics_bind_cmd = {};",direct)
-        self.assertIn("last_graphics_bind_pipeline = {};",direct)
+        self.assertIn("last_graphics_bind_cmd = vk::CommandBuffer{};",direct)
+        self.assertIn("last_graphics_bind_pipeline = vk::Pipeline{};",direct)
         self.assertIn("return current_cmdbuf;",direct)
     def test_all_renderer_graphics_binds_use_cache(self):
         self.assertIn("scheduler.BindGraphicsPipelineCached(cmdbuf, handle);",R)
