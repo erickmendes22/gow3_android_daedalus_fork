@@ -21,7 +21,7 @@ class DrawProfiler(unittest.TestCase):
     def test_gpu_correctness_is_not_altered(self):
         for statement in ("PrepareRenderState(pipeline);", "BindResources(pipeline);",
             "BeginRendering(pipeline);", "ResolveVertexBuffers(pipeline, draw_prepared);",
-            "EmitVertexBuffers();", "pipeline->BindResources(set_writes, push_data);",
+            "EmitVertexBuffers(is_indexed);", "pipeline->BindResources(set_writes, push_data);",
             "UpdateDynamicState(pipeline, is_indexed);", "scheduler.BeginRendering(state);",
             "cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),",
             "cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);",

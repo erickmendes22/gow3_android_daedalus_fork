@@ -16,6 +16,7 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_common.cpp'
       - 'tests/test_mali_draw_record_fusion.py'
+      - 'tests/test_mali_draw_vertex_record_fusion.py'
       - 'tests/test_mali_draw_phase_profile.py'
       - 'cpu/guest_cpu_fex.cpp'
       - 'tests/test_mali_fex_l2_cache.py'
@@ -64,6 +65,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_draw_phase_profile.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_draw_record_fusion.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_draw_vertex_record_fusion.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'

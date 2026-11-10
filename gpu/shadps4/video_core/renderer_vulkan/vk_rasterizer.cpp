@@ -1182,10 +1182,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 ResolveIndexBuffer(index_offset);
             }
         }
-        EmitVertexBuffers();
-        if (is_indexed) {
-            EmitIndexBuffer();
-        }
+        // Same Vulkan bind order, one recording closure for vertex input,
+        // vertex buffers, and the index buffer of an indexed draw.
+        EmitVertexBuffers(is_indexed);
     }
 
     if (needs_barrier) {
@@ -1966,39 +1965,64 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline, const Prepa
     EmitVertexBuffers();
 }
 
-void Rasterizer::EmitVertexBuffers() {
-    // gow3: only the used entries go into the recording chunk (the static vectors hold 32 of
-    // each: ~3 KiB copied per draw).
+void Rasterizer::EmitVertexBuffers(bool include_index_buffer) {
+    // Reserve all variable data before queuing the combined command: no
+    // RecordChunk rollover may invalidate any captured span.
     auto& v = vertex_binds;
     const bool dynamic_input = instance.IsVertexInputDynamicState();
     const u32 num_buffers = v.num_buffers;
     scheduler.ReserveRecordData(
         v.bindings.size() * sizeof(v.bindings[0]) + v.attributes.size() * sizeof(v.attributes[0]) +
-        num_buffers * (sizeof(vk::Buffer) + 3 * sizeof(vk::DeviceSize)) + 128);
+        num_buffers * (sizeof(vk::Buffer) + 3 * sizeof(vk::DeviceSize)) + 256);
+
+    std::span<const vk::VertexInputBindingDescription2EXT> bindings;
+    std::span<const vk::VertexInputAttributeDescription2EXT> attributes;
     if (dynamic_input) {
-        scheduler.Record([bindings = scheduler.RecordData(std::span<const vk::VertexInputBindingDescription2EXT>{v.bindings.data(), v.bindings.size()}),
-                          attributes = scheduler.RecordData(std::span<const vk::VertexInputAttributeDescription2EXT>{
-                              v.attributes.data(), v.attributes.size()})](
-                             vk::CommandBuffer cmdbuf) {
+        bindings = scheduler.RecordData(std::span<const vk::VertexInputBindingDescription2EXT>{
+            v.bindings.data(), v.bindings.size()});
+        attributes = scheduler.RecordData(std::span<const vk::VertexInputAttributeDescription2EXT>{
+            v.attributes.data(), v.attributes.size()});
+    }
+    std::span<const vk::Buffer> buffers;
+    std::span<const vk::DeviceSize> offsets;
+    std::span<const vk::DeviceSize> sizes;
+    std::span<const vk::DeviceSize> strides;
+    if (num_buffers) {
+        buffers = scheduler.RecordData(
+            std::span<const vk::Buffer>{v.host_buffers.data(), num_buffers});
+        offsets = scheduler.RecordData(
+            std::span<const vk::DeviceSize>{v.host_offsets.data(), num_buffers});
+        if (!dynamic_input) {
+            sizes = scheduler.RecordData(
+                std::span<const vk::DeviceSize>{v.host_sizes.data(), num_buffers});
+            strides = scheduler.RecordData(
+                std::span<const vk::DeviceSize>{v.host_strides.data(), num_buffers});
+        }
+    }
+    if (!dynamic_input && !num_buffers && !include_index_buffer) {
+        return;
+    }
+    const auto index_handle = index_bind.handle;
+    const auto index_offset = index_bind.offset;
+    const auto index_type = index_bind.type;
+    // Draw order unchanged: setVertexInput, bindVertexBuffers, bindIndexBuffer.
+    scheduler.Record([dynamic_input, num_buffers, bindings, attributes, buffers, offsets,
+                      sizes, strides, include_index_buffer, index_handle, index_offset,
+                      index_type](vk::CommandBuffer cmdbuf) {
+        if (dynamic_input) {
             cmdbuf.setVertexInputEXT(bindings, attributes);
-        });
-    }
-    if (num_buffers == 0) {
-        return;
-    }
-    const auto buffers = scheduler.RecordData(std::span<const vk::Buffer>{v.host_buffers.data(), num_buffers});
-    const auto offsets = scheduler.RecordData(std::span<const vk::DeviceSize>{v.host_offsets.data(), num_buffers});
-    if (dynamic_input) {
-        scheduler.Record([num_buffers, buffers, offsets](vk::CommandBuffer cmdbuf) {
-            cmdbuf.bindVertexBuffers(0, num_buffers, buffers.data(), offsets.data());
-        });
-        return;
-    }
-    const auto sizes = scheduler.RecordData(std::span<const vk::DeviceSize>{v.host_sizes.data(), num_buffers});
-    const auto strides = scheduler.RecordData(std::span<const vk::DeviceSize>{v.host_strides.data(), num_buffers});
-    scheduler.Record([num_buffers, buffers, offsets, sizes, strides](vk::CommandBuffer cmdbuf) {
-        cmdbuf.bindVertexBuffers2(0, num_buffers, buffers.data(), offsets.data(), sizes.data(),
-                                  strides.data());
+        }
+        if (num_buffers) {
+            if (dynamic_input) {
+                cmdbuf.bindVertexBuffers(0, num_buffers, buffers.data(), offsets.data());
+            } else {
+                cmdbuf.bindVertexBuffers2(0, num_buffers, buffers.data(), offsets.data(),
+                                         sizes.data(), strides.data());
+            }
+        }
+        if (include_index_buffer) {
+            cmdbuf.bindIndexBuffer(index_handle, index_offset, index_type);
+        }
     });
 }
 
