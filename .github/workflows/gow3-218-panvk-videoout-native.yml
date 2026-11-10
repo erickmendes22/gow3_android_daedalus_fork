@@ -139,7 +139,7 @@ jobs:
     # CPU L2 JIT + retired image reuse + image barriers + BC3/BC1 ETC2 compute.
     # Real-world performance cannot be proved by CI synthetic tests alone.
     # Separate package/signing identity keeps the installed stable port safe.
-    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106'
+    if: github.ref == 'refs/heads/fix/gow3-218-panvk-videoout-label-retire-20261031' || github.ref == 'refs/heads/analysis/gow3-mali-pipeline-preflight-20261105' || github.ref == 'refs/heads/analysis/gow3-bachata-mali-memory-20261106' || github.ref == 'refs/heads/analysis/gow3-mali-draw-criticalpath-20261109'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
