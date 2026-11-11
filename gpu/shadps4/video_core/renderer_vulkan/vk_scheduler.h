@@ -720,6 +720,13 @@ public:
     /// Compute binds do not invalidate graphics state; raw CommandBuffer() does.
     void BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipeline pipeline);
 
+    /// Exact-match dynamic vertex-input reuse (Mali only). This is called on
+    /// the active Vulkan recorder, not on the GPU thread submitting chunks.
+    void SetVertexInputCached(
+        vk::CommandBuffer cmdbuf,
+        std::span<const vk::VertexInputBindingDescription2EXT> bindings,
+        std::span<const vk::VertexInputAttributeDescription2EXT> attributes);
+
     /// Returns the current command buffer for recording on the calling thread. With threaded
     /// recording this first waits until all commands passed to Record() are recorded, then
     /// records directly (Record() included, so callers may mix both) until the next
@@ -735,6 +742,7 @@ public:
         // post-processing, overlays). Invalidate before exposing the buffer.
         last_graphics_bind_cmd = vk::CommandBuffer{};
         last_graphics_bind_pipeline = vk::Pipeline{};
+        last_vertex_input_cmd = vk::CommandBuffer{};
         return current_cmdbuf;
     }
 
@@ -921,6 +929,10 @@ private:
     vk::CommandBuffer last_graphics_bind_cmd{}; // accessed only by active recorder
     vk::Pipeline last_graphics_bind_pipeline{};
     bool graphics_pipeline_bind_cache_enabled = false;
+    vk::CommandBuffer last_vertex_input_cmd{};
+    std::vector<vk::VertexInputBindingDescription2EXT> last_vertex_input_bindings;
+    std::vector<vk::VertexInputAttributeDescription2EXT> last_vertex_input_attributes;
+    bool vertex_input_cache_enabled = false;
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;

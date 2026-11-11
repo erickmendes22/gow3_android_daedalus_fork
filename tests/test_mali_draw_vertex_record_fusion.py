@@ -14,8 +14,8 @@ class VertexFusion(unittest.TestCase):
         self.assertIn("void EmitVertexBuffers(bool include_index_buffer = false);",HDR)
         self.assertEqual(VERTEX.count("scheduler.Record("),1)
         for op in ("setVertexInputEXT", "bindVertexBuffers(", "bindVertexBuffers2(", "bindIndexBuffer("):
-            self.assertIn("cmdbuf."+op,VERTEX)
-        self.assertLess(VERTEX.index("cmdbuf.setVertexInputEXT("),VERTEX.index("cmdbuf.bindVertexBuffers("))
+            self.assertIn(("scheduler." if op=="setVertexInputEXT" else "cmdbuf.")+("SetVertexInputCached(" if op=="setVertexInputEXT" else op),VERTEX)
+        self.assertLess(VERTEX.index("scheduler.SetVertexInputCached("),VERTEX.index("cmdbuf.bindVertexBuffers("))
         self.assertLess(VERTEX.index("cmdbuf.bindVertexBuffers2("),VERTEX.index("cmdbuf.bindIndexBuffer("))
     def test_indirect_legacy_bind_unchanged(self):
         self.assertIn("void Rasterizer::BindIndexBuffer(u32 index_offset)",CPP)

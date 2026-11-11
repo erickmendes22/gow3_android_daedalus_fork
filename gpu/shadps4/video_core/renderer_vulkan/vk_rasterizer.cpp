@@ -2010,7 +2010,7 @@ void Rasterizer::EmitVertexBuffers(bool include_index_buffer) {
                       sizes, strides, include_index_buffer, index_handle, index_offset,
                       index_type](vk::CommandBuffer cmdbuf) {
         if (dynamic_input) {
-            cmdbuf.setVertexInputEXT(bindings, attributes);
+            scheduler.SetVertexInputCached(cmdbuf, bindings, attributes);
         }
         if (num_buffers) {
             if (dynamic_input) {

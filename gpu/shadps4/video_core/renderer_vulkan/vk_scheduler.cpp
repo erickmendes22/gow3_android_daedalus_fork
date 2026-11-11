@@ -38,6 +38,14 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
         std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         (!bind_cache || bind_cache[0] != '0');
+    // Only exact consecutive dynamic vertex-input state may be omitted.
+    // The Vulkan state becomes unknown after every pipeline bind or raw
+    // CommandBuffer() access, including post-processing and ImGui.
+    const char* vertex_cache = std::getenv("GOW3_MALI_VERTEX_INPUT_CACHE");
+    vertex_input_cache_enabled =
+        std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!vertex_cache || vertex_cache[0] != '0');
     // gow3: GOW3_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("GOW3_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
@@ -426,6 +434,42 @@ void Scheduler::PopPendingOperations() {
     }
 }
 
+void Scheduler::SetVertexInputCached(
+    vk::CommandBuffer cmdbuf,
+    std::span<const vk::VertexInputBindingDescription2EXT> bindings,
+    std::span<const vk::VertexInputAttributeDescription2EXT> attributes) {
+    // Compare named fields, not padding bytes. The cache is owned by this
+    // scheduler and accessed by the active Vulkan recorder in command order.
+    const auto same_bindings = [&] {
+        return last_vertex_input_bindings.size() == bindings.size() &&
+            std::equal(bindings.begin(), bindings.end(), last_vertex_input_bindings.begin(),
+                       [](const auto& a, const auto& b) {
+                           return a.binding == b.binding && a.stride == b.stride &&
+                                  a.inputRate == b.inputRate && a.divisor == b.divisor;
+                       });
+    };
+    const auto same_attributes = [&] {
+        return last_vertex_input_attributes.size() == attributes.size() &&
+            std::equal(attributes.begin(), attributes.end(), last_vertex_input_attributes.begin(),
+                       [](const auto& a, const auto& b) {
+                           return a.location == b.location && a.binding == b.binding &&
+                                  a.format == b.format && a.offset == b.offset;
+                       });
+    };
+    if (vertex_input_cache_enabled && cmdbuf == last_vertex_input_cmd &&
+        same_bindings() && same_attributes()) {
+        MaliPerfStats::CountVertexInputSet(true);
+        return;
+    }
+    cmdbuf.setVertexInputEXT(bindings, attributes);
+    if (vertex_input_cache_enabled) {
+        last_vertex_input_bindings.assign(bindings.begin(), bindings.end());
+        last_vertex_input_attributes.assign(attributes.begin(), attributes.end());
+        last_vertex_input_cmd = cmdbuf;
+    }
+    MaliPerfStats::CountVertexInputSet(false);
+}
+
 void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipeline pipeline) {
     const bool same = graphics_pipeline_bind_cache_enabled &&
         cmdbuf == last_graphics_bind_cmd && pipeline == last_graphics_bind_pipeline;
@@ -434,6 +478,10 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
         return;
     }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+    // Conservatively invalidate dynamic vertex input whenever a graphics
+    // pipeline changes. Some pipelines may use static vertex input; Vulkan
+    // commands recorded before binding must not be assumed to survive it.
+    last_vertex_input_cmd = vk::CommandBuffer{};
     if (graphics_pipeline_bind_cache_enabled) {
         last_graphics_bind_cmd = cmdbuf;
         last_graphics_bind_pipeline = pipeline;
@@ -449,6 +497,7 @@ void Scheduler::AllocateWorkerCommandBuffers() {
     current_cmdbuf = command_pool.Commit();
     last_graphics_bind_cmd = vk::CommandBuffer{};
     last_graphics_bind_pipeline = vk::Pipeline{};
+    last_vertex_input_cmd = vk::CommandBuffer{};
     Check(current_cmdbuf.begin(begin_info));
 
     // Invalidate dynamic state so it gets applied to the new command buffer.

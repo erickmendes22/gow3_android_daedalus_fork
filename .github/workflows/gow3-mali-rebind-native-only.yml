@@ -21,6 +21,7 @@ on:
       - 'tests/test_mali_graphics_bind_cache.py'
       - 'tests/test_mali_draw_record_fusion.py'
       - 'tests/test_mali_draw_vertex_record_fusion.py'
+      - 'tests/test_mali_vertex_input_bind_cache.py'
       - 'tests/test_mali_draw_phase_profile.py'
       - 'cpu/guest_cpu_fex.cpp'
       - 'tests/test_mali_fex_l2_cache.py'
@@ -70,6 +71,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_draw_phase_profile.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_draw_record_fusion.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_draw_vertex_record_fusion.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_graphics_bind_cache.py' -v
       - uses: android-actions/setup-android@v3
         with:

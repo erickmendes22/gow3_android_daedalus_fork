@@ -92,6 +92,11 @@ public:
                      Get().graphics_pipeline_binds_executed)
             .fetch_add(1, std::memory_order_relaxed);
     }
+    static void CountVertexInputSet(bool redundant) {
+        if (!Enabled()) return;
+        (redundant ? Get().vertex_input_sets_skipped : Get().vertex_input_sets_emitted)
+            .fetch_add(1, std::memory_order_relaxed);
+    }
     static void CountEmptyDrawCandidate() {
         if (Enabled()) Get().empty_draw_candidates.fetch_add(1, std::memory_order_relaxed);
     }
@@ -251,14 +256,21 @@ public:
             0, std::memory_order_relaxed);
         const auto skipped = state.graphics_pipeline_binds_skipped.exchange(
             0, std::memory_order_relaxed);
-        if (used + 240 < sizeof(line))
+        const auto vertex_sets = state.vertex_input_sets_emitted.exchange(
+            0, std::memory_order_relaxed);
+        const auto vertex_skips = state.vertex_input_sets_skipped.exchange(
+            0, std::memory_order_relaxed);
+        if (used + 360 < sizeof(line))
             std::snprintf(line + used, sizeof(line) - used,
                           " vk_draw_commands_recorded=%llu empty_draw_candidates=%llu"
-                          " gfx_pipeline_binds=%llu gfx_pipeline_binds_skipped=%llu",
+                          " gfx_pipeline_binds=%llu gfx_pipeline_binds_skipped=%llu"
+                          " vertex_input_sets=%llu vertex_input_skipped=%llu",
                           static_cast<unsigned long long>(recorded),
                           static_cast<unsigned long long>(empty),
                           static_cast<unsigned long long>(binds),
-                          static_cast<unsigned long long>(skipped));
+                          static_cast<unsigned long long>(skipped),
+                          static_cast<unsigned long long>(vertex_sets),
+                          static_cast<unsigned long long>(vertex_skips));
         std::printf("%s\n", line);
     }
 
@@ -273,6 +285,7 @@ private:
         std::atomic<uint64_t> last_report_ms{0};
         std::atomic<uint64_t> draw_commands_recorded{0}, empty_draw_candidates{0};
         std::atomic<uint64_t> graphics_pipeline_binds_executed{0}, graphics_pipeline_binds_skipped{0};
+        std::atomic<uint64_t> vertex_input_sets_emitted{0}, vertex_input_sets_skipped{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
