@@ -16,7 +16,8 @@ class VertexInputBindCache(unittest.TestCase):
         for member in ('a.binding == b.binding', 'a.stride == b.stride',
                        'a.inputRate == b.inputRate', 'a.divisor == b.divisor',
                        'a.location == b.location','a.format == b.format',
-                       'a.offset == b.offset'):
+                       'a.offset == b.offset', 'a.sType == b.sType',
+                       '!a.pNext && !b.pNext'):
             self.assertIn(member,S)
         self.assertIn('scheduler.SetVertexInputCached(cmdbuf, bindings, attributes);',D)
         self.assertIn('CountVertexInputSet(true)',S)

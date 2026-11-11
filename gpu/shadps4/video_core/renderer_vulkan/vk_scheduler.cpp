@@ -444,7 +444,10 @@ void Scheduler::SetVertexInputCached(
         return last_vertex_input_bindings.size() == bindings.size() &&
             std::equal(bindings.begin(), bindings.end(), last_vertex_input_bindings.begin(),
                        [](const auto& a, const auto& b) {
-                           return a.binding == b.binding && a.stride == b.stride &&
+                           // Extension pNext payloads may affect interpretation.
+                           // Cache only the standard null-pNext representation.
+                           return !a.pNext && !b.pNext && a.sType == b.sType &&
+                                  a.binding == b.binding && a.stride == b.stride &&
                                   a.inputRate == b.inputRate && a.divisor == b.divisor;
                        });
     };
@@ -452,7 +455,8 @@ void Scheduler::SetVertexInputCached(
         return last_vertex_input_attributes.size() == attributes.size() &&
             std::equal(attributes.begin(), attributes.end(), last_vertex_input_attributes.begin(),
                        [](const auto& a, const auto& b) {
-                           return a.location == b.location && a.binding == b.binding &&
+                           return !a.pNext && !b.pNext && a.sType == b.sType &&
+                                  a.location == b.location && a.binding == b.binding &&
                                   a.format == b.format && a.offset == b.offset;
                        });
     };
