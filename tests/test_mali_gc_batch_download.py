@@ -45,6 +45,12 @@ class TestMaliGcBatchDownload(unittest.TestCase):
         self.assertIn("++gc_downloads;",self.gc)
         self.assertIn("++gc_evictions;",self.gc)
 
+    def test_does_not_overevict_when_deferred_images_cross_gc_watermark(self):
+        self.assertIn("gc_pending_reclaim += Common::AlignUp(image.info.guest_size, 1024)",self.gc)
+        self.assertIn("gc_pending_reclaim >= total_used_memory - pressure_gc_memory",self.gc)
+        self.assertIn("gc_pending_reclaim = 0;",self.gc)
+        self.assertIn("if (total_used_memory < critical_gc_memory)",self.gc)
+
     def test_flushes_before_aggressive_second_scan_and_at_end(self):
         after=self.gc.split("lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);",1)[1]
         self.assertIn("flush_gc_writebacks();",after.split("if (total_used_memory >= critical_gc_memory)",1)[0])
