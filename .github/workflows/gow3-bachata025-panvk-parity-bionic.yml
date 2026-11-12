@@ -104,6 +104,41 @@ jobs:
           git -C /tmp/bachata-panvk-src/work/mesa log -8 --pretty='%h %s' > /tmp/driver-audit/patches.txt
           printf '%s\n' 'UNTESTED on G720. No APK built. Experimental side-by-side driver.' \
             > /tmp/driver-audit/READ_FIRST.txt
+      - name: Create directly importable PanVK driver ZIP for GoW3 (isolated A/B)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile
+          source=Path('/tmp/driver-audit')
+          library=source/'libvulkan_panfrost.so'
+          name='PanVK-Bachata025-8patch-Bionic-EXPERIMENTAL.zip'
+          target=source/name
+          meta={
+            'schemaVersion':1,
+            'name':'PanVK Bachata 0.2.5 parity Bionic (experimental)',
+            'libraryName':'libvulkan_panfrost.so',
+            'minApi':35,'vendor':'Mesa',
+            'description':'8 exact upstream Bachata V3 patches on pinned Mesa; G720 unvalidated'
+          }
+          origin={
+            'repository':'JICA98/panvk-kbase-android',
+            'sourceCommit':'2a9358a000fd691dac36d04c170fa3bd4101ff06',
+            'mesaCommit':'5a07217f034b3e50d8c7c7794f97a2df1742613b',
+            'patches':'all 8 in patches/bachata-v3; report patches.txt',
+            'sha256':hashlib.sha256(library.read_bytes()).hexdigest()
+          }
+          with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+            z.write(library,'libvulkan_panfrost.so')
+            z.writestr('meta.json',json.dumps(meta,indent=2))
+            z.writestr('SOURCE.json',json.dumps(origin,indent=2))
+            z.write(source/'SHA256SUMS.txt','SHA256SUMS.txt')
+            z.write(source/'READ_FIRST.txt','READ_FIRST.txt')
+          with zipfile.ZipFile(target) as z:
+            assert set(z.namelist())=={'libvulkan_panfrost.so','meta.json','SOURCE.json','SHA256SUMS.txt','READ_FIRST.txt'}
+            assert z.read('libvulkan_panfrost.so')==library.read_bytes()
+          print(f'Importable driver created: {target} ({target.stat().st_size} bytes)')
+          PY
       - name: Publish experimental driver only, never an APK
         uses: actions/upload-artifact@v4
         with:
