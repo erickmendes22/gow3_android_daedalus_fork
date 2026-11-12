@@ -27,6 +27,22 @@ def inspect_zip(zfile, source, depth=0):
             say(f"Archive {source}: {len(infos)} entries")
             for e in sorted(infos, key=lambda i:i.file_size,reverse=True)[:15]:
                 say(f"  large {e.file_size//1024//1024:>3} MiB {e.filename[:110]}")
+            # Real launch/config evidence, including scripts inside runtime.zip.
+            # Presence in a driver alone does NOT prove the launcher enables it.
+            printed=0
+            for entry in infos:
+                lname=entry.filename.lower()
+                if entry.file_size>300000 or not lname.endswith((".sh",".ini",".cfg",".env",".json",".txt",".properties")):
+                    continue
+                try:
+                    payload=z.read(entry).decode("utf-8","replace")
+                except Exception:
+                    continue
+                envs=sorted(set(re.findall(r"\\b(?:PANVK_KBASE|PANVK_V[0-9]+|MESA|GOW3_VK|GOW3_MALI|FEX)_[A-Z0-9_]+",payload)))
+                if envs:
+                    say(f"  CONFIG {entry.filename}: "+", ".join(envs[:35]))
+                    printed+=1
+                    if printed>=25: break
             for e in infos:
                 name=e.filename.lower()
                 basename=pathlib.PurePosixPath(name).name
