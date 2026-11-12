@@ -5,9 +5,12 @@ on:
     branches:
       - analysis/gow3-bachata-mali-memory-20261106
       - analysis/gow3-mali-draw-criticalpath-20261109
+      - perf/gow3-mali-bachata-gc-batch-20261112
     paths:
       - '.github/workflows/gow3-mali-rebind-native-only.yml'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'gpu/shadps4/video_core/texture_cache/texture_cache.cpp'
+      - 'tests/test_mali_gc_batch_download.py'
       - 'gpu/shadps4/video_core/texture_cache/retired_image_rebind_policy.h'
       - 'tests/test_mali_retired_memory_rebind.py'
       - 'tests/test_mali_vma_block_policy.py'
@@ -62,6 +65,7 @@ jobs:
       - name: Compile C++ requirements guard with negative safety cases
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_fex_l2_cache.py' -v
