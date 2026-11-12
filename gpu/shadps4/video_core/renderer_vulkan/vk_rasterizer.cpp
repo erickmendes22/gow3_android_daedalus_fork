@@ -2006,7 +2006,7 @@ void Rasterizer::EmitVertexBuffers(bool include_index_buffer) {
     const auto index_offset = index_bind.offset;
     const auto index_type = index_bind.type;
     // Draw order unchanged: setVertexInput, bindVertexBuffers, bindIndexBuffer.
-    scheduler.Record([dynamic_input, num_buffers, bindings, attributes, buffers, offsets,
+    scheduler.Record([this, dynamic_input, num_buffers, bindings, attributes, buffers, offsets,
                       sizes, strides, include_index_buffer, index_handle, index_offset,
                       index_type](vk::CommandBuffer cmdbuf) {
         if (dynamic_input) {
