@@ -1,0 +1,46 @@
+name: Bachata S4 v0.2.5 vs GoW3 Mali - binary-only audit (NO APK)
+on:
+  push:
+    branches:
+      - audit/bachata025-gow3-elf-20261112
+    paths:
+      - .github/workflows/gow3-bachata025-elf-audit.yml
+      - tools/analysis/compare_bachata_025_elf.py
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  binary-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified official Bachata 0.2.5 APK and existing successful GoW3 Mali artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors --max-time 480 \
+            -o /tmp/bachata025.apk \
+            'https://github.com/JICA98/Bachata-S4/releases/download/v0.2.5/bachatas4-0.2.5-release.apk'
+          echo '1df49463f396df8b6f042230bdc1bb9f948b8e69894c378915920875c40ab0ee  /tmp/bachata025.apk' | sha256sum --check --strict
+          curl --fail --location --retry 5 --retry-all-errors --max-time 480 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -o /tmp/gow3-mali-native.zip \
+            'https://api.github.com/repos/erickmendes22/gow3_android_daedalus_fork/actions/artifacts/13982464227/zip'
+          test $(stat -c '%s' /tmp/gow3-mali-native.zip) -gt 100000
+      - name: Inspect actual ELF payloads and classify differences (no binary publishing)
+        run: |
+          set -euo pipefail
+          python3 tools/analysis/compare_bachata_025_elf.py /tmp/bachata025.apk /tmp/gow3-mali-native.zip
+          cat bachata_binary_audit/BACHATA_025_GOW3_BINARY_AUDIT.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload text report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bachata025-gow3-mali-elf-audit-report
+          path: bachata_binary_audit/BACHATA_025_GOW3_BINARY_AUDIT.md
+          if-no-files-found: ignore
+          retention-days: 7
