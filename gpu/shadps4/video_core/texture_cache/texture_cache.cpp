@@ -1892,6 +1892,7 @@ void TextureCache::GarbageCollectImages() {
     };
     boost::container::small_vector<GcPendingWriteback, 16> gc_pending;
     u64 gc_pending_bytes = 0;
+    u64 gc_pending_reclaim = 0;
     constexpr u64 MaxGcBatchBytes = 32ULL * 1024 * 1024;
     constexpr size_t MaxGcBatchImages = 16;
     const auto flush_gc_writebacks = [&] {
@@ -1927,6 +1928,7 @@ void TextureCache::GarbageCollectImages() {
         }
         gc_pending.clear();
         gc_pending_bytes = 0;
+        gc_pending_reclaim = 0;
     };
     const auto clean_up = [&](ImageId image_id) {
         if (num_deletions == 0) {
@@ -1991,6 +1993,15 @@ void TextureCache::GarbageCollectImages() {
             } else if (auto copy = RecordImageDownload(image_id)) {
                 gc_pending.push_back({image_id, *copy, start, end});
                 gc_pending_bytes += copy->size;
+                // GC must stop at its ACTUAL watermark just as in the old
+                // immediate-free path.  Delaying FreeImage() without this
+                // check would evict too many reusable images in one pass.
+                // Same size accounting as UnregisterImage().
+                gc_pending_reclaim += Common::AlignUp(image.info.guest_size, 1024);
+                if (total_used_memory > pressure_gc_memory &&
+                    gc_pending_reclaim >= total_used_memory - pressure_gc_memory) {
+                    flush_gc_writebacks();
+                }
             } else {
                 // SafeToDownload() can be true for a non-GpuModified image.
                 ++gc_evictions;
