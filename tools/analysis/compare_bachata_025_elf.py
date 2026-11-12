@@ -38,7 +38,7 @@ def inspect_zip(zfile, source, depth=0):
                     payload=z.read(entry).decode("utf-8","replace")
                 except Exception:
                     continue
-                envs=sorted(set(re.findall(r"\\b(?:PANVK_KBASE|PANVK_V[0-9]+|MESA|GOW3_VK|GOW3_MALI|FEX)_[A-Z0-9_]+",payload)))
+                envs=sorted(set(re.findall(r"\b(?:PANVK_KBASE|PANVK_V[0-9]+|MESA|GOW3_VK|GOW3_MALI|FEX)_[A-Z0-9_]+",payload)))
                 if envs:
                     say(f"  CONFIG {entry.filename}: "+", ".join(envs[:35]))
                     printed+=1
