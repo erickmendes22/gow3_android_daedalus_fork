@@ -91,7 +91,21 @@ def inspect_blob(group, path, blob):
     finally:
         proc.stdout.close()
         proc.wait(timeout=90)
-    stats.update(needed=needed,buildid=buildid[:2],symbols=symnames,markers=matches)
+    # Target actual implementation symbols and sizes; avoid inferring from generic Vulkan strings.
+    nm=run("nm","-C","-S","--defined-only",str(out),limit=16000000)
+    targets=[
+        "Vulkan::CommandRecorder::Reserve", "Vulkan::CommandRecorder::Publish",
+        "Vulkan::CommandRecorder::Sync", "Vulkan::CommandRecorder::WorkerLoop",
+        "VideoCore::TileManager::EncodeEtc2",
+        "VideoCore::TileManager::GetEtc2EncodePipeline",
+        "Vulkan::Instance::RefreshAllocatorMemoryBudget",
+        "Vulkan::Instance::GetLiveGpuMemoryBudget",
+        "VideoCore::BufferCache::BindVertexBuffers",
+        "Vulkan::Scheduler::SubmitExecution", "Vulkan::Scheduler::RecorderThread",
+        "Vulkan::BcnTranscodeState::Record", "Vulkan::BcnTranscodeState::RecordBatch",
+    ]
+    exact={key:[ln.strip()[:300] for ln in nm.splitlines() if key in ln][:3] for key in targets}
+    stats.update(needed=needed,buildid=buildid[:2],symbols=symnames,markers=matches,exact=exact)
     out.unlink(missing_ok=True)
     return stats
 if len(sys.argv) not in (3,4): raise SystemExit("usage: compare_bachata_025_elf.py bachata.apk gow3-native.zip [gow3-apk-artifact.zip]")
@@ -122,6 +136,8 @@ for origin,p in inputs:
         for key,vals in stats["markers"].items():
             if vals: say(f"{key}: "+" | ".join(vals)[:1400])
         if stats["symbols"]: say("symbols: "+" | ".join(stats["symbols"])[:1400])
+        for symbol, rows in stats["exact"].items():
+            if rows: say("FUNCTION: "+symbol+" | "+" | ".join(rows))
 say("## Comparison cautions")
 say("String markers and exported symbols are presence evidence, not proof of performance, codepath selection, or the absence of stripped implementations.")
 say("No native .so file and no executable binary is redistributed by this audit.")
