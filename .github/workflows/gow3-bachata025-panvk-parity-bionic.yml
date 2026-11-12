@@ -104,7 +104,7 @@ jobs:
           text=p.read_text()
           target='-Dcpp_link_args=-static-libstdc++ >"$LOG"'
           assert text.count(target)==1, 'upstream build script changed; inspect before modifying'
-          text=text.replace(target, '-Dforce-fallback-for=libdrm -Dlibdrm:default_library=static ' + target)
+          text=text.replace(target, '--force-fallback-for=libdrm -Dlibdrm:default_library=static ' + target)
           p.write_text(text)
           PY
           bash scripts/build-android.sh --profile "$PANVK_PROFILE" --api 35
