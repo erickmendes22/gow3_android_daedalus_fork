@@ -40,7 +40,7 @@ jobs:
             libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev \
             libxshmfence-dev libz-dev libelf-dev libexpat1-dev libglvnd-dev
           python3 -m venv /tmp/panvk-build-py
-          /tmp/panvk-build-py/bin/pip install --disable-pip-version-check 'meson>=1.4,<2' mako pyyaml
+          /tmp/panvk-build-py/bin/pip install --disable-pip-version-check 'meson>=1.4,<2' mako pyyaml packaging
           echo "/tmp/panvk-build-py/bin" >> "$GITHUB_PATH"
       - name: Checkout EXACT upstream driver source and Mesa base
         run: |
