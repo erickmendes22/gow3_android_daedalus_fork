@@ -59,7 +59,15 @@ jobs:
           assert len(files)==8, [x.name for x in files]
           print('Verified exact Bachata V3 baseline source, Mesa commit, 8 release patches')
           PY
-          bash /tmp/bachata-panvk-src/scripts/fetch-mesa.sh
+          mkdir -p /tmp/bachata-panvk-src/work/mesa
+          git -C /tmp/bachata-panvk-src/work/mesa init -q
+          git -C /tmp/bachata-panvk-src/work/mesa remote add origin \
+            https://gitlab.freedesktop.org/mesa/mesa.git
+          # Do not clone the multi-GB Mesa history into ephemeral CI: fetch
+          # the exact official Bachata base as a single shallow object.
+          git -C /tmp/bachata-panvk-src/work/mesa fetch --depth=1 origin "$MESA_BASE"
+          git -C /tmp/bachata-panvk-src/work/mesa checkout -q --detach FETCH_HEAD
+          test "$(git -C /tmp/bachata-panvk-src/work/mesa rev-parse HEAD)" = "$MESA_BASE"
         env:
           GIT_TERMINAL_PROMPT: '0'
       - name: Apply upstream baseline and ALL eight original Bachata V3 patches
