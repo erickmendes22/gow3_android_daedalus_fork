@@ -29,6 +29,16 @@ def inspect_zip(zfile, source, depth=0):
                 say(f"  large {e.file_size//1024//1024:>3} MiB {e.filename[:110]}")
             # Real launch/config evidence, including scripts inside runtime.zip.
             # Presence in a driver alone does NOT prove the launcher enables it.
+            # Driver origin/patch metadata is far stronger than a string
+            # shared by unrelated ELF builds; print only public package metadata.
+            for entry in infos:
+                name=entry.filename
+                if name.endswith(("SOURCE.json","VALIDATION.json","BACHATA-DISTRIBUTION.json","meta.json")) and entry.file_size<35000:
+                    try:
+                        value=z.read(entry).decode("utf-8","replace")
+                    except Exception:
+                        continue
+                    say("  DRIVER_METADATA "+name+" "+value[:4500].replace("\\n"," "))
             printed=0
             for entry in infos:
                 lname=entry.filename.lower()
