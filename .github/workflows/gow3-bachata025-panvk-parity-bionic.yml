@@ -93,6 +93,20 @@ jobs:
           cd /tmp/bachata-panvk-src
           export ANDROID_HOME="${ANDROID_HOME}"
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/29.0.14206865"
+          # The upstream helper can inadvertently discover x86_64 host
+          # libdrm via /usr/lib/pkgconfig and feed its headers/libs to
+          # aarch64 Bionic.  Force a target-built static libdrm wrap, exactly
+          # as Bachata's Bionic provenance states (no host ABI contamination).
+          mkdir -p work/android-deps/lib/pkgconfig
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/build-android.sh')
+          text=p.read_text()
+          target='-Dcpp_link_args=-static-libstdc++ >"$LOG"'
+          assert text.count(target)==1, 'upstream build script changed; inspect before modifying'
+          text=text.replace(target, '-Dforce-fallback-for=libdrm -Dlibdrm:default_library=static ' + target)
+          p.write_text(text)
+          PY
           bash scripts/build-android.sh --profile "$PANVK_PROFILE" --api 35
           test -s "dist/android-$PANVK_PROFILE/libvulkan_panfrost.so"
       - name: Require ARM64 Bionic ELF and matching patch features
