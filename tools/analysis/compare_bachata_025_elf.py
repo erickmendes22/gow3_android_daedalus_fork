@@ -10,10 +10,10 @@ report=[]
 def say(s=""):
     report.append(s)
     print(s, flush=True)
-def run(*cmd):
+def run(*cmd, limit=120000):
     try:
         p=subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=110, check=False)
-        return p.stdout.decode("utf-8", "replace")[:120000]
+        return p.stdout.decode("utf-8", "replace")[:limit]
     except (OSError, subprocess.TimeoutExpired) as exc:
         return str(exc)
 def sha(buf):
