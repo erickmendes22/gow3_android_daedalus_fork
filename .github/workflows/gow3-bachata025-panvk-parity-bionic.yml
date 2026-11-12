@@ -1,0 +1,113 @@
+name: GoW3 Mali - Bachata S4 0.2.5 PanVK V3 patch parity Bionic (NO APK)
+on:
+  push:
+    branches: [perf/gow3-mali-bachata-gc-batch-20261112]
+    paths:
+      - '.github/workflows/gow3-bachata025-panvk-parity-bionic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gow3-bachata025-panvk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-panvk-bionic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      BACHATA_PANVK_SOURCE: 2a9358a000fd691dac36d04c170fa3bd4101ff06
+      MESA_BASE: 5a07217f034b3e50d8c7c7794f97a2df1742613b
+      PANVK_PROFILE: g615-v11-csf
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned NDK and host dependencies
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools ndk;29.0.14206865'
+      - name: Host development dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            git build-essential clang llvm-dev libclang-dev llvm-18-dev \
+            pkg-config ninja-build cmake python3 python3-pip python3-venv \
+            python3-mako python3-yaml python3-ply bison flex \
+            libdrm-dev libudev-dev libwayland-dev libx11-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
+            libxcb-xfixes0-dev libxcb-randr0-dev libxcb-shm0-dev \
+            libxshmfence-dev libz-dev libelf-dev libexpat1-dev libglvnd-dev
+          python3 -m venv /tmp/panvk-build-py
+          /tmp/panvk-build-py/bin/pip install --disable-pip-version-check 'meson>=1.4,<2' mako pyyaml
+          echo "/tmp/panvk-build-py/bin" >> "$GITHUB_PATH"
+      - name: Checkout EXACT upstream driver source and Mesa base
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --no-checkout \
+            https://github.com/JICA98/panvk-kbase-android.git /tmp/bachata-panvk-src
+          git -C /tmp/bachata-panvk-src fetch --depth=1 origin "$BACHATA_PANVK_SOURCE"
+          git -C /tmp/bachata-panvk-src checkout --detach "$BACHATA_PANVK_SOURCE"
+          test "$(git -C /tmp/bachata-panvk-src rev-parse HEAD)" = "$BACHATA_PANVK_SOURCE"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/bachata-panvk-src/sources.lock').read_text())
+          assert d['mesaCommit']=='5a07217f034b3e50d8c7c7794f97a2df1742613b'
+          files=sorted((Path('/tmp/bachata-panvk-src')/'patches/bachata-v3').glob('*.patch'))
+          assert len(files)==8, [x.name for x in files]
+          print('Verified exact Bachata V3 baseline source, Mesa commit, 8 release patches')
+          PY
+          bash /tmp/bachata-panvk-src/scripts/fetch-mesa.sh
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+      - name: Apply upstream baseline and ALL eight original Bachata V3 patches
+        run: |
+          set -euo pipefail
+          cd /tmp/bachata-panvk-src
+          bash scripts/apply-patches.sh --profile "$PANVK_PROFILE"
+          git -C work/mesa add -A
+          git -C work/mesa -c user.name='GoW3 binary parity CI' \
+            -c user.email='go3-ci@example.invalid' commit -qm 'Pinned upstream PanVK CSF baseline'
+          for patch in patches/bachata-v3/*.patch; do
+            echo "BACHATA_V3_PATCH: $(basename "$patch")"
+            git -C work/mesa am --3way "$PWD/$patch"
+          done
+          echo "BACHATA_V3_PATCHES_APPLIED=8"
+          test "$(git -C work/mesa status --porcelain)" = ""
+          git -C work/mesa rev-parse HEAD
+      - name: Build exact Bachata patched PanVK for Android Bionic
+        run: |
+          set -euo pipefail
+          cd /tmp/bachata-panvk-src
+          export ANDROID_HOME="${ANDROID_HOME}"
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/29.0.14206865"
+          bash scripts/build-android.sh --profile "$PANVK_PROFILE" --api 35
+          test -s "dist/android-$PANVK_PROFILE/libvulkan_panfrost.so"
+      - name: Require ARM64 Bionic ELF and matching patch features
+        run: |
+          set -euo pipefail
+          so="/tmp/bachata-panvk-src/dist/android-$PANVK_PROFILE/libvulkan_panfrost.so"
+          readelf -h "$so" | grep -F 'AArch64'
+          readelf -d "$so" | tee /tmp/panvk-needed.txt
+          if grep -E 'NEEDED.*(libc.so.6|libstdc[+][+].so.6|ld-linux)' /tmp/panvk-needed.txt; then
+            echo 'ERROR: glibc leak into Android Bionic PanVK driver'; exit 1
+          fi
+          strings "$so" | grep -F 'PANVK_KBASE_GPU_SEMAPHORE_WAITS'
+          strings "$so" | grep -F 'PANVK_KBASE_SKIP_HEAP_OPS'
+          strings "$so" | grep -F 'Bachata V3.2'
+          sha256sum "$so" | tee /tmp/bachata-panvk-bionic.sha256
+          mkdir -p /tmp/driver-audit
+          cp "$so" /tmp/driver-audit/libvulkan_panfrost.so
+          cp /tmp/bachata-panvk-bionic.sha256 /tmp/driver-audit/SHA256SUMS.txt
+          git -C /tmp/bachata-panvk-src/work/mesa log -8 --pretty='%h %s' > /tmp/driver-audit/patches.txt
+          printf '%s\n' 'UNTESTED on G720. No APK built. Experimental side-by-side driver.' \
+            > /tmp/driver-audit/READ_FIRST.txt
+      - name: Publish experimental driver only, never an APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoW3-PanVK-Bachata-025-8patches-Bionic-ARM64-UNTESTED
+          path: /tmp/driver-audit/
+          if-no-files-found: error
+          retention-days: 14
