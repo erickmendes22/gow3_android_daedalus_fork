@@ -37,7 +37,9 @@ class VertexInputBindCache(unittest.TestCase):
         self.assertIn('last_vertex_input_attributes',H)
 
     def test_cpu_command_fusion_is_kept(self):
-        self.assertIn('scheduler.Record([dynamic_input, num_buffers, bindings, attributes', D)
+        self.assertIn('scheduler.Record([this, dynamic_input, num_buffers, bindings, attributes', D)
+        # The deferred lambda invokes a Rasterizer member; capture must be explicit.
+        self.assertIn('scheduler.SetVertexInputCached(cmdbuf, bindings, attributes);', D)
         self.assertIn('cmdbuf.bindVertexBuffers2(0, num_buffers, buffers.data(), offsets.data()',D)
         self.assertIn('cmdbuf.bindIndexBuffer(index_handle, index_offset, index_type)',D)
 
