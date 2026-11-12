@@ -75,30 +75,42 @@ def inspect_blob(group, path, blob):
             symbol=line.split()[-1] if line.split() else ""
             if re.search(r"(?i)(garbagecollectimages|downloadimagememory|bindtextures|drawrecord|scheduler|submitexecution|rasterizer|panvk.*heap)",symbol):
                 if len(symnames)<35: symnames.append(symbol[:140])
-    raw=run("strings","-a","-n","9",str(out))
-    matches={}
-    for key,pattern in KEYS:
-        found=[line.strip() for line in raw.splitlines() if re.search(pattern,line,re.I)]
-        # Dedup and cap; never infer absence of code from absent diagnostic strings.
-        matches[key]=list(dict.fromkeys(found))[:22]
+    # Stream the COMPLETE ELF strings, not the first 120 KB (which are dominated by symbols).
+    # Only collect distinctive/diagnostic strings, capped by category to keep the report short.
+    matches={key:[] for key,_ in KEYS}
+    patterns=[(key,re.compile(pattern,re.I)) for key,pattern in KEYS]
+    proc=subprocess.Popen(["strings","-a","-n","9",str(out)],stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL,text=True,errors="replace")
+    try:
+        for rawline in proc.stdout:
+            line=rawline.strip()
+            if len(line)>400: continue
+            for key,pattern in patterns:
+                if pattern.search(line) and line not in matches[key] and len(matches[key])<45:
+                    matches[key].append(line)
+    finally:
+        proc.stdout.close()
+        proc.wait(timeout=90)
     stats.update(needed=needed,buildid=buildid[:2],symbols=symnames,markers=matches)
     out.unlink(missing_ok=True)
     return stats
-if len(sys.argv)!=3: raise SystemExit("usage: compare_bachata_025_elf.py bachata.apk gow3-artifact.zip")
+if len(sys.argv) not in (3,4): raise SystemExit("usage: compare_bachata_025_elf.py bachata.apk gow3-native.zip [gow3-apk-artifact.zip]")
 bachata=pathlib.Path(sys.argv[1]);gow=pathlib.Path(sys.argv[2])
 if sha(bachata.read_bytes())!=BACHATA_EXPECTED_SHA256:
     raise SystemExit("OFFICIAL BACHATA APK SHA-256 mismatch: abort")
 say("# Actual ELF binary audit: Bachata S4 0.2.5 vs GoW3 Mali")
 say(f"Verified official Bachata APK sha256 {BACHATA_EXPECTED_SHA256}")
 allstats={}
-for origin,p in (("bachata025",bachata),("gow3",gow)):
+inputs=[("bachata025",bachata),("gow3-native",gow)]
+if len(sys.argv)==4: inputs.append(("gow3-apk",pathlib.Path(sys.argv[3])))
+for origin,p in inputs:
     files=inspect_zip(p,origin)
     say(f"ELF entries {origin}: {len(files)}")
     for src,name,blob in sorted(files,key=lambda v:len(v[2]),reverse=True)[:25]:
         say(f"  ELF {len(blob)//1048576:>3} MiB {name[:120]}")
     selected=[item for item in files if interesting(item[1])]
     if not selected: selected=sorted(files,key=lambda v:len(v[2]),reverse=True)[:4]
-    selected=sorted(selected,key=lambda v:len(v[2]),reverse=True)[:12]
+    selected=sorted(selected,key=lambda v:len(v[2]),reverse=True)[:15]
     allstats[origin]=[]
     for source,name,blob in selected:
         stats=inspect_blob(origin,name,blob)
