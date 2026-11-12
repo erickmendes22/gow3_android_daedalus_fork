@@ -1872,6 +1872,62 @@ void TextureCache::GarbageCollectImages() {
         ticks_to_destroy = std::min(ticks_to_destroy, gc_tick);
         num_deletions = aggresive ? 40 : pressured ? 20 : 10;
     };
+    // The Bachata-style download scheduling records GPU copies together and
+    // waits once, instead of draining the queue for every dirty GC image.
+    // GoW3 already batches ProcessDownloadImages(), but ordinary GC still
+    // did one scheduler.Finish() per image (26 sync waits / 642 ms on G720).
+    // Hold images tracked and alive until their batched readbacks complete;
+    // NEVER defer a guest-memory write past FreeImage().
+    // Scoped to Mali, opt out with GOW3_MALI_GC_BATCH_DOWNLOAD=0.
+    static const bool mali_gc_batch_download = [] {
+        const char* mali = std::getenv("GOW3_MALI_CPU_PRESENT");
+        const char* option = std::getenv("GOW3_MALI_GC_BATCH_DOWNLOAD");
+        return mali && mali[0] == '1' && (!option || option[0] != '0');
+    }();
+    struct GcPendingWriteback {
+        ImageId image_id;
+        PendingDownload download;
+        VAddr image_address;
+        u64 image_end;
+    };
+    boost::container::small_vector<GcPendingWriteback, 16> gc_pending;
+    u64 gc_pending_bytes = 0;
+    constexpr u64 MaxGcBatchBytes = 32ULL * 1024 * 1024;
+    constexpr size_t MaxGcBatchImages = 16;
+    const auto flush_gc_writebacks = [&] {
+        if (gc_pending.empty()) return;
+        const bool timing = Vulkan::MaliPerfStats::Enabled();
+        const auto start = timing ? Vulkan::MaliPerfStats::Clock::now()
+                                  : Vulkan::MaliPerfStats::TimePoint{};
+        scheduler.Finish();
+        if (timing) {
+            Vulkan::MaliPerfStats::Record(Vulkan::MaliPerfStats::Stage::SyncTextureDownload,
+                                         start);
+        }
+        // Preserve GC traversal order and synchronous guest-memory visibility.
+        for (const auto& entry : gc_pending) {
+            entry.download.staging.Invalidate();
+            Core::Memory::Instance()->TryWriteBacking(
+                std::bit_cast<u8*>(entry.download.guest_address),
+                entry.download.staging.mapped, entry.download.size);
+            runtime.GetStagingPool().FreeDeferred(entry.download.staging);
+            ++gc_downloads;
+            ++gc_evictions;
+            FreeImage(entry.image_id);
+        }
+        static u64 batch_waits = 0, batched_images = 0;
+        ++batch_waits;
+        batched_images += gc_pending.size();
+        if (batch_waits <= 4 || (batch_waits & 31u) == 0) {
+            std::printf("GOW3_MALI_GC_BATCH downloads=%zu bytes=%llu "
+                        "cumulative_downloads=%llu waits=%llu\n",
+                        gc_pending.size(), (unsigned long long)gc_pending_bytes,
+                        (unsigned long long)batched_images,
+                        (unsigned long long)batch_waits);
+        }
+        gc_pending.clear();
+        gc_pending_bytes = 0;
+    };
     const auto clean_up = [&](ImageId image_id) {
         if (num_deletions == 0) {
             return true;
@@ -1905,15 +1961,50 @@ void TextureCache::GarbageCollectImages() {
         ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                          ReadbackSource::CacheCleanup);
         --num_deletions;
-        if (download) {
-            // gow3: synchronously, while the image still protects its pages. A deferred
-            // write-back landed after FreeImage had unprotected them, over whatever the game
-            // had meanwhile stored there (e.g. its heap after unloading an area).
-            DownloadImageMemory(image_id, true);
-            ++gc_downloads;
+        if (download && mali_gc_batch_download) {
+            // Do not change semantics when two GPU images alias the same
+            // guest address: finish previous writes before issuing the next
+            // copy. For other shapes, overlap checks are bounded to 16 entries.
+            const VAddr start = image.info.guest_address;
+            const u64 end = start + image.info.guest_size;
+            const u64 bytes = u64{image.info.pitch} * image.info.size.height *
+                              image.info.size.depth * image.info.resources.layers *
+                              (image.info.num_bits / 8);
+            bool overlap = false;
+            for (const auto& previous : gc_pending) {
+                if (start < previous.image_end && previous.image_address < end) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if (overlap || gc_pending.size() >= MaxGcBatchImages ||
+                gc_pending_bytes + bytes > MaxGcBatchBytes) {
+                flush_gc_writebacks();
+            }
+            if (bytes > MaxGcBatchBytes) {
+                // A giant single texture must not blow out the temporary
+                // staging budget: use the established immediate path.
+                DownloadImageMemory(image_id, true);
+                ++gc_downloads;
+                ++gc_evictions;
+                FreeImage(image_id);
+            } else if (auto copy = RecordImageDownload(image_id)) {
+                gc_pending.push_back({image_id, *copy, start, end});
+                gc_pending_bytes += copy->size;
+            } else {
+                // SafeToDownload() can be true for a non-GpuModified image.
+                ++gc_evictions;
+                FreeImage(image_id);
+            }
+        } else {
+            if (download) {
+                // Preserve old immediate path on non-Mali and when disabled.
+                DownloadImageMemory(image_id, true);
+                ++gc_downloads;
+            }
+            ++gc_evictions;
+            FreeImage(image_id);
         }
-        ++gc_evictions;
-        FreeImage(image_id);
         if (total_used_memory < critical_gc_memory) {
             if (aggresive) {
                 num_deletions >>= 2;
@@ -1931,12 +2022,14 @@ void TextureCache::GarbageCollectImages() {
     // Try to remove anything old enough and not high priority.
     configure(false);
     lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
+    flush_gc_writebacks();
 
     if (total_used_memory >= critical_gc_memory) {
         // If we are still over the critical limit, run an aggressive GC
         configure(true);
         lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
+    flush_gc_writebacks();
     // gow3: evictions under memory pressure, at most every 5 s (GOW3_FRAME_STATS or not).
     // Report previously invisible clean evictions even without pressure.
     if (gc_evictions || pressured || gc_downloads != 0) {
