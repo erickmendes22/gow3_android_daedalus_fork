@@ -75,6 +75,8 @@ jobs:
           set -euo pipefail
           cd /tmp/bachata-panvk-src
           bash scripts/apply-patches.sh --profile "$PANVK_PROFILE"
+          git -C work/mesa config user.name 'GoW3 binary parity CI'
+          git -C work/mesa config user.email 'gow3-parity-ci@example.invalid'
           git -C work/mesa add -A
           git -C work/mesa -c user.name='GoW3 binary parity CI' \
             -c user.email='go3-ci@example.invalid' commit -qm 'Pinned upstream PanVK CSF baseline'
