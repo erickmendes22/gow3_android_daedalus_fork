@@ -35,6 +35,10 @@ on:
       - 'gpu/shadps4/video_core/texture_cache/image.h'
       - 'gpu/shadps4/video_core/texture_cache/image_view.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_shader_util.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_shader_hle.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_early_z.h'
+      - 'tests/test_mali_gpu_early_z.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_compute_pipeline.h'
       - 'tests/test_mali_background_warmup.py'
@@ -62,6 +66,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Validate opaque-fragment early-depth transform with negative cases
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            -Igpu/shadps4 \
+            -Igpu/third_party/sirit/externals/SPIRV-Headers/include \
+            tests/test_mali_gpu_early_z.cpp -o /tmp/gow3-mali-early-z
+          /tmp/gow3-mali-early-z
       - name: Compile C++ requirements guard with negative safety cases
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
