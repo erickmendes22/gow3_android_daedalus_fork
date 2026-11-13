@@ -1234,6 +1234,17 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eTransferWrite |
         vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
 
+    // When the tracker is retired on a buffer hazard, it retires *every*
+    // previously recorded access, not just the range that caused the flush.
+    // Therefore local VkBuffer barriers must cover ALL pending resources;
+    // otherwise a later draw can miss a dependency on another buffer.
+    // Too many distinct ranges conservatively fall back to the original
+    // global memory barrier via MaliBufferBarrierRegions::Overflow().
+    if (mali_local_buffer_barriers && !pending_mali_buffer_barriers.Overflow()) {
+        pending_mali_buffer_barriers.Add(std::bit_cast<u64>(handle->Handle()),
+                                         offset, size);
+    }
+
     // gow3: reads are tracked at 4 KiB granularity. Constant data comes from ring allocations
     // at a new offset every draw; rounded, they land in ranges already present and the
     // insert returns early instead of growing the tree until the next barrier flush.
