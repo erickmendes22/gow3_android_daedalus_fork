@@ -65,15 +65,26 @@ int main() {
     // CPU microbenchmark of the *actual* region code, not shader/GPU time.
     constexpr unsigned batches = 400000;
     const auto begin = std::chrono::steady_clock::now();
+    u64 seed = 0x7206ab54e11c031dull;
     size_t sink = 0;
     for (unsigned i = 0; i < batches; ++i) {
         r.Clear();
-        for (u64 k = 1; k <= 4; ++k)
-            sink += r.Add(k, k * 256, 32);
+        for (u64 k = 1; k <= 4; ++k) {
+            // Dynamic, data-dependent non-constant hazard ranges: without this
+            // the optimizer reduced the earlier synthetic loop to a constant,
+            // reporting an impossible 9 ns for four real hazard insertions.
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            const u64 buffer = 1 + (seed & 7);
+            const u64 offset = (seed >> 3) & 0x3FFF;
+            sink += r.Add(buffer, offset, 32);
+            sink += r.Count() ^ r[0].offset;
+        }
     }
     const auto end = std::chrono::steady_clock::now();
     const double us = std::chrono::duration<double, std::micro>(end-begin).count() / batches;
-    assert(sink == batches * 4);
+    assert(sink != 0 && seed != 0);
     std::printf("GOW3_MALI_LOCAL_BARRIER_SYNTH safe=%zu overflow=%zu 4hazards_us=%.3f "
                 "scope_bytes=128 vs whole-buffer-model=268435456 "
                 "WARNING=host-CPU-NOT-Mali-GPU-FPS\\n",
