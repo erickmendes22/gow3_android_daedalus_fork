@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#include <bit>
 #include <cstdlib>
 #include "gow3_toggles.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -474,6 +475,12 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
         std::getenv("GOW3_ANDROID_PORT") != nullptr &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         (!split || split[0] != '0');
+    // Opt-in only until PanVK G720 A/B proves a frame-time improvement.
+    // Unlike a global memory barrier, these barriers target only the
+    // conflicting VkBuffer ranges. Overflow and submission fall back to
+    // the original global memory barrier (no weakened dependencies).
+    const char* local = std::getenv("GOW3_MALI_LOCAL_BUFFER_BARRIERS");
+    mali_local_buffer_barriers = split_image_buffer_barriers && local && local[0] == '1';
 #endif
 }
 
@@ -1201,6 +1208,9 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
     // The old global memory barrier must still be emitted for any overlapping
     // writer or prior read when the next operation writes the same range.
     buffer_hazard_pending |= has_access;
+    if (has_access && mali_local_buffer_barriers && !pending_mali_buffer_barriers.Overflow()) {
+        pending_mali_buffer_barriers.Add(std::bit_cast<u64>(handle->Handle()), offset, size);
+    }
     return has_access;
 }
 
@@ -1269,17 +1279,45 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
         return;
     }
 
-    // An image-only dependency needs only its VkImageMemoryBarrier2 entries.
-    // Preserve the buffer tracker and pending src stage/access masks until
-    // a real buffer hazard or queue submission, otherwise future RAW/WAR/WAW
-    // dependencies would be silently dropped after an unrelated image transit.
+    // An image-only dependency needs only VkImageMemoryBarrier2 entries.
+    // For a true buffer hazard on Mali, optionally scope the memory
+    // dependency to the exact VkBuffer objects/ranges that conflicted.
+    // No range is dropped: overflow, invalid offsets, and queue-submit
+    // force the original global VkMemoryBarrier2 instead.
+    const bool local_buffers = mali_local_buffer_barriers && decision.emit_memory &&
+        buffer_hazard_pending && !force_buffer_barrier &&
+        !pending_mali_buffer_barriers.Overflow() &&
+        pending_mali_buffer_barriers.Count() > 0;
+    std::array<vk::BufferMemoryBarrier2, MaliBufferBarrierRegions::Max> local_buffer_info{};
+    u32 local_buffer_count = 0;
+    if (local_buffers) {
+        for (std::size_t i = 0; i < pending_mali_buffer_barriers.Count(); ++i) {
+            const auto& region = pending_mali_buffer_barriers[i];
+            local_buffer_info[local_buffer_count++] = {
+                .srcStageMask = memory_barrier.srcStageMask,
+                .srcAccessMask = memory_barrier.srcAccessMask,
+                .dstStageMask = memory_barrier.dstStageMask,
+                .dstAccessMask = memory_barrier.dstAccessMask,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer = std::bit_cast<vk::Buffer>(region.buffer),
+                .offset = region.offset,
+                .size = region.size,
+            };
+        }
+    }
     scheduler.EndRendering();
-    scheduler.Record([memory = memory_barrier, has_memory = decision.emit_memory,
+    scheduler.Record([memory = memory_barrier,
+                      has_memory = decision.emit_memory && !local_buffers,
+                      buffers = scheduler.RecordData(std::span<const vk::BufferMemoryBarrier2>(
+                          local_buffer_info.data(), local_buffer_count)),
                       images = scheduler.RecordData(std::span<const vk::ImageMemoryBarrier2>(
                           image_barriers.data(), image_barriers.size()))](vk::CommandBuffer cmdbuf) {
         const vk::DependencyInfo info = {
             .memoryBarrierCount = has_memory ? 1U : 0U,
             .pMemoryBarriers = has_memory ? &memory : nullptr,
+            .bufferMemoryBarrierCount = static_cast<u32>(buffers.size()),
+            .pBufferMemoryBarriers = buffers.data(),
             .imageMemoryBarrierCount = static_cast<u32>(images.size()),
             .pImageMemoryBarriers = images.data(),
         };
@@ -1288,6 +1326,7 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
 
     image_barriers.clear();
     if (decision.retire_buffer_ranges) {
+        pending_mali_buffer_barriers.Clear();
         memory_barrier.srcStageMask = vk::PipelineStageFlagBits2::eNone;
         memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
         barrier_tracker.Clear();
