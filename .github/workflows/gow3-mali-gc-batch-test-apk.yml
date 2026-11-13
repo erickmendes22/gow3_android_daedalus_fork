@@ -1,4 +1,4 @@
-name: GoW III Mali-G720 GC plus VMA stage tracing - isolated diagnostics APK
+name: GoW III Mali-G720 Performance Early-Z and Compute MultiCopy APK
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
-      - name: Verify experimental app ID, known signing key and GC source
+      - name: Verify performance patch, isolated app ID, signing key, safety tests
         run: |
           set -euo pipefail
           test -s tools/android/debug/gow3-debug.keystore
@@ -48,6 +48,12 @@ jobs:
           grep -q 'gc_pending_reclaim' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
           grep -q 'GOW3_MALI_VMA_DRIVER_CALL' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           grep -q 'MaliTimedAllocateMemory' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
+          grep -q 'GOW3_MALI_GPU_EARLY_Z' tools/android/bionic/run-bionic.sh
+          grep -q 'MaliEarlyZ::Transform' gpu/shadps4/video_core/renderer_vulkan/vk_shader_util.cpp
+          grep -q 'GOW3_MALI_MULTI_COPY_PANVK' gpu/shadps4/video_core/renderer_vulkan/vk_shader_hle.cpp
+          grep -q 'descriptor_set' gpu/shadps4/video_core/renderer_vulkan/vk_shader_hle.cpp
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 -Igpu/third_party/sirit/externals/SPIRV-Headers/include tests/test_mali_gpu_early_z.cpp -o /tmp/gow3-mali-early-z
+          /tmp/gow3-mali-early-z
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
@@ -94,7 +100,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: God-of-War-III-Mali-G720-VMA-Stage-Trace-GC-Batch-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-G720-EarlyZ-ComputeMultiCopy-Performance-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
