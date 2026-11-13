@@ -6,6 +6,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/host_shaders/buffer_multi_copy_comp.h"
@@ -36,17 +37,22 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
         dst_min = std::min(dst_min, copy.dstOffset);
         dst_max = std::max(dst_max, copy.dstOffset + copy.size);
     }
+    // A single parallel dispatch is not a legal replacement for ordered
+    // copies with overlapping source/destination bytes in one VkBuffer.
+    // Keep the original transfer path for such aliasing cases.
+    if (src->Handle() == dst->Handle() && src_min < dst_max && dst_min < src_max) {
+        return false;
+    }
     auto& runtime = rasterizer.GetRuntime();
     auto& scheduler = runtime.GetScheduler();
     const auto& instance = runtime.GetInstance();
-    // Bachata's public ARM64 copy HLE uses vkCmdCopyBuffer and works without
-    // VK_KHR_push_descriptor. Our accelerated multi-copy shader is optional,
-    // but its descriptor layout unconditionally uses push descriptors.
-    // With PanVK variants that expose none, retain the original Vulkan copy
-    // path rather than attempting to create an unsupported layout.
-    if (instance.MaxPushDescriptors() < 3) {
-        return false;
-    }
+    // The original compute fast path was silently disabled on all PanVK
+    // drivers lacking VK_KHR_push_descriptor. 57 batches/frame x ~1024
+    // individual vkCmdCopyBuffer regions then ran on Mali instead. Bind
+    // three ordinary storage-buffer descriptors where push is unavailable.
+    // Pool recycling is GPU-tick gated by DescriptorHeap, so in-flight
+    // submissions can never read an overwritten descriptor.
+    const bool push_descriptors = instance.MaxPushDescriptors() >= 3;
     const u64 align = instance.StorageMinAlignment();
     src_min = Common::AlignDown(src_min, align);
     dst_min = Common::AlignDown(dst_min, align);
@@ -55,7 +61,12 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
         vk::UniqueDescriptorSetLayout set_layout;
         vk::UniquePipelineLayout layout;
         vk::UniquePipeline pipeline;
+        std::unique_ptr<DescriptorHeap> descriptors;
+        bool push = false;
     };
+    static const std::array<vk::DescriptorPoolSize, 1> copy_pool_sizes{{
+        {vk::DescriptorType::eStorageBuffer, 3 * 1024},
+    }};
     static Pipeline pipe = [&] {
         const auto device = instance.GetDevice();
         Pipeline p;
@@ -66,11 +77,18 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
                            .descriptorCount = 1,
                            .stageFlags = vk::ShaderStageFlagBits::eCompute};
         }
+        p.push = push_descriptors;
         p.set_layout = Check(device.createDescriptorSetLayoutUnique({
-            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .flags = p.push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+                            : vk::DescriptorSetLayoutCreateFlags{},
             .bindingCount = static_cast<u32>(bindings.size()),
             .pBindings = bindings.data(),
         }));
+        if (!p.push) {
+            p.descriptors = std::make_unique<DescriptorHeap>(
+                instance, scheduler.GetWorkSemaphore(), copy_pool_sizes, 1024);
+            std::printf("GOW3_MALI_MULTI_COPY_HLE bind=descriptor_set (PanVK no push)\\n");
+        }
         const vk::PushConstantRange range{.stageFlags = vk::ShaderStageFlagBits::eCompute,
                                           .offset = 0,
                                           .size = sizeof(u32)};
@@ -115,25 +133,41 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
         runtime.FlushBarriers();
     }
     const u32 count = static_cast<u32>(copies.size());
-    scheduler.Record([src = src->Handle(), dst = dst->Handle(), table = stream.Handle(), src_min,
-                      src_size, dst_min, dst_size, table_offset, table_size,
-                      count](vk::CommandBuffer cmdbuf) {
-        const std::array<vk::DescriptorBufferInfo, 3> infos{{
-            {src, src_min, src_size},
-            {dst, dst_min, dst_size},
-            {table, table_offset, table_size},
-        }};
+    const std::array<vk::DescriptorBufferInfo, 3> infos{{
+        {src->Handle(), src_min, src_size},
+        {dst->Handle(), dst_min, dst_size},
+        {stream.Handle(), table_offset, table_size},
+    }};
+    vk::DescriptorSet descriptor_set{};
+    if (!pipe.push) {
+        descriptor_set = pipe.descriptors->Commit(*pipe.set_layout);
         std::array<vk::WriteDescriptorSet, 3> writes{};
         for (u32 i = 0; i < 3; ++i) {
-            writes[i] = {.dstBinding = i,
+            writes[i] = {.dstSet = descriptor_set,
+                         .dstBinding = i,
                          .descriptorCount = 1,
                          .descriptorType = vk::DescriptorType::eStorageBuffer,
                          .pBufferInfo = &infos[i]};
         }
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *pipe.pipeline);
-        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *pipe.layout, 0, writes);
-        cmdbuf.pushConstants(*pipe.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(count),
-                             &count);
+        instance.GetDevice().updateDescriptorSets(writes, {});
+    }
+    scheduler.Record([infos, descriptor_set, push = pipe.push, layout = *pipe.layout,
+                      pipeline = *pipe.pipeline, count](vk::CommandBuffer cmdbuf) {
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+        if (push) {
+            std::array<vk::WriteDescriptorSet, 3> writes{};
+            for (u32 i = 0; i < 3; ++i) {
+                writes[i] = {.dstBinding = i,
+                             .descriptorCount = 1,
+                             .descriptorType = vk::DescriptorType::eStorageBuffer,
+                             .pBufferInfo = &infos[i]};
+            }
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+        } else {
+            cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0,
+                                     std::array{descriptor_set}, {});
+        }
+        cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(count), &count);
         cmdbuf.dispatch(count, 1, 1);
     });
     runtime.AccessBuffer(src, src_min, src_size, vk::PipelineStageFlagBits2::eComputeShader,
