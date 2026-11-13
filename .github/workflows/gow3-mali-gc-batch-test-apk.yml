@@ -77,11 +77,8 @@ jobs:
           bash tools/android/bionic/build_runtime.sh
           test -s out/bionic/lib/libgow3gpu.so
           test -s out/bionic/lib/libgow3cpu.so
-      - name: Build pinned MIT Bloodframe engine
-        run: |
-          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
-          bash tools/android/build_framegen.sh
-          test -s out/bionic/lib/libbloodframe.so
+      # Mali-only packaging excludes Bloodframe; its private DXBC submodule is
+      # not needed, and trying to fetch it would make this build fail.
       - name: Build Android PKG extractor
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
