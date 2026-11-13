@@ -25,7 +25,6 @@ inline bool Transform(std::span<const uint32_t> words, std::vector<uint32_t>& ou
     uint32_t fragment_entry = 0;
     size_t insert_at = 0;
     bool has_entrypoint = false;
-    bool has_execution_mode = false;
 
     for (size_t i = 5; i < words.size();) {
         const uint32_t word = words[i], count = word >> 16, op = word & 0xffff;
@@ -43,7 +42,6 @@ inline bool Transform(std::span<const uint32_t> words, std::vector<uint32_t>& ou
             if (op == SpvOpExecutionMode &&
                 (words[i + 2] == SpvExecutionModeEarlyFragmentTests ||
                  words[i + 2] == SpvExecutionModeDepthReplacing)) return false;
-            has_execution_mode = true;
             insert_at = i + count;
         } else if (op == SpvOpDecorate) {
             if (!at_least(3)) return false;
@@ -52,6 +50,12 @@ inline bool Transform(std::span<const uint32_t> words, std::vector<uint32_t>& ou
                  words[i + 3] == SpvBuiltInSampleMask ||
                  words[i + 3] == SpvBuiltInFragStencilRefEXT))
                 return false;
+        } else if (op == SpvOpMemberDecorate) {
+            if (!at_least(4)) return false;
+            if (words[i + 3] == SpvDecorationBuiltIn && at_least(5) &&
+                (words[i + 4] == SpvBuiltInFragDepth ||
+                 words[i + 4] == SpvBuiltInSampleMask ||
+                 words[i + 4] == SpvBuiltInFragStencilRefEXT)) return false;
         } else if (op == SpvOpTypePointer) {
             if (!at_least(4)) return false;
             pointer_storage[words[i + 1]] = words[i + 2];
