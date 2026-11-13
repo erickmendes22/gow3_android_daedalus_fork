@@ -1,0 +1,112 @@
+name: GoW III Mali-G720 GC batching - isolated diagnostics APK
+
+on:
+  push:
+    branches: [perf/gow3-mali-bachata-gc-batch-20261112]
+    paths: ['.github/workflows/gow3-mali-gc-batch-test-apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gow3-mali-gc-batch-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+      GOW3_BUILD_TOOLS: '36.0.0'
+      GOW3_MALI_TEST_APK: '1'
+      GOW3_MALI_ONLY_BUILD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          targets: aarch64-linux-android
+      - name: Verify experimental app ID, known signing key and GC source
+        run: |
+          set -euo pipefail
+          test -s tools/android/debug/gow3-debug.keystore
+          grep -q 'com.gow3.android.bionic.malitest' android-launcher/app/build.gradle.kts
+          grep -q 'GOW3_MALI_GC_BATCH_DOWNLOAD' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
+          grep -q 'gc_pending_reclaim' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
+          test -x tools/android/bionic/run-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
+          python3 -m unittest discover -s tests -p 'test_android_*.py'
+          python3 -m compileall -q tools/android/bionic scripts
+          "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
+      - name: Verify launcher compilation
+        run: |
+          bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pgow3MaliTest=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2
+      - name: Build Android Python for patch validators
+        run: GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865" bash tools/android/bionic/build_python.sh
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Host headers and native toolchain
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build pinned Android dependencies
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_deps.sh
+      - name: Build Vulkan C++ runtime and CPU runtime (NOT reuse old binaries)
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_runtime.sh
+          test -s out/bionic/lib/libgow3gpu.so
+          test -s out/bionic/lib/libgow3cpu.so
+      - name: Build pinned MIT Bloodframe engine
+        run: |
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          bash tools/android/build_framegen.sh
+          test -s out/bionic/lib/libbloodframe.so
+      - name: Build Android PKG extractor
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_pkg.sh
+      - name: Package, sign, and validate separate Mali diagnostics app
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash tools/android/bionic/build_apk.sh --package-only
+          test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
+          test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          sha256sum -c out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: God-of-War-III-Mali-G720-GC-Batch-v2.1.8-EXPERIMENTAL
+          path: |
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
+            out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: God-of-War-III-Mali-GC-Batch-Build-Diagnostics
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+            android-launcher/app/build/outputs/logs/
+          if-no-files-found: ignore
