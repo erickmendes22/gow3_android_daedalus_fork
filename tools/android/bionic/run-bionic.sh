@@ -280,6 +280,14 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
+      # Opaque, side-effect-free fragment programs can reject occluded pixels
+      # before expensive shading on Mali. Reuses the existing shader cache.
+      # 0 restores unchanged SPIR-V modules without touching cache data.
+      export GOW3_MALI_GPU_EARLY_Z=${GOW3_MALI_GPU_EARLY_Z:-1}
+      # PanVK lacks push descriptors on some variants. The copy shader can
+      # now use GPU-tick-safe descriptor sets instead of ~1024 transfer regions.
+      # 0 restores the original vkCmdCopyBuffer path.
+      export GOW3_MALI_MULTI_COPY_PANVK=${GOW3_MALI_MULTI_COPY_PANVK:-1}
       export GOW3_MALI_PERF_STATS=${GOW3_MALI_PERF_STATS:-1}
       # Lightweight five-second per-frame workload and GPU-thread wait statistics.
       export GOW3_FRAME_STATS=${GOW3_FRAME_STATS:-1}
