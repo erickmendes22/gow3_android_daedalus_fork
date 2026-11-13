@@ -1309,14 +1309,14 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
     scheduler.EndRendering();
     scheduler.Record([memory = memory_barrier,
                       has_memory = decision.emit_memory && !local_buffers,
-                      buffers = scheduler.RecordData(std::span<const vk::BufferMemoryBarrier2>(
-                          local_buffer_info.data(), local_buffer_count)),
+                      buffers = local_buffer_info,
+                      buffer_count = local_buffer_count,
                       images = scheduler.RecordData(std::span<const vk::ImageMemoryBarrier2>(
                           image_barriers.data(), image_barriers.size()))](vk::CommandBuffer cmdbuf) {
         const vk::DependencyInfo info = {
             .memoryBarrierCount = has_memory ? 1U : 0U,
             .pMemoryBarriers = has_memory ? &memory : nullptr,
-            .bufferMemoryBarrierCount = static_cast<u32>(buffers.size()),
+            .bufferMemoryBarrierCount = buffer_count,
             .pBufferMemoryBarriers = buffers.data(),
             .imageMemoryBarrierCount = static_cast<u32>(images.size()),
             .pImageMemoryBarriers = images.data(),
