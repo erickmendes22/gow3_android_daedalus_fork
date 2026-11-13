@@ -2557,6 +2557,27 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     return entry;
 }
 
+// Scope read-only image dependencies to their consumer shader stage.
+// The opt-in affects only sampled images; feedback/storage keep their original
+// conservative ALL_COMMANDS behavior. Multiple readers are unioned by
+// Image::GetBarriers, so later writes still see every reading stage.
+static vk::PipelineStageFlags2 MaliReadOnlyTextureStage(Shader::SwStage sw_stage) {
+    static const bool exact = [] {
+        const char* selected = std::getenv("GOW3_MALI_SHADER_STAGE_BARRIERS");
+        return std::getenv("GOW3_MALI_CPU_PRESENT") && selected && selected[0] == '1';
+    }();
+    if (!exact) return vk::PipelineStageFlagBits2::eAllCommands;
+    switch (sw_stage) {
+    case Shader::SwStage::Vertex: return vk::PipelineStageFlagBits2::eVertexShader;
+    case Shader::SwStage::TessellationControl: return vk::PipelineStageFlagBits2::eTessellationControlShader;
+    case Shader::SwStage::TessellationEval: return vk::PipelineStageFlagBits2::eTessellationEvaluationShader;
+    case Shader::SwStage::Geometry: return vk::PipelineStageFlagBits2::eGeometryShader;
+    case Shader::SwStage::Fragment: return vk::PipelineStageFlagBits2::eFragmentShader;
+    case Shader::SwStage::Compute: return vk::PipelineStageFlagBits2::eComputeShader;
+    default: return vk::PipelineStageFlagBits2::eAllCommands;
+    }
+}
+
 void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* prepared,
                               Shader::Backend::Bindings& binding, u32& write_index,
                               bool& barrier, bool on_helper) {
@@ -2799,7 +2820,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                                                 ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
                                                 : vk::ImageLayout::eShaderReadOnlyOptimal;
                     barrier |= runtime.Transit(
-                        &image, new_layout, vk::PipelineStageFlagBits2::eAllCommands,
+                        &image, new_layout, MaliReadOnlyTextureStage(stage.sw_stage),
                         vk::AccessFlagBits2::eShaderRead, desc.view_info.range);
                 }
             }
@@ -3029,7 +3050,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
         const auto new_layout = image.info.props.is_depth
                                     ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
                                     : vk::ImageLayout::eShaderReadOnlyOptimal;
-        barrier |= runtime.Transit(&image, new_layout, vk::PipelineStageFlagBits2::eAllCommands,
+        barrier |= runtime.Transit(&image, new_layout, MaliReadOnlyTextureStage(stage.sw_stage),
                                    vk::AccessFlagBits2::eShaderRead, entry.range);
         image_infos.emplace_back(VK_NULL_HANDLE, entry.view, image.backing->state.layout);
     }
