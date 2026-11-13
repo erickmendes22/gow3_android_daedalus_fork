@@ -67,6 +67,32 @@ class ImageBarrierTests(unittest.TestCase):
             self.assertIn(guard, SRC)
         self.assertIn("if (mali_read_only_elision && !barriers.empty())", SRC)
 
+    def test_exact_shader_stage_barriers_never_widen_and_keep_readers(self):
+        rasterizer = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+        self.assertIn("GOW3_MALI_SHADER_STAGE_BARRIERS", rasterizer)
+        self.assertIn("if (!exact) return vk::PipelineStageFlagBits2::eAllCommands;", rasterizer)
+        self.assertEqual(rasterizer.count("MaliReadOnlyTextureStage(stage.sw_stage)"), 2)
+        for shader_stage, vk_stage in [
+            ("Fragment", "eFragmentShader"), ("Vertex", "eVertexShader"),
+            ("TessellationControl", "eTessellationControlShader"),
+            ("TessellationEval", "eTessellationEvaluationShader"),
+            ("Geometry", "eGeometryShader"), ("Compute", "eComputeShader")
+        ]:
+            self.assertIn(f"case Shader::SwStage::{shader_stage}:", rasterizer)
+            self.assertIn(f"return vk::PipelineStageFlagBits2::{vk_stage};", rasterizer)
+        # Storage feedback and image writes are intentionally not narrowed.
+        self.assertIn("vk::PipelineStageFlagBits2::eAllGraphics", rasterizer)
+        self.assertIn("vk::PipelineStageFlagBits2::eAllCommands,", rasterizer)
+        self.assertIn("state.pl_stage |= dst_stage;", SRC)
+        self.assertIn("last_state.pl_stage |= dst_stage;", SRC)
+        # Any later write still sees all earlier readers. This pure model
+        # also guards the same-stage repeated-read fast path.
+        for stages in ((1, 2, 4), (4, 4, 1), (1, 8, 16)):
+            observed = 0
+            for stage in stages:
+                observed |= stage
+            self.assertEqual(observed, sum(set(stages)))
+
     def test_opt_out_and_vendor(self):
         self.assertIn("vendorID == 0x13B5",SRC)
         self.assertIn("GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}",RUN)
