@@ -92,7 +92,7 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
-          sha256sum -c out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: God-of-War-III-Mali-G720-GC-Batch-v2.1.8-EXPERIMENTAL
