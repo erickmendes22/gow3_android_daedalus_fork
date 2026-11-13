@@ -1,4 +1,4 @@
-name: GoW III Mali-G720 GC batching - isolated diagnostics APK
+name: GoW III Mali-G720 GC plus VMA stage tracing - isolated diagnostics APK
 
 on:
   push:
@@ -46,6 +46,8 @@ jobs:
           grep -q 'com.gow3.android.bionic.malitest' android-launcher/app/build.gradle.kts
           grep -q 'GOW3_MALI_GC_BATCH_DOWNLOAD' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
           grep -q 'gc_pending_reclaim' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
+          grep -q 'GOW3_MALI_VMA_DRIVER_CALL' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
+          grep -q 'MaliTimedAllocateMemory' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
@@ -92,7 +94,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: God-of-War-III-Mali-G720-GC-Batch-v2.1.8-EXPERIMENTAL
+          name: God-of-War-III-Mali-G720-VMA-Stage-Trace-GC-Batch-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
