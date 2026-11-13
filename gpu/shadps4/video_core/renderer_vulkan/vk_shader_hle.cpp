@@ -54,9 +54,46 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
     // submissions can never read an overwritten descriptor.
     const bool push_descriptors = instance.MaxPushDescriptors() >= 3;
     const char* multi_copy_opt_out = std::getenv("GOW3_MALI_MULTI_COPY_PANVK");
-    if (!push_descriptors &&
-        (!std::getenv("GOW3_MALI_CPU_PRESENT") ||
-         (multi_copy_opt_out && multi_copy_opt_out[0] == '0'))) return false;
+    if (!push_descriptors) {
+        if (!std::getenv("GOW3_MALI_CPU_PRESENT") ||
+            (multi_copy_opt_out && multi_copy_opt_out[0] == '0')) return false;
+        // The transfer baseline measured ~37 ns/region on a previous setup.
+        // Eight regions save at most 0.30 us of GPU transfer work, far less
+        // than a descriptor-set update plus a compute dispatch. Never submit
+        // such tiny compute batches on PanVK. The threshold is intentionally
+        // conservative pending a real G720 dispatch-time measurement.
+        const char* min_opt = std::getenv("GOW3_MALI_MULTI_COPY_MIN_REGIONS");
+        const u32 minimum_regions = min_opt ?
+            std::clamp<u32>(static_cast<u32>(std::strtoul(min_opt, nullptr, 10)),
+                            8u, 1024u) : 256u;
+        if (copies.size() < minimum_regions) return false;
+
+        // A compute dispatch launches one workgroup per region, with no
+        // ordering between groups. Different-source copies that write the
+        // same destination dword must retain ordered vkCmdCopyBuffer.
+        // Each 64KiB HLE batch has at most 16384 destination dwords:
+        // mark 256 64-bit occupancy words, O(regions + distinct 256B spans).
+        constexpr u64 max_batch_bytes = 64_KB;
+        if (dst_max - dst_min > max_batch_bytes) return false;
+        std::array<u64, max_batch_bytes / 256> writes{};
+        for (const auto& region : copies) {
+            if (region.dstOffset < dst_min || (region.size & 3)) return false;
+            const u64 first = (region.dstOffset - dst_min) / 4;
+            const u64 last = first + region.size / 4;
+            if (last > max_batch_bytes / 4) return false;
+            for (u64 bit = first; bit < last;) {
+                const u64 word = bit / 64;
+                const u64 end = std::min<u64>(last, (word + 1) * 64);
+                const u64 begin_bit = bit % 64;
+                const u64 end_bit = end - word * 64;
+                const u64 mask = (~0ull << begin_bit) &
+                    (end_bit == 64 ? ~0ull : ((1ull << end_bit) - 1));
+                if (writes[word] & mask) return false;
+                writes[word] |= mask;
+                bit = end;
+            }
+        }
+    }
     const u64 align = instance.StorageMinAlignment();
     src_min = Common::AlignDown(src_min, align);
     dst_min = Common::AlignDown(dst_min, align);
