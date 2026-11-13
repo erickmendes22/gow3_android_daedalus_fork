@@ -93,6 +93,70 @@ std::string GetReadableVersion(u32 version) {
                        VK_VERSION_PATCH(version));
 }
 
+// Separate the expensive driver entry points within vmaCreateImage without
+// changing the VMA allocation algorithm or creating a second VkImage. The
+// selected device's native dispatch remains the source of truth; only the
+// allocator's function table receives these delegates on Android Mali.
+using MaliAllocClock = std::chrono::steady_clock;
+double MaliAllocMs(MaliAllocClock::time_point start) {
+    return std::chrono::duration<double, std::milli>(MaliAllocClock::now() - start).count();
+}
+void MaliTraceLongCall(const char* stage, double ms, unsigned long long bytes,
+                       int format = -1) {
+    if (ms >= 5.0) {
+        std::printf("GOW3_MALI_VMA_DRIVER_CALL stage=%s ms=%.2f bytes=%llu format=%d\\n",
+                    stage, ms, bytes, format);
+    }
+}
+VKAPI_ATTR VkResult VKAPI_CALL MaliTimedCreateImage(
+    VkDevice device, const VkImageCreateInfo* info,
+    const VkAllocationCallbacks* callbacks, VkImage* image) {
+    const auto start = MaliAllocClock::now();
+    const VkResult result =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateImage(device, info, callbacks, image);
+    MaliTraceLongCall("vkCreateImage", MaliAllocMs(start), 0, info ? int(info->format) : -1);
+    return result;
+}
+VKAPI_ATTR VkResult VKAPI_CALL MaliTimedAllocateMemory(
+    VkDevice device, const VkMemoryAllocateInfo* info,
+    const VkAllocationCallbacks* callbacks, VkDeviceMemory* memory) {
+    const auto start = MaliAllocClock::now();
+    const VkResult result =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkAllocateMemory(device, info, callbacks, memory);
+    MaliTraceLongCall("vkAllocateMemory", MaliAllocMs(start),
+                      info ? static_cast<unsigned long long>(info->allocationSize) : 0);
+    return result;
+}
+VKAPI_ATTR VkResult VKAPI_CALL MaliTimedBindImageMemory(
+    VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize offset) {
+    const auto start = MaliAllocClock::now();
+    const VkResult result =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkBindImageMemory(device, image, memory, offset);
+    MaliTraceLongCall("vkBindImageMemory", MaliAllocMs(start), 0);
+    return result;
+}
+VKAPI_ATTR VkResult VKAPI_CALL MaliTimedBindImageMemory2(
+    VkDevice device, uint32_t count, const VkBindImageMemoryInfo* info) {
+    const auto start = MaliAllocClock::now();
+    const VkResult result =
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkBindImageMemory2(device, count, info);
+    MaliTraceLongCall("vkBindImageMemory2", MaliAllocMs(start), count);
+    return result;
+}
+VKAPI_ATTR void VKAPI_CALL MaliTimedGetImageMemoryRequirements(
+    VkDevice device, VkImage image, VkMemoryRequirements* requirements) {
+    const auto start = MaliAllocClock::now();
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkGetImageMemoryRequirements(device, image, requirements);
+    MaliTraceLongCall("vkGetImageMemoryRequirements", MaliAllocMs(start), 0);
+}
+VKAPI_ATTR void VKAPI_CALL MaliTimedGetImageMemoryRequirements2(
+    VkDevice device, const VkImageMemoryRequirementsInfo2* info,
+    VkMemoryRequirements2* requirements) {
+    const auto start = MaliAllocClock::now();
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkGetImageMemoryRequirements2(device, info, requirements);
+    MaliTraceLongCall("vkGetImageMemoryRequirements2", MaliAllocMs(start), 0);
+}
+
 } // Anonymous namespace
 
 Instance::Instance(bool enable_validation, bool enable_crash_diagnostic)
@@ -833,10 +897,25 @@ bool Instance::CreateDevice() {
 }
 
 void Instance::CreateAllocator() {
-    const VmaVulkanFunctions functions = {
+    VmaVulkanFunctions functions = {
         .vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
+    // Diagnose >5ms Vulkan driver calls nested in VMA, without changing image
+    // allocation semantics. Active by default only for Android PanVK tracing.
+    // GOW3_MALI_VMA_CALL_TRACE=0 disables this instrumented dispatch.
+    const char* trace_opt = std::getenv("GOW3_MALI_VMA_CALL_TRACE");
+    const bool trace_mali = std::getenv("GOW3_ANDROID_PORT") &&
+        properties.vendorID == 0x13B5 && (!trace_opt || trace_opt[0] != '0');
+    if (trace_mali) {
+        functions.vkCreateImage = MaliTimedCreateImage;
+        functions.vkAllocateMemory = MaliTimedAllocateMemory;
+        functions.vkBindImageMemory = MaliTimedBindImageMemory;
+        functions.vkBindImageMemory2KHR = MaliTimedBindImageMemory2;
+        functions.vkGetImageMemoryRequirements = MaliTimedGetImageMemoryRequirements;
+        functions.vkGetImageMemoryRequirements2KHR = MaliTimedGetImageMemoryRequirements2;
+        std::printf("GOW3_MALI_VMA_CALL_TRACE enabled=1 threshold_ms=5\\n");
+    }
 
     // VMA defaults to 256 MiB blocks for Vulkan heaps >1 GiB. The G720
     // capture allocated 334.8 MiB of RGBA128 images across 192 creations
