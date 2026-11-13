@@ -53,6 +53,10 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
     // Pool recycling is GPU-tick gated by DescriptorHeap, so in-flight
     // submissions can never read an overwritten descriptor.
     const bool push_descriptors = instance.MaxPushDescriptors() >= 3;
+    const char* multi_copy_opt_out = std::getenv("GOW3_MALI_MULTI_COPY_PANVK");
+    if (!push_descriptors &&
+        (!std::getenv("GOW3_MALI_CPU_PRESENT") ||
+         (multi_copy_opt_out && multi_copy_opt_out[0] == '0'))) return false;
     const u64 align = instance.StorageMinAlignment();
     src_min = Common::AlignDown(src_min, align);
     dst_min = Common::AlignDown(dst_min, align);
@@ -67,9 +71,13 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
     static const std::array<vk::DescriptorPoolSize, 1> copy_pool_sizes{{
         {vk::DescriptorType::eStorageBuffer, 3 * 1024},
     }};
-    static Pipeline pipe = [&] {
+    // Keep this process-lifetime pipeline alive just like the loaded Bionic
+    // Vulkan device: a C++ static destructor would otherwise attempt to
+    // dereference the scheduler semaphore after the renderer is shut down.
+    static Pipeline& pipe = *[&]() -> Pipeline* {
         const auto device = instance.GetDevice();
-        Pipeline p;
+        auto* allocated = new Pipeline;
+        Pipeline& p = *allocated;
         std::array<vk::DescriptorSetLayoutBinding, 3> bindings{};
         for (u32 i = 0; i < 3; ++i) {
             bindings[i] = {.binding = i,
@@ -107,7 +115,7 @@ static bool MultiCopy(Rasterizer& rasterizer, const VideoCore::Buffer* src,
                     .layout = *p.layout,
                 }));
         device.destroyShaderModule(module);
-        return p;
+        return allocated;
     }();
 
     // The region table goes into the stream buffer (host writes, visible at submission).
