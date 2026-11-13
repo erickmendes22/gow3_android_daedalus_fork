@@ -32,6 +32,22 @@ int main() {
     assert(r.Count() == 2 && Covered(r, 2, 8) && !Covered(r, 1, 24));
     r.Clear();
 
+    // A write to buffer B can precede a hazard on buffer A. FlushBarriers
+    // retires its entire tracker, not just A. The scoped barriers must
+    // therefore include B too, even if B was not the immediate hazard.
+    r.Clear();
+    assert(r.Add(1, 0, 64));   // earlier WRITE A
+    assert(r.Add(2, 512, 64)); // earlier WRITE B, no hazard yet
+    assert(r.Add(1, 0, 64));   // later READ A causes flush
+    assert(Covered(r, 2, 512) && Covered(r, 2, 575));
+    // A draw with >8 disjoint buffers MUST instead use the global barrier.
+    r.Clear();
+    for (u64 id = 1; id <= MaliBufferBarrierRegions::Max + 1; ++id) {
+        r.Add(id, 0, 4);
+    }
+    assert(r.Overflow());
+    r.Clear();
+
     // Every inserted hazard byte is either covered by an exact VkBuffer range
     // or causes a safe global fallback. Test randomized overlaps and aliases.
     std::mt19937_64 gen(0x720u);
