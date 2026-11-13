@@ -29,9 +29,10 @@ int main() {
     auto opaque = Fragment();
     assert(Vulkan::MaliEarlyZ::Transform(opaque, out));
     assert(out.size() == opaque.size() + 3);
-    assert(out[14] == Op(3, SpvOpExecutionMode));
-    assert(out[15] == 1 && out[16] == SpvExecutionModeEarlyFragmentTests);
-    assert(!Vulkan::MaliEarlyZ::Transform(out, out)); // already modified
+    assert(out[13] == Op(3, SpvOpExecutionMode));
+    assert(out[14] == 1 && out[15] == SpvExecutionModeEarlyFragmentTests);
+    const auto already_optimized = out;
+    assert(!Vulkan::MaliEarlyZ::Transform(already_optimized, out)); // already modified
     auto side_effect = Fragment(true);
     assert(!Vulkan::MaliEarlyZ::Transform(side_effect, out));
     auto drop = Fragment();
