@@ -1,0 +1,30 @@
+name: GoW III Mali Vulkan buffer barrier scoped-hazard synthetic preflight (NO APK)
+on:
+  push:
+    branches: [perf/gow3-mali-bachata-gc-batch-20261112]
+    paths:
+      - '.github/workflows/gow3-mali-local-barrier-synthetic.yml'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_buffer_barrier_regions.h'
+      - 'tests/test_mali_buffer_barrier_regions.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile sanitizer safety and run measured CPU microbenchmark
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
+            -fsanitize=undefined,address -fno-omit-frame-pointer \
+            tests/test_mali_buffer_barrier_regions.cpp \
+            -o /tmp/gow3-buffer-barrier-synthetic-asan
+          ASAN_OPTIONS=detect_leaks=1 /tmp/gow3-buffer-barrier-synthetic-asan
+          c++ -std=c++20 -O3 -march=x86-64 -Wall -Wextra -Werror \
+            -Igpu/shadps4 tests/test_mali_buffer_barrier_regions.cpp \
+            -o /tmp/gow3-buffer-barrier-synthetic
+          /tmp/gow3-buffer-barrier-synthetic
+          echo 'No GPU/PanVK timing is claimed by this host-only test.'
