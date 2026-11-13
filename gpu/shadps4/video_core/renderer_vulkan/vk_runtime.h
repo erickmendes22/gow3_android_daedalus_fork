@@ -7,6 +7,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_barrier_tracker.h"
 #include "video_core/renderer_vulkan/vk_barrier_flush_policy.h"
+#include "video_core/renderer_vulkan/vk_mali_buffer_barrier_regions.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/types.h"
@@ -129,6 +130,8 @@ private:
     // dependency. Do NOT clear ranges until a buffer hazard or queue submit.
     bool buffer_hazard_pending = false;
     bool split_image_buffer_barriers = false;
+    bool mali_local_buffer_barriers = false;
+    MaliBufferBarrierRegions pending_mali_buffer_barriers;
     // gow3: ranges inserted into barrier_tracker since its last Clear(); re-inserting a
     // contained range is a no-op, and draws re-bind the same ranges constantly.
     struct AccessMemo {
