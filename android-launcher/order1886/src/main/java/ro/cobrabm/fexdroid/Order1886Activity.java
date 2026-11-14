@@ -362,8 +362,10 @@ public final class Order1886Activity extends Activity {
               new File(dir,"sce_sys/param.sfo").isFile();
     }
     private File currentImage(){
-        if(preparer.prepared())return preparer.image();
-        return manualBoot.isFile()?manualBoot:null;
+        // Avoid booting a stale preparation when game folder/eboot/settings change.
+        String recorded=prefs().getString("preparedSignature","");
+        if(preparer.prepared()&&prepSignature().equals(recorded))return preparer.image();
+        return "manual".equals(recorded)&&manualBoot.isFile()?manualBoot:null;
     }
     private String disabledEffects(){
         ArrayList<String> effects=new ArrayList<>();
@@ -376,7 +378,10 @@ public final class Order1886Activity extends Activity {
     private String prepSignature(){
         return prefs().getInt("fps",30)+":"+
             prefs().getString("aspect","original")+":"+
-            prefs().getInt("width",1920)+":"+disabledEffects();
+            prefs().getInt("width",1920)+":"+disabledEffects()+":"+
+            (gameDir==null?"none":gameDir.getAbsolutePath())+":"+
+            (gameDir==null?0:new File(gameDir,"eboot.bin").length())+":"+
+            (gameDir==null?0:new File(gameDir,"eboot.bin").lastModified());
     }
     private void renderHome(){
         LinearLayout headline=card(body,"Biblioteca de jogos");
@@ -615,10 +620,13 @@ public final class Order1886Activity extends Activity {
                 try {
                     File dir=Order1886Content.localDocument(this,uri,true);
                     if(!isGame(dir))throw new IOException("Pasta sem eboot.bin ou sce_sys/param.sfo.");
-                    gameDir=dir;
-                    prefs().edit().putString("gameDir",dir.getAbsolutePath())
-                        .remove("preparedSignature").apply();
-                    show("Pasta selecionada: "+dir.getName()+". Prepare o jogo para iniciar.");
+                    runTask("Pasta selecionada. Preparação automática iniciada...",()->{
+                        gameDir=dir;
+                        if(!prefs().edit().putString("gameDir",dir.getAbsolutePath())
+                                .remove("preparedSignature").commit())
+                            throw new IOException("Falha ao salvar pasta selecionada");
+                        doPrepare();
+                    });
                     page=0;render();
                 }catch(Exception e){show("Pasta inválida: "+e.getMessage());}
                 break;
@@ -632,7 +640,9 @@ public final class Order1886Activity extends Activity {
                 runTask(update?"Instalando atualização PKG...":"Instalando jogo PKG...",()->{
                     File installed=content.install(uri,update,gameDir,this::show);
                     gameDir=installed;
-                    prefs().edit().putString("gameDir",installed.getAbsolutePath()).remove("preparedSignature").apply();
+                    if(!prefs().edit().putString("gameDir",installed.getAbsolutePath())
+                            .remove("preparedSignature").commit())
+                        throw new IOException("Falha ao salvar PKG instalado");
                     show("PKG instalado. Preparando imagem do jogo...");
                     doPrepare();
                 });
@@ -667,13 +677,22 @@ public final class Order1886Activity extends Activity {
         }
     }
     private interface Work{void perform() throws Exception;}
-    private void runTask(String beginning,Work task){
+    private void runTask(String beginning,Work task){runTask(beginning,task,null);}
+    private void runTask(String beginning,Work task,Runnable afterSuccess){
         if(!working.compareAndSet(false,true)){show("Operação anterior ainda ativa.");return;}
         show(beginning);
         new Thread(()->{
-            try{task.perform();}
+            boolean succeeded=false;
+            try{task.perform();succeeded=true;}
             catch(Exception e){writeError(e);show("Falha: "+e.getMessage());}
-            finally{working.set(false);main.post(this::render);}
+            finally{
+                working.set(false);
+                final boolean success=succeeded;
+                main.post(()->{
+                    render();
+                    if(success&&afterSuccess!=null)afterSuccess.run();
+                });
+            }
         },"order1886-task").start();
     }
     private void writeError(Exception e){
@@ -755,10 +774,8 @@ public final class Order1886Activity extends Activity {
         if(working.get()||gameOpen){show("Termine a tarefa anterior.");return;}
         if(gameDir==null||!isGame(gameDir)){show("Selecione ou instale o jogo.");return;}
         File image=currentImage();
-        if(image==null){show("Prepare o jogo no Android antes de iniciar.");return;}
-        String signature=prefs().getString("preparedSignature","");
-        if(preparer.prepared()&&!prepSignature().equals(signature)){
-            show("Configurações mudaram. Prepare novamente o jogo antes de iniciar.");
+        if(image==null){
+            runTask("Preparando automaticamente antes de iniciar...",this::doPrepare,this::startGame);
             return;
         }
         if(!filePermission()&&gameDir.getAbsolutePath().startsWith("/storage/emulated")){
