@@ -66,17 +66,24 @@ public final class Order1886Activity extends Activity {
     private int leftX=128,leftY=128,rightX=128,rightY=128;
     private boolean virtualLeftActive,virtualRightActive;
     private final Set<String> virtualKeys=new LinkedHashSet<>();
-    private long previousFrameCount;
+    private long previousFrameCount, previousFpsMs;
+    private float fpsSmoothed=-1f;
     private final Runnable fpsPoll=new Runnable(){
         @Override public void run(){
             if(!gameOpen)return;
             try {
                 long count=Order1886Present.framesIfLoaded();
-                long delta=Math.max(0,count-previousFrameCount);
+                long now=android.os.SystemClock.elapsedRealtime();
+                long elapsed=now-previousFpsMs;
+                if(elapsed>=250 && count>=previousFrameCount){
+                    float fps=1000f*(count-previousFrameCount)/elapsed;
+                    fpsSmoothed=fpsSmoothed<0f?fps:(0.5f*fpsSmoothed+0.5f*fps);
+                    if(gameHud!=null)gameHud.setText(String.format(Locale.US,"%.1f FPS",fpsSmoothed));
+                }
                 previousFrameCount=count;
-                if(gameHud!=null)gameHud.setText("FPS "+delta+"  |  "+drivers.description());
+                previousFpsMs=now;
             }catch(Throwable ignored){}
-            main.postDelayed(this,1000);
+            main.postDelayed(this,500);
         }
     };
 
@@ -287,10 +294,18 @@ public final class Order1886Activity extends Activity {
         if(preparer.prepared())return preparer.image();
         return manualBoot.isFile()?manualBoot:null;
     }
+    private String disabledEffects(){
+        ArrayList<String> effects=new ArrayList<>();
+        if(prefs().getBoolean("disableMotionBlur",false))effects.add("motion_blur");
+        if(prefs().getBoolean("disableDepthOfField",false))effects.add("depth_of_field");
+        if(prefs().getBoolean("disableFilmGrain",false))effects.add("film_grain");
+        if(prefs().getBoolean("disableChromatic",false))effects.add("chromatic_aberration");
+        return String.join(",",effects);
+    }
     private String prepSignature(){
         return prefs().getInt("fps",30)+":"+
             prefs().getString("aspect","original")+":"+
-            prefs().getInt("width",1920);
+            prefs().getInt("width",1920)+":"+disabledEffects();
     }
     private void renderHome(){
         LinearLayout headline=card(body,"Biblioteca de jogos");
@@ -564,7 +579,7 @@ public final class Order1886Activity extends Activity {
         preparer.prepare(gameDir,prefs().getInt("fps",30),
                 prefs().getString("aspect","original"),prefs().getInt("width",1920),
                 prefs().getString("readback","relaxed"),
-                prefs().getInt("language",1),this::show);
+                prefs().getInt("language",1),disabledEffects(),this::show);
         if(!prefs().edit().putString("preparedSignature",prepSignature()).commit())
             throw new IOException("Não foi possível salvar perfil preparado");
         show("Jogo preparado no Android. Pronto para tentar iniciar.");
@@ -640,7 +655,11 @@ public final class Order1886Activity extends Activity {
         gameOpen=true;stopped=false;
         setGameImmersive(true);
         setupTouchControls();
-        previousFrameCount=0;main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,1000);
+        applyHudStyle();
+        previousFrameCount=0;previousFpsMs=android.os.SystemClock.elapsedRealtime();
+        fpsSmoothed=-1f;
+        if(gameHud!=null)gameHud.setText("— FPS");
+        main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,500);
         main.postDelayed(()->{
             if(!gameOpen)return;
             if(!surface.getHolder().getSurface().isValid()){
