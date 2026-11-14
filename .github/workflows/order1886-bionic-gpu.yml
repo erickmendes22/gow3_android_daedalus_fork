@@ -240,7 +240,8 @@ jobs:
           python3 -m py_compile the-order-1886-android/scripts/stage_default_turnip.py
           python3 the-order-1886-android/scripts/stage_default_turnip.py \
             "$driver" out/order1886/apk-assets/order1886-turnip-default.zip
-          unzip -Z1 out/order1886/apk-assets/order1886-turnip-default.zip | grep -q '^meta.json
+          unzip -Z1 out/order1886/apk-assets/order1886-turnip-default.zip | grep -q 'meta.json'
+      - name: Set up Java for dedicated The Order APK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -270,50 +271,7 @@ jobs:
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.15-classic-playstation-controls
-          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-      - name: Publish native game runtime test executables
-        uses: actions/upload-artifact@v4
-        with:
-          name: order1886-bionic-native-runtime-arm64
-          path: |
-            out/order1886/bin/order1886-probe
-            out/order1886/lib/liborder1886cpu.so
-            out/order1886/lib/libps4gpu.so
-            out/order1886/lib/liborder1886present.so
-          if-no-files-found: error
-
-      - name: Set up Java for dedicated The Order APK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Build dedicated The Order 1886 Android debug APK
-        working-directory: android-launcher
-        shell: bash
-        run: |
-          chmod +x gradlew
-          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
-      - name: Verify The Order APK contents and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
-          test -f "$apk"
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886cpu.so'
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886present.so'
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_pkg_util.so'
-          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
-          unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
-          echo "Built The Order ARM64 APK: $apk"
-          sha256sum "$apk"
-      - name: Publish The Order Android Bionic boot-test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.15-classic-playstation-controls
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.16-auto-prepare-gamehub26
           path: android-launcher/order1886/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
