@@ -534,12 +534,19 @@ public final class Order1886Activity extends Activity {
     private void renderDrivers(){
         LinearLayout c=card(body,"Driver Vulkan");
         line(c,"Driver atual: "+drivers.description(),
-            "Sistema ou Turnip personalizado. Arquivos ZIP AdrenoTools com meta.json; "+
-            "pacotes incompatíveis com ARM64 são recusados.");
-        actions(c,button("Usar driver do sistema",false,v->{
+            "A Turnip GameHub 26.3 + DD GMEM + PWR_MAX (Experimental) acompanha o APK "+
+            "e é usada automaticamente em Adreno. Outras GPUs usam o Vulkan do sistema.");
+        actions(c,button("Usar Turnip 26.3 (padrão)",true,v->{
+            try{
+                drivers.select(Order1886DriverStore.BUNDLED);
+                render();
+                show("Turnip GameHub 26.3 selecionada. Incluída no APK.");
+            }catch(Exception e){show("Driver indisponível: "+e.getMessage());}
+        }),button("Usar sistema",false,v->{
             try{drivers.select("system");render();show("Vulkan do sistema selecionado.");}
             catch(Exception e){show(e.getMessage());}
-        }),button("Importar Turnip ZIP",true,v->pickDriver()));
+        }));
+        actions(c,button("Importar outro driver ZIP",false,v->pickDriver()));
         List<DriverArchive.Installed> list=drivers.installed();
         for(DriverArchive.Installed item:list){
             LinearLayout row=horizontal();row.setPadding(0,dp(8),0,dp(4));
@@ -553,9 +560,9 @@ public final class Order1886Activity extends Activity {
         }
         LinearLayout note=card(body,"Compatibilidade do driver");
         line(note,"O driver é carregado diretamente pelo runtime Vulkan.",
-            "Para Snapdragon/Adreno, importe uma Turnip compatível com Android e com a sua GPU. "+
-            "A seleção é persistida e aplicada na próxima inicialização. "+
-            "Se falhar, volte para Driver do sistema.");
+            "GameHub Turnip 26.3 experimental é o padrão no Snapdragon/Adreno. "+
+            "Outros drivers podem ser importados; a escolha manual permanece salva. "+
+            "Se houver falha de compatibilidade, selecione o Vulkan do sistema.");
     }
     private void renderTools(){
         LinearLayout c=card(body,"Arquivos e diagnóstico");
@@ -709,6 +716,11 @@ public final class Order1886Activity extends Activity {
     }
     private void doPrepare()throws Exception{
         if(gameDir==null)throw new IOException("Nenhum jogo selecionado");
+        // The default Adreno Turnip is installed from the signed APK before running.
+        if(Order1886DriverStore.BUNDLED.equals(drivers.selected())){
+            show("Instalando Turnip GameHub 26.3 embutida...");
+            drivers.ensureBundledDefault();
+        }
         preparer.prepare(gameDir,prefs().getInt("fps",30),
                 prefs().getString("aspect","original"),prefs().getInt("width",1920),
                 prefs().getString("readback","relaxed"),
