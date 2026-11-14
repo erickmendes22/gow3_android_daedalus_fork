@@ -75,7 +75,7 @@ public final class Order1886Activity extends Activity {
                 long count=Order1886Present.framesIfLoaded();
                 long now=android.os.SystemClock.elapsedRealtime();
                 long elapsed=now-previousFpsMs;
-                if(elapsed>=250 && count>=previousFrameCount){
+                if(previousFpsMs>0 && elapsed>=250 && count>=previousFrameCount){
                     float fps=1000f*(count-previousFrameCount)/elapsed;
                     fpsSmoothed=fpsSmoothed<0f?fps:(0.5f*fpsSmoothed+0.5f*fps);
                     if(gameHud!=null)gameHud.setText(String.format(Locale.US,"%.1f FPS",fpsSmoothed));
@@ -244,6 +244,27 @@ public final class Order1886Activity extends Activity {
         gameFrame.addView(surface,new FrameLayout.LayoutParams(-1,-1));
         touchLayer=new FrameLayout(this);
         gameFrame.addView(touchLayer,new FrameLayout.LayoutParams(-1,-1));
+        // Catch right-to-left swipes in otherwise empty screen space. Children
+        // (buttons and sticks) continue receiving their own multitouch streams.
+        touchLayer.setOnTouchListener(new View.OnTouchListener(){
+            private float startX,startY;
+            private boolean fromRight;
+            @Override public boolean onTouch(View view,MotionEvent event){
+                switch(event.getActionMasked()){
+                    case MotionEvent.ACTION_DOWN:
+                        startX=event.getX();startY=event.getY();
+                        fromRight=startX>view.getWidth()-dp(40);
+                        return fromRight;
+                    case MotionEvent.ACTION_UP:
+                        if(fromRight && gameOpen && startX-event.getX()>dp(72) &&
+                           Math.abs(event.getY()-startY)<dp(80))showGameMenu();
+                        return fromRight;
+                    case MotionEvent.ACTION_CANCEL:
+                        fromRight=false;return false;
+                    default:return fromRight;
+                }
+            }
+        });
 
         gameHud=label("— FPS",14,GOLD,true);
         gameFrame.addView(gameHud,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT));
@@ -731,7 +752,7 @@ public final class Order1886Activity extends Activity {
         setGameImmersive(true);
         setupTouchControls();
         applyHudStyle();
-        previousFrameCount=0;previousFpsMs=android.os.SystemClock.elapsedRealtime();
+        previousFrameCount=0;previousFpsMs=0;
         fpsSmoothed=-1f;
         if(gameHud!=null)gameHud.setText("— FPS");
         main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,500);
