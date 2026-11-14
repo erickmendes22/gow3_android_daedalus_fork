@@ -227,6 +227,63 @@ jobs:
           (cd "$stage" && zip -q -r ../apk-assets/order1886-toolchain.zip python order1886)
           unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^order1886/order1886.py$'
           unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^python/lib/python3.13/os.py$'
+      - name: Bundle SHA-pinned GameHub Turnip 26.3 for Adreno
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/order1886/apk-assets out/order1886/downloads
+          driver=out/order1886/downloads/Turnip_GameHub_26.3_DD_GMEM_PWRMAX_EXPERIMENTAL.zip
+          curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 30 \
+            "https://github.com/erickmendes22/WinlatorComponents/releases/download/turnip-gamehub-26.3-dd-gmem-pwrmax/Turnip_GameHub_26.3_DD_GMEM_PWRMAX_EXPERIMENTAL.zip" \
+            -o "$driver"
+          echo "8255659cc205110e0fa89f2d364292b86fe563a2cedafbc41915bead5a611ecb  $driver" | sha256sum -c -
+          python3 -m py_compile the-order-1886-android/scripts/stage_default_turnip.py
+          python3 the-order-1886-android/scripts/stage_default_turnip.py \
+            "$driver" out/order1886/apk-assets/order1886-turnip-default.zip
+          unzip -Z1 out/order1886/apk-assets/order1886-turnip-default.zip | grep -q '^meta.json
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build dedicated The Order 1886 Android debug APK
+        working-directory: android-launcher
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
+      - name: Verify The Order APK contents and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -f "$apk"
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886cpu.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886present.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_pkg_util.so'
+          unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
+          unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
+          unzip -Z1 "$apk" | grep -q 'assets/order1886-turnip-default.zip'
+          echo "Built The Order ARM64 APK: $apk"
+          sha256sum "$apk"
+      - name: Publish The Order Android Bionic boot-test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.15-classic-playstation-controls
+          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Publish native game runtime test executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: order1886-bionic-native-runtime-arm64
+          path: |
+            out/order1886/bin/order1886-probe
+            out/order1886/lib/liborder1886cpu.so
+            out/order1886/lib/libps4gpu.so
+            out/order1886/lib/liborder1886present.so
+          if-no-files-found: error
+
       - name: Set up Java for dedicated The Order APK
         uses: actions/setup-java@v4
         with:
