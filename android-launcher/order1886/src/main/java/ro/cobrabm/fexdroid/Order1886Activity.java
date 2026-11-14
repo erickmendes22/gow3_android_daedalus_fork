@@ -449,13 +449,37 @@ public final class Order1886Activity extends Activity {
             n->{prefs().edit().putInt("language",n==1?17:n==2?7:1).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
-        toggle(c,"Preencher tela (OFF = preservar proporção original)","fullscreen",false);
+        toggle(c,"Preencher tela Android (Fill; desativado = Fit)","fullscreen",false);
         toggle(c,"Controles virtuais","onscreen",true);
         selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Normal","Grande"},
             Math.max(0,Math.min(2,prefs().getInt("controlSize",0))),
             n->{prefs().edit().putInt("controlSize",n).apply();selectionChange();});
+
+        selectSpinner(c,"Posição HUD FPS",
+            new String[]{"Topo esquerdo","Topo central","Topo direito"},
+            Math.max(0,Math.min(2,prefs().getInt("hudPosition",2))),
+            n->{prefs().edit().putInt("hudPosition",n).apply();applyHudStyle();});
+        selectSpinner(c,"Tamanho HUD FPS",new String[]{"Pequeno","Normal","Grande"},
+            Math.max(0,Math.min(2,prefs().getInt("hudSize",1))),
+            n->{prefs().edit().putInt("hudSize",n).apply();applyHudStyle();});
+        CheckBox showHud=new CheckBox(this);
+        showHud.setText("Mostrar HUD FPS");showHud.setTextColor(WHITE);
+        showHud.setChecked(prefs().getBoolean("hudVisible",true));
+        showHud.setOnCheckedChangeListener((b,enabled)->{
+            prefs().edit().putBoolean("hudVisible",enabled).apply();applyHudStyle();
+        });
+        c.addView(showHud);
         toggle(c,"Aquecimento de shaders em segundo plano (experimental)","warmup",false);
         actions(c,button("Aplicar e preparar jogo",true,v->prepareGame()));
+        LinearLayout patches=card(body,"Patches gráficos 01.02");
+        line(patches,"Validados no código da edição enviada",
+            "O preparador verifica os bytes da versão selecionada e modifica somente a imagem derivada; o eboot.bin nunca é alterado.");
+        toggle(patches,"Desativar motion blur","disableMotionBlur",false);
+        toggle(patches,"Desativar profundidade de campo","disableDepthOfField",false);
+        toggle(patches,"Desativar film grain","disableFilmGrain",false);
+        toggle(patches,"Desativar aberração cromática","disableChromatic",false);
+        line(patches,"60 FPS, 16:9 e resolução",
+            "Já disponíveis acima. 60 FPS pode causar QTEs travados nos capítulos 6 e 9.");
         LinearLayout note=card(body,"Sobre as configurações");
         line(note,"O jogo aplica patches verificados na imagem preparada.",
             "30/60 FPS, proporção e resolução exigem nova preparação. "+
@@ -759,7 +783,7 @@ public final class Order1886Activity extends Activity {
     }
     private int controlSize(int dpSize) {
         int selected=prefs().getInt("controlSize",0);
-        float scale=selected==1?1.15f:selected==2?1.30f:1.0f;
+        float scale=selected==1?1.0f:selected==2?1.18f:0.82f;
         return dp(dpSize*scale);
     }
     // Compact PS4 layout with unobstructed central gameplay and menu buttons.
@@ -793,7 +817,7 @@ public final class Order1886Activity extends Activity {
         TextView stick=label(left?"L":"R",16,0xffe0c58b,true);
         stick.setGravity(Gravity.CENTER);
         stick.setBackground(shape(0x66374049,0x999fa5ad,99));
-        stick.setAlpha(0.57f);
+        stick.setAlpha(0.48f);
         int diameter=controlSize(76);
         FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(diameter,diameter,gravity);
         if(left)p.leftMargin=marginX;else p.rightMargin=marginX;
@@ -814,7 +838,7 @@ public final class Order1886Activity extends Activity {
                 }
                 case MotionEvent.ACTION_CANCEL:
                 case MotionEvent.ACTION_UP:
-                    view.setAlpha(0.57f);
+                    view.setAlpha(0.48f);
                     if(left){leftX=leftY=128;virtualLeftActive=false;}
                     else{rightX=rightY=128;virtualRightActive=false;}
                     sendVirtual();
@@ -825,13 +849,13 @@ public final class Order1886Activity extends Activity {
     }
     private void addTouchButton(String text,String token,int gravity,int marginX,int marginY){
         boolean wide=text.length()>3;
-        int width=controlSize(wide?56:38);
-        if(text.equals("L3")||text.equals("R3"))width=controlSize(32);
+        int width=controlSize(wide?53:36);
+        if(text.equals("L3")||text.equals("R3"))width=controlSize(29);
         TextView view=label(text,wide?10:15,WHITE,true);
         view.setGravity(Gravity.CENTER);
-        view.setBackground(shape(0x77404956,0x999fa5ad,40));
-        view.setAlpha(0.65f);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,controlSize(38),gravity);
+        view.setBackground(shape(0x55404956,0x889fa5ad,40));
+        view.setAlpha(0.56f);
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,controlSize(36),gravity);
         if((gravity&Gravity.RIGHT)==Gravity.RIGHT)p.rightMargin=marginX;
         else if((gravity&Gravity.LEFT)==Gravity.LEFT)p.leftMargin=marginX;
         if((gravity&Gravity.BOTTOM)==Gravity.BOTTOM)p.bottomMargin=marginY;
@@ -848,7 +872,7 @@ public final class Order1886Activity extends Activity {
                 virtualKeys.add(token);
                 sendVirtual();
             }else if(action==MotionEvent.ACTION_UP){
-                v.setAlpha(0.65f);
+                v.setAlpha(0.56f);
                 final int sequence=generation[0];
                 long held=android.os.SystemClock.uptimeMillis()-pressedAt[0];
                 main.postDelayed(()->{
@@ -856,7 +880,7 @@ public final class Order1886Activity extends Activity {
                 },Math.max(0,90-held));
             }else if(action==MotionEvent.ACTION_CANCEL){
                 generation[0]++;
-                v.setAlpha(0.65f);
+                v.setAlpha(0.56f);
                 virtualKeys.remove(token);
                 sendVirtual();
             }
