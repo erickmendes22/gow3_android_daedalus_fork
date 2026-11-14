@@ -11,6 +11,7 @@ on:
       - "the-order-1886-android/overlay/cpu/**"
       - "the-order-1886-android/scripts/**"
       - "android-launcher/order1886/**"
+      - "the-order-1886-android/overlay/android-launcher/**"
       - "android-launcher/settings.gradle.kts"
   workflow_dispatch:
 
@@ -255,7 +256,7 @@ jobs:
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.14-mobile-controls-visual-patches
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.15-classic-playstation-controls
           path: android-launcher/order1886/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
