@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 17
-        versionName = "0.1.15-classic-playstation-controls"
+        versionCode = 18
+        versionName = "0.1.16-auto-prepare-gamehub26"
     }
     buildTypes {
         release {
