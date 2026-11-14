@@ -55,7 +55,7 @@ final class Order1886TouchOverlay extends View {
         return size==0?0.82f:size==2?1.16f:1.0f;
     }
     private PointF center(String name) { return centers.get(name); }
-    // The 1280x720 layout drawn at one scale in the centred 16:9 area, as the game (MainActivity):
+    // Classic Daedalus 1280x720 layout, centered in the available game viewport:
     // round on any screen shape. Controls may be dragged into the bars around it.
     private float scale() { return Math.max(1e-3f,Math.min(getWidth()/1280f,getHeight()/720f)); }
     private float offsetX() { return (getWidth()-1280f*scale())/2f; }
@@ -114,7 +114,7 @@ final class Order1886TouchOverlay extends View {
                 ry=axis(Math.max(-1f,Math.min(1f,(p.y-c.y)/(56f*controlScale()))));
             } else if (control.equals("l2")) { l2=255; pressed.add(control); }
             else if (control.equals("r2")) { r2=255; pressed.add(control); }
-            else if (control.equals("touchpad")) pressed.add("touchpad"); /* 右侧点击:打开游戏暂停菜单,进而可进存档列表 */
+            else if (control.equals("touchpad")) pressed.add("touchpad");
             else if (control.equals("mouse")) {
                 // Android Bionic has no X11/XInput mouse backend.
                 mouse=true;
@@ -201,15 +201,14 @@ final class Order1886TouchOverlay extends View {
         c.drawCircle(p.x,p.y,r,paint);
         paint.setStyle(Paint.Style.FILL); paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setTextSize((label.length()>2 ? 19 : 33)*controlScale()); paint.setTextAlign(Paint.Align.CENTER);
+        paint.setColor(accent==0?themeColor():accent);
         c.drawText(label,p.x,p.y-(paint.ascent()+paint.descent())/2,paint);
     }
     private void rectangle(Canvas c,String name,float width,String label) {
         width*=controlScale();
         PointF p=center(name);
-        // The touchpad button presses "touchpad" (right-side click, opens the pause menu),
-        // not "touchpad", so highlight it from that signal too.
-        boolean lit=pressed.contains(name) ||
-            (name.equals("touchpad") && pressed.contains("touchpad"));
+        // Native Order1886PadBridge uses a single PS4 touchpad token.
+        boolean lit=pressed.contains(name);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(overlayFill(name.equals(dragged),lit));
         c.drawRoundRect(p.x-width/2,p.y-25*controlScale(),p.x+width/2,p.y+25*controlScale(),14*controlScale(),14*controlScale(),paint);
