@@ -46,6 +46,11 @@ public final class Order1886Present {
 
     private static synchronized void setSurface(Surface surface) { nativeSetSurface(surface); }
 
+    /** Switch the Android display geometry live; the game's internal aspect is unchanged. */
+    public static synchronized void setFullscreen(boolean fill) {
+        if (used) nativeSetFullscreen(fill);
+    }
+
     /** Frames the game has presented to the app so far. */
     public static long frames() { return nativeFrames(); }
 
