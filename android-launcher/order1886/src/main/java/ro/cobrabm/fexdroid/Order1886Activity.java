@@ -244,28 +244,79 @@ public final class Order1886Activity extends Activity {
         gameFrame.addView(surface,new FrameLayout.LayoutParams(-1,-1));
         touchLayer=new FrameLayout(this);
         gameFrame.addView(touchLayer,new FrameLayout.LayoutParams(-1,-1));
-        gameHud=label("FPS —",12,GOLD,true);
-        gameHud.setBackground(shape(0xaa151b21,0,6));
-        gameHud.setPadding(dp(8),dp(5),dp(8),dp(5));
-        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT);
-        hp.setMargins(0,dp(10),dp(15),0);
-        gameFrame.addView(gameHud,hp);
-        Button back=button("☰  MENU",false,v->new AlertDialog.Builder(this)
-            .setTitle("The Order: 1886")
-            .setItems(new String[]{"Retomar","Mostrar/ocultar controles","Voltar ao launcher","Exportar log"},
-                      (dlg,i)->{
-                          if(i==1){
-                              boolean enabled=!prefs().getBoolean("onscreen",true);
-                              prefs().edit().putBoolean("onscreen",enabled).apply();
-                              setupTouchControls();
-                          }else if(i==2)stopGame();
-                          else if(i==3)exportLog();
-                          if(gameOpen)setGameImmersive(true);
-                      })
-            .show());
-        FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(dp(117),dp(43),Gravity.TOP|Gravity.LEFT);
-        bp.setMargins(dp(13),dp(10),0,0);gameFrame.addView(back,bp);
+
+        gameHud=label("— FPS",14,GOLD,true);
+        gameFrame.addView(gameHud,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT));
+        applyHudStyle();
+        // A small right-edge swipe target, centered vertically; no persistent menu button.
+        // This area does not overlap the face buttons, shoulder triggers or analog stick.
+        View gestureEdge=new View(this);
+        FrameLayout.LayoutParams edge=new FrameLayout.LayoutParams(
+            dp(24),dp(160),Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        gameFrame.addView(gestureEdge,edge);
+        gestureEdge.setOnTouchListener(new View.OnTouchListener(){
+            private float startX,startY;
+            @Override public boolean onTouch(View view,MotionEvent event){
+                switch(event.getActionMasked()){
+                    case MotionEvent.ACTION_DOWN:
+                        startX=event.getX();startY=event.getY();return true;
+                    case MotionEvent.ACTION_UP:
+                        if(gameOpen && startX-event.getX()>dp(64) &&
+                           Math.abs(event.getY()-startY)<dp(72))showGameMenu();
+                        return true;
+                    default:return true;
+                }
+            }
+        });
         setContentView(screen);
+    }
+
+    private void applyHudStyle(){
+        if(gameHud==null)return;
+        int size=prefs().getInt("hudSize",1);
+        gameHud.setTextSize(size==0?12:size==2?18:15);
+        gameHud.setTextColor(GOLD);
+        gameHud.setBackground(shape(0xb5111720,0x775f5c51,8));
+        gameHud.setPadding(dp(9),dp(5),dp(9),dp(5));
+        int position=prefs().getInt("hudPosition",2);
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)gameHud.getLayoutParams();
+        params.gravity=Gravity.TOP|(position==0?Gravity.LEFT:
+            position==1?Gravity.CENTER_HORIZONTAL:Gravity.RIGHT);
+        params.leftMargin=position==0?dp(12):0;
+        params.rightMargin=position==2?dp(12):0;
+        params.topMargin=dp(10);
+        gameHud.setLayoutParams(params);
+        gameHud.setVisibility(prefs().getBoolean("hudVisible",true)?View.VISIBLE:View.GONE);
+    }
+    private void showGameMenu(){
+        if(!gameOpen)return;
+        final boolean controls=prefs().getBoolean("onscreen",true);
+        final boolean fill=prefs().getBoolean("fullscreen",false);
+        final boolean hud=prefs().getBoolean("hudVisible",true);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("The Order: 1886")
+            .setItems(new String[]{"Retomar",
+                controls?"Ocultar controles":"Mostrar controles",
+                fill?"Ajustar imagem (Fit)":"Preencher tela (Fill)",
+                hud?"Ocultar HUD de FPS":"Mostrar HUD de FPS",
+                "Exportar log","Voltar ao launcher"},(d,index)->{
+                if(index==1){
+                    prefs().edit().putBoolean("onscreen",!controls).apply();
+                    setupTouchControls();
+                }else if(index==2){
+                    prefs().edit().putBoolean("fullscreen",!fill).apply();
+                    if(presentStarted)Order1886Present.setFullscreen(!fill);
+                }else if(index==3){
+                    prefs().edit().putBoolean("hudVisible",!hud).apply();
+                    applyHudStyle();
+                }else if(index==4){
+                    exportLog();
+                }else if(index==5){
+                    stopGame();
+                }
+            }).create();
+        dialog.setOnDismissListener(d->{if(gameOpen)setGameImmersive(true);});
+        dialog.show();
     }
     private void updateHomeHeader(){ /* Status updates stay in the fixed footer; do not rebuild during a job. */ }
     private void render(){
