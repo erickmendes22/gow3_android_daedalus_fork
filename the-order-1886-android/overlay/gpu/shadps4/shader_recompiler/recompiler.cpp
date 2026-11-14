@@ -85,6 +85,25 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
         program.ins_list.emplace_back(decoder.decodeInstruction(slice));
     }
 
+    // The no-barycentric Adreno path previously expanded EVERY V_INTERP_P1/P2
+    // attribute to three flat GS outputs, even when the shader never accessed
+    // a specific vertex. Discover the exceptional MOV selectors up front so
+    // both P1 and P2 make the same decision regardless of instruction order.
+    if (info.sw_stage == SwStage::Fragment) {
+        info.fs_requires_per_vertex.fill(false);
+        for (const auto& inst : program.ins_list) {
+            if (inst.opcode == Gcn::Opcode::V_INTERP_MOV_F32) {
+                const u32 slot = inst.control.vintrp.attr;
+                if (slot < info.fs_requires_per_vertex.size()) {
+                    info.fs_requires_per_vertex[slot] = true;
+                }
+            }
+        }
+        // Match the translator's actual MOV attribute list when enforcing
+        // physical GS/FS output limits, not a pessimistic all-expanded count.
+        runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
+    }
+
     // Clear any previous pooled data.
     pools.ReleaseContents();
 

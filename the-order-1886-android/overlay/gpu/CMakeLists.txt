@@ -114,6 +114,8 @@ function(add_host_shader FILENAME SHADER_NAME)
     set(SHADER_HEADERS ${SHADER_HEADERS} ${OUT} PARENT_SCOPE)
 endfunction()
 add_host_shader(color_to_ms_depth.frag color_to_ms_depth_frag)
+add_host_shader(color_ms_to_ms_depth.frag color_ms_to_ms_depth_frag)
+add_host_shader(ms_depth_to_color.frag ms_depth_to_color_frag)
 add_host_shader(ms_image_blit.frag ms_image_blit_frag)
 add_host_shader(ms_image_blit.frag ms_image_blit_msaa_frag SRC_MSAA=1)
 add_host_shader(ms_image_blit.frag ms_image_blit_uint_frag SRC_UINT=1)
@@ -179,8 +181,13 @@ target_include_directories(ps4gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_p
 target_compile_definitions(ps4gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_definitions(ps4gpu PUBLIC ORDER1886_RUNTIME=1)
 target_compile_options(ps4gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
-# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against order1886-runtime.
-if (NOT WIN32)
+# On Android this is a standalone libps4gpu.so. Do not tolerate unresolved
+# symbols: Android's dynamic linker rejects the entire game at process startup.
+# The old --allow-shlib-undefined masked eight missing g_ps4_* compiler counters.
+if (ANDROID)
+    target_link_options(ps4gpu PRIVATE -Wl,-z,defs)
+elseif (NOT WIN32)
+    # Non-Android desktop builds may use unresolved host runtime entry points.
     target_link_options(ps4gpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
 if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -26,8 +27,9 @@
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
-#include "gow3_settings.h"
+#include "ps4_settings.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
@@ -226,6 +228,12 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.hw.fs.en_flags = regs.ps_input_ena;
         info.hw.fs.addr_flags = regs.ps_input_addr;
         info.hw.fs.num_inputs = regs.num_interp;
+        info.hw.fs.is_vs_direct =
+            !regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Geometry)) &&
+            !regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Export)) &&
+            !regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Local)) &&
+            !regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Hull));
+        info.hw.fs.prim_type = sel.graphics_key.prim_type;
         info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
         info.hw.fs.num_samples =
             regs.ps_input_addr.sample_coverage_ena && regs.ps_input_ena.sample_coverage_ena
@@ -361,6 +369,18 @@ struct PipelineCache::DriverCacheState {
 };
 
 std::vector<u8> PipelineCache::LoadDriverCache() {
+#ifdef __ANDROID__
+    // With the Adreno 830 single-sample renderer, a second launch was black
+    // even with the same Turnip. The native driver cache is keyed only by
+    // device/driver, not by the renderer's MSAA compatibility mode.
+    // Keep the in-memory VkPipelineCache but do not restore or checkpoint the
+    // disk snapshot until it has a complete render-state-specific identity.
+    if (AmdGpu::NoMsaa()) {
+        std::printf("ORDER1886_CACHE_REPLAY driver=disabled reason=single-msaa\n");
+        std::fflush(stdout);
+        return {};
+    }
+#endif
     // Complement the current shader cache only when pipeline binaries cannot persist the
     // driver's compiled code. Never replace or duplicate the pipeline-binary cache path.
     if (!std::getenv("GOW3_ANDROID_PORT") || !EmulatorSettings.IsPipelineCacheEnabled() ||
@@ -473,6 +493,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_amd_shader_explicit_vertex_parameter =
             instance_.IsAmdShaderExplicitVertexParameterSupported(),
         .supports_fragment_shader_barycentric = instance_.IsFragmentShaderBarycentricSupported(),
+        .supports_geometry_stage = instance_.IsGeometryStageSupported(),
+        .max_fragment_input_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxFragmentInputComponents,
+        .max_geometry_output_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxGeometryOutputComponents,
+        .max_geometry_total_output_components =
+            instance.GetPhysicalDevice().getProperties().limits.maxGeometryTotalOutputComponents,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
@@ -554,13 +581,13 @@ PipelineCache::~PipelineCache() {
     SaveDriverCache();
 }
 
-// gow3: shader/pipeline compile time on the GPU thread, reported by GOW3_FRAME_STATS.
-std::atomic<u64> g_gow3_compile_ns;
-std::atomic<u32> g_gow3_compiles;
-std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
-std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
+// Original The Order renderer ABI: shared compiler statistics must keep the g_ps4_* names.\n// Other translation units (draw scheduling, stats) bind these exact exported symbols.
+std::atomic<u64> g_ps4_compile_ns;
+std::atomic<u32> g_ps4_compiles;
+std::atomic<u64> g_ps4_capture_ns, g_ps4_async_ns, g_ps4_compile_wait_ns;
+std::atomic<u64> g_ps4_snapshot_ns, g_ps4_guest_wait_ns;
 std::atomic<u32> g_gow3_pool_reuses;
-std::atomic<u32> g_gow3_pending_draws;
+std::atomic<u32> g_ps4_pending_draws;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -579,10 +606,10 @@ struct PhaseTimer {
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_gow3_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        g_ps4_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count());
-        ++g_gow3_compiles;
+        ++g_ps4_compiles;
     }
 };
 } // namespace
@@ -596,7 +623,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     if (!compiler->HasCapacity()) {
         return false;
     }
-    PhaseTimer snapshot{g_gow3_snapshot_ns};
+    PhaseTimer snapshot{g_ps4_snapshot_ns};
     auto build = std::make_shared<AsyncShaderCompilation>();
     build->device = instance.GetDevice();
     build->code.assign(params.code.begin(), params.code.end());
@@ -616,40 +643,71 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     }
     build->pool_cache = &compiler_pools;
     snapshot.Stop();
-    AsyncJob<bool> capture_job;
-    if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-        PhaseTimer capture{g_gow3_capture_ns};
-        auto [pools, reused] = compiler_pools.Acquire();
-        build->pools = std::move(pools);
-        if (reused) {
-            ++g_gow3_pool_reuses;
+    bool captured = false;
+    std::string capture_error;
+    if (srt_sync) {
+        // The Order's SRT source addresses are discovered partway through IR translation.
+        // On this (GPU-command) thread we can publish GPU-written guest pages before
+        // ResourcePatchingPass and LowerDynamicReadConstPass consume those addresses.
+        // Keep the expensive SPIR-V/Vulkan compile on the asynchronous worker below.
+        try {
+            PhaseTimer capture{g_ps4_capture_ns};
+            auto [pools, reused] = compiler_pools.Acquire();
+            build->pools = std::move(pools);
+            if (reused) {
+                ++g_gow3_pool_reuses;
+            }
+            build->ir.emplace(Shader::TranslateProgram(
+                build->code, *build->pools, build->info, build->runtime, profile,
+                [this, build] { srt_sync(build->info); }));
+            build->spec =
+                Shader::StageSpecialization(build->info, build->runtime, profile, binding);
+            build->fetch.Capture(build->info);
+            captured = true;
+        } catch (const std::exception& ex) {
+            capture_error = ex.what();
         }
-        // gow3: the GPU thread waits until all guest reads and specialization are captured.
-        build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
-                                                   build->runtime, profile));
-        build->spec = Shader::StageSpecialization(build->info, build->runtime, profile, binding);
-        build->fetch.Capture(build->info);
-        return true;
-    })) {
-        return false;
+    } else {
+        // Non-SRT ports retain the original threaded guest-read capture.
+        AsyncJob<bool> capture_job;
+        if (!capture_job.Start(*capture_compiler, [this, build, binding] {
+            PhaseTimer capture{g_ps4_capture_ns};
+            auto [pools, reused] = compiler_pools.Acquire();
+            build->pools = std::move(pools);
+            if (reused) {
+                ++g_gow3_pool_reuses;
+            }
+            build->ir.emplace(Shader::TranslateProgram(
+                build->code, *build->pools, build->info, build->runtime, profile));
+            build->spec =
+                Shader::StageSpecialization(build->info, build->runtime, profile, binding);
+            build->fetch.Capture(build->info);
+            return true;
+        })) {
+            return false;
+        }
+        {
+            PhaseTimer waiting{g_ps4_guest_wait_ns};
+            capture_job.Wait();
+        }
+        captured = capture_job.Poll().value_or(false);
+        if (!captured) {
+            capture_error = capture_job.Error();
+        }
     }
-    {
-        PhaseTimer waiting{g_gow3_guest_wait_ns};
-        capture_job.Wait();
-    }
-    if (!capture_job.Poll()) {
+    if (!captured) {
         if (initial) {
             program.compilation_failed = true;
-        } else {
+        } else if (specialization) {
             specialization->info = &program.info;
             program.failed_permutations.push_back(std::move(*specialization));
         }
-        LOG_ERROR(Render_Vulkan, "gow3: shader {:#x}/{} capture failed: {}", params.hash,
-                  permutation, capture_job.Error());
+        LOG_ERROR(Render_Vulkan, "order1886: shader {:#x}/{} capture failed: {}", params.hash,
+                  permutation, capture_error);
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
-        PhaseTimer compile{g_gow3_async_ns};
+        PhaseTimer compile{g_ps4_async_ns};
         Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch};
         auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, build->runtime, *build->ir,
                                                     build->binding);
@@ -714,9 +772,13 @@ void PipelineCache::PublishShaders(bool wait) {
                 program->info_template = std::make_unique<Shader::Info>(program->info);
             }
             build->spec.info = &program->info;
-            RegisterShaderMeta(program->info, build->spec.fetch_shader_data, build->spec,
+            auto effective_info = std::make_unique<Shader::Info>(
+                build->initial ? program->info : build->info);
+            RegisterShaderMeta(program->info, *effective_info,
+                               build->spec.fetch_shader_data, build->spec,
                                perm_hash, build->permutation);
-            program->AddPermut(build->module, std::move(build->spec));
+            program->AddPermut(build->module, std::move(build->spec),
+                               std::move(effective_info));
             build->module = nullptr;
             program->pending.reset();
         }
@@ -769,7 +831,7 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && Ps4Settings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
@@ -853,7 +915,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     sel.draw_indirect_params = params;
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
-            ++g_gow3_pending_draws;
+            ++g_ps4_pending_draws;
         }
         return nullptr;
     }
@@ -863,7 +925,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             return found->second.get();
         }
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
-            PhaseTimer capture{g_gow3_snapshot_ns};
+            PhaseTimer capture{g_ps4_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
             build->selection.regs = nullptr;
@@ -880,7 +942,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
-                PhaseTimer compile{g_gow3_async_ns};
+                PhaseTimer compile{g_ps4_async_ns};
                 auto& s = build->selection;
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
@@ -892,7 +954,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_gow3_pending_draws;
+        ++g_ps4_pending_draws;
         return nullptr;
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
@@ -1159,6 +1221,13 @@ bool PipelineCache::RefreshGraphicsStages(PipelineSelection& sel) {
             sel.compilation_pending = true;
             return false;
         }
+        if (stage_out == SwStage::Fragment) {
+            // The pipeline's runtime_info is constructed again from registers.
+            // Carry the decoded MOV mask from its actual shader Info, otherwise
+            // GS/FS compilation can disagree on expanded input locations.
+            sel.runtime_infos[stage_out_idx].hw.fs.needs_per_vertex_slot =
+                sel.infos[stage_out_idx]->fs_requires_per_vertex;
+        }
         if (fetch_shader_) {
             sel.fetch_shader = fetch_shader_;
         }
@@ -1279,7 +1348,12 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
     CompileTimer timer;
 
-    const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    // The guest SRT pointer graph is discovered by FlattenExtendedUserdataPass.
+    // Synchronize GPU-written pages at guest_reads_done BEFORE resource patching and
+    // dynamic ReadConst lowering produce irreversible SPIR-V constants.
+    const auto ir_program = Shader::TranslateProgram(
+        code, pools, info, runtime_info, profile,
+        [this, &info] { if (srt_sync) srt_sync(info); });
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
@@ -1335,6 +1409,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         }
         runtime_fault_recover = &recover;
         info.RefreshFlatBuf();
+        if (sw_stage == SwStage::Fragment) {
+            runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
+        }
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
         runtime_fault_recover = nullptr;
         const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
@@ -1345,7 +1422,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         info.AddBindings(binding);
         const size_t perm_idx = std::distance(program->modules.begin(), it);
         worker.stages.push_back(
-            {program, params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
+            {program, it->info.get(), params.hash, hw_stage, info.pgm_base, &info.flattened_ud_buf});
         return std::make_tuple(&info, it->module, it->spec.fetch_shader_data,
                                HashCombine(params.hash, perm_idx));
     }
@@ -1356,7 +1433,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                !EmulatorSettings.IsShaderCollect();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
-            PhaseTimer waiting{g_gow3_compile_wait_ns};
+            PhaseTimer waiting{g_ps4_compile_wait_ns};
             it_pgm->second->pending->job.Wait();
         }
         PublishShaders();
@@ -1382,7 +1459,8 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto spec = Shader::StageSpecialization(new_program->info, runtime_info, profile, start);
         const auto perm_hash = HashCombine(params.hash, 0);
 
-        RegisterShaderMeta(new_program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+        RegisterShaderMeta(new_program->info, new_program->info,
+                           spec.fetch_shader_data, spec, perm_hash, 0);
         new_program->AddPermut(module, std::move(spec));
         new_program->info_template = std::make_unique<Shader::Info>(new_program->info);
         Program* program = new_program.get();
@@ -1412,6 +1490,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     info.user_data = params.user_data;
     info.RefreshFlatBuf();
     if (srt_sync) srt_sync(info);
+    if (sw_stage == SwStage::Fragment) {
+        runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
+    }
     auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
 
     size_t perm_idx = program->modules.size();
@@ -1440,9 +1521,10 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
 
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+        RegisterShaderMeta(info, new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         std::unique_lock lk{programs_mutex};
-        program->AddPermut(module, std::move(spec));
+        program->AddPermut(module, std::move(spec),
+                           std::make_unique<Shader::Info>(std::move(new_info)));
     } else {
         info.AddBindings(binding);
         module = it->module;

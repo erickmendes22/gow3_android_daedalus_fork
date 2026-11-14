@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -375,8 +376,24 @@ bool Instance::CreateDevice() {
     custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
     depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-    const bool dynamic_vertex_input = UseVertexInputDynamicState(
-        properties.vendorID, std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE"));
+    // The PC port already uses the static vertex-input fallback for Intel missing
+    // meshes. Adreno 830 can advertise dynamic vertex input while failing to
+    // render PS4 geometry through that route. Keep this change limited to the
+    // affected hardware and allow an explicit override for an A/B comparison.
+    const char* vertex_override = std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE");
+    const bool adreno830 = properties.vendorID == 0x5143 &&
+        std::string_view{properties.deviceName}.find("830") != std::string_view::npos;
+    // The static-input experiment did not resolve the Adreno 830 scene and was
+    // followed by the same stalled GPU timeline. Preserve the original Vulkan
+    // feature policy unless the user explicitly requests an A/B override.
+    const bool dynamic_vertex_input =
+        UseVertexInputDynamicState(properties.vendorID, vertex_override);
+    if (adreno830) {
+        std::printf("ORDER1886_VERTEX_INPUT Adreno830 mode=%s override=%s\n",
+                    dynamic_vertex_input ? "dynamic" : "static",
+                    vertex_override && *vertex_override ? vertex_override : "none");
+        std::fflush(stdout);
+    }
     vertex_input_dynamic_state = dynamic_vertex_input &&
         add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     if (!dynamic_vertex_input) {
@@ -854,11 +871,30 @@ void Instance::CollectDeviceParameters() {
     driver_id = driver.driverID;
     vendor_name = driver.driverName.data();
 
-    // see video_core/amdgpu/ps4_msaa.h; the default per driver is ps4_msaa_default.h.
-    constexpr bool no_msaa = false; // Preserve the guest sample counts.
-    AmdGpu::no_msaa.store(no_msaa, std::memory_order_relaxed);
-    std::printf("GPU: guest multisampling %s\n",
-                no_msaa ? "off (single-sampled images; ORDER1886_NO_MSAA=0 keeps it)" : "on");
+    // Keep native PS4 sample counts by default. Adreno 830 and 840 lack both
+    // mixed-sample Vulkan extensions in the affected Turnip configurations:
+    // forcing guest sample counts there can mismatch depth/color attachments.
+    // Use the centralized NumSamples()/Image::GetType() single-sample path,
+    // which also keeps their disk pipeline replay disabled on the next launch.
+    // ORDER1886_NO_MSAA=0 remains available for a controlled A/B comparison.
+    const char* msaa_override = std::getenv("ORDER1886_NO_MSAA");
+    const auto adreno_name = std::string_view{properties.deviceName.data()};
+    const bool adreno830_or_840 = properties.vendorID == 0x5143 &&
+        (adreno_name.find("830") != std::string_view::npos ||
+         adreno_name.find("840") != std::string_view::npos);
+    const bool lacks_mixed_samples =
+        !nv_framebuffer_mixed_samples && !amd_mixed_attachment_samples;
+    const bool no_msaa = msaa_override && *msaa_override
+        ? msaa_override[0] == '1'
+        : (adreno830_or_840 && lacks_mixed_samples);
+    AmdGpu::no_msaa.store(no_msaa, std::memory_order_release);
+    std::printf("ORDER1886_GRAPHICS_MSAA mode=%s reason=%s mixed_ext=%d,%d\n",
+                no_msaa ? "single" : "guest",
+                msaa_override && *msaa_override ? "user-override"
+                : adreno830_or_840 && lacks_mixed_samples ? "adreno83x-84x-no-mixed-samples"
+                                                          : "native-default",
+                int(nv_framebuffer_mixed_samples), int(amd_mixed_attachment_samples));
+    std::fflush(stdout);
 
     const std::string model_name{GetModelName()};
     const std::string driver_version = GetDriverVersionName();

@@ -2,7 +2,7 @@ name: The Order 1886 - Bachata SRT GPU compile-only validation
 
 on:
   push:
-    branches: [analysis/bachata-order-compare-20261101]
+    branches: [analysis/bachata-order-compare-20261101, fix/order1886-adreno830-pervertex-interpolation]
     paths:
       - ".github/workflows/order1886-bachata-gpu-check.yml"
       - "the-order-1886-android/overlay/gpu/**"
@@ -12,6 +12,12 @@ on:
       - "the-order-1886-android/scripts/**"
       - "android-launcher/order1886/**"
       - "android-launcher/settings.gradle.kts"
+  pull_request:
+    branches: [analysis/bachata-order-compare-20261101]
+    paths:
+      - ".github/workflows/order1886-bachata-gpu-check.yml"
+      - "the-order-1886-android/overlay/gpu/**"
+      - "the-order-1886-android/scripts/**"
   workflow_dispatch:
 
 permissions:

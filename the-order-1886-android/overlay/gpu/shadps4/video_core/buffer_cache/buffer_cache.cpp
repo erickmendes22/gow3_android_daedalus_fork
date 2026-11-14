@@ -9,13 +9,14 @@
 #include <bit>
 #include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
-#include "gow3_copy.h"
-#include "gow3_toggles.h"
+#include "ps4_copy.h"
+#include "ps4_toggles.h"
 #include "common/alignment.h"
 #include "core/memory.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/deferred_readback_merge.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -100,23 +101,56 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
+    // Write faults beside GPU-written bytes are deferred instead of waiting for the whole GPU.
+    // Relaxed readbacks only: the snapshot reads guest pages that the other modes keep
+    // read-protected. Known gap: a CPU write of a pending byte's snapshot value (or one racing
+    // ApplyDeferredBatch) is not detected and the GPU data replaces it; the page has to stay
+    // writable for the faulting write, so closing it needs the GPU wait this removes.
+    if (const char* env = std::getenv("ORDER1886_DEFER_BUFFER_READBACK"); env && env[0] == '0') {
+        deferred_readbacks_enabled = false;
+    }
+    deferred_readbacks_enabled = deferred_readbacks_enabled &&
+                                 EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed;
 }
 
 BufferCache::~BufferCache() = default;
+
+bool BufferCache::ReadbackLog() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("ORDER1886_READBACK_LOG");
+        return env && *env == '1';
+    }();
+    return enabled;
+}
+
+u64 BufferCache::WriterOf(VAddr address) {
+    std::scoped_lock lock{writers_mutex};
+    auto it = writers.upper_bound(address);
+    if (it == writers.begin()) {
+        return 0;
+    }
+    --it;
+    return address < it->first + it->second.first ? it->second.second : 0;
+}
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
         ReadMemory(device_addr, size, true, assume_locks);
     });
+    // A CPU overwrite or unmap ends any read watch: relaxed keeps them for allowlisted outputs.
+    if (EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Selective ||
+        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed) {
+        memory_tracker->WatchReads(device_addr, size, false);
+    }
 }
 
-// gow3: the game fills its per-frame buffers (constants, skinning output) sequentially and
+// the game fills its per-frame buffers (constants, skinning output) sequentially and
 // every 4 KiB page cost a protection fault (~110k/s in the test scene, a fifth of each
 // render worker's time in the kernel). A fault unprotects the aligned window around it instead;
 // pages marked CPU-modified without being written only cost an upload when bound.
 // Item: context = BufferCache, source = guest address, destination = host pointer, size,
 // extra = the Buffer whose mapping holds the destination (flushed after the copy).
-void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
+void BufferCache::RunGuestCopy(const Ps4Copy::Item& item) {
     auto* cache = static_cast<BufferCache*>(item.context);
     auto* dst = reinterpret_cast<u8*>(item.destination);
     cache->memory->CopySparseMemory(item.source, dst, item.size);
@@ -126,27 +160,60 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
 
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
-void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
-    if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
+void BufferCache::SmallGuestCopy(const Ps4Copy::Item& item) {
+    if (scheduler.IsRecordingDeferred() && !Ps4Toggle::Disabled(Ps4Toggle::PoolSmallCopies)) {
         scheduler.RecordHostCopy([item] { item.run(item); });
         return;
     }
-    Gow3Copy::QueueCopy(item);
+    Ps4Copy::QueueCopy(item);
 }
 
 void BufferCache::ExtendWriteFault(VAddr device_addr) {
     static const u64 window = [] {
-        const char* env = std::getenv("GOW3_FAULT_WINDOW");
+        const char* env = std::getenv("ORDER1886_FAULT_WINDOW");
         const u64 kib = env ? std::strtoull(env, nullptr, 10) : 256;
         return std::bit_ceil(std::clamp<u64>(kib, 4, 1024)) * 1024;
     }();
-    if (window <= TRACKER_BYTES_PER_PAGE || Gow3Toggle::Disabled(Gow3Toggle::FaultWindow)) {
+    if (window <= TRACKER_BYTES_PER_PAGE || Ps4Toggle::Disabled(Ps4Toggle::FaultWindow)) {
         return;
     }
     memory_tracker->ExtendWriteFault(Common::AlignDown(device_addr, window), window);
 }
 
 void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool assume_locks) {
+    // A CPU read of a watched output under the relaxed policy (the aim focus, see
+    // ReadbackWatchedShader) returns at once with the value of the previous read; the bytes read
+    // are copied from the GPU and reach guest memory when that copy completes. Waiting for them
+    // (scheduler.Finish() three times a frame) corrupted skinned and cloth vertices in the
+    // chapter II cutscene; no other bytes of the page are written back.
+    if (!is_write && EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed) {
+        const VAddr page = Common::AlignDown(device_addr, TRACKER_BYTES_PER_PAGE);
+        memory_tracker->WatchReads(
+            page, Common::AlignUp(device_addr + size, TRACKER_BYTES_PER_PAGE) - page, false);
+        const auto publish = [this, device_addr, size] {
+            const auto* arena =
+                GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
+            const auto download =
+                staging_pool.Request(size, VideoCore::MemoryType::HostCached, 0, true);
+            const std::array copies{vk::BufferCopy{
+                .srcOffset = device_addr - arena->cpu_addr,
+                .dstOffset = download.offset,
+                .size = size,
+            }};
+            runtime.CopyBuffer(arena, download.buffer, copies);
+            scheduler.DeferOperation([this, device_addr, size, download] {
+                download.buffer->Invalidate(download.offset, size);
+                memory->TryWriteBacking(std::bit_cast<u8*>(device_addr), download.mapped, size);
+                staging_pool.FreeDeferred(download);
+            });
+        };
+        if (assume_locks) {
+            publish();
+        } else {
+            liverpool->SendCommand<false>(publish);
+        }
+        return;
+    }
     const auto flush_request = [this, device_addr, size, is_write] {
         const u32 first_block = device_addr >> block_shift;
         const u32 last_block = (device_addr + size - 1) >> block_shift;
@@ -160,6 +227,21 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
             std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
         const VAddr window_end = std::min<VAddr>(
             std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
+        if (is_write && deferred_readbacks_enabled &&
+            !Ps4Toggle::Disabled(Ps4Toggle::DeferredReadbacks)) {
+            bool on_gpu;
+            {
+                std::scoped_lock lock{gpu_ranges_mutex};
+                on_gpu = gpu_modified_ranges.Intersects(device_addr, size);
+            }
+            if (!on_gpu && DeferReadback(arena, window_start, window_end - window_start)) {
+                memory_tracker->MarkRegionAsCpuModified(device_addr, size);
+                return;
+            }
+        }
+        // GPU data of earlier deferred readbacks in this window must reach guest memory
+        // before this readback completes.
+        WaitDeferredReadbacks(window_start, window_end - window_start);
         DownloadMemory(arena, window_start, window_end - window_start);
         if (is_write) {
             memory_tracker->MarkRegionAsCpuModified(device_addr, size);
@@ -170,21 +252,6 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
     } else {
         liverpool->SendCommand<true>(std::move(flush_request));
     }
-}
-
-bool BufferCache::IsRangeGpuWritten(VAddr addr, size_t size) const {
-    return size != 0 && gpu_modified_ranges.Intersects(addr, size);
-}
-
-bool BufferCache::DownloadSrtSourcePage(VAddr page) {
-    constexpr u64 PageSize = 4096;
-    if ((page & (PageSize - 1)) || !IsRangeGpuWritten(page, PageSize) ||
-        !IsRegionGpuModified(page, PageSize)) return false;
-    const auto* arena = GetArena(page >> block_shift, (page + PageSize - 1) >> block_shift);
-    // Exact page (not 512-KiB ReadMemory window); consistent with Bachata
-    // 0.2.7 selective GPU-written SRT data synchronization.
-    DownloadMemory(arena, page, PageSize);
-    return true;
 }
 
 void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size) {
@@ -205,6 +272,7 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
             constexpr u64 mask = ~(align - 1ULL);
             total_size_bytes += (new_size + align - 1) & mask;
         };
+        std::scoped_lock lock{gpu_ranges_mutex};
         gpu_modified_ranges.ForEachInRange(address, size, add_download);
         gpu_modified_ranges.Subtract(address, size);
     });
@@ -227,8 +295,187 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
 }
 
+bool BufferCache::DeferReadback(const Buffer* arena, VAddr device_addr, u64 size) {
+    std::vector<std::pair<VAddr, u64>> pages;
+    memory_tracker->ForEachDownloadRange<false>(
+        device_addr, size, [&](u64 address, u64 range) { pages.emplace_back(address, range); });
+    std::vector<std::pair<VAddr, u64>> parts;
+    u64 total = 0, snapshot_size = 0;
+    {
+        std::scoped_lock lock{gpu_ranges_mutex};
+        for (const auto& [address, range] : pages) {
+            gpu_modified_ranges.ForEachInRange(address, range, [&](VAddr start, VAddr end) {
+                parts.emplace_back(start, end - start);
+                total += Common::AlignUp(end - start, 64);
+                snapshot_size += end - start;
+            });
+        }
+        // Big readbacks (rare, tens of MiB) keep the waiting path: no snapshot that size.
+        constexpr u64 MaxDeferredBytes = 4_MB;
+        if (total > MaxDeferredBytes) {
+            return false;
+        }
+        for (const auto& [address, range] : pages) {
+            gpu_modified_ranges.Subtract(address, range);
+        }
+    }
+    if (total == 0) {
+        memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
+        return true;
+    }
+    DeferredBatch batch{};
+    batch.staging = staging_pool.Request(total, MemoryType::HostCached, 0, true);
+    batch.snapshot.resize(snapshot_size);
+    std::vector<vk::BufferCopy> copies;
+    u64 offset = 0, snapshot_offset = 0;
+    for (const auto& [addr, part] : parts) {
+        copies.push_back(vk::BufferCopy{
+            .srcOffset = addr - arena->cpu_addr,
+            .dstOffset = batch.staging.offset + offset,
+            .size = part,
+        });
+        memory->CopySparseMemory(addr, batch.snapshot.data() + snapshot_offset, part);
+        batch.items.push_back({addr, part, offset, snapshot_offset});
+        offset += Common::AlignUp(part, 64);
+        snapshot_offset += part;
+    }
+    runtime.CopyBuffer(arena, batch.staging.buffer, copies);
+    batch.tick = scheduler.CurrentTick(); // signalled by the flush that ends this submission
+    {
+        // Pending before the pages stop being GPU-modified: no upload in between takes them.
+        std::scoped_lock lock{deferred_mutex};
+        for (const auto& item : batch.items) {
+            pending_readbacks.Add(item.addr, item.size);
+        }
+        deferred_readbacks.push_back(std::move(batch));
+        has_pending_readbacks.store(true, std::memory_order_relaxed);
+    }
+    memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
+    return true;
+}
+
+void BufferCache::ApplyDeferredReadbacks() {
+    // Ranges whose guest bytes changed before the GPU data arrived: uploaded again from guest
+    // memory (now merged), outside deferred_mutex (the tracker lock is taken under it in
+    // SynchronizeMemory).
+    std::vector<std::pair<VAddr, u64>> reupload;
+    {
+        std::scoped_lock lock{deferred_mutex};
+        bool applied = false;
+        while (!deferred_readbacks.empty() && scheduler.IsFree(deferred_readbacks.front().tick)) {
+            DeferredBatch batch = std::move(deferred_readbacks.front());
+            deferred_readbacks.pop_front();
+            applied = true;
+            batch.staging.buffer->Invalidate(batch.staging.offset, batch.staging.size);
+            // GPU data goes where the guest left its bytes as they were at the fault.
+            ApplyDeferredBatch(
+                batch, deferred_readbacks,
+                [&](const DeferredItem& item) { return batch.staging.mapped + item.staging_offset; },
+                [&](VAddr addr, u8* dst, u64 size) { memory->CopySparseMemory(addr, dst, size); },
+                [&](VAddr addr, const u8* src, u64 size) {
+                    memory->TryWriteBacking(reinterpret_cast<void*>(addr), src, size);
+                },
+                [&](const DeferredItem& item, u64 changed) {
+                    if (!changed) {
+                        return;
+                    }
+                    std::scoped_lock ranges{gpu_ranges_mutex};
+                    if (!gpu_modified_ranges.Intersects(item.addr, item.size)) {
+                        reupload.emplace_back(item.addr, item.size);
+                    }
+                });
+            staging_pool.FreeDeferred(batch.staging);
+        }
+        if (applied) {
+            pending_readbacks.Clear();
+            for (const auto& batch : deferred_readbacks) {
+                for (const auto& item : batch.items) {
+                    pending_readbacks.Add(item.addr, item.size);
+                }
+            }
+            has_pending_readbacks.store(!deferred_readbacks.empty(), std::memory_order_relaxed);
+        }
+    }
+    for (const auto& [addr, size] : reupload) {
+        memory_tracker->MarkRegionAsCpuModified(addr, size);
+    }
+}
+
+void BufferCache::WaitDeferredReadbacks(VAddr addr, u64 size) {
+    if (!has_pending_readbacks.load(std::memory_order_relaxed)) {
+        return;
+    }
+    u64 needed = 0;
+    {
+        std::scoped_lock lock{deferred_mutex};
+        for (const auto& batch : deferred_readbacks) {
+            for (const auto& item : batch.items) {
+                if (addr < item.addr + item.size && item.addr < addr + size) {
+                    needed = std::max(needed, batch.tick);
+                }
+            }
+        }
+    }
+    if (!needed) {
+        return;
+    }
+    if (!scheduler.IsFree(needed)) {
+        if (needed >= scheduler.CurrentTick()) {
+            scheduler.Finish(); // still being recorded
+        } else {
+            scheduler.Wait(needed);
+        }
+    }
+    ApplyDeferredReadbacks();
+}
+
+// A shader can trace many different GPU-written SRT pages. The old path
+// waited for a deferred timeline tick separately for *every* page, potentially
+// issuing multiple queue flushes while shader translation held the GPU thread.
+// The pages come from ReadBackGpuWrittenSrtSources in sorted order.
+bool BufferCache::WaitDeferredSrtPages(std::span<const VAddr> sorted_pages) {
+    if (sorted_pages.empty() || !has_pending_readbacks.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    constexpr VAddr PageMask = ~VAddr{4095};
+    u64 needed = 0;
+    {
+        std::scoped_lock lock{deferred_mutex};
+        for (const auto& batch : deferred_readbacks) {
+            for (const auto& item : batch.items) {
+                const VAddr first_page = item.addr & PageMask;
+                const auto it = std::lower_bound(sorted_pages.begin(), sorted_pages.end(),
+                                                 first_page);
+                if (it != sorted_pages.end() && *it < item.addr + item.size) {
+                    needed = std::max(needed, batch.tick);
+                }
+            }
+        }
+    }
+    if (!needed) {
+        return false;
+    }
+    if (!scheduler.IsFree(needed)) {
+        if (needed >= scheduler.CurrentTick()) {
+            scheduler.Finish();
+        } else {
+            scheduler.Wait(needed);
+        }
+    }
+    ApplyDeferredReadbacks();
+    return true;
+}
+
+bool BufferCache::PendingReadback(VAddr addr, u64 size) {
+    if (!has_pending_readbacks.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    std::scoped_lock lock{deferred_mutex};
+    return pending_readbacks.Intersects(addr, size);
+}
+
 namespace {
-// gow3: GOW3_BUFFER_STATS=1 — how buffer bindings reach the GPU, by guest region (256 MiB),
+// ORDER1886_BUFFER_STATS=1 — how buffer bindings reach the GPU, by guest region (256 MiB),
 // printed every 5 s: small read-only copies into the stream buffer, arena bindings, and the
 // bytes those re-upload after CPU writes. Input for engine-level short paths.
 struct BufferStats {
@@ -250,7 +497,7 @@ void NoteHotUse(VAddr address, u32 size) {
         return;
     }
     auto& st = Stats();
-    const u64 frame = Gow3Stats::gpu_frames.load(std::memory_order_relaxed);
+    const u64 frame = Ps4Stats::gpu_frames.load(std::memory_order_relaxed);
     for (u64 block = address >> 16; block <= (address + size - 1) >> 16; ++block) {
         auto [it, inserted] = st.last_use.try_emplace(block, frame);
         if (!inserted && it->second != frame) {
@@ -265,7 +512,7 @@ u64 RegionKey(VAddr address) {
 }
 bool BufferStatsEnabled() {
     static const bool enabled = [] {
-        const char* value = std::getenv("GOW3_BUFFER_STATS");
+        const char* value = std::getenv("ORDER1886_BUFFER_STATS");
         return value && value[0] == '1';
     }();
     return enabled;
@@ -309,9 +556,43 @@ void PrintBufferStats() {
 }
 } // namespace
 
+bool BufferCache::MaterializeHtile(const Buffer* arena, VAddr device_addr, u32 size) {
+    // ORDER1886_HTILE=0 keeps the unqualified adaptation out of the launch path: the
+    // metadata registry still tracks words, but no GPU-written buffer is replaced by
+    // one, so reads fall through to the normal paths.
+    if (!EmulatorSettings.HtileEnabled()) {
+        return false;
+    }
+    // CPU invalidation must finish before its buffer readback can retire this GPU write.
+    return texture_cache.WithHtileWord(device_addr, size, [&](u32 htile) {
+        SynchronizeMemory(arena, device_addr, size, true, false);
+        runtime.FillBuffer(arena, arena->Offset(device_addr), size, htile);
+        if (size <= 64_KB && EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Selective)
+            memory_tracker->WatchReads(device_addr, size, true);
+        {
+            std::scoped_lock lock{gpu_ranges_mutex};
+            gpu_modified_ranges.Add(device_addr, size);
+        }
+        static std::atomic<u32> reports{};
+        if (reports.fetch_add(1, std::memory_order_relaxed) < 8)
+            LOG_INFO(Render_Vulkan, "Materialized HTILE address={:#x} bytes={} word={:#x}",
+                     device_addr, size, htile);
+    });
+}
+
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
     texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
+    if (!is_written) {
+        if (texture_cache.HtileReadValue(device_addr, size)) {
+            const u64 first_block = device_addr >> block_shift;
+            const u64 last_block = (device_addr + size - 1) >> block_shift;
+            const auto* arena = GetArena(first_block, last_block);
+            EnsureResident(arena, first_block, last_block);
+            if (MaterializeHtile(arena, device_addr, size))
+                return {arena, arena->Offset(device_addr)};
+        }
+    }
     const bool stats = BufferStatsEnabled();
     if (stats) {
         PrintBufferStats();
@@ -324,10 +605,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             ++region.stream_count;
             region.stream_bytes += size;
         }
-        // gow3: the guest data is copied on a copy thread, started now; submission and
+        // the guest data is copied on a copy thread, started now; submission and
         // guest-visible fences wait for it (Scheduler::WaitHostCopies).
         if (!stream_buffer.mapped_data.empty() &&
-            !Gow3Toggle::Disabled(Gow3Toggle::DeferredStreamCopies)) {
+            !Ps4Toggle::Disabled(Ps4Toggle::DeferredStreamCopies)) {
             if (const auto offset = stream_buffer.Reserve(size, instance.UniformMinAlignment())) {
                 SmallGuestCopy({
                     .run = &RunGuestCopy,
@@ -349,47 +630,29 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const u64 last_block = (device_addr + size - 1) >> block_shift;
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
-    const u64 uploaded_before = Gow3Stats::buffer_upload_bytes.load(std::memory_order_relaxed);
+    const u64 uploaded_before = Ps4Stats::buffer_upload_bytes.load(std::memory_order_relaxed);
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
+    if (is_written && size <= 64_KB && ReadbackLog()) {
+        std::scoped_lock lock{writers_mutex};
+        writers[device_addr] = {size, current_dispatch};
+    }
+    if (is_written && size <= 64_KB &&
+        (EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Selective ||
+         (watch_written_buffers &&
+          EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed))) {
+        memory_tracker->WatchReads(device_addr, size, true);
+    }
     if (stats) {
         auto& region = Stats().regions[RegionKey(device_addr)];
         ++region.arena_count;
         region.arena_bytes += size;
         region.upload_bytes +=
-            Gow3Stats::buffer_upload_bytes.load(std::memory_order_relaxed) - uploaded_before;
+            Ps4Stats::buffer_upload_bytes.load(std::memory_order_relaxed) - uploaded_before;
     }
     if (is_written) {
+        texture_cache.NoteMetaShaderWrite(device_addr, size);
+        std::scoped_lock lock{gpu_ranges_mutex};
         gpu_modified_ranges.Add(device_addr, size);
-    }
-    return {arena, arena->Offset(device_addr)};
-}
-
-std::pair<const Buffer*, u64> BufferCache::ObtainBufferRanges(
-    VAddr device_addr, u32 size, std::span<const CopyRange> requested, bool is_written) {
-    const auto normalized = NormalizeCopyRanges(size, requested);
-    if (!normalized || normalized->empty()) {
-        return ObtainBuffer(device_addr, size, is_written);
-    }
-    // Resolve pending image downloads before acquiring any page-tracker locks.
-    for (auto [offset, length] : *normalized) {
-        texture_cache.ResolveReadbacks(device_addr + offset, length, true, ReadbackSource::BufferObtain);
-    }
-    const auto* arena = GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
-    for (auto [offset, length] : *normalized) {
-        EnsureResident(arena, (device_addr + offset) >> block_shift,
-                       (device_addr + offset + length - 1) >> block_shift);
-    }
-    boost::container::small_vector<vk::BufferCopy, 4> copies;
-    size_t bytes = 0;
-    const Buffer* staging = nullptr;
-    memory_tracker->ForEachUploadRanges(device_addr, *normalized, is_written,
-        [&](u64 address, u64 length) {
-            copies.emplace_back(bytes, address, length);
-            bytes += length;
-        }, [&] { staging = UploadCopies(arena, copies, bytes); });
-    if (staging) runtime.CopyBuffer(staging, arena, copies);
-    if (is_written) {
-        for (auto [offset, length] : *normalized) gpu_modified_ranges.Add(device_addr + offset, length);
     }
     return {arena, arena->Offset(device_addr)};
 }
@@ -401,12 +664,12 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
     }
     const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostUncached,
                                               instance.StorageMinAlignment());
-    if (!Gow3Toggle::Disabled(Gow3Toggle::DeferredUploads)) {
-        // gow3: texture data is copied on the copy threads (streaming: 100+ MB per frame);
+    if (!Ps4Toggle::Disabled(Ps4Toggle::DeferredUploads)) {
+        // texture data is copied on the copy threads (streaming: 100+ MB per frame);
         // the upload reads the staging only after submission, which waits for the copies.
         constexpr u64 Chunk = 1_MB;
         for (u64 offset = 0; offset < staging.size; offset += Chunk) {
-            const Gow3Copy::Item item{
+            const Ps4Copy::Item item{
                 .run = &RunGuestCopy,
                 .context = this,
                 .source = device_addr + offset,
@@ -417,7 +680,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
             if (staging.size < Chunk) {
                 SmallGuestCopy(item);
             } else {
-                Gow3Copy::Async([item] { item.run(item); });
+                Ps4Copy::Async([item] { item.run(item); });
             }
         }
         return {staging.buffer, staging.offset};
@@ -432,7 +695,107 @@ bool BufferCache::IsRegionCpuModified(VAddr addr, size_t size) {
 }
 
 bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
-    return memory_tracker->IsRegionGpuModified(addr, size);
+    // Bytes of a deferred readback are only up to date in the arena.
+    return memory_tracker->IsRegionGpuModified(addr, size) || PendingReadback(addr, size);
+}
+
+bool BufferCache::IsRangeGpuWritten(VAddr address, size_t size) {
+    if (!size) return false;
+    bool gpu_written = false;
+    {
+        std::scoped_lock lock{gpu_ranges_mutex};
+        gpu_written = gpu_modified_ranges.Intersects(address, size);
+    }
+    return gpu_written || PendingReadback(address, size);
+}
+
+// The Order's SRT graph can refer to dozens of different GPU-written 4 KiB pages.
+// The single-page helper calls scheduler.Finish() for EVERY page. On mobile
+// Vulkan this serializes the GPU and stalls the command processor repeatedly.
+// Record the exact same dirty-range copies first, then Finish only once.
+bool BufferCache::DownloadSrtSourcePages(std::span<const VAddr> pages) {
+    constexpr u64 PageSize = 4096;
+    struct PendingPage {
+        VAddr page;
+        VAddr arena_base;
+        Vulkan::StagingBufferRef staging;
+        boost::container::small_vector<vk::BufferCopy, 1> copies;
+    };
+    std::vector<PendingPage> pending;
+    pending.reserve(pages.size());
+    // Publish older GPU snapshots once before examining any of these pages.
+    // An already-finished deferred snapshot also counts as newly published data
+    // and requires the guest SRT pointer graph to be refreshed.
+    bool published = WaitDeferredSrtPages(pages);
+
+    for (const VAddr page : pages) {
+        if (page & (PageSize - 1)) {
+            continue;
+        }
+        if (!IsRangeGpuWritten(page, PageSize) || !IsRegionGpuModified(page, PageSize)) {
+            continue;
+        }
+        // Earlier deferred pages were published above as one group. Do not
+        // wait again per page, or this shader can repeatedly stall the GPU.
+        const auto* arena = GetArena(page >> block_shift, (page + PageSize - 1) >> block_shift);
+        boost::container::small_vector<vk::BufferCopy, 1> copies;
+        u64 bytes = 0;
+        memory_tracker->ForEachDownloadRange<false>(
+            page, PageSize, [&](u64 address, u64 size) {
+                std::scoped_lock lock{gpu_ranges_mutex};
+                gpu_modified_ranges.ForEachInRange(address, size, [&](VAddr start, VAddr end) {
+                    copies.push_back(vk::BufferCopy{
+                        .srcOffset = start - arena->cpu_addr,
+                        .dstOffset = bytes,
+                        .size = end - start,
+                    });
+                    bytes += Common::AlignUp(end - start, 64ULL);
+                });
+                gpu_modified_ranges.Subtract(address, size);
+            });
+        if (copies.empty()) {
+            continue;
+        }
+        auto staging = staging_pool.Request(bytes, VideoCore::MemoryType::HostCached);
+        for (auto& copy : copies) {
+            copy.dstOffset += staging.offset;
+        }
+        runtime.CopyBuffer(arena, staging.buffer, copies);
+        pending.push_back(PendingPage{page, arena->cpu_addr, staging, std::move(copies)});
+    }
+    if (pending.empty()) {
+        return published;
+    }
+
+    // All copies are in order on the GPU command stream: one fence, not N fences.
+    scheduler.Finish();
+    for (auto& item : pending) {
+        item.staging.buffer->Invalidate(item.staging.offset, item.staging.size);
+        for (const auto& copy : item.copies) {
+            auto* dst = std::bit_cast<u8*>(item.arena_base + copy.srcOffset);
+            memory->TryWriteBacking(dst,
+                item.staging.mapped + (copy.dstOffset - item.staging.offset), copy.size);
+        }
+        memory_tracker->UnmarkRegionAsGpuModified(item.page, PageSize);
+    }
+    return true;
+}
+
+bool BufferCache::DownloadSrtSourcePage(VAddr page) {
+    constexpr u64 PageSize = 4096;
+    if ((page & (PageSize - 1)) || !IsRangeGpuWritten(page, PageSize) ||
+        !IsRegionGpuModified(page, PageSize)) {
+        return false;
+    }
+    // Publish any earlier deferred writeback first, then read the exact SRT page.
+    // Called on the GPU command thread, after the draw pipe has drained.
+    WaitDeferredReadbacks(page, PageSize);
+    if (!IsRangeGpuWritten(page, PageSize)) {
+        return true; // The deferred publication made the guest bytes current.
+    }
+    const auto* arena = GetArena(page >> block_shift, (page + PageSize - 1) >> block_shift);
+    DownloadMemory(arena, page, PageSize);
+    return true;
 }
 
 void BufferCache::ProcessFaultBuffer() {
@@ -513,7 +876,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     if (bind_ranges.Empty()) {
         return;
     }
-    Gow3Stats::Timer timer{Gow3Stats::t_resident};
+    Ps4Stats::Timer timer{Ps4Stats::t_resident};
 
     const vk::MemoryAllocateInfo alloc_info = {
         .allocationSize = resident_blocks << block_shift,
@@ -564,11 +927,27 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
     boost::container::small_vector<vk::BufferCopy, 4> copies;
     size_t total_size_bytes{};
     const Buffer* src_buffer{};
+    const auto add_copy = [&](u64 addr, u64 size) {
+        copies.emplace_back(total_size_bytes, addr, size);
+        total_size_bytes += size;
+    };
     memory_tracker->ForEachUploadRange(
         device_addr, size, is_written,
         [&](u64 addr, u64 size) {
-            copies.emplace_back(total_size_bytes, addr, size);
-            total_size_bytes += size;
+            // The guest's copy of deferred readback bytes is stale until it arrives; the arena
+            // keeps them.
+            if (!has_pending_readbacks.load(std::memory_order_relaxed)) {
+                add_copy(addr, size);
+                return;
+            }
+            std::scoped_lock lock{deferred_mutex};
+            pending_readbacks.ForEachNotInRange(addr, size, add_copy);
+            // Pending bytes the guest wrote after the fault are newer than the arena's GPU
+            // data (ApplyDeferredReadbacks keeps these bytes in guest memory).
+            ForEachRewrittenPending(
+                deferred_readbacks, addr, size,
+                [&](VAddr src, u8* dst, u64 n) { memory->CopySparseMemory(src, dst, n); },
+                add_copy);
         },
         [&] { src_buffer = UploadCopies(arena, copies, total_size_bytes); });
 
@@ -590,12 +969,12 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
     for (const auto& copy : copies) {
         texture_cache.ResolveReadbacks(copy.dstOffset, copy.size, true, ReadbackSource::BufferUpload);
     }
-    Gow3Stats::buffer_upload_bytes.fetch_add(total_size_bytes, std::memory_order_relaxed);
+    Ps4Stats::buffer_upload_bytes.fetch_add(total_size_bytes, std::memory_order_relaxed);
     const auto staging = staging_pool.Request(total_size_bytes, MemoryType::HostUncached);
-    // gow3: the guest memory is copied into staging on the copy threads, started now in
+    // the guest memory is copied into staging on the copy threads, started now in
     // groups of about 1 MiB; submission and guest-visible fences wait for them
     // (Scheduler::WaitHostCopies).
-    if (!Gow3Toggle::Disabled(Gow3Toggle::DeferredUploads) && total_size_bytes < 1_MB) {
+    if (!Ps4Toggle::Disabled(Ps4Toggle::DeferredUploads) && total_size_bytes < 1_MB) {
         // Small uploads join the calling thread's batch.
         for (auto& copy : copies) {
             SmallGuestCopy({
@@ -611,7 +990,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
         }
         return staging.buffer;
     }
-    if (!Gow3Toggle::Disabled(Gow3Toggle::DeferredUploads)) {
+    if (!Ps4Toggle::Disabled(Ps4Toggle::DeferredUploads)) {
         struct HostCopy {
             VAddr source;
             u8* destination;
@@ -621,7 +1000,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
         auto group = std::make_shared<Group>();
         u64 group_bytes = 0;
         const auto launch = [&] {
-            Gow3Copy::Async([group, memory = memory, staging] {
+            Ps4Copy::Async([group, memory = memory, staging] {
                 for (const auto& copy : *group) {
                     memory->CopySparseMemory(copy.source, copy.destination, copy.size);
                 }
@@ -649,7 +1028,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
                                  copies[i].size);
     };
     if (total_size_bytes >= 2_MB && copies.size() > 1) {
-        Gow3Copy::ParallelFor(copies.size(), copy);
+        Ps4Copy::ParallelFor(copies.size(), copy);
     } else {
         for (std::size_t i = 0; i < copies.size(); ++i) {
             copy(i);
@@ -666,18 +1045,16 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
 bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size) {
     if (auto type = texture_cache.IsMeta(device_addr)) {
         if (*type == TextureCache::MetaType::HTile) {
-            static constexpr u32 ZmaskUncompressed = 0xf;
-            runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
-            return true;
+            if (MaterializeHtile(arena, device_addr, size)) return true;
         } else {
             LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
         }
     }
-    // gow3: most texel buffers alias no image; remember misses until images change.
+    // most texel buffers alias no image; remember misses until images change.
     const u64 generation = texture_cache.RegistryGeneration();
     auto& miss = image_miss_cache[((device_addr >> 6) ^ size * 0x9E3779B1u) % image_miss_cache.size()];
     if (miss.address == device_addr && miss.size == size && miss.generation == generation &&
-        !Gow3Toggle::Disabled(Gow3Toggle::TextureBindingMemo)) {
+        !Ps4Toggle::Disabled(Ps4Toggle::TextureBindingMemo)) {
         return false;
     }
     const ImageId image_id = texture_cache.FindImageFromRange(device_addr, size);
@@ -685,7 +1062,7 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
         miss = {device_addr, size, generation};
         return false;
     }
-    // gow3: the lookups above only read what the texture binding helper leaves alone; the
+    // the lookups above only read what the texture binding helper leaves alone; the
     // copy below changes image state, so the helper finishes first.
     runtime.BeforeImageAccess();
     Image& image = texture_cache.GetImage(image_id);

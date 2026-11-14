@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 9
-        versionName = "0.1.8-srt-texture-fix"
+        versionCode = 15
+        versionName = "0.1.13-adreno840-msaa-restart"
     }
     buildTypes {
         release {

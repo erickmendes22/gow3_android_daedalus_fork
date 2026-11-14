@@ -125,27 +125,35 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
     constexpr unsigned MaxPasses = 4;
     std::unordered_set<VAddr> visited;
     for (unsigned pass = 0; pass < MaxPasses; ++pass) {
-        bool downloaded = false;
-        // Official Bachata 0.2.7: page-level GPU-written SRT source
-        // publication, then recompute the guest pointer graph up to 4 times.
+        // Official Bachata 0.2.7: publish GPU-written guest SRT pages before
+        // re-reading the pointer graph, but do not stall once for EVERY page.
         const auto sources = info.srt_source_addresses;
-        VAddr previous_page = 0;
+        std::vector<VAddr> pages;
+        pages.reserve(sources.size());
         for (const VAddr address : sources) {
             if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
             const VAddr page = address & PageMask;
-            if (page == previous_page) continue;
-            previous_page = page;
             if (visited.contains(page) || !IsMapped(page, PageSize) ||
                 !buffer_cache.IsRegionGpuModified(page, PageSize) ||
                 !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
             visited.insert(page);
-            // GPU command thread only; never block in background shader workers.
-            DrainDrawPipe();
-            texture_cache.ResolveReadbacks(page, PageSize, true,
-                                           VideoCore::ReadbackSource::CpuRead);
-            downloaded |= buffer_cache.DownloadSrtSourcePage(page);
+            pages.push_back(page);
         }
-        if (!downloaded) break;
+        if (pages.empty()) break;
+        // Keep the exact same command ordering as the old per-page path.
+        // Group image readback resolutions for adjacent SRT pages too.
+        DrainDrawPipe();
+        std::sort(pages.begin(), pages.end());
+        for (size_t i = 0; i < pages.size();) {
+            size_t end = i + 1;
+            while (end < pages.size() && pages[end] - pages[end - 1] == PageSize) {
+                ++end;
+            }
+            texture_cache.ResolveReadbacks(pages[i], (end - i) * PageSize, true,
+                                           VideoCore::ReadbackSource::CpuRead);
+            i = end;
+        }
+        if (!buffer_cache.DownloadSrtSourcePages(pages)) break;
         info.RefreshFlatBuf();
     }
 #else
@@ -987,6 +995,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
                          prepared->reg_checksum == liverpool->gfx_reg_checksum);
     }
     if (!pipeline) {
+        // An empty scene is very different when draws are rejected here than
+        // when successful draw commands produce no color/depth output.
+        static std::atomic<u32> order_missing_pipeline{0};
+        if (order_missing_pipeline.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_DRAW_NO_PIPELINE indices={} indexed={} draw_pipe={}",
+                        liverpool->regs.num_indices, is_indexed, pipelined);
+        }
         return;
     }
     if (pipelined && FilterDrawPasses()) {
@@ -1084,6 +1100,31 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     EmitVertexBuffers();
     if (is_indexed) {
         EmitIndexBuffer();
+    }
+
+    // Unlike the old MRT>=2 test, a fullscreen triangle (3 unindexed vertices,
+    // no vertex streams) must not exhaust the diagnostic quota. Sample only draws
+    // with *actual* bound vertex buffers and a nontrivial primitive count.
+    const bool object_candidate = vertex_binds.num_buffers > 0 &&
+        (is_indexed || regs.num_indices > 6 || regs.num_instances.NumInstances() > 1);
+    if (object_candidate) {
+        static std::atomic<u32> object_samples{0};
+        const u32 index = object_samples.fetch_add(1, std::memory_order_relaxed);
+        if (index < 32) {
+            const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
+            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_OBJECT_DRAW sample={} vs={:#x} ps={:#x} "
+                        "mrt={:#x} prim={} indices={} instances={} indexed={} vb={} "
+                        "cb0={:#x} db={:#x}",
+                        index, vs.pgm_hash, ps ? ps->pgm_hash : 0,
+                        pipeline->GetGraphicsKey().mrt_mask,
+                        static_cast<u32>(regs.primitive_type), regs.num_indices,
+                        regs.num_instances.NumInstances(), is_indexed,
+                        vertex_binds.num_buffers,
+                        regs.color_buffers[0] ? regs.color_buffers[0].Address() : 0,
+                        regs.depth_buffer.DepthAddress());
+        }
     }
 
     if (needs_barrier) {
@@ -2441,29 +2482,61 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
                 }
-                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
-                    vsharp.base_address, size, desc.is_written, desc.is_formatted);
-                const u64 offset_aligned = Common::AlignDown(offset, alignment);
-                const u64 adjust = offset - offset_aligned;
-                if (desc.buffer_type == Shader::BufferType::ReadConst) {
-                    ASSERT_MSG(Shader::FitsReadConstStorageRange(size, adjust, instance.StorageMaxRange()),
-                               "ReadConst VMA range exceeds Vulkan storage-buffer range");
-                }
-                if (adjust % 4 != 0) {
-                    if (const auto count = CountUnalignedWarning(stage.pgm_hash, adjust % 4)) {
-                        LOG_WARNING(Render_Vulkan,
-                                    "Buffer binding in shader {:#x} isn't dword aligned: remainder={} "
-                                    "occurrences={} (repeats counted)", stage.pgm_hash, adjust % 4, count);
+                // Port of The Order PC v0.2.7: some large vertex-record buffers
+                // alternate between a dword-aligned base and one shifted by 2 bytes.
+                // The shader indexes dwords: subtracting a non-dword alignment
+                // offset makes the GPU read wrong positions and removes objects.
+                // Copy only CPU-owned, read-only buffers into an aligned stream slot.
+                if (!desc.is_written && desc.buffer_type != Shader::BufferType::ReadConst &&
+                    (vsharp.base_address & 3) != 0 && size >= 4096 &&
+                    !buffer_cache.IsRegionGpuModified(vsharp.base_address, size)) {
+                    if (unaligned_copies_tick != scheduler.CurrentTick()) {
+                        unaligned_copies.clear();
+                        unaligned_copies_tick = scheduler.CurrentTick();
                     }
+                    auto& stream = buffer_cache.GetStreamBuffer();
+                    const auto [it, inserted] =
+                        unaligned_copies.try_emplace(vsharp.base_address ^ (size << 44), 0);
+                    if (inserted) {
+                        it->second = stream.Copy(reinterpret_cast<const void*>(vsharp.base_address),
+                                                 size, alignment);
+                        static std::atomic<u32> shown{0};
+                        if (shown.fetch_add(1, std::memory_order_relaxed) < 12) {
+                            LOG_WARNING(Render_Vulkan,
+                                        "ORDER1886_ALIGNED_VERTEX_COPY shader={:#x} address={:#x} "
+                                        "size={} saved_remainder={}",
+                                        stage.pgm_hash, vsharp.base_address, size,
+                                        vsharp.base_address & 3);
+                        }
+                    }
+                    push_data.AddOffset(binding.buffer, 0);
+                    buffer_infos.emplace_back(stream.Handle(), it->second, size);
+                } else {
+                    const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                        vsharp.base_address, size, desc.is_written, desc.is_formatted);
+                    const u64 offset_aligned = Common::AlignDown(offset, alignment);
+                    const u64 adjust = offset - offset_aligned;
+                    if (desc.buffer_type == Shader::BufferType::ReadConst) {
+                        ASSERT_MSG(Shader::FitsReadConstStorageRange(size, adjust,
+                                                                     instance.StorageMaxRange()),
+                                   "ReadConst VMA range exceeds Vulkan storage-buffer range");
+                    }
+                    if (adjust % 4 != 0) {
+                        if (const auto count = CountUnalignedWarning(stage.pgm_hash, adjust % 4)) {
+                            LOG_WARNING(Render_Vulkan,
+                                        "Buffer binding in shader {:#x} isn't dword aligned: "
+                                        "remainder={} occurrences={} (repeats counted)",
+                                        stage.pgm_hash, adjust % 4, count);
+                        }
+                    }
+                    push_data.AddOffset(binding.buffer, adjust);
+                    buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
+                    bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
+                    if (desc.is_written) {
+                        texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+                    }
+                    needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
                 }
-                push_data.AddOffset(binding.buffer, adjust);
-                buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
-                bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
-                if (desc.is_written) {
-                    // Raw storage-buffer writes can also make an aliased cached image stale.
-                    texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
-                }
-                needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
             }
         }
 
