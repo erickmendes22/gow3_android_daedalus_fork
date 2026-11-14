@@ -470,10 +470,29 @@ public final class Order1886Activity extends Activity {
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Preencher tela Android (Fill; desativado = Fit)","fullscreen",false);
-        toggle(c,"Controles virtuais","onscreen",true);
-        selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Normal","Grande"},
-            Math.max(0,Math.min(2,prefs().getInt("controlSize",0))),
-            n->{prefs().edit().putInt("controlSize",n).apply();selectionChange();});
+        CheckBox showTouch=new CheckBox(this);
+        showTouch.setText("Controles PlayStation na tela");showTouch.setTextColor(WHITE);
+        showTouch.setChecked(prefs().getBoolean("onscreen",true));
+        showTouch.setOnCheckedChangeListener((v,enabled)->{
+            prefs().edit().putBoolean("onscreen",enabled).apply();
+            setupTouchControls();
+        });
+        c.addView(showTouch);
+        selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Clássico","Grande"},
+            Math.max(0,Math.min(2,prefs().getInt("controlSize",1))),
+            n->{
+                prefs().edit().putInt("controlSize",n).apply();
+                if(touchLayer!=null)touchLayer.invalidate();
+            });
+        final int[] alphaLevels={50,65,78,90,100};
+        int savedOpacity=prefs().getInt("controlOpacity",78), alphaIndex=2;
+        for(int i=0;i<alphaLevels.length;i++)if(savedOpacity==alphaLevels[i])alphaIndex=i;
+        selectSpinner(c,"Opacidade dos controles",
+            new String[]{"50%","65%","78%","90%","100%"},alphaIndex,
+            n->{
+                prefs().edit().putInt("controlOpacity",alphaLevels[n]).apply();
+                if(touchLayer!=null)touchLayer.setAlpha(alphaLevels[n]/100f);
+            });
 
         selectSpinner(c,"Posição HUD FPS",
             new String[]{"Topo esquerdo","Topo central","Topo direito"},
