@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 16
-        versionName = "0.1.14-mobile-controls-visual-patches"
+        versionCode = 17
+        versionName = "0.1.15-classic-playstation-controls"
     }
     buildTypes {
         release {
