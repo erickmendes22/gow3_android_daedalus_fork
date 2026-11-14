@@ -54,7 +54,8 @@ public final class Order1886Activity extends Activity {
     private Order1886Content content;
     private Order1886Preparation preparer;
     private Order1886DriverStore drivers;
-    private FrameLayout screen, gameFrame, touchLayer;
+    private FrameLayout screen, gameFrame;
+    private Order1886TouchOverlay touchLayer;
     private LinearLayout mainUI,body,tabs;
     private SurfaceView surface;
     private TextView status,gameHud,gameTitle;
@@ -63,9 +64,9 @@ public final class Order1886Activity extends Activity {
     private boolean presentStarted, gameOpen;
     private int page=0, pendingStorage=0;
     private String statusText="Pronto para configurar o jogo.";
-    private int leftX=128,leftY=128,rightX=128,rightY=128;
-    private boolean virtualLeftActive,virtualRightActive;
-    private final Set<String> virtualKeys=new LinkedHashSet<>();
+    private AlertDialog gameMenuDialog;
+    private float swipeX, swipeY;
+    private boolean swipeCandidate, swipeConsumed, editingControls;
     private long previousFrameCount, previousFpsMs;
     private float fpsSmoothed=-1f;
     private final Runnable fpsPoll=new Runnable(){
@@ -242,53 +243,13 @@ public final class Order1886Activity extends Activity {
         screen.addView(gameFrame,fill);gameFrame.setVisibility(View.GONE);
         surface=new SurfaceView(this);
         gameFrame.addView(surface,new FrameLayout.LayoutParams(-1,-1));
-        touchLayer=new FrameLayout(this);
+        touchLayer=new Order1886TouchOverlay(this,pad);
         gameFrame.addView(touchLayer,new FrameLayout.LayoutParams(-1,-1));
-        // Catch right-to-left swipes in otherwise empty screen space. Children
-        // (buttons and sticks) continue receiving their own multitouch streams.
-        touchLayer.setOnTouchListener(new View.OnTouchListener(){
-            private float startX,startY;
-            private boolean fromRight;
-            @Override public boolean onTouch(View view,MotionEvent event){
-                switch(event.getActionMasked()){
-                    case MotionEvent.ACTION_DOWN:
-                        startX=event.getX();startY=event.getY();
-                        fromRight=startX>view.getWidth()-dp(40);
-                        return fromRight;
-                    case MotionEvent.ACTION_UP:
-                        if(fromRight && gameOpen && startX-event.getX()>dp(72) &&
-                           Math.abs(event.getY()-startY)<dp(80))showGameMenu();
-                        return fromRight;
-                    case MotionEvent.ACTION_CANCEL:
-                        fromRight=false;return false;
-                    default:return fromRight;
-                }
-            }
-        });
-
         gameHud=label("— FPS",14,GOLD,true);
         gameFrame.addView(gameHud,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT));
         applyHudStyle();
-        // A small right-edge swipe target, centered vertically; no persistent menu button.
-        // This area does not overlap the face buttons, shoulder triggers or analog stick.
-        View gestureEdge=new View(this);
-        FrameLayout.LayoutParams edge=new FrameLayout.LayoutParams(
-            dp(24),dp(160),Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-        gameFrame.addView(gestureEdge,edge);
-        gestureEdge.setOnTouchListener(new View.OnTouchListener(){
-            private float startX,startY;
-            @Override public boolean onTouch(View view,MotionEvent event){
-                switch(event.getActionMasked()){
-                    case MotionEvent.ACTION_DOWN:
-                        startX=event.getX();startY=event.getY();return true;
-                    case MotionEvent.ACTION_UP:
-                        if(gameOpen && startX-event.getX()>dp(64) &&
-                           Math.abs(event.getY()-startY)<dp(72))showGameMenu();
-                        return true;
-                    default:return true;
-                }
-            }
-        });
+        // Game menu is driven by dispatchTouchEvent and Android's system Back gesture.
+        // Do not overlay a permanent invisible button on the PlayStation controls.
         setContentView(screen);
     }
 
@@ -310,34 +271,72 @@ public final class Order1886Activity extends Activity {
         gameHud.setVisibility(prefs().getBoolean("hudVisible",true)?View.VISIBLE:View.GONE);
     }
     private void showGameMenu(){
-        if(!gameOpen)return;
+        if(!gameOpen || gameMenuDialog!=null && gameMenuDialog.isShowing())return;
+        if(touchLayer!=null)touchLayer.release();
         final boolean controls=prefs().getBoolean("onscreen",true);
         final boolean fill=prefs().getBoolean("fullscreen",false);
         final boolean hud=prefs().getBoolean("hudVisible",true);
         AlertDialog dialog=new AlertDialog.Builder(this)
-            .setTitle("The Order: 1886")
-            .setItems(new String[]{"Retomar",
-                controls?"Ocultar controles":"Mostrar controles",
-                fill?"Ajustar imagem (Fit)":"Preencher tela (Fill)",
+            .setTitle("THE ORDER 1886 / DAEDALUS")
+            .setItems(new String[]{
+                "Retomar jogo",
+                controls?"Ocultar controles PlayStation":"Mostrar controles PlayStation",
+                "Editar posição dos controles",
+                "Restaurar layout clássico",
+                fill?"Enquadramento: Ajustar (Fit)":"Enquadramento: Preencher (Fill)",
                 hud?"Ocultar HUD de FPS":"Mostrar HUD de FPS",
-                "Exportar log","Voltar ao launcher"},(d,index)->{
-                if(index==1){
-                    prefs().edit().putBoolean("onscreen",!controls).apply();
-                    setupTouchControls();
-                }else if(index==2){
-                    prefs().edit().putBoolean("fullscreen",!fill).apply();
-                    if(presentStarted)Order1886Present.setFullscreen(!fill);
-                }else if(index==3){
-                    prefs().edit().putBoolean("hudVisible",!hud).apply();
-                    applyHudStyle();
-                }else if(index==4){
-                    exportLog();
-                }else if(index==5){
-                    stopGame();
+                "Exportar log",
+                "Voltar ao launcher / Sair do jogo"
+            },(d,index)->{
+                switch(index){
+                    case 1:
+                        prefs().edit().putBoolean("onscreen",!controls).apply();
+                        setupTouchControls();
+                        break;
+                    case 2:
+                        prefs().edit().putBoolean("onscreen",true).apply();
+                        setupTouchControls();
+                        editingControls=true;
+                        touchLayer.edit(()->{editingControls=false;setupTouchControls();});
+                        break;
+                    case 3:
+                        touchLayer.resetLayout();
+                        setupTouchControls();
+                        break;
+                    case 4:
+                        prefs().edit().putBoolean("fullscreen",!fill).apply();
+                        if(presentStarted)Order1886Present.setFullscreen(!fill);
+                        break;
+                    case 5:
+                        prefs().edit().putBoolean("hudVisible",!hud).apply();
+                        applyHudStyle();
+                        break;
+                    case 6:
+                        exportLog();
+                        break;
+                    case 7:
+                        stopGame();
+                        break;
+                    default:break;
                 }
             }).create();
-        dialog.setOnDismissListener(d->{if(gameOpen)setGameImmersive(true);});
+        gameMenuDialog=dialog;
+        dialog.setOnDismissListener(d->{
+            gameMenuDialog=null;
+            if(gameOpen)setGameImmersive(true);
+        });
         dialog.show();
+        android.view.Window window=dialog.getWindow();
+        if(window!=null){
+            window.setBackgroundDrawable(shape(PANEL,EDGE,12));
+            window.setGravity(Gravity.RIGHT|Gravity.TOP);
+            window.setLayout(Math.min(dp(380),
+                (int)(getResources().getDisplayMetrics().widthPixels*.82f)),-1);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams params=window.getAttributes();
+            params.dimAmount=.55f;
+            window.setAttributes(params);
+        }
     }
     private void updateHomeHeader(){ /* Status updates stay in the fixed footer; do not rebuild during a job. */ }
     private void render(){
@@ -749,6 +748,15 @@ public final class Order1886Activity extends Activity {
         mainUI.setVisibility(View.GONE);
         gameFrame.setVisibility(View.VISIBLE);
         gameOpen=true;stopped=false;
+        if(Build.VERSION.SDK_INT>=29)gameFrame.post(()->{
+            if(!gameOpen || gameFrame.getWidth()==0)return;
+            int w=gameFrame.getWidth(), h=gameFrame.getHeight();
+            // Keep a 180dp mid-right band free of the system Back interceptor.
+            gameFrame.setSystemGestureExclusionRects(
+                Collections.singletonList(new android.graphics.Rect(
+                    w-dp(38),Math.max(0,h/2-dp(90)),w,
+                    Math.min(h,h/2+dp(90)))));
+        });
         setGameImmersive(true);
         setupTouchControls();
         applyHudStyle();
@@ -802,115 +810,14 @@ public final class Order1886Activity extends Activity {
             }
         },"order1886-runtime").start();
     }
-    private int controlSize(int dpSize) {
-        int selected=prefs().getInt("controlSize",0);
-        float scale=selected==1?1.0f:selected==2?1.18f:0.82f;
-        return dp(dpSize*scale);
-    }
-    // Compact PS4 layout with unobstructed central gameplay and menu buttons.
+    // A single canvas-based PlayStation overlay replaces 18 independent Android buttons.
     private void setupTouchControls(){
-        touchLayer.removeAllViews();
-        virtualKeys.clear();
-        leftX=leftY=rightX=rightY=128;
-        virtualLeftActive=virtualRightActive=false;
-        sendVirtual();
-        if(!prefs().getBoolean("onscreen",true))return;
-        addStick(true,Gravity.BOTTOM|Gravity.LEFT,dp(17),dp(16));
-        addStick(false,Gravity.BOTTOM|Gravity.RIGHT,dp(17),dp(16));
-        addTouchButton("L2","l2",Gravity.LEFT|Gravity.TOP,dp(16),dp(60));
-        addTouchButton("L1","l1",Gravity.LEFT|Gravity.TOP,dp(62),dp(60));
-        addTouchButton("R1","r1",Gravity.RIGHT|Gravity.TOP,dp(62),dp(60));
-        addTouchButton("R2","r2",Gravity.RIGHT|Gravity.TOP,dp(16),dp(60));
-        addTouchButton("△","triangle",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(127));
-        addTouchButton("○","circle",Gravity.RIGHT|Gravity.BOTTOM,dp(115),dp(86));
-        addTouchButton("×","cross",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(45));
-        addTouchButton("□","square",Gravity.RIGHT|Gravity.BOTTOM,dp(205),dp(86));
-        addTouchButton("↑","up",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(123));
-        addTouchButton("↓","down",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(41));
-        addTouchButton("←","left",Gravity.LEFT|Gravity.BOTTOM,dp(123),dp(82));
-        addTouchButton("→","right",Gravity.LEFT|Gravity.BOTTOM,dp(205),dp(82));
-        addTouchButton("L3","l3",Gravity.LEFT|Gravity.BOTTOM,dp(107),dp(14));
-        addTouchButton("R3","r3",Gravity.RIGHT|Gravity.BOTTOM,dp(107),dp(14));
-        addTouchButton("OPTIONS","options",Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,0,dp(13));
-        addTouchButton("TOUCH","touchpad",Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,dp(12));
-    }
-    private void addStick(boolean left,int gravity,int marginX,int marginY){
-        TextView stick=label(left?"L":"R",16,0xffe0c58b,true);
-        stick.setGravity(Gravity.CENTER);
-        stick.setBackground(shape(0x66374049,0x999fa5ad,99));
-        stick.setAlpha(0.48f);
-        int diameter=controlSize(76);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(diameter,diameter,gravity);
-        if(left)p.leftMargin=marginX;else p.rightMargin=marginX;
-        p.bottomMargin=marginY;
-        touchLayer.addView(stick,p);
-        stick.setOnTouchListener((view,event)->{
-            switch(event.getActionMasked()){
-                case MotionEvent.ACTION_DOWN:
-                    view.setAlpha(0.90f);
-                case MotionEvent.ACTION_MOVE: {
-                    float x=Math.max(-1f,Math.min(1f,(event.getX()-view.getWidth()/2f)/(view.getWidth()*.37f)));
-                    float y=Math.max(-1f,Math.min(1f,(event.getY()-view.getHeight()/2f)/(view.getHeight()*.37f)));
-                    int ax=Math.round((x+1f)*127.5f),ay=Math.round((y+1f)*127.5f);
-                    if(left){leftX=ax;leftY=ay;virtualLeftActive=true;}
-                    else{rightX=ax;rightY=ay;virtualRightActive=true;}
-                    sendVirtual();
-                    return true;
-                }
-                case MotionEvent.ACTION_CANCEL:
-                case MotionEvent.ACTION_UP:
-                    view.setAlpha(0.48f);
-                    if(left){leftX=leftY=128;virtualLeftActive=false;}
-                    else{rightX=rightY=128;virtualRightActive=false;}
-                    sendVirtual();
-                    return true;
-            }
-            return true;
-        });
-    }
-    private void addTouchButton(String text,String token,int gravity,int marginX,int marginY){
-        boolean wide=text.length()>3;
-        int width=controlSize(wide?53:36);
-        if(text.equals("L3")||text.equals("R3"))width=controlSize(29);
-        TextView view=label(text,wide?10:15,WHITE,true);
-        view.setGravity(Gravity.CENTER);
-        view.setBackground(shape(0x55404956,0x889fa5ad,40));
-        view.setAlpha(0.56f);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,controlSize(36),gravity);
-        if((gravity&Gravity.RIGHT)==Gravity.RIGHT)p.rightMargin=marginX;
-        else if((gravity&Gravity.LEFT)==Gravity.LEFT)p.leftMargin=marginX;
-        if((gravity&Gravity.BOTTOM)==Gravity.BOTTOM)p.bottomMargin=marginY;
-        else p.topMargin=marginY;
-        touchLayer.addView(view,p);
-        final long[] pressedAt={0};
-        final int[] generation={0};
-        view.setOnTouchListener((v,event)->{
-            int action=event.getActionMasked();
-            if(action==MotionEvent.ACTION_DOWN){
-                generation[0]++;
-                pressedAt[0]=android.os.SystemClock.uptimeMillis();
-                v.setAlpha(0.95f);
-                virtualKeys.add(token);
-                sendVirtual();
-            }else if(action==MotionEvent.ACTION_UP){
-                v.setAlpha(0.56f);
-                final int sequence=generation[0];
-                long held=android.os.SystemClock.uptimeMillis()-pressedAt[0];
-                main.postDelayed(()->{
-                    if(generation[0]==sequence){virtualKeys.remove(token);sendVirtual();}
-                },Math.max(0,90-held));
-            }else if(action==MotionEvent.ACTION_CANCEL){
-                generation[0]++;
-                v.setAlpha(0.56f);
-                virtualKeys.remove(token);
-                sendVirtual();
-            }
-            return true;
-        });
-    }
-    private void sendVirtual(){
-        if(pad!=null)pad.virtual(new LinkedHashSet<>(virtualKeys),leftX,leftY,rightX,rightY,
-                virtualLeftActive,virtualRightActive,0,0);
+        if(touchLayer==null)return;
+        touchLayer.release();
+        touchLayer.setAlpha(Math.max(.35f,Math.min(1f,
+            prefs().getInt("controlOpacity",78)/100f)));
+        touchLayer.setVisibility(prefs().getBoolean("onscreen",true)?View.VISIBLE:View.GONE);
+        touchLayer.invalidate();
     }
     private void stopGame(){
         stopped=true;
@@ -922,10 +829,52 @@ public final class Order1886Activity extends Activity {
             try{Order1886Present.stop();}catch(Throwable ignored){}
             presentStarted=false;
         }
-        virtualKeys.clear();main.removeCallbacks(fpsPoll);
+        if(gameMenuDialog!=null){gameMenuDialog.dismiss();gameMenuDialog=null;}
+        if(touchLayer!=null)touchLayer.release();
+        editingControls=false;swipeCandidate=false;swipeConsumed=false;
+        main.removeCallbacks(fpsPoll);
         gameOpen=false;gameFrame.setVisibility(View.GONE);mainUI.setVisibility(View.VISIBLE);
         setGameImmersive(false);
         render();
+    }
+    @Override public boolean dispatchTouchEvent(MotionEvent event){
+        // Reversed from TLOU's left-edge swipe: drag from right to left.
+        // Observe before the overlay receives input; cancel its active touch
+        // sequence if the gesture becomes a menu swipe.
+        if(!gameOpen || editingControls)return super.dispatchTouchEvent(event);
+        final int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN){
+            swipeX=event.getX();swipeY=event.getY();
+            swipeCandidate=event.getPointerCount()==1 &&
+                swipeX>=gameFrame.getWidth()-dp(36);
+            swipeConsumed=false;
+        }else if(action==MotionEvent.ACTION_POINTER_DOWN){
+            swipeCandidate=false;
+        }else if(action==MotionEvent.ACTION_MOVE && swipeCandidate &&
+                event.getPointerCount()==1 && !swipeConsumed){
+            float dx=swipeX-event.getX();
+            float dy=Math.abs(event.getY()-swipeY);
+            if(dy>dp(52) || dx < -dp(20)){
+                swipeCandidate=false;
+            }else if(dx>=dp(62) && dx>dy*1.5f){
+                swipeCandidate=false;
+                swipeConsumed=true;
+                MotionEvent cancel=MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                showGameMenu();
+                return true;
+            }
+        }
+        if(swipeConsumed){
+            if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL)
+                swipeConsumed=false;
+            return true;
+        }
+        if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL)
+            swipeCandidate=false;
+        return super.dispatchTouchEvent(event);
     }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
         if(pad!=null&&pad.key(e))return true;
@@ -936,11 +885,13 @@ public final class Order1886Activity extends Activity {
         return super.onGenericMotionEvent(e);
     }
     @Override public void onBackPressed(){
-        if(gameOpen)new AlertDialog.Builder(this).setTitle("Sair do jogo?")
-            .setMessage("Progresso não salvo será perdido.")
-            .setPositiveButton("Parar", (dialog,which)->stopGame())
-            .setNegativeButton("Retomar",null).show();
-        else if(page!=0){page=0;render();}
+        // Android reserves the right edge for Back on some system configurations.
+        // That gesture must open the SAME in-game menu, never a direct exit prompt.
+        if(gameOpen){
+            if(editingControls && touchLayer!=null){
+                touchLayer.finishEdit();
+            }else showGameMenu();
+        }else if(page!=0){page=0;render();}
         else super.onBackPressed();
     }
     @Override protected void onPause(){super.onPause();if(audio!=null)audio.pause();}
