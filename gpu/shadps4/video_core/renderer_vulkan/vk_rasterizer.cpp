@@ -569,7 +569,13 @@ void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDr
     const u64 alignment = std::max<u64>(instance.StorageMinAlignment(),
                                         instance.UniformMinAlignment());
     const auto copy = [&](u32 index, const void* source, VAddr address, u64 size) {
-        const auto offset = constant_ring->Allocate(size, alignment);
+        // Uniform-buffer bindings declare a power-of-two size; reserve at least that much so a
+        // driver upload of the whole declared range never reads past the ring.
+        const u64 reserve =
+            Shader::UseUniformBuffer(stage, stage.buffers[index])
+                ? std::max<u64>(size, u64{1} << Shader::UniformBufferSizeLog2(size))
+                : size;
+        const auto offset = constant_ring->Allocate(reserve, alignment);
         if (!offset) {
             return;
         }
@@ -2487,7 +2493,10 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
-                const u64 offset_aligned = Common::AlignDown(offset, alignment);
+                const u64 offset_aligned = Common::AlignDown(
+                    offset, Shader::UseUniformBuffer(stage, desc)
+                                ? std::max<u64>(alignment, instance.UniformMinAlignment())
+                                : alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
                     LOG_WARNING(Render_Vulkan, "Buffer binding in shader {:#x} isn't dword aligned",
@@ -2509,7 +2518,14 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
         set_write.descriptorCount = 1;
-        set_write.descriptorType = vk::DescriptorType::eStorageBuffer;
+        // Small read-only buffers are uniform buffers (see Shader::UseUniformBuffer).
+        const bool uniform = Shader::UseUniformBuffer(stage, desc);
+        set_write.descriptorType =
+            uniform ? vk::DescriptorType::eUniformBuffer : vk::DescriptorType::eStorageBuffer;
+        if (uniform && buffer_infos.back().range != VK_WHOLE_SIZE &&
+            buffer_infos.back().range > Shader::MaxUniformBufferBytes) {
+            buffer_infos.back().range = Shader::MaxUniformBufferBytes;
+        }
         set_write.pBufferInfo = &buffer_infos.back();
         ++binding.buffer;
     }
