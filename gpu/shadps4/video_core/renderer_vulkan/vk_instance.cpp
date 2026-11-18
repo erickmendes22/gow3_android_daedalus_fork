@@ -584,7 +584,8 @@ bool Instance::CreateDevice() {
     // the wrong constant word.
     Shader::SetUniformBufferStandardLayoutSupported(
         vk12_features.uniformBufferStandardLayout == VK_TRUE &&
-        properties.limits.minUniformBufferOffsetAlignment <= 256);
+        properties.limits.minUniformBufferOffsetAlignment <= 256 &&
+        properties.limits.minStorageBufferOffsetAlignment <= 256);
     std::printf("GOW3_UBO_DEVICE requested=%d standard_layout=%d min_align=%llu active=%d\n",
                 Shader::UniformBufferLevel(),
                 int(vk12_features.uniformBufferStandardLayout == VK_TRUE),
