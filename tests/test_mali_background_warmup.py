@@ -51,7 +51,8 @@ class MaliWarmupSafetyTest(unittest.TestCase):
 
 
     def test_cache_serialization_rejects_old_pointer_bearing_format(self):
-        self.assertIn("ShaderMetaVersion = 8u", self.code)
+        self.assertIn("ShaderMetaVersion = 9u", self.code)
+        self.assertIn("Shader::UniformBufferLevel()", self.code)
         self.assertNotIn("info.Write(this, sizeof(InfoPersistent))", self.code)
         self.assertNotIn("info.Read(this, sizeof(Shader::InfoPersistent))", self.code)
         for name in ("buffers", "images", "samplers", "fmasks"):
