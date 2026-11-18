@@ -92,7 +92,8 @@ static vk::ImageType ConvertImageType(AmdGpu::ImageType type) noexcept {
     }
 }
 
-static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usage_flags) {
+static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usage_flags,
+                                                  bool needs_storage = false) {
     vk::FormatFeatureFlags2 feature_flags{};
     if (usage_flags & vk::ImageUsageFlagBits::eTransferSrc) {
         feature_flags |= vk::FormatFeatureFlagBits2::eTransferSrc;
@@ -109,8 +110,12 @@ static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usag
     if (usage_flags & vk::ImageUsageFlagBits::eDepthStencilAttachment) {
         feature_flags |= vk::FormatFeatureFlagBits2::eDepthStencilAttachment;
     }
-    // Note: StorageImage is intentionally ignored for now since it is always set, and can mess up
-    // compatibility checks.
+    // When the guest genuinely performs imageStore, require a format that
+    // supports storage images. Only speculative STORAGE is excluded from this
+    // check: it can be dropped on devices that reject this optional usage.
+    if (needs_storage && (usage_flags & vk::ImageUsageFlagBits::eStorage)) {
+        feature_flags |= vk::FormatFeatureFlagBits2::eStorageImage;
+    }
     return feature_flags;
 }
 
@@ -907,7 +912,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     }
 
     usage_flags = ImageUsageFlags(instance, info);
-    format_features = FormatFeatureFlags(usage_flags);
+    format_features = FormatFeatureFlags(usage_flags, info.props.needs_storage);
     if (info.props.is_depth) {
         aspect_mask = vk::ImageAspectFlagBits::eDepth;
         if (info.props.has_stencil) {
@@ -965,7 +970,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
             format_info = etc2_info;
             supported_format = target;
             usage_flags = target_usage;
-            format_features = FormatFeatureFlags(usage_flags);
+            format_features = FormatFeatureFlags(usage_flags, info.props.needs_storage);
             flags = {};
             transcoded_bc_to_etc2 = true;
             static std::atomic<u32> selected{0};
@@ -990,7 +995,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         image_format_properties = ProbeImageFormat(instance, format_info);
         if (image_format_properties.result == vk::Result::eSuccess) {
             usage_flags = format_info.usage;
-            format_features = FormatFeatureFlags(usage_flags);
+            format_features = FormatFeatureFlags(usage_flags, info.props.needs_storage);
         } else {
             format_info.usage = usage_flags;
         }
