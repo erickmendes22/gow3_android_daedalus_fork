@@ -39,6 +39,26 @@ class MaliCausalCounts(unittest.TestCase):
         self.assertIn("if (!Enabled()) return;", stats)
         self.assertIn("std::memory_order_relaxed", stats)
         self.assertIn("counter.exchange(0", stats)
+    def test_rebind_probe_covers_driver_image_creation_before_fallback(self):
+        image = read("gpu/shadps4/video_core/texture_cache/image.cpp")
+        stats = read("gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h")
+        start = image.index("bool RebindRetiredImageMemory(")
+        end = image.index("bool ReturnBcImage(", start)
+        body = image[start:end]
+        self.assertIn("Stage::ImageRebindProbe", body)
+        self.assertIn("CountImageRebindCandidate()", body)
+        self.assertIn("CountImageRebindIncompatible()", body)
+        self.assertIn("CountImageRebindSuccess()", body)
+        self.assertLess(body.index("CountImageRebindCandidate()"),
+                        body.index("device.createImage(requested_ci)"))
+        self.assertLess(body.index("CountImageRebindIncompatible()"),
+                        body.index("device.destroyImage(new_image)", body.index("if (!retired.image)")))
+        self.assertIn("image_rebind_probe", stats)
+        self.assertIn("rebind_incompatible=%llu", stats)
+        self.assertIn("rebind_success=%llu", stats)
+        self.assertIn("GOW3_MALI_REBIND_RETIRED_MEMORY", body)
+        self.assertNotIn("waitIdle(", body)
+
     def test_cpp_header_compiles(self):
         source = """
 #include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
