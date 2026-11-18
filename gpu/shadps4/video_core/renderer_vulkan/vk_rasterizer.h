@@ -265,6 +265,7 @@ private:
     static void RunDrawPacket(void* rasterizer, const u8* packet, u32 size);
     struct RingBinding;
     void CollectRingBindings(const Shader::Info& stage, const PreparedDraw* prepared,
+                             u64 uniform_mask,
                              boost::container::static_vector<RingBinding, Shader::NUM_BUFFERS>& out);
     void PrintPipeStats();
     /// The registers of the draw being recorded: stage B's copy there, else Liverpool's.
