@@ -60,9 +60,11 @@ static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
                 !info.props.needs_storage && !info.props.is_block &&
                 !info.props.is_volume && info.type == AmdGpu::ImageType::Color2D &&
                 info.num_samples == 1 && info.num_bits <= 32;
-            if (!afbc_color &&
-                (info.num_samples == 1 || instance.IsMultisampleStorageImageSupported()))
+            if (afbc_color) {
+                Vulkan::MaliPerfStats::CountAfbcCandidate();
+            } else if (info.num_samples == 1 || instance.IsMultisampleStorageImageSupported()) {
                 usage |= vk::ImageUsageFlagBits::eStorage;
+            }
         }
     } else {
         // Similarly to above, we specify storage usage. This is typically not supported by
