@@ -1200,6 +1200,17 @@ bool PipelineCache::RefreshGraphicsStages(PipelineSelection& sel) {
             sel.compilation_pending = true;
             return false;
         }
+        // StageSpecialization uses the same UBO predicate. Persist its
+        // descriptor *class*, which cannot be recovered from old shader metadata
+        // without live guest SHARP pointers during background preloading.
+        const auto* live_info = sel.infos[stage_out_idx];
+        u64 uniform_mask = 0;
+        for (u32 i = 0; i < live_info->buffers.size(); ++i) {
+            if (Shader::UseUniformBuffer(*live_info, live_info->buffers[i])) {
+                uniform_mask |= u64{1} << i;
+            }
+        }
+        key.uniform_buffer_masks[stage_out_idx] = uniform_mask;
         if (fetch_shader_) {
             sel.fetch_shader = fetch_shader_;
         }
