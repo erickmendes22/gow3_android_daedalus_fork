@@ -62,6 +62,32 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("key.Write(this, sizeof(*this));", read(
             "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"))
 
+    def test_std430_ubo_requires_enabled_device_feature(self):
+        info = read("gpu/shadps4/shader_recompiler/info.h")
+        instance = read("gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp")
+        profile = read("gpu/shadps4/shader_recompiler/profile.h")
+        cache = read("gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp")
+        self.assertIn("uniform_std430_supported{false}", info)
+        self.assertIn("if (!UniformBufferStandardLayoutSupported()) return false;", info)
+        self.assertIn("SetUniformBufferStandardLayoutSupported(", instance)
+        self.assertIn("vk12_features.uniformBufferStandardLayout == VK_TRUE", instance)
+        self.assertIn(".uniformBufferStandardLayout = vk12_features.uniformBufferStandardLayout", instance)
+        self.assertIn("supports_uniform_buffer_std430{}", profile)
+        self.assertIn(".supports_uniform_buffer_std430 = instance_.IsUniformBufferStandardLayoutSupported()", cache)
+        self.assertIn("GOW3_UBO_DEVICE", instance)
+
+    def test_stage_rings_and_direct_bindings_use_pipeline_masks(self):
+        hdr = read("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h")
+        bind = read("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp")
+        self.assertIn("u64 uniform_mask,", hdr)
+        self.assertIn("CollectRingBindings(*stage, used_prepared, uniform_mask, ring);", bind)
+        self.assertIn("uniform_mask & (u64{1} << index)", bind)
+        self.assertIn("const bool uniform = bool(bind_ubo_masks[u32(stage.sw_stage)]", bind)
+        self.assertIn("const u64 bound_range = uniform", bind)
+        self.assertIn("Shader::UniformBufferSizeLog2(ring->size)", bind)
+        self.assertIn("offset, uniform ? std::max<u64>(alignment, instance.UniformMinAlignment())", bind)
+        self.assertIn("constant_ring->Flush(*offset, reserve)", bind)
+
     def test_specialization_tracks_declared_range_and_cache_invalidated(self):
         spec = read("gpu/shadps4/shader_recompiler/specialization.h")
         serial = read("gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp")
