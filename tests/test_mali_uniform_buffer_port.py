@@ -49,7 +49,7 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("Shader::UniformBufferLevel()", serial)
         self.assertIn("ShaderBinaryVersion = 8u", serial)
         self.assertIn("ShaderMetaVersion = 9u", serial)
-        self.assertIn("PipelineKeyVersion = 6u", serial)
+        self.assertIn("PipelineKeyVersion = 7u", serial)
 
 if __name__ == "__main__":
     unittest.main()
