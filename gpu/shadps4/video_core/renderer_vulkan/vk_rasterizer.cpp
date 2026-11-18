@@ -2544,7 +2544,10 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         set_write.dstArrayElement = 0;
         set_write.descriptorCount = 1;
         // Small read-only buffers are uniform buffers (see Shader::UseUniformBuffer).
-        const bool uniform = Shader::UseUniformBuffer(stage, desc);
+        // Class must match the saved pipeline key even if guest user-data
+        // snapshots change between Draw preparation and Vulkan recording.
+        const bool uniform = bool(bind_ubo_masks[u32(stage.sw_stage)] &
+                                  (u64{1} << buffer_index));
         set_write.descriptorType =
             uniform ? vk::DescriptorType::eUniformBuffer : vk::DescriptorType::eStorageBuffer;
         if (uniform) MaliPerfStats::CountUniformBinding();
