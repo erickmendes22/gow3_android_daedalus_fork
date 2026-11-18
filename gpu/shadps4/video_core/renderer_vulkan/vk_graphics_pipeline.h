@@ -33,6 +33,9 @@ using VertexInputs = boost::container::static_vector<T, MaxVertexBufferCount>;
 
 struct GraphicsPipelineKey {
     std::array<size_t, MaxShaderStages> stage_hashes;
+    // Immutable per-pipeline UBO descriptor masks. Cached stages have no live guest SHARPs;
+    // derive descriptor classes during shader selection and persist them in the key.
+    std::array<u64, MaxShaderStages> uniform_buffer_masks;
     std::array<vk::Format, MaxVertexBufferCount> vertex_buffer_formats;
     u32 patch_control_points;
     u32 num_color_attachments;
