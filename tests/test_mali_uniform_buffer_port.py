@@ -11,13 +11,15 @@ def read(name):
     return (ROOT / name).read_text(encoding="utf-8")
 
 class MaliUniformBufferPort(unittest.TestCase):
-    def test_opt_in_only_and_minimum_vulkan_range(self):
+    def test_enabled_by_default_and_minimum_vulkan_range(self):
         s = read("gpu/shadps4/shader_recompiler/info.h")
         self.assertIn('std::getenv("GOW3_UBO")', s)
-        self.assertRegex(s, r"env\[0\] - '0' : 0;")
+        self.assertRegex(s, r"env\[0\] - '0' : 2;")
         self.assertIn("MaxUniformBufferBytes = 16384", s)
-        self.assertIn("bytes >= 4 && bytes <= MaxUniformBufferBytes", s)
-        self.assertIn("!desc.is_written && !desc.is_formatted", s)
+        self.assertIn("return bytes >= 4 && bytes <= MaxUniformBufferBytes;", s)
+        self.assertIn("desc.is_written ||", s)
+        self.assertIn("desc.is_formatted ||", s)
+        self.assertLess(s.index("if (!stage_ok || desc.buffer_type"), s.index("desc.GetSharp(info).GetSize()"))
         self.assertIn("BufferType::Guest", s)
         self.assertIn("SwStage::Vertex", s)
         self.assertIn("SwStage::Fragment", s)
@@ -35,6 +37,8 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("vk::DescriptorType::eUniformBuffer", bind)
         self.assertIn("UniformMinAlignment()", bind)
         self.assertIn("MaxUniformBufferBytes", bind)
+        self.assertIn("std::memset(dst + size, 0, reserve - size)", bind)
+        self.assertIn("constant_ring->Flush(*offset, reserve)", bind)
 
     def test_specialization_tracks_declared_range_and_cache_invalidated(self):
         spec = read("gpu/shadps4/shader_recompiler/specialization.h")
