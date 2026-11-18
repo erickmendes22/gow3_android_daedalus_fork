@@ -33,9 +33,9 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // gow3: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 8u; // gow3: explicit resource-list serialization; v7 stored stale small_vector pointers
-static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResource::needs_native)
+static const u32 ShaderBinaryVersion = 8u + 16u * u32(Shader::UniformBufferLevel()); // gow3: interpolated integer fix (Pascal)
+static const u32 ShaderMetaVersion = 9u + 16u * u32(Shader::UniformBufferLevel()); // gow3: explicit resource-list serialization; v7 stored stale small_vector pointers
+static const u32 PipelineKeyVersion = 6u + 16u * u32(Shader::UniformBufferLevel()); // gow3: Info layout (ImageResource::needs_native)
 } // namespace Serialization
 
 namespace Vulkan {
