@@ -44,12 +44,24 @@ static vk::ImageUsageFlags ImageUsageFlags(const Vulkan::Instance& instance,
             if (instance.IsAttachmentFeedbackLoopLayoutSupported()) {
                 usage |= vk::ImageUsageFlagBits::eAttachmentFeedbackLoopEXT;
             }
-            // Always create images with storage flag to avoid needing re-creation in case of e.g
-            // compute clears. This sacrifices a bit of performance but is less work. ExtendedUsage
-            // flag is also used. The exception is multisample images when storage is not supported
-            // (shaderStorageImageMultisample): with ExtendedUsage a driver that cannot store to a
-            // multisample image may return only one supported sample, losing the MSAA render.
-            if (info.num_samples == 1 || instance.IsMultisampleStorageImageSupported())
+            // panvk_image_can_use_afbc() refuses STORAGE usage. The generic
+            // "always STORAGE" policy silently disables AFBC on every ordinary
+            // Mali color render target, even when the guest never imageStores.
+            // Keep the original policy on other GPUs, MSAA, 3D, BC images,
+            // wider formats and when a writable shader image is requested.
+            // TextureCache upgrades a pure RT to STORAGE on first imageStore,
+            // preserving old pixels with its existing ExpandImage/CopyImage.
+            // GOW3_MALI_AFBC_COLOR_RT=0 restores the original all-STORAGE path.
+            const char* afbc = std::getenv("GOW3_MALI_AFBC_COLOR_RT");
+            const bool afbc_color =
+                std::getenv("GOW3_ANDROID_PORT") != nullptr &&
+                instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                (!afbc || afbc[0] != '0') &&
+                !info.props.needs_storage && !info.props.is_block &&
+                !info.props.is_volume && info.type == AmdGpu::ImageType::Color2D &&
+                info.num_samples == 1 && info.num_bits <= 32;
+            if (!afbc_color &&
+                (info.num_samples == 1 || instance.IsMultisampleStorageImageSupported()))
                 usage |= vk::ImageUsageFlagBits::eStorage;
         }
     } else {
