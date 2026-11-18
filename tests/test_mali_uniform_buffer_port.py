@@ -31,7 +31,7 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("UseUniformBuffer(info, desc)", emitter)
         self.assertIn("spv::StorageClass::Uniform", emitter)
         self.assertIn("TypeArray(data_type", emitter)
-        self.assertIn("UseUniformBuffer(*stage, buffer)", gfx)
+        self.assertIn("key.uniform_buffer_masks[stage_index]", gfx)
         self.assertIn("vk::DescriptorType::eUniformBuffer", gfx)
         self.assertIn("UseUniformBuffer(stage, desc)", bind)
         self.assertIn("vk::DescriptorType::eUniformBuffer", bind)
