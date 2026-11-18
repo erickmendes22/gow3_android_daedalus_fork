@@ -1044,6 +1044,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         scheduler.PopPendingOperations();
     }
     const auto& regs = Regs();
+    const auto& mali_stages = pipeline->GetStages();
+    MaliPerfStats::CountDrawTopology(
+        regs.primitive_type == AmdGpu::PrimitiveType::RectList,
+        regs.primitive_type == AmdGpu::PrimitiveType::QuadList,
+        mali_stages[u32(Shader::SwStage::TessellationControl)] ||
+            mali_stages[u32(Shader::SwStage::TessellationEval)],
+        bool(mali_stages[u32(Shader::SwStage::Geometry)]));
     // Record zero-index/zero-instance candidates, but DO NOT suppress the
     // draw: occlusion queries/predication must first be audited.
     if (!regs.num_indices || !regs.num_instances.NumInstances())
@@ -1445,6 +1452,13 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_indexed,
                                     const IndirectDraw& indirect, const DrawPredication& pred) {
     const auto& regs = Regs();
+    const auto& mali_indirect_stages = pipeline->GetStages();
+    MaliPerfStats::CountDrawTopology(
+        regs.primitive_type == AmdGpu::PrimitiveType::RectList,
+        regs.primitive_type == AmdGpu::PrimitiveType::QuadList,
+        mali_indirect_stages[u32(Shader::SwStage::TessellationControl)] ||
+            mali_indirect_stages[u32(Shader::SwStage::TessellationEval)],
+        bool(mali_indirect_stages[u32(Shader::SwStage::Geometry)]));
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
         scheduler.PopPendingOperations();
@@ -2522,6 +2536,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         const bool uniform = Shader::UseUniformBuffer(stage, desc);
         set_write.descriptorType =
             uniform ? vk::DescriptorType::eUniformBuffer : vk::DescriptorType::eStorageBuffer;
+        if (uniform) MaliPerfStats::CountUniformBinding();
         if (uniform && buffer_infos.back().range != VK_WHOLE_SIZE &&
             buffer_infos.back().range > Shader::MaxUniformBufferBytes) {
             buffer_infos.back().range = Shader::MaxUniformBufferBytes;
