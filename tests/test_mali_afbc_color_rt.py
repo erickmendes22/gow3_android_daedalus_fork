@@ -60,6 +60,10 @@ class MaliAfbcColorRtTests(unittest.TestCase):
         self.assertIn("(usage_flags & vk::ImageUsageFlagBits::eStorage)", fallback)
         self.assertIn("upgraded.props.needs_storage = 1;", read(
             "gpu/shadps4/video_core/texture_cache/texture_cache.cpp"))
+        self.assertIn("feature_flags |= vk::FormatFeatureFlagBits2::eStorageImage;", image)
+        self.assertEqual(
+            image.count("FormatFeatureFlags(usage_flags, info.props.needs_storage)"), 3)
+
 
     def test_mali_driver_diagnostics_use_real_line_terminators(self):
         # Literal backslash-n merged successive Vulkan calls into one
