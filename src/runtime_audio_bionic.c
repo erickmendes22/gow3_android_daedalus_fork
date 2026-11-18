@@ -128,11 +128,30 @@ static void frame_to_stereo(const Port *p, const unsigned char *in, int *l, int 
     if (p->channels==1) fl=fr=v[0];
     else if (p->channels==2) { fl=v[0]; fr=v[1]; }
     else {
-        /* 7.1 down to stereo: centre and surrounds at -3 / -6 dB, normalised so the sum cannot clip. */
-        const float n=1.0f/2.7071f;
-        fl=(v[0]+0.7071f*v[2]+0.5f*v[4]+0.5f*v[6])*n; fr=(v[1]+0.7071f*v[2]+0.5f*v[5]+0.5f*v[7])*n;
+        /* 7.1 down to stereo: centre and surrounds at -3 dB, LFE at -6 dB. Not normalised: the
+           old 1/2.7071 divisor kept the surround mix 8.7 dB below the game's stereo ports (UI
+           sounds). The mixer's soft limiter handles the rare peaks instead.
+           GOW3_AUDIO_SURROUND_GAIN scales the surround mix (default 1.0). */
+        static float gain=-1.0f;
+        if (gain<0.0f) {
+            const char *env=getenv("GOW3_AUDIO_SURROUND_GAIN");
+            float g=env ? strtof(env,NULL) : 1.0f;
+            gain=g>0.0f && g<=4.0f ? g : 1.0f;
+        }
+        const float c=0.7071f*v[2]+0.5f*v[3];
+        fl=(v[0]+c+0.7071f*v[4]+0.7071f*v[6])*gain; fr=(v[1]+c+0.7071f*v[5]+0.7071f*v[7])*gain;
     }
     *l=(int)fl; *r=(int)fr;
+}
+/* Soft limiter: unchanged below the knee (about -2.5 dBFS), then a smooth curve that approaches
+   but never reaches full scale, so loud peaks compress instead of clipping hard. */
+static int16_t soft_limit(int32_t x) {
+    const int32_t knee=24576, range=32767-knee;
+    const int32_t a=x<0 ? -x : x;
+    if (a<=knee) return (int16_t)x;
+    const int32_t d=a-knee;
+    const int32_t y=knee+(int32_t)((int64_t)range*d/(range+d));
+    return (int16_t)(x<0 ? -y : y);
 }
 static void *mixer_thread(void *arg) {
     (void)arg;
@@ -156,7 +175,7 @@ static void *mixer_thread(void *arg) {
             pthread_mutex_unlock(&p->ring_lock);
         }
         pthread_mutex_unlock(&table_lock);
-        for (int i=0;i<MIX_FRAMES*2;++i) out[i]=(int16_t)(acc[i]>32767 ? 32767 : acc[i]<-32768 ? -32768 : acc[i]);
+        for (int i=0;i<MIX_FRAMES*2;++i) out[i]=soft_limit(acc[i]);
         const unsigned char *at=(const unsigned char *)out; size_t left=sizeof out;
         while (left) {
             ssize_t n=write(fifo_fd,at,left);
