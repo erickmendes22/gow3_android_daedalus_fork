@@ -936,6 +936,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
                            (!etc2_opt || etc2_opt[0] != '0') &&
                            info.props.is_block && !info.props.is_volume &&
+                           !info.props.needs_storage &&
                            info.type == AmdGpu::ImageType::Color2D &&
                            info.resources.layers == 1 && info.num_samples == 1;
     const bool bc1 = info.pixel_format == vk::Format::eBc1RgbaUnormBlock ||
