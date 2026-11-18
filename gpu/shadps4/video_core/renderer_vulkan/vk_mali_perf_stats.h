@@ -33,7 +33,7 @@ public:
         DrawDescriptors, DrawDynamic, DrawCommands,
         NewGraphicsPipeline, NewComputePipeline, NewShaderModule,
         NewBcImage, NewRgba128Image, NewOtherImage,
-        ImageFormatQuery, ImageVkAllocate, Pm4ResumeBlocked, Pm4ResumeWork,
+        ImageFormatQuery, ImageVkAllocate, ImageRebindProbe, Pm4ResumeBlocked, Pm4ResumeWork,
         SubmitMutex, SubmitThrottle, SubmitHostCopies, SubmitQueueDriver,
         PendingTimelineQuery, Pm4SubmitWall,
         Pm4ResumeCpuWork, Pm4ResumeCpuBlocked,
@@ -127,6 +127,19 @@ public:
 
     static void CountUniformBinding() {
         if (Enabled()) Get().causal_ubo_bindings.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // A failed cross-shape rebind probe may create/destroy a VkImage *before*
+    // the normal image_vk_allocate timer starts. Record candidates and misses
+    // explicitly, otherwise driver stalls can be attributed to GPU execution.
+    static void CountImageRebindCandidate() {
+        if (Enabled()) Get().image_rebind_candidates.fetch_add(1, std::memory_order_relaxed);
+    }
+    static void CountImageRebindIncompatible() {
+        if (Enabled()) Get().image_rebind_incompatible.fetch_add(1, std::memory_order_relaxed);
+    }
+    static void CountImageRebindSuccess() {
+        if (Enabled()) Get().image_rebind_success.fetch_add(1, std::memory_order_relaxed);
     }
 
     static bool SampleSubmit() {
@@ -226,7 +239,7 @@ public:
             "draw_descriptors", "draw_dynamic", "draw_record_commands",
             "graphics_pipeline_new", "compute_pipeline_new", "shader_module_new",
             "image_bc_new", "image_rgba128_new", "image_other_new",
-            "image_format_query", "image_vk_allocate", "pm4_resume_blocked", "pm4_resume_work",
+            "image_format_query", "image_vk_allocate", "image_rebind_probe", "pm4_resume_blocked", "pm4_resume_work",
             "submit_mutex", "submit_throttle", "submit_host_copy_wait",
             "submit_vk_queue", "pending_timeline_query", "pm4_submit_wall",
             "pm4_resume_cpu_work", "pm4_resume_cpu_blocked",
@@ -310,14 +323,16 @@ public:
         std::printf("MALI_CAUSAL_COUNTS interval_ms=%llu draws=%llu rect=%llu quad=%llu "
                     "native_tess=%llu geometry=%llu barriers=%llu pass_splits=%llu "
                     "global_barriers=%llu local_buffer_barriers=%llu image_barriers=%llu "
-                    "ubo_bindings=%llu\n",
+                    "ubo_bindings=%llu rebind_candidates=%llu rebind_incompatible=%llu "
+                    "rebind_success=%llu\n",
                     static_cast<unsigned long long>(now_ms - last),
                     take(state.causal_draws), take(state.causal_rect),
                     take(state.causal_quad), take(state.causal_native_tess),
                     take(state.causal_geometry), take(state.causal_barrier_flushes),
                     take(state.causal_pass_splits), take(state.causal_global_barriers),
                     take(state.causal_local_barriers), take(state.causal_image_barriers),
-                    take(state.causal_ubo_bindings));
+                    take(state.causal_ubo_bindings), take(state.image_rebind_candidates),
+                    take(state.image_rebind_incompatible), take(state.image_rebind_success));
     }
 
 private:
@@ -337,6 +352,7 @@ private:
         std::atomic<uint64_t> causal_barrier_flushes{0}, causal_pass_splits{0};
         std::atomic<uint64_t> causal_global_barriers{0}, causal_local_barriers{0};
         std::atomic<uint64_t> causal_image_barriers{0}, causal_ubo_bindings{0};
+        std::atomic<uint64_t> image_rebind_candidates{0}, image_rebind_incompatible{0}, image_rebind_success{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
