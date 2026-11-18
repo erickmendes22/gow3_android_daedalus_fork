@@ -1864,6 +1864,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
+    bind_ubo_masks.fill(0);
+    if (!pipeline->IsCompute()) {
+        bind_ubo_masks =
+            static_cast<const GraphicsPipeline*>(pipeline)->GetGraphicsKey().uniform_buffer_masks;
+    }
     // gow3: G-buffer passes sample material textures for a scene rendered below the output
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
