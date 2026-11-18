@@ -24,6 +24,8 @@ on:
       - 'gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp'
       - 'tests/test_mali_uniform_buffer_port.py'
+      - 'tests/test_mali_causal_counts.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_common.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.h'
@@ -96,6 +98,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_graphics_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
