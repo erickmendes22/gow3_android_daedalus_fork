@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdlib>
 #include <span>
 #include <vector>
