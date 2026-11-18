@@ -585,7 +585,13 @@ void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDr
         } else {
             memory->CopySparseMemory(address, dst, size);
         }
-        constant_ring->Flush(*offset, size);
+        // The shader's fixed-size UBO declaration can extend beyond the guest
+        // buffer's logical length. Ensure the extra words are deterministic
+        // zeros, not bytes left by a previous draw in the constant ring.
+        if (reserve > size) {
+            std::memset(dst + size, 0, reserve - size);
+        }
+        constant_ring->Flush(*offset, reserve);
         out.push_back({index, static_cast<u32>(size), *offset, address});
     };
     for (u32 index = 0; index < stage.buffers.size(); ++index) {
