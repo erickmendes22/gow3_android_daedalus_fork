@@ -33,7 +33,7 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("TypeArray(data_type", emitter)
         self.assertIn("key.uniform_buffer_masks[stage_index]", gfx)
         self.assertIn("vk::DescriptorType::eUniformBuffer", gfx)
-        self.assertIn("UseUniformBuffer(stage, desc)", bind)
+        self.assertIn("bool(bind_ubo_masks[u32(stage.sw_stage)]", bind)
         self.assertIn("vk::DescriptorType::eUniformBuffer", bind)
         self.assertIn("UniformMinAlignment()", bind)
         self.assertIn("MaxUniformBufferBytes", bind)
