@@ -578,6 +578,13 @@ bool Instance::CreateDevice() {
 
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+    Shader::SetUniformBufferStandardLayoutSupported(
+        vk12_features.uniformBufferStandardLayout == VK_TRUE);
+    std::printf("GOW3_UBO_DEVICE requested=%d standard_layout=%d active=%d\n",
+                Shader::UniformBufferLevel(),
+                int(vk12_features.uniformBufferStandardLayout == VK_TRUE),
+                int(Shader::UniformBufferLevel() > 0 &&
+                    Shader::UniformBufferStandardLayoutSupported()));
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
     // gow3: DLSS (optional bridge DLL) needs its own device extensions on NVIDIA GPUs.
     std::vector<const char*> dlss_extensions;
