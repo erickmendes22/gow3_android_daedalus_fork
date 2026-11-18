@@ -268,11 +268,11 @@ DECLARE_ENUM_FLAG_OPERATORS(Info::ReadConstType);
 /// buffer is uniform depends only on Info (shared by all permutations), so the emitter, the
 /// descriptor set layout and the binding code always agree; its declared length depends on the
 /// bound size and is part of the stage specialization (BufferSpecialization::ubo_size_log2).
-/// GOW3_UBO: 0 = off (analysis default), 1 = vertex stage, 2 = vertex and fragment stages.
+/// GOW3_UBO: 2 = vertex + fragment (default on all devices), 1 = vertex only, 0 = off for A/B.
 inline int UniformBufferLevel() {
     static const int level = [] {
         const char* env = std::getenv("GOW3_UBO");
-        return env && env[0] >= '0' && env[0] <= '2' ? env[0] - '0' : 0;
+        return env && env[0] >= '0' && env[0] <= '2' ? env[0] - '0' : 2;
     }();
     return level;
 }
@@ -295,10 +295,15 @@ inline bool UseUniformBuffer(const Info& info, const BufferResource& desc) {
     const int level = UniformBufferLevel();
     const bool stage_ok = (level >= 1 && info.sw_stage == SwStage::Vertex) ||
                           (level >= 2 && info.sw_stage == SwStage::Fragment);
+    // Never evaluate a SHARP for auxiliary/special buffers. Such buffers can
+    // point at arbitrary guest user-data and are not eligible for UBO lowering.
+    if (!stage_ok || desc.buffer_type != BufferType::Guest || desc.is_written ||
+        desc.is_formatted || desc.used_types == IR::Type::Void ||
+        True(desc.used_types & ~allowed)) {
+        return false;
+    }
     const auto bytes = desc.GetSharp(info).GetSize();
-    return stage_ok && bytes >= 4 && bytes <= MaxUniformBufferBytes &&
-           desc.buffer_type == BufferType::Guest && !desc.is_written && !desc.is_formatted &&
-           desc.used_types != IR::Type::Void && False(desc.used_types & ~allowed);
+    return bytes >= 4 && bytes <= MaxUniformBufferBytes;
 }
 
 } // namespace Shader
