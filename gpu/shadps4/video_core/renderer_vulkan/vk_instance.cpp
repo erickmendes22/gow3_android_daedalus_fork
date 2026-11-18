@@ -105,7 +105,7 @@ double MaliAllocMs(MaliAllocClock::time_point start) {
 void MaliTraceLongCall(const char* stage, double ms, unsigned long long bytes,
                        int format = -1) {
     if (ms >= 5.0) {
-        std::printf("GOW3_MALI_VMA_DRIVER_CALL stage=%s ms=%.2f bytes=%llu format=%d\\n",
+        std::printf("GOW3_MALI_VMA_DRIVER_CALL stage=%s ms=%.2f bytes=%llu format=%d\n",
                     stage, ms, bytes, format);
     }
 }
@@ -930,7 +930,7 @@ void Instance::CreateAllocator() {
         functions.vkBindImageMemory2KHR = MaliTimedBindImageMemory2;
         functions.vkGetImageMemoryRequirements = MaliTimedGetImageMemoryRequirements;
         functions.vkGetImageMemoryRequirements2KHR = MaliTimedGetImageMemoryRequirements2;
-        std::printf("GOW3_MALI_VMA_CALL_TRACE enabled=1 threshold_ms=5\\n");
+        std::printf("GOW3_MALI_VMA_CALL_TRACE enabled=1 threshold_ms=5\n");
     }
 
     // VMA defaults to 256 MiB blocks for Vulkan heaps >1 GiB. The G720
