@@ -101,6 +101,34 @@ public:
         if (Enabled()) Get().empty_draw_candidates.fetch_add(1, std::memory_order_relaxed);
     }
 
+    // Causal event counters: only relaxed atomics, no timestamp or per-draw printf.
+    // Topology counts distinguish costly PanVK auxiliary tessellation from native stages.
+    static void CountDrawTopology(bool rect, bool quad, bool native_tess, bool geometry) {
+        if (!Enabled()) return;
+        auto& st = Get();
+        st.causal_draws.fetch_add(1, std::memory_order_relaxed);
+        if (rect) st.causal_rect.fetch_add(1, std::memory_order_relaxed);
+        if (quad) st.causal_quad.fetch_add(1, std::memory_order_relaxed);
+        if (native_tess) st.causal_native_tess.fetch_add(1, std::memory_order_relaxed);
+        if (geometry) st.causal_geometry.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static void CountBarrierFlush(bool split_pass, bool global_memory,
+                                  bool local_buffer, unsigned image_barriers) {
+        if (!Enabled()) return;
+        auto& st = Get();
+        st.causal_barrier_flushes.fetch_add(1, std::memory_order_relaxed);
+        if (split_pass) st.causal_pass_splits.fetch_add(1, std::memory_order_relaxed);
+        if (global_memory) st.causal_global_barriers.fetch_add(1, std::memory_order_relaxed);
+        if (local_buffer) st.causal_local_barriers.fetch_add(1, std::memory_order_relaxed);
+        if (image_barriers)
+            st.causal_image_barriers.fetch_add(image_barriers, std::memory_order_relaxed);
+    }
+
+    static void CountUniformBinding() {
+        if (Enabled()) Get().causal_ubo_bindings.fetch_add(1, std::memory_order_relaxed);
+    }
+
     static bool SampleSubmit() {
         if (!Enabled()) return false;
         static thread_local uint32_t submits = 0;
@@ -272,6 +300,24 @@ public:
                           static_cast<unsigned long long>(vertex_sets),
                           static_cast<unsigned long long>(vertex_skips));
         std::printf("%s\n", line);
+        // Independent compact line: these are event COUNTS over the interval,
+        // not GPU time or FPS. Report even if a present pass did not complete
+        // in the interval; zero counts mean the path was not encountered.
+        const auto take = [](std::atomic<uint64_t>& counter) {
+            return static_cast<unsigned long long>(
+                counter.exchange(0, std::memory_order_relaxed));
+        };
+        std::printf("MALI_CAUSAL_COUNTS interval_ms=%llu draws=%llu rect=%llu quad=%llu "
+                    "native_tess=%llu geometry=%llu barriers=%llu pass_splits=%llu "
+                    "global_barriers=%llu local_buffer_barriers=%llu image_barriers=%llu "
+                    "ubo_bindings=%llu\\n",
+                    static_cast<unsigned long long>(now_ms - last),
+                    take(state.causal_draws), take(state.causal_rect),
+                    take(state.causal_quad), take(state.causal_native_tess),
+                    take(state.causal_geometry), take(state.causal_barrier_flushes),
+                    take(state.causal_pass_splits), take(state.causal_global_barriers),
+                    take(state.causal_local_barriers), take(state.causal_image_barriers),
+                    take(state.causal_ubo_bindings));
     }
 
 private:
@@ -286,6 +332,11 @@ private:
         std::atomic<uint64_t> draw_commands_recorded{0}, empty_draw_candidates{0};
         std::atomic<uint64_t> graphics_pipeline_binds_executed{0}, graphics_pipeline_binds_skipped{0};
         std::atomic<uint64_t> vertex_input_sets_emitted{0}, vertex_input_sets_skipped{0};
+        std::atomic<uint64_t> causal_draws{0}, causal_rect{0}, causal_quad{0};
+        std::atomic<uint64_t> causal_native_tess{0}, causal_geometry{0};
+        std::atomic<uint64_t> causal_barrier_flushes{0}, causal_pass_splits{0};
+        std::atomic<uint64_t> causal_global_barriers{0}, causal_local_barriers{0};
+        std::atomic<uint64_t> causal_image_barriers{0}, causal_ubo_bindings{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
