@@ -665,7 +665,13 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
             auto& ring = rings[num_stages];
             ring.clear();
             if (constant_ring && !Gow3Toggle::Disabled(Gow3Toggle::ConstantRing)) {
-                CollectRingBindings(*stage, used_prepared, ring);
+                // The compiled pipeline's immutable descriptor class is
+                // authoritative, including in the background-warmup path.
+                const u64 uniform_mask = !pipeline->IsCompute()
+                    ? static_cast<const GraphicsPipeline*>(pipeline)
+                          ->GetGraphicsKey().uniform_buffer_masks[u32(stage->sw_stage)]
+                    : 0;
+                CollectRingBindings(*stage, used_prepared, uniform_mask, ring);
             }
             ++num_stages;
             size += sizeof(PacketStage) +
