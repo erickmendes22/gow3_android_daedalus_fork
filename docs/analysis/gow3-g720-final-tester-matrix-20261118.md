@@ -29,6 +29,13 @@ Let T0=189.656ms/frame. Assign each full-frame latency bucket to a distinct cost
 **Crucial:** the last row is the *required best-case performance distribution*, not an expectation. We DO NOT know those three category lengths or savings yet. Without a GPU pass/driver counter capture, there is no defensible empirical evidence that >2x is likely. The only way to measure device FPS is a tester APK; a safety-verified, clearly labeled experimental APK can now be used for the A/B.
 
 ## Test instructions (same heavy save and driver; 960x540)
+
+The experimental APK has a **separate Android application ID**
+(`com.gow3.android.bionic.malitest`) and is signed by the fixed debug key.
+It does NOT overwrite or share private save data with the installed stable
+GoW3 app. Export the heavy-scene save from the original and import it using
+the new test app's save manager before comparing. Do not compare a fresh game
+or menu scene against the established 5.27 FPS heavy-save baseline.
 - Warm up to the same scene. Use the same PanVK Mesa 26.3.1 and clock/cooler, ideally 30–60s after shader preflight. Capture `Frame stats`, `MALI_CAUSAL_COUNTS`, `GOW3_UBO_DEVICE`, image-pool diagnostics and `GOW3_MALI_SLOW_IMAGE_ALLOC`. First launch after new schema rebuilds shader metadata; compare the following warm-cache launch.
 - Run normal defaults first: `GOW3_UBO=2`, `GOW3_MALI_AFBC_COLOR_RT=1`, `GOW3_MALI_LOCAL_BUFFER_BARRIERS=1`. Verify active=1 in `GOW3_UBO_DEVICE`, count of AFBC candidates, and ideally zero or few storage upgrades.
 - For regression isolation change **one** variable at a time: UBO=0, AFBC=0, local_buffer_barriers=0, rebind=0. Compare same-save median/p95 frame time and graphics correctness. UBO toggle changes cache schema; allow warmup.
