@@ -466,6 +466,7 @@ public final class Order1886Activity extends Activity {
             "selective".equals(prefs().getString("readback","relaxed"))?1:0,
             n->{prefs().edit().putString("readback",
                 n==2?"precise":n==1?"selective":"relaxed").apply();selectionChange();});
+        toggle(c,"Apresentação econômica (reduz buffers Vulkan)","efficientPresentation",true);
         selectSpinner(c,"Filtro de apresentação",new String[]{"FSR 1 espacial","Linear (sem FSR)"},
             "linear".equals(prefs().getString("filter","fsr1"))?1:0,
             n->{prefs().edit().putString("filter",n==0?"fsr1":"linear").apply();selectionChange();});
@@ -769,8 +770,25 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_DISPLAY_HZ",
             Integer.toString(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
         if(surface!=null&&surface.getWidth()>=320&&surface.getHeight()>=180) {
-            env.put("ORDER1886_SCREEN_W",Integer.toString(surface.getWidth()));
-            env.put("ORDER1886_SCREEN_H",Integer.toString(surface.getHeight()));
+            final int physicalW=surface.getWidth(), physicalH=surface.getHeight();
+            // The device's compositor can scale a smaller AHardwareBuffer to the real
+            // SurfaceView. Do not render the Vulkan output at 2688x1216 when the game
+            // itself was prepared for 1280-wide rendering.
+            final boolean efficient=prefs().getBoolean("efficientPresentation",true);
+            final int sceneW=prefs().getInt("width",1920);
+            final int outputW=efficient?Math.min(physicalW,sceneW):physicalW;
+            int outputH=physicalH;
+            if(efficient&&outputW<physicalW){
+                final boolean wide="16:9".equals(prefs().getString("aspect","original"));
+                outputH=wide?Math.round(outputW*9f/16f):
+                    Math.round(outputW*((float)physicalH/physicalW));
+                outputH=Math.min(physicalH,Math.max(180,(outputH+1)&~1));
+            }
+            env.put("ORDER1886_SCREEN_W",Integer.toString(outputW));
+            env.put("ORDER1886_SCREEN_H",Integer.toString(outputH));
+            android.util.Log.i("TheOrder1886","Vulkan output "+outputW+"x"+outputH+
+                " (physical "+physicalW+"x"+physicalH+", render width "+sceneW+
+                ", efficient="+efficient+")");
         }
         env.put("ORDER1886_GAME_PROFILE","order1886");
         Order1886LauncherConfig.environment(this,new File(base,"user"),env);
