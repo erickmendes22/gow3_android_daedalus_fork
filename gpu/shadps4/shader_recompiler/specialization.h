@@ -29,11 +29,13 @@ struct BufferSpecialization {
     u32 num_format : 4;
     u32 index_stride : 2;
     u32 element_size : 2;
+    u8 ubo_size_log2{}; ///< declared uniform buffer size, 0 for storage buffers
     AmdGpu::CompMapping dst_select{};
     AmdGpu::NumberConversion num_conversion{};
 
     bool operator==(const BufferSpecialization& other) const {
         return stride == other.stride && is_formatted == other.is_formatted &&
+               ubo_size_log2 == other.ubo_size_log2 &&
                swizzle_enable == other.swizzle_enable &&
                (!is_formatted ||
                 (data_format == other.data_format && num_format == other.num_format &&
@@ -115,8 +117,12 @@ struct StageSpecialization {
         }
         u32 binding{};
         ForEachSharp(binding, buffers, info->buffers,
-                     [](auto& spec, const auto& desc, AmdGpu::Buffer sharp) {
+                     [this](auto& spec, const auto& desc, AmdGpu::Buffer sharp) {
                          spec.stride = sharp.GetStride();
+                         if (UseUniformBuffer(*info, desc)) {
+                             spec.ubo_size_log2 =
+                                 static_cast<u8>(UniformBufferSizeLog2(sharp.GetSize()));
+                         }
                          spec.is_formatted = desc.is_formatted;
                          spec.swizzle_enable = sharp.swizzle_enable;
                          if (spec.is_formatted) {
