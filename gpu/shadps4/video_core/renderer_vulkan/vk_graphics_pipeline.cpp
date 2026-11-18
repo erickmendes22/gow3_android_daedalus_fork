@@ -519,18 +519,20 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
     u32 binding{};
 
-    for (const auto* stage : stages) {
+    for (u32 stage_index = 0; stage_index < stages.size(); ++stage_index) {
+        const auto* stage = stages[stage_index];
         if (!stage) {
             continue;
         }
         const auto stage_bit = LogicalStageToStageBit[u32(stage->sw_stage)];
-        for (const auto& buffer : stage->buffers) {
-            const auto sharp =
-                preloading ? AmdGpu::Buffer{}
-                           : buffer.GetSharp(*stage); // See for the comment in compute PL creation
+        const u64 uniform_mask = key.uniform_buffer_masks[stage_index];
+        for (u32 buffer_index = 0; buffer_index < stage->buffers.size(); ++buffer_index) {
+            // Preloaded pipelines have no live guest SHARP data. The stored
+            // key selects the same UBO/SSBO classes as the compiled SPIR-V.
+            const bool uniform = bool(uniform_mask & (u64{1} << buffer_index));
             bindings.push_back({
                 .binding = binding++,
-                .descriptorType = Shader::UseUniformBuffer(*stage, buffer)
+                .descriptorType = uniform
                                       ? vk::DescriptorType::eUniformBuffer
                                       : vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
