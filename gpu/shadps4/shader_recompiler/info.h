@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <span>
 #include <vector>
 #include <boost/container/static_vector.hpp>
@@ -260,5 +261,44 @@ struct Info : InfoPersistent {
     bool Deserialize(Serialization::Archive& ar);
 };
 DECLARE_ENUM_FLAG_OPERATORS(Info::ReadConstType);
+
+/// Read-only guest buffers of vertex and fragment shaders are declared as uniform buffers
+/// instead of storage buffers. Turnip then uploads small ones to the const file once per draw
+/// (loops read registers instead of issuing isam fetches) and reads larger ones with ldc. Whether a
+/// buffer is uniform depends only on Info (shared by all permutations), so the emitter, the
+/// descriptor set layout and the binding code always agree; its declared length depends on the
+/// bound size and is part of the stage specialization (BufferSpecialization::ubo_size_log2).
+/// GOW3_UBO: 0 = off (analysis default), 1 = vertex stage, 2 = vertex and fragment stages.
+inline int UniformBufferLevel() {
+    static const int level = [] {
+        const char* env = std::getenv("GOW3_UBO");
+        return env && env[0] >= '0' && env[0] <= '2' ? env[0] - '0' : 0;
+    }();
+    return level;
+}
+
+/// Largest declared uniform buffer (Vulkan guarantees maxUniformBufferRange >= 16384; Turnip
+/// reports 65536).
+constexpr u32 MaxUniformBufferBytes = 16384;
+
+/// log2 of the declared size for a bound size: the next power of two, at least 256 bytes.
+inline u32 UniformBufferSizeLog2(u64 size) {
+    u32 log2 = 8;
+    while (log2 < 14 && (u64{1} << log2) < size) {
+        ++log2;
+    }
+    return log2;
+}
+
+inline bool UseUniformBuffer(const Info& info, const BufferResource& desc) {
+    constexpr auto allowed = IR::Type::U32 | IR::Type::F32;
+    const int level = UniformBufferLevel();
+    const bool stage_ok = (level >= 1 && info.sw_stage == SwStage::Vertex) ||
+                          (level >= 2 && info.sw_stage == SwStage::Fragment);
+    const auto bytes = desc.GetSharp(info).GetSize();
+    return stage_ok && bytes >= 4 && bytes <= MaxUniformBufferBytes &&
+           desc.buffer_type == BufferType::Guest && !desc.is_written && !desc.is_formatted &&
+           desc.used_types != IR::Type::Void && False(desc.used_types & ~allowed);
+}
 
 } // namespace Shader
