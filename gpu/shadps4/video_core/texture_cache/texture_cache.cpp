@@ -1318,6 +1318,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         !(slot_images[image_id].usage_flags & vk::ImageUsageFlagBits::eStorage)) {
         auto upgraded = slot_images[image_id].info;
         upgraded.props.needs_storage = 1;
+        Vulkan::MaliPerfStats::CountAfbcStorageUpgrade();
         image_id = ExpandImage(upgraded, image_id);
     }
 
