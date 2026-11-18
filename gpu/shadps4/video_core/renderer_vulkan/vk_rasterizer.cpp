@@ -2533,9 +2533,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
                 const u64 offset_aligned = Common::AlignDown(
-                    offset, Shader::UseUniformBuffer(stage, desc)
-                                ? std::max<u64>(alignment, instance.UniformMinAlignment())
-                                : alignment);
+                    offset, uniform ? std::max<u64>(alignment, instance.UniformMinAlignment())
+                                    : alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
                     LOG_WARNING(Render_Vulkan, "Buffer binding in shader {:#x} isn't dword aligned",
