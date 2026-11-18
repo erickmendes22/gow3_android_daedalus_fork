@@ -117,6 +117,10 @@ struct RetiredBcImage {
     // in each PanVK cold-image miss.
     VmaAllocationInfo2 memory_info{};
 };
+// Cached VkImage memory requirements are valid only for one Vulkan device
+// lifetime. Instance destruction bumps the generation, so a reused handle
+// cannot inherit the old device's requirements.
+std::atomic<uint64_t> rebind_requirements_generation{1};
 struct BcPool {
     std::mutex mutex;
     std::vector<RetiredBcImage> images;
@@ -446,6 +450,32 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     const MaliPerfStats::Scoped rebind_probe{
         MaliPerfStats::Stage::ImageRebindProbe, MaliPerfStats::Enabled()};
 
+    // A failed rebind can otherwise issue vkCreateImage + destroyImage here,
+    // then repeat vkCreateImage during the caller's normal VMA allocation.
+    // Memory requirements are stable for identical no-pNext image creation
+    // parameters on the same VkDevice. Keep a bounded *per-thread* memo,
+    // invalidated when the renderer/allocator is destroyed. Always re-check
+    // the current retired pool: new GPU-completed images may be eligible.
+    struct RebindRequirements {
+        VkDevice device;
+        VkImageCreateInfo description;
+        VkMemoryRequirements requirements;
+        bool dedicated;
+    };
+    static thread_local std::vector<RebindRequirements> requirements_cache;
+    static thread_local uint64_t seen_generation = 0;
+    const auto generation = rebind_requirements_generation.load(std::memory_order_acquire);
+    if (seen_generation != generation) {
+        requirements_cache.clear();
+        seen_generation = generation;
+    }
+    const auto device_handle = static_cast<VkDevice>(device);
+    const auto cached = std::find_if(
+        requirements_cache.begin(), requirements_cache.end(),
+        [&](const RebindRequirements& old) {
+            return old.device == device_handle && SameBcCreate(old.description, requested);
+        });
+
     auto& bc = GetBcPool();
     auto& rgba = GetRgba128Pool();
     auto& transient = GetTransientPool();
@@ -470,19 +500,35 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     };
     {
         std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
-        // Avoid vkCreateImage/getImageMemoryRequirements2 when the pool
-        // contains no candidate allowed for rebind; exact-reuse remains first.
+        // Do not issue a driver vkCreateImage just to reject a *known*
+        // incompatible allocation. A missing cache entry preserves the old
+        // compatibility query; a cache hit checks every CURRENT pool entry.
         bool has_candidate = false;
         for (const auto* pool : {&transient, &rgba, &bc}) {
             for (const auto& entry : pool->images) {
-                if (entry.allocator == allocator && !reserved_shape(*pool, entry)) {
-                    has_candidate = true;
-                    break;
+                if (entry.allocator != allocator || reserved_shape(*pool, entry))
+                    continue;
+                if (cached != requirements_cache.end()) {
+                    const auto& req = cached->requirements;
+                    const auto& info = entry.memory_info;
+                    const bool etc2_target = IsEtc2Image(requested);
+                    if (!CanRebindRetiredImageMemory(
+                            req.size, req.alignment, req.memoryTypeBits, cached->dedicated,
+                            info.allocationInfo.size, info.allocationInfo.offset,
+                            info.allocationInfo.memoryType, info.dedicatedMemory,
+                            etc2_target && pool == &bc))
+                        continue;
                 }
+                has_candidate = true;
+                break;
             }
             if (has_candidate) break;
         }
-        if (!has_candidate) return false;
+        if (!has_candidate) {
+            if (cached != requirements_cache.end())
+                MaliPerfStats::CountImageRebindFastReject();
+            return false;
+        }
     }
     MaliPerfStats::CountImageRebindCandidate();
     const auto create_result = device.createImage(requested_ci);
@@ -494,6 +540,16 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     const vk::ImageMemoryRequirementsInfo2 request_info{.image = new_image};
     device.getImageMemoryRequirements2(&request_info, &requirements2);
     const auto& requirements = requirements2.memoryRequirements;
+    if (cached == requirements_cache.end()) {
+        if (requirements_cache.size() >= 64)
+            requirements_cache.erase(requirements_cache.begin());
+        auto plain_description = requested;
+        plain_description.pNext = nullptr;
+        plain_description.pQueueFamilyIndices = nullptr;
+        requirements_cache.push_back(
+            {device_handle, plain_description, requirements,
+             dedicated.requiresDedicatedAllocation == VK_TRUE});
+    }
     if (dedicated.requiresDedicatedAllocation || requirements.size == 0) {
         device.destroyImage(new_image);
         return false;
@@ -677,6 +733,7 @@ CachedImageFormatProbe ProbeImageFormat(const Vulkan::Instance& instance,
 } // namespace
 
 void FlushMaliBcImagePool(VmaAllocator allocator) {
+    rebind_requirements_generation.fetch_add(1, std::memory_order_acq_rel);
     // Both pools are retired before VMA allocator teardown; each pool owns
     // completely independent image handles, quotas and hit/miss counters.
     for (auto* target : {&GetBcPool(), &GetRgba128Pool(), &GetTransientPool()}) {
