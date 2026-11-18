@@ -15,6 +15,25 @@ Date: 2026-11-18. Source: analysis/gow3-mali-double-fps-evidence-20261118.
 4. **Vulkan barriers**: Mali-only image/buffer split already enabled; bounded exact VkBuffer range barriers (max 8, fallback to global on overflow/invalid/submit) enabled in tester profile, rollback `GOW3_MALI_LOCAL_BUFFER_BARRIERS=0`. Does not remove any required dependency, only narrows its scope. Counter `pass_splits`, `local_buffer_barriers`, `global_barriers`, `image_barriers`.
 5. **Why so many draws?** new topology counts `rect`, `quad`, `native_tess`, `geometry` distinguish auxiliary TCS/TES and native stages. The expensive tessellation case is not patched speculatively without seeing whether it occurs in the slow scene. Avoid bypassing semantic pipeline stages.
 
+## Follow-up safety fixes before distributing a tester APK
+
+6. **Required storage-image usage:** physical-format selection now checks
+   `VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT` when the actual guest shader writes
+   the resource. If PanVK rejects such an image, the Vulkan compatibility
+   fallback does **not** drop its required `VK_IMAGE_USAGE_STORAGE_BIT`; doing
+   so would have produced an invalid storage descriptor rather than a safe
+   fallback. Read-only/RT images still use the original relaxed compatibility
+   path, preserving AFBC eligibility.
+7. **Diagnostic log integrity:** corrected six doubly escaped `\\n` markers
+   across the image-pool and VMA wrappers. Previously `GOW3_MALI_VMA_DRIVER_CALL`
+   events could merge into one line; logcat parsing of 400+ ms Vulkan driver
+   calls was unreliable. The existing AFBC regression suite now checks both
+   the storage invariant and genuine line terminators.
+
+These are code safety and attribution fixes, **not measured Mali FPS gains**.
+A run using a commit before the above fixes must not be distributed as the
+final consolidated diagnostic APK.
+
 ## Estimated FPS scenarios, conditional
 The improvements are NOT independent proven FPS multipliers. UBO measured **22.2→29.5 FPS** (~1.33x) in an *Adreno* GoW3 scene (PR #9), **not PanVK**. Khronos measured ~33% **bandwidth reduction** with AFBC in a *different Vulkan application*, **not GoW3 FPS**. A conservative and a high-end estimate therefore require *explicit hypothetical non-overlapping frame-time buckets*.
 
