@@ -49,6 +49,15 @@ class MaliCausalCounts(unittest.TestCase):
         self.assertIn("CountImageRebindCandidate()", body)
         self.assertIn("CountImageRebindIncompatible()", body)
         self.assertIn("CountImageRebindSuccess()", body)
+        self.assertIn("CountImageRebindFastReject()", body)
+        self.assertIn("requirements_cache", body)
+        self.assertIn("SameBcCreate(old.description, requested)", body)
+        self.assertIn("rebind_requirements_generation.load(", body)
+        self.assertIn("CanRebindRetiredImageMemory(", body)
+        self.assertIn("if (!has_candidate)", body)
+        self.assertIn("rebind_requirements_generation.fetch_add(1", image)
+        self.assertLess(body.index("if (!has_candidate)"),
+                        body.index("device.createImage(requested_ci)"))
         self.assertLess(body.index("CountImageRebindCandidate()"),
                         body.index("device.createImage(requested_ci)"))
         self.assertLess(body.index("CountImageRebindIncompatible()"),
@@ -56,6 +65,7 @@ class MaliCausalCounts(unittest.TestCase):
         self.assertIn("image_rebind_probe", stats)
         self.assertIn("rebind_incompatible=%llu", stats)
         self.assertIn("rebind_success=%llu", stats)
+        self.assertIn("rebind_fast_reject=%llu", stats)
         self.assertIn("GOW3_MALI_REBIND_RETIRED_MEMORY", body)
         self.assertNotIn("waitIdle(", body)
 
