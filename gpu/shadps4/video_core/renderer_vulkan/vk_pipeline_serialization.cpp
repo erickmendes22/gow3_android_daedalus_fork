@@ -903,7 +903,7 @@ bool PipelineCache::CheckCacheProfile() {
     const bool mali_schema = !EmulatorSettings.IsPipelineCacheArchived() &&
         std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
-    constexpr std::array<u32, 3> schema{
+    const std::array<u32, 3> schema{
         Serialization::ShaderMetaVersion,
         Serialization::ShaderBinaryVersion,
         Serialization::PipelineKeyVersion,
