@@ -395,7 +395,7 @@ void ReclaimIdleImagesBeforeAllocate(VmaAllocator allocator,
     }
     if (retired) {
         std::printf("GOW3_MALI_IMAGE_PREALLOC_RECLAIM images=%u retired_mib=%llu "
-                    "heap_mib=%llu budget_mib=%llu incoming_format=%d\\n",
+                    "heap_mib=%llu budget_mib=%llu incoming_format=%d\n",
                     retired, (unsigned long long)(reclaimed >> 20),
                     (unsigned long long)(used >> 20),
                     (unsigned long long)(budget >> 20), int(requested.format));
@@ -626,7 +626,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
         device.destroyImage(new_image);
         vmaFreeMemory(allocator, retired.allocation);
         // Fallback below will create a fully independent image/allocation.
-        std::printf("GOW3_MALI_IMAGE_REBIND rejected=%d; falling back to VMA\\n",
+        std::printf("GOW3_MALI_IMAGE_REBIND rejected=%d; falling back to VMA\n",
                     int(bind_result));
         return false;
     }
@@ -638,7 +638,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     const auto hits = rebind_hits.fetch_add(1, std::memory_order_relaxed) + 1;
     if (hits <= 4 || (hits & 63u) == 0) {
         std::printf("GOW3_MALI_IMAGE_REBIND hits=%llu old_format=%d new_format=%d "
-                    "bytes=%llu requested=%llu\\n",
+                    "bytes=%llu requested=%llu\n",
                     (unsigned long long)hits, int(retired.create.format),
                     int(requested.format), (unsigned long long)bytes,
                     (unsigned long long)requirements.size);
@@ -970,7 +970,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
             transcoded_bc_to_etc2 = true;
             static std::atomic<u32> selected{0};
             if (selected.fetch_add(1, std::memory_order_relaxed) < 12)
-                std::printf("GOW3_MALI_BCN_TO_ETC2 guest=%s host=%s %ux%u mips=%u\\n",
+                std::printf("GOW3_MALI_BCN_TO_ETC2 guest=%s host=%s %ux%u mips=%u\n",
                             vk::to_string(info.pixel_format).c_str(),
                             vk::to_string(target).c_str(), info.size.width,
                             info.size.height, info.resources.levels);
@@ -979,10 +979,12 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
 
     auto image_format_properties =
         ProbeImageFormat(instance, format_info);
-    // gow3: storage usage is speculative (see ImageUsageFlags). Drivers that refuse it for a
-    // format (AMD's Windows driver for BC6H) get the image without it: creating the unsupported
-    // combination anyway loses the device a few frames later.
+    // The generic STORAGE bit is optional only for images the guest never writes.
+    // For an actual shader imageStore (needs_storage), dropping STORAGE here
+    // creates an invalid image view/descriptor and can hide the true PanVK
+    // format-compatibility failure. Preserve required usage and report it.
     if (image_format_properties.result == vk::Result::eErrorFormatNotSupported &&
+        !info.props.needs_storage &&
         (usage_flags & vk::ImageUsageFlagBits::eStorage)) {
         format_info.usage = usage_flags & ~vk::ImageUsageFlagBits::eStorage;
         image_format_properties = ProbeImageFormat(instance, format_info);
