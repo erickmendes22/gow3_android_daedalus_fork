@@ -21,7 +21,6 @@ class MaliAfbcColorRtTests(unittest.TestCase):
                        "!info.props.is_volume", "info.num_samples == 1",
                        "info.num_bits <= 32", "ImageType::Color2D"):
             self.assertIn(clause, image)
-        self.assertIn("if (!afbc_color", image) if False else None
         self.assertIn("if (afbc_color)", image)
         self.assertIn("usage |= vk::ImageUsageFlagBits::eStorage;", image)
         self.assertIn("GOW3_MALI_AFBC_COLOR_RT:-1", shell)
