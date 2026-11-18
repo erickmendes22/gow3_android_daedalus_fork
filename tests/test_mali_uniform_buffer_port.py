@@ -75,6 +75,10 @@ class MaliUniformBufferPort(unittest.TestCase):
         self.assertIn("supports_uniform_buffer_std430{}", profile)
         self.assertIn(".supports_uniform_buffer_std430 = instance_.IsUniformBufferStandardLayoutSupported()", cache)
         self.assertIn("GOW3_UBO_DEVICE", instance)
+        self.assertIn("properties.limits.minUniformBufferOffsetAlignment <= 256", instance)
+        launcher = read("tools/android/bionic/run-bionic.sh")
+        self.assertIn("GOW3_UBO=${GOW3_UBO:-2}", launcher)
+        self.assertIn("ubo=$GOW3_UBO", launcher)
 
     def test_stage_rings_and_direct_bindings_use_pipeline_masks(self):
         hdr = read("gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h")
