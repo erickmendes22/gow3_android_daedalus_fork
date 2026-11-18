@@ -572,8 +572,7 @@ void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDr
     const auto copy = [&](u32 index, const void* source, VAddr address, u64 size) {
         // Uniform-buffer bindings declare a power-of-two size; reserve at least that much so a
         // driver upload of the whole declared range never reads past the ring.
-        const u64 reserve =
-            Shader::UseUniformBuffer(stage, stage.buffers[index])
+        const u64 reserve = (uniform_mask & (u64{1} << index))
                 ? std::max<u64>(size, u64{1} << Shader::UniformBufferSizeLog2(size))
                 : size;
         const auto offset = constant_ring->Allocate(reserve, alignment);
