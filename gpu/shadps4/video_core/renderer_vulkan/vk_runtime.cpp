@@ -10,6 +10,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
+#include "video_core/renderer_vulkan/vk_mali_perf_stats.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
@@ -1317,6 +1318,9 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
             };
         }
     }
+    MaliPerfStats::CountBarrierFlush(scheduler.IsRendering(),
+                                    decision.emit_memory && !local_buffers,
+                                    local_buffers, static_cast<unsigned>(image_barriers.size()));
     scheduler.EndRendering();
     scheduler.Record([memory = memory_barrier,
                       has_memory = decision.emit_memory && !local_buffers,
