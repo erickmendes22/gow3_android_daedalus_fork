@@ -530,6 +530,9 @@ private:
     u32 pending_checks = 0;
     u64 proxy_samples = 0; ///< texture bindings that read a scene proxy (statistics)
     float sampler_lod_bias = 0.0f; ///< gow3: extra bias of this draw's samplers
+    // Match immutable shader descriptor classes, never query a different
+    // live SHARP size than the one the Vulkan pipeline was compiled with.
+    std::array<u64, Shader::MaxStageTypes> bind_ubo_masks{};
     bool scene_debug_frame = false; ///< GOW3_SCENE_DEBUG: this frame's passes are printed
     bool PendingWriteOverlaps(VAddr address, u64 size);
     /// Stage B: the ring bindings of the stages of the packet being recorded.
