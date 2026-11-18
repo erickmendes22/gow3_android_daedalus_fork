@@ -2435,7 +2435,13 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 push_data.AddOffset(binding.buffer, 0);
             }
-            buffer_infos.emplace_back(constant_ring->Handle(), ring->offset, ring->size);
+            // The shader declares a fixed power-of-two array. Backing bytes
+            // were zero-padded and flushed up to this declared range when
+            // copied into the constant ring.
+            const u64 bound_range = uniform
+                ? std::max<u64>(ring->size, u64{1} << Shader::UniformBufferSizeLog2(ring->size))
+                : ring->size;
+            buffer_infos.emplace_back(constant_ring->Handle(), ring->offset, bound_range);
         } else if (desc.IsSpecial()) {
             if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
                 const auto* gds_buf = buffer_cache.GetGdsBuffer();
