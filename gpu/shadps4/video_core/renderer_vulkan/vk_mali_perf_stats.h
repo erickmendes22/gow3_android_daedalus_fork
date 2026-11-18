@@ -145,6 +145,13 @@ public:
         if (Enabled()) Get().image_rebind_success.fetch_add(1, std::memory_order_relaxed);
     }
 
+    static void CountAfbcCandidate() {
+        if (Enabled()) Get().afbc_candidates.fetch_add(1, std::memory_order_relaxed);
+    }
+    static void CountAfbcStorageUpgrade() {
+        if (Enabled()) Get().afbc_storage_upgrades.fetch_add(1, std::memory_order_relaxed);
+    }
+
     static bool SampleSubmit() {
         if (!Enabled()) return false;
         static thread_local uint32_t submits = 0;
@@ -327,7 +334,8 @@ public:
                     "native_tess=%llu geometry=%llu barriers=%llu pass_splits=%llu "
                     "global_barriers=%llu local_buffer_barriers=%llu image_barriers=%llu "
                     "ubo_bindings=%llu rebind_candidates=%llu rebind_incompatible=%llu "
-                    "rebind_success=%llu rebind_fast_reject=%llu\n",
+                    "rebind_success=%llu rebind_fast_reject=%llu afbc_candidates=%llu "
+                    "afbc_storage_upgrades=%llu\n",
                     static_cast<unsigned long long>(now_ms - last),
                     take(state.causal_draws), take(state.causal_rect),
                     take(state.causal_quad), take(state.causal_native_tess),
@@ -336,7 +344,8 @@ public:
                     take(state.causal_local_barriers), take(state.causal_image_barriers),
                     take(state.causal_ubo_bindings), take(state.image_rebind_candidates),
                     take(state.image_rebind_incompatible), take(state.image_rebind_success),
-                    take(state.image_rebind_fast_reject));
+                    take(state.image_rebind_fast_reject), take(state.afbc_candidates),
+                    take(state.afbc_storage_upgrades));
     }
 
 private:
@@ -358,6 +367,7 @@ private:
         std::atomic<uint64_t> causal_image_barriers{0}, causal_ubo_bindings{0};
         std::atomic<uint64_t> image_rebind_candidates{0}, image_rebind_incompatible{0}, image_rebind_success{0};
         std::atomic<uint64_t> image_rebind_fast_reject{0};
+        std::atomic<uint64_t> afbc_candidates{0}, afbc_storage_upgrades{0};
         State() {
             last_report_ms.store(static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
