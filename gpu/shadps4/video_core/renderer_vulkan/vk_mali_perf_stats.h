@@ -310,7 +310,7 @@ public:
         std::printf("MALI_CAUSAL_COUNTS interval_ms=%llu draws=%llu rect=%llu quad=%llu "
                     "native_tess=%llu geometry=%llu barriers=%llu pass_splits=%llu "
                     "global_barriers=%llu local_buffer_barriers=%llu image_barriers=%llu "
-                    "ubo_bindings=%llu\\n",
+                    "ubo_bindings=%llu\n",
                     static_cast<unsigned long long>(now_ms - last),
                     take(state.causal_draws), take(state.causal_rect),
                     take(state.causal_quad), take(state.causal_native_tess),
