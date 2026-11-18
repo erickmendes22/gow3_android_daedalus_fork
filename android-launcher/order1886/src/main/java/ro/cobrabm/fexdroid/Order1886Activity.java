@@ -89,6 +89,8 @@ public final class Order1886Activity extends Activity {
     };
 
     private android.content.SharedPreferences prefs(){return getSharedPreferences("order1886",MODE_PRIVATE);}
+    private String tr(String text){return Order1886UiText.translate(this,text);}
+    private String[] translated(String[] texts){String[] v=new String[texts.length];for(int i=0;i<texts.length;i++)v[i]=tr(texts[i]);return v;}
     // The Order: v0.1.8 dependency-aware SRT flattening changes shader metadata; rebuild derived cache.
     // Touch only derived CUSA shader data, never game PKGs, saves or user settings.
     private static void deleteShaderCacheTree(File root,File file) throws IOException {
@@ -142,13 +144,13 @@ public final class Order1886Activity extends Activity {
         return d;
     }
     private TextView label(String text,int sp,int color,boolean bold){
-        TextView v=new TextView(this);v.setText(text);v.setTextColor(color);
+        TextView v=new TextView(this);v.setText(tr(text));v.setTextColor(color);
         v.setTextSize(sp);if(bold)v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         v.setIncludeFontPadding(false);return v;
     }
     private Button button(String name, boolean accent,View.OnClickListener listener){
         Button b=new Button(this);
-        b.setAllCaps(false);b.setText(name);b.setTextSize(13);
+        b.setAllCaps(false);b.setText(tr(name));b.setTextSize(13);
         b.setTextColor(accent?INK:WHITE);
         b.setBackground(shape(accent?GOLD:0xff272e38,accent?0:EDGE,9));
         b.setPadding(dp(10),dp(3),dp(10),dp(3));
@@ -171,7 +173,7 @@ public final class Order1886Activity extends Activity {
         c.setBackground(shape(PANEL,EDGE,12));
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.bottomMargin=dp(12);
         parent.addView(c,cp);
-        if(caption!=null){TextView t=label(caption.toUpperCase(Locale.ROOT),12,GOLD,true);c.addView(t);gap(c,9);}
+        if(caption!=null){TextView t=label(tr(caption).toUpperCase(Locale.ROOT),12,GOLD,true);c.addView(t);gap(c,9);}
         return c;
     }
     private void actions(LinearLayout target,Button... buttons){
@@ -186,9 +188,11 @@ public final class Order1886Activity extends Activity {
         target.addView(row);
     }
     private void show(String message){
+        message=tr(message);
         statusText=message;
+        final String translatedMessage=message;
         main.post(() -> {
-            if(status!=null)status.setText(message);
+            if(status!=null)status.setText(translatedMessage);
             if(!gameOpen&&page==0)updateHomeHeader();
         });
     }
@@ -205,6 +209,7 @@ public final class Order1886Activity extends Activity {
         preparer=new Order1886Preparation(this,new File(base,"user"));
         drivers=new Order1886DriverStore(this);
         pad=new Order1886PadBridge(new File(base,"pad.state"));
+        pad.setRightStickZRZ(prefs().getBoolean("rightStickZRZ",false));
         audio=new Order1886AudioBridge(new File(base,"audio.fifo"));
         String path=prefs().getString("gameDir",null);
         if(path!=null){File f=new File(path);if(isGame(f))gameDir=f;}
@@ -278,7 +283,7 @@ public final class Order1886Activity extends Activity {
         final boolean hud=prefs().getBoolean("hudVisible",true);
         AlertDialog dialog=new AlertDialog.Builder(this)
             .setTitle("THE ORDER 1886 / DAEDALUS")
-            .setItems(new String[]{
+            .setItems(translated(new String[]{
                 "Retomar jogo",
                 controls?"Ocultar controles PlayStation":"Mostrar controles PlayStation",
                 "Editar posição dos controles",
@@ -287,7 +292,7 @@ public final class Order1886Activity extends Activity {
                 hud?"Ocultar HUD de FPS":"Mostrar HUD de FPS",
                 "Exportar log",
                 "Voltar ao launcher / Sair do jogo"
-            },(d,index)->{
+            }),(d,index)->{
                 switch(index){
                     case 1:
                         prefs().edit().putBoolean("onscreen",!controls).apply();
@@ -378,7 +383,7 @@ public final class Order1886Activity extends Activity {
     private String prepSignature(){
         return prefs().getInt("fps",30)+":"+
             prefs().getString("aspect","original")+":"+
-            prefs().getInt("width",1920)+":"+disabledEffects()+":"+
+            prefs().getInt("width",1920)+":"+disabledEffects()+":"+prefs().getString("readback","relaxed")+":"+prefs().getInt("language",1)+":"+
             (gameDir==null?"none":gameDir.getAbsolutePath())+":"+
             (gameDir==null?0:new File(gameDir,"eboot.bin").length())+":"+
             (gameDir==null?0:new File(gameDir,"eboot.bin").lastModified());
@@ -416,7 +421,7 @@ public final class Order1886Activity extends Activity {
         TextView t=label(title,14,WHITE,false);
         box.addView(t,new LinearLayout.LayoutParams(0,-2,1f));
         Spinner spinner=new Spinner(this);
-        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,items);
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,translated(items));
         spinner.setAdapter(adapter);spinner.setSelection(selected);
         spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
             private boolean initialized;
@@ -433,7 +438,7 @@ public final class Order1886Activity extends Activity {
         show("Configuração salva. Prepare novamente o jogo se mudou FPS, proporção ou resolução.");
     }
     private void toggle(LinearLayout card,String label,String key,boolean def){
-        CheckBox box=new CheckBox(this);box.setText(label);box.setTextColor(WHITE);
+        CheckBox box=new CheckBox(this);box.setText(tr(label));box.setTextColor(WHITE);
         box.setChecked(prefs().getBoolean(key,def));
         box.setOnCheckedChangeListener((b,checked)->{
             prefs().edit().putBoolean(key,checked).apply();selectionChange();
@@ -442,6 +447,10 @@ public final class Order1886Activity extends Activity {
     }
     private void renderGraphics(){
         LinearLayout c=card(body,"Configurações reais de vídeo");
+        String uiLang=prefs().getString("appLanguage","auto");
+        selectSpinner(c,"Idioma do aplicativo",new String[]{"Automático (sistema)","Português (Brasil)","English"},
+            "pt".equals(uiLang)?1:"en".equals(uiLang)?2:0,
+            n->{prefs().edit().putString("appLanguage",n==1?"pt":n==2?"en":"auto").apply();render();});
         String[] fps={"30 FPS (padrão)","60 FPS (experimental)"};
         selectSpinner(c,"Taxa do jogo",fps,prefs().getInt("fps",30)==60?1:0,
             n->{prefs().edit().putInt("fps",n==0?30:60).apply();selectionChange();});
@@ -469,20 +478,21 @@ public final class Order1886Activity extends Activity {
         selectSpinner(c,"Frames adiantados",new String[]{"0 (sem limite)","1 (padrão)","2"},
             prefs().getInt("framesQueued",1),
             n->{prefs().edit().putInt("framesQueued",n).apply();selectionChange();});
-        selectSpinner(c,"Idioma do jogo",new String[]{"Inglês","Português (Brasil)","Português (Portugal)"},
-            prefs().getInt("language",1)==17?1:prefs().getInt("language",1)==7?2:0,
-            n->{prefs().edit().putInt("language",n==1?17:n==2?7:1).apply();selectionChange();});
+        selectSpinner(c,"Idioma do jogo",new String[]{"日本語","English (United States)","Français (France)","Español (España)","Deutsch","Italiano","Nederlands","Português (Portugal)","Русский","한국어","繁體中文","简体中文","Suomi","Svenska","Dansk","Norsk","Polski","Português (Brasil)","English (United Kingdom)","Türkçe","Español (Latinoamérica)","العربية","Français (Canada)","Čeština","Magyar","Ελληνικά","Română","ไทย","Tiếng Việt","Bahasa Indonesia"},
+            Math.max(0,Math.min(29,prefs().getInt("language",1))),
+            n->{prefs().edit().putInt("language",n).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Preencher tela Android (Fill; desativado = Fit)","fullscreen",false);
         CheckBox showTouch=new CheckBox(this);
-        showTouch.setText("Controles PlayStation na tela");showTouch.setTextColor(WHITE);
+        showTouch.setText(tr("Controles PlayStation na tela"));showTouch.setTextColor(WHITE);
         showTouch.setChecked(prefs().getBoolean("onscreen",true));
         showTouch.setOnCheckedChangeListener((v,enabled)->{
             prefs().edit().putBoolean("onscreen",enabled).apply();
             setupTouchControls();
         });
         c.addView(showTouch);
+        toggle(c,"Analógico direito: usar Z/RZ (controle físico)","rightStickZRZ",false);
         selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Clássico","Grande"},
             Math.max(0,Math.min(2,prefs().getInt("controlSize",1))),
             n->{
@@ -507,7 +517,7 @@ public final class Order1886Activity extends Activity {
             Math.max(0,Math.min(2,prefs().getInt("hudSize",1))),
             n->{prefs().edit().putInt("hudSize",n).apply();applyHudStyle();});
         CheckBox showHud=new CheckBox(this);
-        showHud.setText("Mostrar HUD FPS");showHud.setTextColor(WHITE);
+        showHud.setText(tr("Mostrar HUD FPS");showHud.setTextColor(WHITE);
         showHud.setChecked(prefs().getBoolean("hudVisible",true));
         showHud.setOnCheckedChangeListener((b,enabled)->{
             prefs().edit().putBoolean("hudVisible",enabled).apply();applyHudStyle();
@@ -826,6 +836,7 @@ public final class Order1886Activity extends Activity {
                 if(!msg.startsWith("bridge running:"))throw new IOException(msg);
                 presentStarted=true;
                 pad.reset();
+                pad.setRightStickZRZ(prefs().getBoolean("rightStickZRZ",false));
                 launchNative(image);
             }catch(Throwable ex){show("Erro ao iniciar display: "+ex);stopGame();}
         },160);
@@ -845,6 +856,8 @@ public final class Order1886Activity extends Activity {
                 try(BufferedReader input=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
                     BufferedWriter log=new BufferedWriter(new OutputStreamWriter(new FileOutputStream(logFile),StandardCharsets.UTF_8))){
                     String line;int n=0;
+                    try {log.write("ORDER1886_PREPARED_MANIFEST "+preparer.manifestSummary());log.newLine();}
+                    catch(Exception ex){log.write("ORDER1886_PREPARED_MANIFEST unavailable: "+ex.getMessage());log.newLine();}
                     while((line=input.readLine())!=null){
                         log.write(line);log.newLine();if(++n%30==0){log.flush();show("Log "+n+": "+line);}
                     }

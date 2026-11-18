@@ -15,6 +15,8 @@ import java.util.Set;
 final class Order1886PadBridge {
     private final File state;
     private boolean swapFaceButtons;
+    private boolean rightStickZRZ;
+    void setRightStickZRZ(boolean enabled){rightStickZRZ=enabled;}
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Set<String> keys = new LinkedHashSet<>();
     private final Set<String> virtualKeys = new LinkedHashSet<>();
@@ -98,14 +100,15 @@ final class Order1886PadBridge {
         ly=stick(axis(e,MotionEvent.AXIS_Y));
         // Xbox / XInput typically reports right stick as RX/RY and triggers
         // on Z/RZ; classic Android pads use Z/RZ for the right stick.
-        rx=stick(axis(e,hasRxRy?MotionEvent.AXIS_RX:MotionEvent.AXIS_Z));
-        ry=stick(axis(e,hasRxRy?MotionEvent.AXIS_RY:MotionEvent.AXIS_RZ));
+        boolean useRxRy=hasRxRy&&!rightStickZRZ;
+        rx=stick(axis(e,useRxRy?MotionEvent.AXIS_RX:MotionEvent.AXIS_Z));
+        ry=stick(axis(e,useRxRy?MotionEvent.AXIS_RY:MotionEvent.AXIS_RZ));
         int leftAxis=range(device,MotionEvent.AXIS_LTRIGGER)!=null
                 ?MotionEvent.AXIS_LTRIGGER:range(device,MotionEvent.AXIS_BRAKE)!=null
-                ?MotionEvent.AXIS_BRAKE:hasRxRy?MotionEvent.AXIS_Z:-1;
+                ?MotionEvent.AXIS_BRAKE:useRxRy?MotionEvent.AXIS_Z:-1;
         int rightAxis=range(device,MotionEvent.AXIS_RTRIGGER)!=null
                 ?MotionEvent.AXIS_RTRIGGER:range(device,MotionEvent.AXIS_GAS)!=null
-                ?MotionEvent.AXIS_GAS:hasRxRy?MotionEvent.AXIS_RZ:-1;
+                ?MotionEvent.AXIS_GAS:useRxRy?MotionEvent.AXIS_RZ:-1;
         l2=leftAxis<0?0:trigger(axis(e,leftAxis),range(device,leftAxis));
         r2=rightAxis<0?0:trigger(axis(e,rightAxis),range(device,rightAxis));
         hatX=Math.round(axis(e,MotionEvent.AXIS_HAT_X));
