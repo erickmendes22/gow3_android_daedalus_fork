@@ -306,6 +306,7 @@ inline u32 UniformBufferSizeLog2(u64 size) {
 inline bool UseUniformBuffer(const Info& info, const BufferResource& desc) {
     constexpr auto allowed = IR::Type::U32 | IR::Type::F32;
     const int level = UniformBufferLevel();
+    if (!UniformBufferStandardLayoutSupported()) return false;
     const bool stage_ok = (level >= 1 && info.sw_stage == SwStage::Vertex) ||
                           (level >= 2 && info.sw_stage == SwStage::Fragment);
     // Never evaluate a SHARP for auxiliary/special buffers. Such buffers can
