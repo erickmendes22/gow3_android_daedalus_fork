@@ -1141,6 +1141,7 @@ ImageId TextureCache::ExpandImage(const ImageInfo& info, ImageId image_id) {
 ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     const auto& info = desc.info;
     ASSERT(info.guest_address != 0);
+    const bool storage_requested = desc.type == BindingType::Storage;
 
     std::scoped_lock lock{mutex};
 
@@ -1188,6 +1189,13 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         cached.bank_swizzle == info.bank_swizzle && cached.alt_tile == info.alt_tile &&
         cached.is_pow2 == bool(info.props.is_pow2) &&
         cached.is_block == bool(info.props.is_block) &&
+        // An image originally allocated for an AFBC-eligible render target
+        // cannot be bound as a storage descriptor. Reject this cached hit
+        // and upgrade through the existing preserve-pixels path below.
+        (!storage_requested ||
+            (cached.image_id &&
+             bool(slot_images[cached.image_id].usage_flags &
+                  vk::ImageUsageFlagBits::eStorage))) &&
         !Gow3Toggle::Disabled(Gow3Toggle::FindImageCache)) {
         Image& image = slot_images[cached.image_id];
         image.tick_accessed_last = scheduler.CurrentTick();
@@ -1301,6 +1309,18 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             created.reason = "fewer resources";
         }
     }
+    // Mali/PanVK: an earlier render-target-only allocation can use AFBC.
+    // If the guest later binds the same image to imageStore, the Vulkan
+    // STORAGE usage is mandatory. Recreate that image with STORAGE and copy
+    // its current GPU pixels, rather than reading/writing an illegal image.
+    // This is the same ExpandImage path used for resource growth.
+    if (image_id && storage_requested &&
+        !(slot_images[image_id].usage_flags & vk::ImageUsageFlagBits::eStorage)) {
+        auto upgraded = slot_images[image_id].info;
+        upgraded.props.needs_storage = 1;
+        image_id = ExpandImage(upgraded, image_id);
+    }
+
     // Create and register a new image
     if (!image_id) {
         image_id = slot_images.insert(instance, runtime, slot_image_views, info);
