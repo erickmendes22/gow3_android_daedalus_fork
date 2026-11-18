@@ -2408,6 +2408,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         upscaler->Enabled() && camera_motion->Depth();
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
+        const bool uniform = bool(bind_ubo_masks[u32(stage.sw_stage)] &
+                                  (u64{1} << buffer_index));
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
