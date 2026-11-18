@@ -90,6 +90,12 @@ jobs:
             -Igpu/third_party/sirit/externals/SPIRV-Headers/include \
             tests/test_mali_gpu_early_z.cpp -o /tmp/gow3-mali-early-z
           /tmp/gow3-mali-early-z
+      - name: Verify bounded VkBuffer hazard ranges before scoped barriers go live
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
+            tests/test_mali_buffer_barrier_regions.cpp -o /tmp/gow3-mali-buffer-barriers
+          /tmp/gow3-mali-buffer-barriers
+          grep -q 'GOW3_MALI_LOCAL_BUFFER_BARRIERS' tools/android/bionic/run-bionic.sh
       - name: Compile C++ requirements guard with negative safety cases
         run: |
           python3 -m unittest discover -s tests -p 'test_mali_retired_memory_rebind.py' -v
