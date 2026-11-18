@@ -376,6 +376,10 @@ public:
     }
 
     /// Returns the minimum required alignment for uniforms
+    bool IsUniformBufferStandardLayoutSupported() const {
+        return vk12_features.uniformBufferStandardLayout == VK_TRUE;
+    }
+
     vk::DeviceSize UniformMinAlignment() const {
         return properties.limits.minUniformBufferOffsetAlignment;
     }
