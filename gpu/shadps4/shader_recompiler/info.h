@@ -278,6 +278,18 @@ inline int UniformBufferLevel() {
     return level;
 }
 
+// A UBO with ArrayStride=4 needs the Vulkan 1.2
+// uniformBufferStandardLayout feature. The default user setting stays ON,
+// but an old PanVK variant that does not advertise the feature must not be
+// sent invalid SPIR-V. Set once by Instance after physical-device probing.
+inline std::atomic_bool uniform_std430_supported{false};
+inline void SetUniformBufferStandardLayoutSupported(bool value) {
+    uniform_std430_supported.store(value, std::memory_order_release);
+}
+inline bool UniformBufferStandardLayoutSupported() {
+    return uniform_std430_supported.load(std::memory_order_acquire);
+}
+
 /// Largest declared uniform buffer (Vulkan guarantees maxUniformBufferRange >= 16384; Turnip
 /// reports 65536).
 constexpr u32 MaxUniformBufferBytes = 16384;
