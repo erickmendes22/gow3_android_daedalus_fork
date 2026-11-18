@@ -57,6 +57,12 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
+          # Prevent distributing an APK with silent storage-image writes or
+          # merged driver trace lines. Unit tests above check these invariants;
+          # keep independent preflight assertions in the release packaging job.
+          grep -q 'feature_flags |= vk::FormatFeatureFlagBits2::eStorageImage;' gpu/shadps4/video_core/texture_cache/image.cpp
+          grep -q '!info.props.needs_storage' gpu/shadps4/video_core/texture_cache/image.cpp
+          grep -q 'GOW3_MALI_VMA_DRIVER_CALL' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           python3 -m unittest discover -s tests -p 'test_mali_afbc_color_rt.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
