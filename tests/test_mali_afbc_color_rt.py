@@ -42,6 +42,15 @@ class MaliAfbcColorRtTests(unittest.TestCase):
         self.assertIn("FreeImage(image_id);", cache)
         self.assertIn("CountAfbcStorageUpgrade()", cache)
 
+    def test_writable_block_textures_never_transcode_to_nonstorage_etc2(self):
+        image = read("gpu/shadps4/video_core/texture_cache/image.cpp")
+        start = image.index("const bool want_etc2 =")
+        stop = image.index("const bool bc1 =", start)
+        self.assertIn("!info.props.needs_storage", image[start:stop])
+        self.assertIn("transcoded_bc_to_etc2 = true", image)
+        self.assertIn("props.needs_storage = desc.is_written;", read(
+            "gpu/shadps4/video_core/texture_cache/image_info.cpp"))
+
     def test_transfers_do_not_require_storage_usage(self):
         runtime = read("gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp")
         clear = runtime[runtime.index("void Runtime::ClearImage("):
