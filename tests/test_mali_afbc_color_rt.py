@@ -51,6 +51,29 @@ class MaliAfbcColorRtTests(unittest.TestCase):
         self.assertIn("props.needs_storage = desc.is_written;", read(
             "gpu/shadps4/video_core/texture_cache/image_info.cpp"))
 
+    def test_real_storage_image_may_never_lose_required_usage(self):
+        # PanVK may reject speculative STORAGE for an otherwise sampled image,
+        # but imageStore requires an image actually created with STORAGE usage.
+        image = read("gpu/shadps4/video_core/texture_cache/image.cpp")
+        fallback = image[image.index("const bool want_etc2 ="):]
+        self.assertIn("!info.props.needs_storage &&", fallback)
+        self.assertIn("(usage_flags & vk::ImageUsageFlagBits::eStorage)", fallback)
+        self.assertIn("upgraded.props.needs_storage = 1;", read(
+            "gpu/shadps4/video_core/texture_cache/texture_cache.cpp"))
+
+    def test_mali_driver_diagnostics_use_real_line_terminators(self):
+        # Literal backslash-n merged successive Vulkan calls into one
+        # logcat line and hid the source of 400+ ms allocation stalls.
+        for path in (
+            "gpu/shadps4/video_core/texture_cache/image.cpp",
+            "gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp",
+        ):
+            source = read(path)
+            self.assertNotIn(r"\\n", source, path)
+        trace = read("gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp")
+        self.assertIn(r"\n", trace)
+        self.assertIn("GOW3_MALI_VMA_DRIVER_CALL", trace)
+
     def test_transfers_do_not_require_storage_usage(self):
         runtime = read("gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp")
         clear = runtime[runtime.index("void Runtime::ClearImage("):
