@@ -700,6 +700,7 @@ public:
 
     /// Ends current rendering scope.
     void EndRendering();
+    [[nodiscard]] bool IsRendering() const noexcept { return is_rendering; }
 
     /// Sets a function to be called on every scheduler submission.
     void SetSubmitCallback(SubmitFunc&& on_submit) {
