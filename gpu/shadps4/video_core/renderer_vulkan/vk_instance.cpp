@@ -578,11 +578,18 @@ bool Instance::CreateDevice() {
 
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+    // PushData stores the dword binding offset in one byte. A UBO alignment
+    // above 256 would overflow that field when BindBuffers aligns offsets.
+    // Use SSBO descriptors on such devices rather than crashing or reading
+    // the wrong constant word.
     Shader::SetUniformBufferStandardLayoutSupported(
-        vk12_features.uniformBufferStandardLayout == VK_TRUE);
-    std::printf("GOW3_UBO_DEVICE requested=%d standard_layout=%d active=%d\n",
+        vk12_features.uniformBufferStandardLayout == VK_TRUE &&
+        properties.limits.minUniformBufferOffsetAlignment <= 256);
+    std::printf("GOW3_UBO_DEVICE requested=%d standard_layout=%d min_align=%llu active=%d\n",
                 Shader::UniformBufferLevel(),
                 int(vk12_features.uniformBufferStandardLayout == VK_TRUE),
+                static_cast<unsigned long long>(
+                    properties.limits.minUniformBufferOffsetAlignment),
                 int(Shader::UniformBufferLevel() > 0 &&
                     Shader::UniformBufferStandardLayoutSupported()));
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
