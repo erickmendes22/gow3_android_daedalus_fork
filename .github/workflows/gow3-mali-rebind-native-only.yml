@@ -19,6 +19,8 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
       - 'gpu/shadps4/shader_recompiler/info.h'
+      - 'gpu/shadps4/shader_recompiler/profile.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_instance.h'
       - 'gpu/shadps4/shader_recompiler/specialization.h'
       - 'gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.cpp'
       - 'gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.h'
