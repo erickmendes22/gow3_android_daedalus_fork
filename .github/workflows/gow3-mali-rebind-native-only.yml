@@ -6,6 +6,7 @@ on:
       - analysis/gow3-bachata-mali-memory-20261106
       - analysis/gow3-mali-draw-criticalpath-20261109
       - perf/gow3-mali-bachata-gc-batch-20261112
+      - analysis/gow3-mali-double-fps-evidence-20261118
     paths:
       - '.github/workflows/gow3-mali-rebind-native-only.yml'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
@@ -17,6 +18,12 @@ on:
       - 'gpu/shadps4/video_core/amdgpu/liverpool.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'gpu/shadps4/shader_recompiler/info.h'
+      - 'gpu/shadps4/shader_recompiler/specialization.h'
+      - 'gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.cpp'
+      - 'gpu/shadps4/shader_recompiler/backend/spirv/spirv_emit_context.h'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp'
+      - 'tests/test_mali_uniform_buffer_port.py'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_common.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.h'
@@ -88,6 +95,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_draw_vertex_record_fusion.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_graphics_bind_cache.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
