@@ -439,6 +439,13 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
                             VK_IMAGE_CREATE_PROTECTED_BIT)))
         return false;
 
+    // This cost was previously invisible to image_vk_allocate: on failed
+    // compatibility searches vkCreateImage/getImageMemoryRequirements2 is
+    // performed here, destroyed, then the caller creates another VkImage.
+    // Only Mali's existing lightweight perf heartbeat records the duration.
+    const MaliPerfStats::Scoped rebind_probe{
+        MaliPerfStats::Stage::ImageRebindProbe, MaliPerfStats::Enabled()};
+
     auto& bc = GetBcPool();
     auto& rgba = GetRgba128Pool();
     auto& transient = GetTransientPool();
@@ -477,6 +484,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
         }
         if (!has_candidate) return false;
     }
+    MaliPerfStats::CountImageRebindCandidate();
     const auto create_result = device.createImage(requested_ci);
     if (create_result.result != vk::Result::eSuccess) return false;
     const vk::Image new_image = create_result.value;
@@ -533,6 +541,9 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
         }
     }
     if (!retired.image) {
+        // We already made a driver VkImage, and the normal allocation below
+        // will create a second one. Count this wasted probe explicitly.
+        MaliPerfStats::CountImageRebindIncompatible();
         device.destroyImage(new_image);
         return false;
     }
@@ -552,6 +563,7 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     image = new_handle;
     allocation = retired.allocation;
     bytes = retired.bytes;
+    MaliPerfStats::CountImageRebindSuccess();
     static std::atomic<uint64_t> rebind_hits{0};
     const auto hits = rebind_hits.fetch_add(1, std::memory_order_relaxed) + 1;
     if (hits <= 4 || (hits & 63u) == 0) {
