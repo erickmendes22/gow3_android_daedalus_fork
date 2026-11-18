@@ -554,6 +554,7 @@ bool Rasterizer::PendingWriteOverlaps(VAddr address, u64 size) {
 }
 
 void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDraw* prepared,
+                           u64 uniform_mask,
                            boost::container::static_vector<RingBinding, Shader::NUM_BUFFERS>& out) {
     const PreparedStage* prepared_stage = nullptr;
     if (prepared && !Gow3Toggle::Disabled(Gow3Toggle::PreparedResources)) {
