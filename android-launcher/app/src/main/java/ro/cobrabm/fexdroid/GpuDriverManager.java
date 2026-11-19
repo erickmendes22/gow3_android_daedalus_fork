@@ -16,8 +16,8 @@ public final class GpuDriverManager {
     // PanVK Mali support is experimental, matching ducvd89/Bloodborne-Android.
     private static final String PANVK_ZIP="PanVK-android-v3.2-universal-2a9358a.zip";
     private static final String PANVK_SHA256="68d4eccc1442cb0bef08228c90127388e68bf6087898abc492c717b9a06ca61f";
-    // Newer Mesa/PanVK driver is explicitly selectable for Mali A/B comparison.
-    // Do not change the automatic driver or any Adreno/Exynos selections.
+    // Newer Mesa/PanVK driver remains explicitly selectable, but Bachata V3
+    // is the automatic Mali G615/G720 parity baseline. Adreno/Exynos unchanged.
     private static final String PANVK_NEXT_ZIP="Mesa-PanVK-Android-v26.3.1-795ca7ff.adpkg.zip";
     private static final String PANVK_NEXT_SHA256="0c61ef0cdd5c9314715c4a0cc34a5929dbd727ce7a30545b947577e83600b900";
     // Increment when the default driver generation changes again. The
@@ -104,22 +104,10 @@ public final class GpuDriverManager {
             Build.VERSION.SDK_INT>=31 ? Build.SOC_MANUFACTURER : "",kgsl,mali,maliRenderer());
     }
 
-    private static boolean nextPanvkVerifiedAutoDevice(Context context) {
-        // 26.3.1 carries CSF v12 / BC improvements intended for G720.
-        // Applies to BOTH the normal Bionic app and isolated malitest.
-        // Device-specific FPS still requires gameplay confirmation.
-        if (!supported(context)) return false;
-        String renderer=maliRenderer();
-        if (!supportedCsfMali(renderer)) return false;
-        String normalized=renderer.toLowerCase(Locale.ROOT);
-        return normalized.contains("g720") || normalized.contains("g615");
-    }
-
     static String migratedMaliSelection(String oldSelection, boolean eligibleMali,
                                         boolean migrationApplied) {
-        // Before this release, an explicit built-in "panvk" selection was
-        // commonly retained from older installs, preventing improvements
-        // to the default driver from ever reaching those users.
+        // Old explicit "panvk" selections can become auto without changing
+        // the actual V3 driver generation selected for Mali.
         // Convert ONLY that old 3.2 selection, ONCE, to auto. Do not
         // overwrite "system", custom packages, or a newer explicit choice.
         return eligibleMali && !migrationApplied && "panvk".equals(oldSelection)
@@ -134,8 +122,7 @@ public final class GpuDriverManager {
         return name.contains("g720") || name.contains("g615");
     }
     public static String automaticDescription(Context context) {
-        if (maliCandidate()) return context.getString(nextPanvkVerifiedAutoDevice(context)
-            ? R.string.gpu_driver_panvk_next : R.string.gpu_driver_panvk);
+        if (maliCandidate()) return context.getString(R.string.gpu_driver_panvk);
         if (adrenoCandidate()) return context.getString(R.string.gpu_driver_adreno_auto);
         return context.getString(R.string.gpu_driver_system);
     }
@@ -187,7 +174,7 @@ public final class GpuDriverManager {
         if (!old.equals(migrated)) editor.putString("gpu_driver",migrated);
         if (editor.commit()) {
             if (!old.equals(migrated))
-                android.util.Log.i("GoW3","Mali G615/G720 driver upgraded from PanVK 3.2 to 26.3.1 automatic");
+                android.util.Log.i("GoW3","Mali G615/G720 selection migrated to auto (PanVK V3 parity)");
             return migrated;
         }
         // If storage fails, the next call can retry; don't report success.
@@ -249,28 +236,18 @@ public final class GpuDriverManager {
             ("auto".equals(selection) && maliCandidate())) {
             if (Build.VERSION.SDK_INT>=35) {
                 try {
-                    final boolean wantNext = "panvk-next".equals(selection) ||
-                        ("auto".equals(selection) && nextPanvkVerifiedAutoDevice(context));
-                    DriverArchive.Installed drv;
-                    boolean usingNext = wantNext;
-                    try {
-                        drv = bundledPanvk(context, wantNext);
-                    } catch (Exception nextFailed) {
-                        if (!"auto".equals(selection) || !wantNext) throw new IOException("Selected PanVK driver unavailable",nextFailed);
-                        // A failed auto-update must not leave a supported Mali
-                        // device on the stock Vulkan loader. Use the old, pinned
-                        // PanVK instead; explicit driver selection never falls back.
-                        android.util.Log.w("GoW3","PanVK 26.3.1 auto unavailable; using 3.2",nextFailed);
-                        drv = bundledPanvk(context, false);
-                        usingNext = false;
-                    }
+                    // The PanVK V3 source matches the Bachata 0.2.5 Mali
+                    // patch series. Do not silently override this parity
+                    // baseline with the separate 26.3.1 driver.
+                    final boolean wantNext = "panvk-next".equals(selection);
+                    DriverArchive.Installed drv = bundledPanvk(context, wantNext);
                     DriverArchive.validateLibrary(drv.library);
                     environment.put("GOW3_BIONIC_DRIVER","custom");
                     environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
                     environment.put("GOW3_GPU_AUTO_REASON",
-                        usingNext
-                            ? "PanVK 26.3.1 (default Mali G720/G615)"
-                            : "PanVK 3.2 (legacy compatibility)");
+                        wantNext
+                            ? "PanVK 26.3.1 (explicit alternative)"
+                            : "PanVK 3.2 (Bachata V3 Mali parity)");
                     return;
                 } catch (Exception ex) {
                     if ("panvk".equals(selection) || "panvk-next".equals(selection))
