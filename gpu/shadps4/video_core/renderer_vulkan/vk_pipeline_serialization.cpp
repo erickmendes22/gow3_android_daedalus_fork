@@ -934,6 +934,17 @@ bool PipelineCache::CheckCacheProfile() {
     std::vector<u8> profile_data{};
     db.Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
+        // If an interrupted previous session left shader blobs but no profile,
+        // they cannot be trusted as belonging to the current shader ABI.
+        // Preserve them instead of silently attaching a new profile to stale keys.
+        if (!EmulatorSettings.IsPipelineCacheArchived() &&
+            (db.CountBlobs(Storage::BlobType::PipelineKey) != 0 ||
+             db.CountBlobs(Storage::BlobType::ShaderMeta) != 0)) {
+            if (!db.ArchiveIncompatibleCache()) {
+                LOG_ERROR(Render, "Missing shader profile with old blobs; preserving existing cache");
+                return false;
+            }
+        }
         save_profile_and_schema();
         return false;
     }
