@@ -35,6 +35,9 @@ public:
     /// Keeps incompatible SPIR-V, pipeline keys and metadata for later recovery.
     /// Returns false if the old cache could not be preserved without data loss.
     [[nodiscard]] bool ArchiveIncompatibleCache();
+    /// Reactivates a previously preserved generation with the same profile and schema.
+    [[nodiscard]] bool RestoreCompatibleArchive(const std::vector<u8>& profile_bytes,
+                                                const std::vector<u8>& schema_bytes);
 
     bool Save(BlobType type, const std::string& name, std::vector<u8>&& data);
     bool Save(BlobType type, const std::string& name, std::vector<u32>&& data);
