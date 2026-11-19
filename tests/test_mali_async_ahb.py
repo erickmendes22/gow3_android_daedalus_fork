@@ -55,8 +55,10 @@ class MaliAsyncPresentTests(unittest.TestCase):
     def test_ahb_resize_is_serialized_with_worker(self):
         body = PRESENTER.read_text()
         self.assertIn('mali_cpu_swapchain_mutex', body)
-        self.assertIn('if (mali_swapchain_guard.owns_lock()) mali_swapchain_guard.unlock();', body)
+        self.assertIn('if (resize_needed || next_vsync != mali_cpu_last_vsync)', body)
         self.assertIn('std::scoped_lock lock{mali_cpu_swapchain_mutex};', body)
+        self.assertIn('mali_cpu_last_vsync = next_vsync;', body)
+        self.assertIn('mali_cpu_last_vsync = Gow3Settings::Get().vsync.load();', body)
 
     @staticmethod
     def launch_profile(driver, overrides=None):
