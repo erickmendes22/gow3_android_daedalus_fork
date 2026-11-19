@@ -97,8 +97,11 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         # Cold driver-hash cache never adopts arbitrary existing .key files:
         # restoring an archive requires the exact profile AND schema match.
         storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
-        self.assertIn('matches(candidate.path() / "profile.bin", profile_bytes)', storage)
+        self.assertIn('matches_profile(candidate.path() / "profile.bin")', storage)
         self.assertIn('matches(candidate.path() / "gow3-cache-schema.bin", schema_bytes)', storage)
+        self.assertIn('Shader::Profile previous{}, current{};', storage)
+        self.assertIn('return previous == current;', storage)
+        self.assertNotIn('matches(candidate.path() / "profile.bin", profile_bytes)', storage)
 
     def test_shader_cache_closure_drains_pending_writes(self):
         storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
