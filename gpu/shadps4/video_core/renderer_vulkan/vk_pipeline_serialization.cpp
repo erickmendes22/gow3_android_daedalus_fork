@@ -936,7 +936,10 @@ bool PipelineCache::CheckCacheProfile() {
     }
     if (profile_data.size() != sizeof(Shader::Profile) || cached_profile != profile) {
         LOG_WARNING(Render, "Pipeline cache isn't compatible with current system: rebuilding it");
-        db.Clear();
+        if (!db.ArchiveIncompatibleCache()) {
+            LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
+            return false;
+        }
         save_profile_and_schema();
         return false;
     }
@@ -947,7 +950,10 @@ bool PipelineCache::CheckCacheProfile() {
             std::memcmp(stored_schema.data(), schema.data(), sizeof(schema)) != 0) {
             std::printf("GOW3_MALI_SHADER_SCHEMA status=reset-old-cache meta=%u binary=%u key=%u\n",
                         schema[0], schema[1], schema[2]);
-            db.Clear();
+            if (!db.ArchiveIncompatibleCache()) {
+            LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
+            return false;
+        }
             save_profile_and_schema();
             return false;
         }
