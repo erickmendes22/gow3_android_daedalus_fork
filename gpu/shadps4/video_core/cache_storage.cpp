@@ -408,6 +408,84 @@ bool DataBase::ArchiveIncompatibleCache() {
     return true;
 }
 
+bool DataBase::RestoreCompatibleArchive(const std::vector<u8>& profile_bytes,
+                                        const std::vector<u8>& schema_bytes) {
+    if (!opened || EmulatorSettings.IsPipelineCacheArchived() || profile_bytes.empty()) {
+        return false;
+    }
+    // A previous app/driver profile may become active again. Reuse its already
+    // compiled shaders rather than forcing another on-demand compilation.
+    const auto matches = [](const std::filesystem::path& path,
+                            const std::vector<u8>& expected) {
+        using namespace Common::FS;
+        const auto file = IOFile{path, FileAccessMode::Read};
+        if (!file.IsOpen() || file.GetSize() != expected.size()) {
+            return false;
+        }
+        std::vector<u8> data(expected.size());
+        file.Read(data);
+        return data == expected;
+    };
+    std::error_code ec;
+    for (const auto& candidate : std::filesystem::directory_iterator{cache_path, ec}) {
+        if (ec) {
+            return false;
+        }
+        if (!candidate.is_directory(ec) ||
+            !candidate.path().filename().string().starts_with("incompatible-")) {
+            ec.clear();
+            continue;
+        }
+        if (!matches(candidate.path() / "profile.bin", profile_bytes) ||
+            (!schema_bytes.empty() &&
+             !matches(candidate.path() / "gow3-cache-schema.bin", schema_bytes))) {
+            continue;
+        }
+        // Restore the identity first. A partially restored generation after a
+        // crash is still correctly marked, and warm-up reads only present blobs.
+        auto restore_file = [&](const std::filesystem::path& file) {
+            const auto dest = cache_path / file.filename();
+            if (std::filesystem::exists(dest, ec) || ec) {
+                return false;
+            }
+            std::filesystem::rename(file, dest, ec);
+            return !ec;
+        };
+        if (!restore_file(candidate.path() / "profile.bin")) {
+            LOG_ERROR(Render, "Cannot restore compatible shader profile from {}",
+                      candidate.path().string());
+            return false;
+        }
+        if (!schema_bytes.empty() &&
+            !restore_file(candidate.path() / "gow3-cache-schema.bin")) {
+            LOG_ERROR(Render, "Cannot restore compatible shader schema from {}",
+                      candidate.path().string());
+            return false;
+        }
+        u64 restored = 0;
+        for (const auto& file : std::filesystem::directory_iterator{candidate.path(), ec}) {
+            if (ec || !file.is_regular_file(ec) || file.is_symlink(ec)) {
+                if (ec) return false;
+                continue;
+            }
+            const auto ext = file.path().extension();
+            if (ext != ".spv" && ext != ".meta" && ext != ".key") {
+                continue;
+            }
+            if (!restore_file(file.path())) {
+                LOG_ERROR(Render, "Cannot restore cached shader {}", file.path().string());
+                return false;
+            }
+            ++restored;
+        }
+        std::filesystem::remove(candidate.path(), ec); // ignore unexpected non-cache files
+        LOG_INFO(Render, "Restored {} shader-cache files from compatible generation",
+                 restored);
+        return true;
+    }
+    return false;
+}
+
 void DataBase::FinishPreload() {
     if (EmulatorSettings.IsPipelineCacheArchived()) {
         mz_zip_writer_init_from_reader(&zip_ar, cache_path.string().c_str());
