@@ -271,6 +271,155 @@ Presenter::~Presenter() {
     }
 }
 
+
+#ifdef __ANDROID__
+void Presenter::MaliCpuPresentWorker(std::stop_token stop_token) {
+    for (;;) {
+        MaliCpuPresentJob job{};
+        {
+            std::unique_lock lock{mali_cpu_jobs_mutex};
+            mali_cpu_jobs_cv.wait(lock, [&] {
+                return !mali_cpu_jobs.empty() || stop_token.stop_requested();
+            });
+            if (mali_cpu_jobs.empty()) {
+                if (stop_token.stop_requested()) return;
+                continue;
+            }
+            job = mali_cpu_jobs.front();
+            mali_cpu_jobs.pop_front();
+        }
+        CompleteMaliCpuPresentation(job);
+    }
+}
+
+void Presenter::CompleteMaliCpuPresentation(const MaliCpuPresentJob& job) {
+    Frame* frame = job.frame;
+    const bool mali_perf_sample = job.perf_sample;
+    const VkDeviceSize required = VkDeviceSize(frame->width) * frame->height * 4;
+        // Wait for this readback submission, not every outstanding GPU queue.
+        // The present_done fence is signaled after the transfer completes.
+        // A global device.waitIdle() serializes unrelated PanVK work per frame.
+        const auto mali_fence_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                      : MaliPerfStats::TimePoint{};
+        const auto done = instance.GetDevice().waitForFences(frame->present_done, true, ~0ull);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::FenceWait, mali_fence_start);
+        ASSERT_MSG(done == vk::Result::eSuccess,
+                   "MALI_CPU_PRESENT readback fence failed: {}", vk::to_string(done));
+        const auto mali_invalidate_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                           : MaliPerfStats::TimePoint{};
+        const VkResult invalidate =
+            vmaInvalidateAllocation(instance.GetAllocator(), frame->mali_cpu_readback_allocation,
+                                    0, required);
+        if (mali_perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::Invalidate, mali_invalidate_start);
+        ASSERT_MSG(invalidate == VK_SUCCESS,
+                   "MALI_CPU_PRESENT invalidate failed: {}",
+                   vk::to_string(vk::Result(invalidate)));
+        const u8* pixels = static_cast<const u8*>(frame->mali_cpu_readback_mapped);
+        // Sampling the RGBA readback and hashing pixels was diagnostic only.
+        // The actual readback + AHB delivery remain untouched.
+        static const bool mali_probe_enabled = [] {
+            const char* probe = std::getenv("GOW3_MALI_PRESENT_PROBE");
+            const char* capture = std::getenv("GOW3_MALI_AUTOCAPTURE");
+            const char* snapshots = std::getenv("GOW3_MALI_CPU_SNAPSHOTS");
+            return (probe && probe[0] == '1') || (capture && capture[0] == '1') ||
+                   (snapshots && snapshots[0] == '1');
+        }();
+        static u64 probe_count = 0;
+        static bool mali_seen_nonblack = false;
+        if (mali_probe_enabled) ++probe_count;
+        const bool periodic_probe = mali_probe_enabled &&
+                                    (probe_count <= 8 || probe_count % 120 == 0);
+        if (mali_probe_enabled && (periodic_probe || !mali_seen_nonblack)) {
+            u64 nonblack = 0, alpha_nonzero = 0, rgb_with_alpha = 0, sampled = 0;
+            u64 rgb_hash = 14695981039346656037ull;
+            for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {
+                const bool has_rgb = (pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0;
+                const bool has_alpha = pixels[i + 3] != 0;
+                nonblack += has_rgb;
+                // A constant nonblack *count* need not mean a frozen frame.
+                // Hash the sampled source RGB to distinguish actual changes.
+                for (u32 channel = 0; channel < 3; ++channel) {
+                    rgb_hash ^= pixels[i + channel];
+                    rgb_hash *= 1099511628211ull;
+                }
+                alpha_nonzero += has_alpha;
+                rgb_with_alpha += has_rgb && has_alpha;
+                ++sampled;
+            }
+            if (nonblack && !mali_seen_nonblack) {
+                mali_seen_nonblack = true;
+                mali_capture_first_content.store(true, std::memory_order_release);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW3_MALI_CAPTURE first_nonblack_output={} of {} at present_frame={}; "
+                            "requesting complete guest/post/cpu capture of next accepted frame",
+                            nonblack, sampled, probe_count);
+            }
+            if (periodic_probe || nonblack) {
+                LOG_WARNING(Render_Vulkan,
+                            "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{} "
+                            "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
+                            probe_count, frame->width, frame->height, nonblack, sampled,
+                            alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
+            }
+        }
+        if (frame->mali_capture_frame) {
+            const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/cpu_%03u_%ux%u.bmp",
+                          dir && *dir ? dir : "out/dump", frame->mali_capture_frame,
+                          frame->width, frame->height);
+            const bool ok = WriteMaliCaptureBmp(path, pixels, frame->width, frame->height,
+                                                swapchain.GetSurfaceFormat().format);
+            std::printf("GOW3_MALI_CAPTURE stage=cpu frame=%u path=%s ok=%d\n",
+                        frame->mali_capture_frame, path, int(ok));
+        }
+        const auto mali_ahb_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                    : MaliPerfStats::TimePoint{};
+        bool sent = false;
+        if (mali_cpu_async) {
+            std::scoped_lock lock{mali_cpu_swapchain_mutex};
+            const auto acquire_start = mali_perf_sample ? MaliPerfStats::Clock::now()
+                                                        : MaliPerfStats::TimePoint{};
+            if (swapchain.AcquireNextImage()) {
+                if (mali_perf_sample)
+                    MaliPerfStats::Record(MaliPerfStats::Stage::AcquireAhb, acquire_start);
+                sent = swapchain.PresentCpuPixels(
+                    pixels, frame->width, frame->height, frame->mali_capture_frame,
+                    mali_perf_sample);
+            } else {
+                LOG_WARNING(Render_Vulkan, "Mali async AHB unavailable; dropping this presentation");
+            }
+        } else {
+            sent = swapchain.PresentCpuPixels(
+                pixels, frame->width, frame->height, frame->mali_capture_frame,
+                mali_perf_sample);
+        }
+        if (mali_perf_sample) {
+            MaliPerfStats::Record(MaliPerfStats::Stage::AhbTotal, mali_ahb_start);
+            MaliPerfStats::ReportIfDue();
+        }
+        if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
+            MaliVisualTrace::ReportPresented(
+                frame->mali_trace_flip, frame->mali_trace_guest_address,
+                frame->mali_trace_source_uid, frame->width, frame->height, sent);
+        }
+
+    // Fence completion, invalidate and AHB delivery must precede frame reuse.
+    if (!job.is_reusing_frame) {
+        last_submit_frame.store(frame, std::memory_order_release);
+        {
+            std::scoped_lock lock{free_mutex};
+            free_queue.push(frame);
+        }
+        free_cv.notify_one();
+    }
+    if (!mali_cpu_async && !job.is_reusing_frame && job.is_game_frame)
+        DebugState.IncFlipFrameNum();
+}
+#endif
+
 bool Presenter::IsVideoOutSurface(const AmdGpu::ColorBuffer& color_buffer) const {
     return std::ranges::find(vo_buffers_addr, color_buffer.Address()) != vo_buffers_addr.cend();
 }
@@ -1057,15 +1206,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         const VkDeviceSize required = VkDeviceSize(frame->width) * frame->height * 4;
         ASSERT_MSG(frame->width && frame->height && required,
                    "MALI_CPU_PRESENT invalid frame dimensions");
-        if (required > mali_cpu_readback_size) {
-            if (mali_cpu_readback != VK_NULL_HANDLE) {
-                const auto idle = instance.GetDevice().waitIdle();
-                ASSERT_MSG(idle == vk::Result::eSuccess,
-                           "MALI_CPU_PRESENT cannot retire the old staging buffer: {}",
-                           vk::to_string(idle));
-                vmaDestroyBuffer(instance.GetAllocator(), mali_cpu_readback,
-                                 mali_cpu_readback_allocation);
-                mali_cpu_readback = VK_NULL_HANDLE;
+        if (required > frame->mali_cpu_readback_size) {
+            if (frame->mali_cpu_readback != VK_NULL_HANDLE) {
+                // This frame is reusable only after the worker's GPU fence
+                // and AHB copy finish. No device-wide idle is required.
+                vmaDestroyBuffer(instance.GetAllocator(), frame->mali_cpu_readback,
+                                 frame->mali_cpu_readback_allocation);
+                frame->mali_cpu_readback = VK_NULL_HANDLE;
             }
             const VkBufferCreateInfo buffer_ci{
                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1080,13 +1227,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             VmaAllocationInfo allocation_info{};
             const VkResult create_result =
                 vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &allocation_ci,
-                                &mali_cpu_readback, &mali_cpu_readback_allocation,
+                                &frame->mali_cpu_readback, &frame->mali_cpu_readback_allocation,
                                 &allocation_info);
             ASSERT_MSG(create_result == VK_SUCCESS && allocation_info.pMappedData,
                        "MALI_CPU_PRESENT staging allocation failed: {}",
                        vk::to_string(vk::Result(create_result)));
-            mali_cpu_readback_mapped = allocation_info.pMappedData;
-            mali_cpu_readback_size = required;
+            frame->mali_cpu_readback_mapped = allocation_info.pMappedData;
+            frame->mali_cpu_readback_size = required;
         }
         auto& cpu_scheduler = present_scheduler;
         const auto cmdbuf = cpu_scheduler.CommandBuffer();
@@ -1114,7 +1261,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .imageExtent = {frame->width, frame->height, 1},
         };
         cmdbuf.copyImageToBuffer(frame->image, vk::ImageLayout::eTransferSrcOptimal,
-                                 vk::Buffer{mali_cpu_readback}, region);
+                                 vk::Buffer{frame->mali_cpu_readback}, region);
         const vk::ImageMemoryBarrier restore_frame{
             .srcAccessMask = vk::AccessFlagBits::eTransferRead,
             .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
@@ -1137,100 +1284,17 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         cpu_scheduler.Flush(cpu_info);
         if (mali_perf_sample)
             MaliPerfStats::Record(MaliPerfStats::Stage::ReadbackSubmit, mali_submit_start);
-        // Wait for this readback submission, not every outstanding GPU queue.
-        // The present_done fence is signaled after the transfer completes.
-        // A global device.waitIdle() serializes unrelated PanVK work per frame.
-        const auto mali_fence_start = mali_perf_sample ? MaliPerfStats::Clock::now()
-                                                      : MaliPerfStats::TimePoint{};
-        const auto done = instance.GetDevice().waitForFences(frame->present_done, true, ~0ull);
-        if (mali_perf_sample)
-            MaliPerfStats::Record(MaliPerfStats::Stage::FenceWait, mali_fence_start);
-        ASSERT_MSG(done == vk::Result::eSuccess,
-                   "MALI_CPU_PRESENT readback fence failed: {}", vk::to_string(done));
-        const auto mali_invalidate_start = mali_perf_sample ? MaliPerfStats::Clock::now()
-                                                           : MaliPerfStats::TimePoint{};
-        const VkResult invalidate =
-            vmaInvalidateAllocation(instance.GetAllocator(), mali_cpu_readback_allocation,
-                                    0, required);
-        if (mali_perf_sample)
-            MaliPerfStats::Record(MaliPerfStats::Stage::Invalidate, mali_invalidate_start);
-        ASSERT_MSG(invalidate == VK_SUCCESS,
-                   "MALI_CPU_PRESENT invalidate failed: {}",
-                   vk::to_string(vk::Result(invalidate)));
-        const u8* pixels = static_cast<const u8*>(mali_cpu_readback_mapped);
-        // Sampling the RGBA readback and hashing pixels was diagnostic only.
-        // The actual readback + AHB delivery remain untouched.
-        static const bool mali_probe_enabled = [] {
-            const char* probe = std::getenv("GOW3_MALI_PRESENT_PROBE");
-            const char* capture = std::getenv("GOW3_MALI_AUTOCAPTURE");
-            const char* snapshots = std::getenv("GOW3_MALI_CPU_SNAPSHOTS");
-            return (probe && probe[0] == '1') || (capture && capture[0] == '1') ||
-                   (snapshots && snapshots[0] == '1');
-        }();
-        static u64 probe_count = 0;
-        static bool mali_seen_nonblack = false;
-        if (mali_probe_enabled) ++probe_count;
-        const bool periodic_probe = mali_probe_enabled &&
-                                    (probe_count <= 8 || probe_count % 120 == 0);
-        if (mali_probe_enabled && (periodic_probe || !mali_seen_nonblack)) {
-            u64 nonblack = 0, alpha_nonzero = 0, rgb_with_alpha = 0, sampled = 0;
-            u64 rgb_hash = 14695981039346656037ull;
-            for (VkDeviceSize i = 0; i + 3 < required; i += 4 * 64) {
-                const bool has_rgb = (pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0;
-                const bool has_alpha = pixels[i + 3] != 0;
-                nonblack += has_rgb;
-                // A constant nonblack *count* need not mean a frozen frame.
-                // Hash the sampled source RGB to distinguish actual changes.
-                for (u32 channel = 0; channel < 3; ++channel) {
-                    rgb_hash ^= pixels[i + channel];
-                    rgb_hash *= 1099511628211ull;
-                }
-                alpha_nonzero += has_alpha;
-                rgb_with_alpha += has_rgb && has_alpha;
-                ++sampled;
+        const MaliCpuPresentJob job{frame, is_reusing_frame, is_game_frame, mali_perf_sample};
+        if (mali_cpu_async) {
+            {
+                std::scoped_lock lock{mali_cpu_jobs_mutex};
+                mali_cpu_jobs.push_back(job);
             }
-            if (nonblack && !mali_seen_nonblack) {
-                mali_seen_nonblack = true;
-                mali_capture_first_content.store(true, std::memory_order_release);
-                LOG_WARNING(Render_Vulkan,
-                            "GOW3_MALI_CAPTURE first_nonblack_output={} of {} at present_frame={}; "
-                            "requesting complete guest/post/cpu capture of next accepted frame",
-                            nonblack, sampled, probe_count);
-            }
-            if (periodic_probe || nonblack) {
-                LOG_WARNING(Render_Vulkan,
-                            "MALI_CPU_PRESENT_SOURCE frame={} size={}x{} nonblack={}/{} "
-                            "alpha_nonzero={}/{} rgb_with_alpha={}/{} rgb_hash={:016x}",
-                            probe_count, frame->width, frame->height, nonblack, sampled,
-                            alpha_nonzero, sampled, rgb_with_alpha, sampled, rgb_hash);
-            }
+            mali_cpu_jobs_cv.notify_one();
+            if (!is_reusing_frame && is_game_frame) DebugState.IncFlipFrameNum();
+        } else {
+            CompleteMaliCpuPresentation(job);
         }
-        if (frame->mali_capture_frame) {
-            const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");
-            char path[512];
-            std::snprintf(path, sizeof(path), "%s/cpu_%03u_%ux%u.bmp",
-                          dir && *dir ? dir : "out/dump", frame->mali_capture_frame,
-                          frame->width, frame->height);
-            const bool ok = WriteMaliCaptureBmp(path, pixels, frame->width, frame->height,
-                                                swapchain.GetSurfaceFormat().format);
-            std::printf("GOW3_MALI_CAPTURE stage=cpu frame=%u path=%s ok=%d\n",
-                        frame->mali_capture_frame, path, int(ok));
-        }
-        const auto mali_ahb_start = mali_perf_sample ? MaliPerfStats::Clock::now()
-                                                    : MaliPerfStats::TimePoint{};
-        const bool sent = swapchain.PresentCpuPixels(
-            pixels, frame->width, frame->height, frame->mali_capture_frame, mali_perf_sample);
-        if (mali_perf_sample) {
-            MaliPerfStats::Record(MaliPerfStats::Stage::AhbTotal, mali_ahb_start);
-            MaliPerfStats::ReportIfDue();
-        }
-        if (MaliVisualTrace::Enabled(instance.GetPhysicalDevice().getProperties().vendorID)) {
-            MaliVisualTrace::ReportPresented(
-                frame->mali_trace_flip, frame->mali_trace_guest_address,
-                frame->mali_trace_source_uid, frame->width, frame->height, sent);
-        }
-        free_frame();
-        if (!is_reusing_frame && is_game_frame) DebugState.IncFlipFrameNum();
         return;
     }
 #endif
