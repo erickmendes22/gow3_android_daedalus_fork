@@ -24,7 +24,7 @@ public:
     using TimePoint = Clock::time_point;
 
     enum class Stage : unsigned {
-        PrepareFrame, FramesAheadWait, AcquireAhb, ReadbackSetup,
+        PrepareFrame, FramesAheadWait, AcquireAhb, AsyncQueueDelay, ReadbackSetup,
         ReadbackSubmit, FenceWait, Invalidate, AhbTotal,
         AhbLock, AhbCopy, AhbUnlock, AhbIpc,
         TextureGc, SyncTextureDownload,
@@ -240,7 +240,7 @@ public:
                                                             std::memory_order_relaxed))
             return;
         constexpr const char* names[]{
-            "prepare", "ahead_wait", "acquire_ahb", "rb_setup",
+            "prepare", "ahead_wait", "acquire_ahb", "async_queue_wait", "rb_setup",
             "rb_submit", "fence_wait", "invalidate", "ahb_total",
             "ahb_lock", "ahb_copy", "ahb_unlock", "ahb_ipc",
             "texture_gc", "texture_sync_download",
