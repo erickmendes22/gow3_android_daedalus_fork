@@ -82,6 +82,25 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn('db.Save(Storage::BlobType::ShaderProfile, "profile"', self.code)
         self.assertIn('mali_schema = !EmulatorSettings.IsPipelineCacheArchived()', self.code)
 
+    def test_shader_cache_closure_drains_pending_writes(self):
+        storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
+        self.assertIn('accepting_requests = false;', storage)
+        self.assertIn('request_cv.notify_all();', storage)
+        self.assertIn('io_worker.join(); // The worker drains every request', storage)
+        self.assertIn('if (stoken.stop_requested()) {', storage)
+        self.assertIn('if (!accepting_requests)', storage)
+        self.assertNotIn('while (!stoken.stop_requested())', storage)
+        self.assertNotIn('num_requests', storage)
+
+    def test_archive_is_non_destructive_and_restorable(self):
+        storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
+        self.assertIn('bool DataBase::ArchiveIncompatibleCache()', storage)
+        self.assertIn('bool DataBase::RestoreCompatibleArchive(', storage)
+        self.assertIn('std::filesystem::rename(entry.path(), archive', storage)
+        self.assertIn('std::filesystem::rename(file, dest, ec)', storage)
+        self.assertIn('file.path().extension()', storage)
+        self.assertNotIn('std::filesystem::remove(entry.path()', storage)
+
     def test_keeps_background_warmup_and_private_mali_driver_cache(self):
         self.assertIn("return StartBackgroundWarmUp();", self.code)
         self.assertIn("warm.mali_worker_cache", self.code)
