@@ -74,12 +74,46 @@ Scheduler::~Scheduler() {
 }
 
 void Scheduler::BeginRendering(const RenderState& new_state) {
-    if (is_rendering && render_state == new_state) {
+    RenderState effective_state = new_state;
+#ifdef __ANDROID__
+    // GoW3 may request attachment-less graphics passes with a 65535x65535
+    // nominal render area (16-bit max). PanVK must size/track the tile region
+    // even though the guest's dynamic scissors cover only a small rectangle.
+    // A render area larger than the union of active scissors cannot produce
+    // additional fragments. Keep attachment-backed passes completely intact.
+    const bool mali = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    const char* disable = std::getenv("GOW3_MALI_ATTACHMENTLESS_SCISSOR_AREA");
+    if (mali && (!disable || disable[0] != '0') &&
+        !new_state.depth_stencil_attachment.has_depth &&
+        !new_state.depth_stencil_attachment.has_stencil) {
+        bool has_color_attachment = false;
+        for (u32 cb = 0; cb < new_state.num_color_attachments; ++cb) {
+            has_color_attachment |= bool(new_state.color_attachments[cb].image_view);
+        }
+        if (!has_color_attachment && !dynamic_state.scissors.empty()) {
+            u32 right = 1, bottom = 1;
+            for (const auto& scissor : dynamic_state.scissors) {
+                // Offscreen negative offsets are valid; saturate to the
+                // positive framebuffer extent before narrowing to u16.
+                const s64 x = s64(scissor.offset.x) + scissor.extent.width;
+                const s64 y = s64(scissor.offset.y) + scissor.extent.height;
+                right = std::max(right, u32(std::clamp<s64>(x, 1, new_state.width)));
+                bottom = std::max(bottom, u32(std::clamp<s64>(y, 1, new_state.height)));
+            }
+            effective_state.width = u16(std::min<u32>(effective_state.width, right));
+            effective_state.height = u16(std::min<u32>(effective_state.height, bottom));
+        }
+    }
+#endif
+    // Include the effective area in render-state equality. If the scissor
+    // grows on a later draw, end the earlier pass before expanding its area.
+    if (is_rendering && render_state == effective_state) {
         return;
     }
     EndRendering();
     is_rendering = true;
-    render_state = new_state;
+    render_state = effective_state;
 
     std::array<vk::RenderingAttachmentInfo, 8> color_attachments;
     for (u32 i = 0; i < render_state.num_color_attachments; ++i) {
