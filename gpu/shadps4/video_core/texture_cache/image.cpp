@@ -1090,6 +1090,27 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         ((bc_pool_enabled && info.props.is_block) ||
          (rgba128_pool_enabled && image_ci.format == vk::Format::eR32G32B32A32Uint) ||
          transient_color);
+    // Only the *actual* construction of these uncommon guest formats matters.
+    // CollectImageFormatInfo probes every possible PS4 format on startup and
+    // cannot prove the game requested it or that it cost any frame time.
+    // Emit at most four events per format for a real guest image, without a
+    // readback, texture conversion, global trace or per-frame instrumentation.
+    if (is_mali &&
+        (info.pixel_format == vk::Format::eA2B10G10R10SnormPack32 ||
+         info.pixel_format == vk::Format::eD16UnormS8Uint)) {
+        static std::atomic<u32> snorm_runtime_uses{0}, d16s8_runtime_uses{0};
+        auto& count = info.pixel_format == vk::Format::eA2B10G10R10SnormPack32
+                          ? snorm_runtime_uses : d16s8_runtime_uses;
+        if (count.fetch_add(1, std::memory_order_relaxed) < 4) {
+            std::printf("GOW3_MALI_FORMAT_RUNTIME guest=%s backing=%s "
+                        "query_supported=%d required_features=%s size=%ux%u\n",
+                        vk::to_string(info.pixel_format).c_str(),
+                        vk::to_string(image_ci.format).c_str(),
+                        int(image_format_properties.result == vk::Result::eSuccess),
+                        vk::to_string(format_features).c_str(),
+                        info.size.width, info.size.height);
+        }
+    }
     backing->image.Create(image_ci);
     // A hit reuses existing driver/VMA memory and must not be counted as a
     // fresh image_alloc_bc_mib allocation in future performance logs.
