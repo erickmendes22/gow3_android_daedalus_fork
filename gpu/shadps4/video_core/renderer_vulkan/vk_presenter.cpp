@@ -179,6 +179,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
                      instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
                      (!async_opt || async_opt[0] != '0');
     if (mali_cpu_async) {
+        mali_cpu_last_vsync = Gow3Settings::Get().vsync.load();
         mali_cpu_worker = std::jthread(
             [this](std::stop_token stop) { MaliCpuPresentWorker(stop); });
         LOG_INFO(Render_Vulkan, "Mali async CPU presentation: independent GPU readbacks and AHB worker");
@@ -1139,20 +1140,28 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Upstream bloodframe state changes take effect at the next real frame.
     PollLsfgState();
 #endif
-    // The AHB worker owns acquire/present; resize must not destroy those
-    // buffers concurrently with CPU writes or compositor releases.
+    // Never take the compositor mutex on a normal GPU frame. The worker may
+    // block waiting for an Android release fence. Locking here on EVERY flip
+    // would reintroduce the exact PM4 CPU stall this async path removes.
+    const bool resize_needed = window.GetWidth() != swapchain.GetWidth() ||
+                               window.GetHeight() != swapchain.GetHeight();
 #ifdef __ANDROID__
-    std::unique_lock<std::mutex> mali_swapchain_guard{mali_cpu_swapchain_mutex,
-                                                    std::defer_lock};
-    if (mali_cpu_async) mali_swapchain_guard.lock();
+    if (mali_cpu_async) {
+        const bool next_vsync = Gow3Settings::Get().vsync.load();
+        if (resize_needed || next_vsync != mali_cpu_last_vsync) {
+            std::scoped_lock lock{mali_cpu_swapchain_mutex};
+            swapchain.UpdateVsync();
+            if (resize_needed)
+                swapchain.Recreate(window.GetWidth(), window.GetHeight());
+            mali_cpu_last_vsync = next_vsync;
+        }
+    } else
 #endif
-    swapchain.UpdateVsync();
-    if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
-        swapchain.Recreate(window.GetWidth(), window.GetHeight());
+    {
+        swapchain.UpdateVsync();
+        if (resize_needed)
+            swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
-#ifdef __ANDROID__
-    if (mali_swapchain_guard.owns_lock()) mali_swapchain_guard.unlock();
-#endif
 
 #ifdef __ANDROID__
     if (lsfg && is_game_frame && !is_reusing_frame) {
