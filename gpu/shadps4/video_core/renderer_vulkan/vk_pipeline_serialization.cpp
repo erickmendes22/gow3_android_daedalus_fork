@@ -951,9 +951,9 @@ bool PipelineCache::CheckCacheProfile() {
             std::printf("GOW3_MALI_SHADER_SCHEMA status=reset-old-cache meta=%u binary=%u key=%u\n",
                         schema[0], schema[1], schema[2]);
             if (!db.ArchiveIncompatibleCache()) {
-            LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
-            return false;
-        }
+                LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
+                return false;
+            }
             save_profile_and_schema();
             return false;
         }
