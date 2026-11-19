@@ -1,4 +1,4 @@
-name: GoW III Mali-G720 AFBC UBO Scoped Barriers Test APK
+name: GoW III Mali G720 Bachata V3 Async CPU Present Bionic Test APK
 
 on:
   push:
@@ -67,12 +67,20 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_async_ahb.py' -v
+          python3 -m unittest discover -s tests -p 'test_g720_driver_2631_isolated.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
             tests/test_mali_buffer_barrier_regions.cpp -o /tmp/gow3-mali-barrier-regions
           /tmp/gow3-mali-barrier-regions
           grep -q 'GOW3_UBO=${GOW3_UBO:-2}' tools/android/bionic/run-bionic.sh
           grep -q 'GOW3_MALI_AFBC_COLOR_RT=${GOW3_MALI_AFBC_COLOR_RT:-1}' tools/android/bionic/run-bionic.sh
           grep -q 'GOW3_MALI_LOCAL_BUFFER_BARRIERS=${GOW3_MALI_LOCAL_BUFFER_BARRIERS:-1}' tools/android/bionic/run-bionic.sh
+          grep -q 'GOW3_MALI_ASYNC_PRESENT=${GOW3_MALI_ASYNC_PRESENT:-1}' tools/android/bionic/run-bionic.sh
+          grep -q 'PANVK_KBASE_GPU_SEMAPHORE_WAITS=${PANVK_KBASE_GPU_SEMAPHORE_WAITS:-1}' tools/android/bionic/run-bionic.sh
+          grep -q 'PANVK_KBASE_SKIP_HEAP_OPS=${PANVK_KBASE_SKIP_HEAP_OPS:-0}' tools/android/bionic/run-bionic.sh
+          grep -q 'void Presenter::MaliCpuPresentWorker' gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -q 'AsyncQueueDelay' gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h
           grep -q 'GOW3_UBO_DEVICE' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           grep -q 'uniform_buffer_masks' gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.h
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
@@ -119,7 +127,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-G720-AFBC-UBO-ScopedBarriers-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-G720-Bachata-V3-Async-AHB-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
@@ -128,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: God-of-War-III-Mali-AFBC-UBO-Build-Diagnostics
+          name: God-of-War-III-Mali-Bachata-V3-Async-AHB-Build-Diagnostics
           path: |
             .local-deps/android/bionic-build/**/*.log
             out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
