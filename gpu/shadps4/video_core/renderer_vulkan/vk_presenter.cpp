@@ -289,6 +289,8 @@ void Presenter::MaliCpuPresentWorker(std::stop_token stop_token) {
             job = mali_cpu_jobs.front();
             mali_cpu_jobs.pop_front();
         }
+        if (job.perf_sample)
+            MaliPerfStats::Record(MaliPerfStats::Stage::AsyncQueueDelay, job.queued_at);
         CompleteMaliCpuPresentation(job);
         {
             std::scoped_lock lock{mali_cpu_jobs_mutex};
@@ -1317,7 +1319,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         cpu_scheduler.Flush(cpu_info);
         if (mali_perf_sample)
             MaliPerfStats::Record(MaliPerfStats::Stage::ReadbackSubmit, mali_submit_start);
-        const MaliCpuPresentJob job{frame, is_reusing_frame, is_game_frame, mali_perf_sample};
+        const MaliCpuPresentJob job{
+            frame, is_reusing_frame, is_game_frame, mali_perf_sample,
+            mali_perf_sample ? MaliPerfStats::Clock::now() : MaliPerfStats::TimePoint{} };
         if (mali_cpu_async) {
             {
                 std::scoped_lock lock{mali_cpu_jobs_mutex};
