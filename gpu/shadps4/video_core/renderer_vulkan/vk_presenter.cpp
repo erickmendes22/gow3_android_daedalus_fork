@@ -173,6 +173,18 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         free_queue.push(&frame);
     }
 
+#ifdef __ANDROID__
+    const char* async_opt = std::getenv("GOW3_MALI_ASYNC_PRESENT");
+    mali_cpu_async = swapchain.UsesCpuPresentation() &&
+                     instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+                     (!async_opt || async_opt[0] != '0');
+    if (mali_cpu_async) {
+        mali_cpu_worker = std::jthread(
+            [this](std::stop_token stop) { MaliCpuPresentWorker(stop); });
+        LOG_INFO(Render_Vulkan, "Mali async CPU presentation: independent GPU readbacks and AHB worker");
+    }
+#endif
+
     // Android uses direct guest-resolution patches and never selects a
     // reconstruction pass. Avoid compiling two unused compute pipelines,
     // creating descriptors and reserving intermediary render targets.
@@ -237,13 +249,22 @@ Presenter::~Presenter() {
     Check(present_scheduler.CommandBuffer().reset());
     Check(flip_scheduler.CommandBuffer().reset());
 
-    const vk::Device device = instance.GetDevice();
 #ifdef __ANDROID__
-    if (mali_cpu_readback != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(instance.GetAllocator(), mali_cpu_readback, mali_cpu_readback_allocation);
+    if (mali_cpu_worker.joinable()) {
+        // All accepted frames are retired before destroying their Vulkan buffers.
+        mali_cpu_worker.request_stop();
+        mali_cpu_jobs_cv.notify_all();
+        mali_cpu_worker.join();
     }
 #endif
+    const vk::Device device = instance.GetDevice();
     for (auto& frame : present_frames) {
+#ifdef __ANDROID__
+        if (frame.mali_cpu_readback != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(instance.GetAllocator(), frame.mali_cpu_readback,
+                             frame.mali_cpu_readback_allocation);
+        }
+#endif
         vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
         device.destroyImageView(frame.image_view);
         device.destroyFence(frame.present_done);
@@ -961,11 +982,20 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Upstream bloodframe state changes take effect at the next real frame.
     PollLsfgState();
 #endif
-    // Recreate the swapchain if the window was resized.
+    // The AHB worker owns acquire/present; resize must not destroy those
+    // buffers concurrently with CPU writes or compositor releases.
+#ifdef __ANDROID__
+    std::unique_lock<std::mutex> mali_swapchain_guard{mali_cpu_swapchain_mutex,
+                                                    std::defer_lock};
+    if (mali_cpu_async) mali_swapchain_guard.lock();
+#endif
     swapchain.UpdateVsync();
     if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
+#ifdef __ANDROID__
+    if (mali_swapchain_guard.owns_lock()) mali_swapchain_guard.unlock();
+#endif
 
 #ifdef __ANDROID__
     if (lsfg && is_game_frame && !is_reusing_frame) {
@@ -991,10 +1021,16 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     const auto mali_acquire_start = mali_perf_sample ? MaliPerfStats::Clock::now()
                                                    : MaliPerfStats::TimePoint{};
 #endif
-    if (!swapchain.AcquireNextImage()) {
+    // On Mali async, the worker acquires the AHB *after* the GPU readback.
+    // The PM4 thread is no longer serialized on compositor release fences.
+#ifdef __ANDROID__
+    const bool defer_acquire = mali_cpu_async;
+#else
+    constexpr bool defer_acquire = false;
+#endif
+    if (!defer_acquire && !swapchain.AcquireNextImage()) {
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
         if (!swapchain.AcquireNextImage()) {
-            // User resizes the window too fast and GPU can't keep up. Skip this frame.
             LOG_WARNING(Render_Vulkan, "Skipping frame!");
             free_frame();
             return;
