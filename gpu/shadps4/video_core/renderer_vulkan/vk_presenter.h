@@ -8,6 +8,8 @@
 #include <chrono>
 
 #include <condition_variable>
+#include <mutex>
+#include <thread>
 
 #include "core/libraries/videoout/buffer.h"
 #include "video_core/renderer_vulkan/host_passes/fsr_pass.h"
@@ -45,6 +47,13 @@ struct Frame {
     u64 mali_trace_flip{}; ///< Accepted guest flip sequence; 0 for blank/UI-only frames.
     u64 mali_trace_guest_address{};
     u64 mali_trace_source_uid{}; ///< 0 means post/upscaled image, not direct texture cache.
+#ifdef __ANDROID__
+    // Per-frame staging: independent GPU readbacks can overlap CPU AHB display.
+    VkBuffer mali_cpu_readback{VK_NULL_HANDLE};
+    VmaAllocation mali_cpu_readback_allocation{};
+    void* mali_cpu_readback_mapped{};
+    VkDeviceSize mali_cpu_readback_size{};
+#endif
     u8 id{};
 
 };
@@ -121,6 +130,14 @@ private:
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
 #ifdef __ANDROID__
+    struct MaliCpuPresentJob {
+        Frame* frame{};
+        bool is_reusing_frame{};
+        bool is_game_frame{};
+        bool perf_sample{};
+    };
+    void CompleteMaliCpuPresentation(const MaliCpuPresentJob& job);
+    void MaliCpuPresentWorker(std::stop_token stop_token);
     void PollLsfgState();
     void ApplyLsfgState(const Gow3LsfgState::State& next);
     void ApplyLsfgOutputMode();
@@ -152,10 +169,13 @@ private:
     Gow3LsfgState::State lsfg_requested{Gow3LsfgState::Initial()};
     Gow3LsfgState::Watcher lsfg_watch{lsfg_requested};
     std::unique_ptr<Lsfg> lsfg;
-    VkBuffer mali_cpu_readback{VK_NULL_HANDLE};
-    VmaAllocation mali_cpu_readback_allocation{};
-    void* mali_cpu_readback_mapped{};
-    VkDeviceSize mali_cpu_readback_size{};
+    bool mali_cpu_async{};
+    std::mutex mali_cpu_jobs_mutex;
+    std::condition_variable mali_cpu_jobs_cv;
+    std::deque<MaliCpuPresentJob> mali_cpu_jobs;
+    std::jthread mali_cpu_worker;
+    // AHB state must not be modified by resize and the CPU-present worker concurrently.
+    std::mutex mali_cpu_swapchain_mutex;
     // The present thread reports when the GPU finally produced visible RGB.
     // Capture the next accepted guest frame at each of the three pipeline stages.
     std::atomic<bool> mali_capture_first_content{false};
@@ -171,7 +191,7 @@ private:
     vk::UniqueCommandPool command_pool;
     std::vector<Frame> present_frames;
     std::queue<Frame*> free_queue;
-    Frame* last_submit_frame;
+    std::atomic<Frame*> last_submit_frame{nullptr};
     std::mutex free_mutex;
     std::condition_variable free_cv;
     std::condition_variable_any frame_cv;
