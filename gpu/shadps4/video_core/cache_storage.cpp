@@ -21,6 +21,8 @@
 #include <future>
 #include <mutex>
 #include <queue>
+#include <string>
+#include <system_error>
 
 namespace {
 
