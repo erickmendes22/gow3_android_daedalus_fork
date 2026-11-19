@@ -339,18 +339,71 @@ void DataBase::ForEachBlob(BlobType type, const std::function<void(std::vector<u
     }
 }
 
-void DataBase::Clear() {
+bool DataBase::ArchiveIncompatibleCache() {
     if (!opened || EmulatorSettings.IsPipelineCacheArchived()) {
-        return;
+        return false;
     }
+    // Cache generations can differ when an app build changes Shader::Profile, a
+    // PanVK option toggles or the serialized shader ABI is updated. Never erase
+    // the previous generation: its shaders can still be useful to another build.
+    // The cache IO worker has not yet been given work by CheckCacheProfile().
     std::error_code ec;
-    u64 removed = 0;
-    for (const auto& entry : std::filesystem::directory_iterator(cache_path, ec)) {
-        if (entry.is_regular_file(ec) && std::filesystem::remove(entry.path(), ec)) {
-            ++removed;
+    std::filesystem::path archive;
+    for (u32 attempt = 1; attempt <= 10000; ++attempt) {
+        archive = cache_path / ("incompatible-" + std::to_string(attempt));
+        if (!std::filesystem::exists(archive, ec)) {
+            if (ec) {
+                LOG_ERROR(Render, "Cannot inspect old shader-cache archive: {}", ec.message());
+                return false;
+            }
+            break;
+        }
+        if (attempt == 10000) {
+            LOG_ERROR(Render, "Shader-cache archive limit reached; refusing to delete cache");
+            return false;
         }
     }
-    LOG_WARNING(Render, "Pipeline cache cleared ({} files): it is rebuilt for this build", removed);
+    if (!std::filesystem::create_directory(archive, ec)) {
+        LOG_ERROR(Render, "Cannot preserve incompatible shader cache at {}: {}",
+                  archive.string(), ec.message());
+        return false;
+    }
+    u64 preserved = 0;
+    for (const auto& entry : std::filesystem::directory_iterator{cache_path, ec}) {
+        if (ec) {
+            LOG_ERROR(Render, "Cannot enumerate incompatible shader cache: {}", ec.message());
+            return false;
+        }
+        if (!entry.is_regular_file(ec) || entry.is_symlink(ec)) {
+            if (ec) {
+                LOG_ERROR(Render, "Cannot inspect shader cache file: {}", ec.message());
+                return false;
+            }
+            continue;
+        }
+        const auto extension = entry.path().extension();
+        const bool metadata = extension == ".spv" || extension == ".meta" ||
+                              extension == ".key";
+        const bool profile = entry.path().filename() == "profile.bin" ||
+                             entry.path().filename() == "gow3-cache-schema.bin";
+        if (!metadata && !profile) {
+            continue; // Never move independent Vulkan driver cache or other user files.
+        }
+        std::filesystem::rename(entry.path(), archive / entry.path().filename(), ec);
+        if (ec) {
+            LOG_ERROR(Render, "Cannot archive incompatible shader cache file {}: {}",
+                      entry.path().string(), ec.message());
+            return false;
+        }
+        ++preserved;
+    }
+    if (ec) {
+        LOG_ERROR(Render, "Cannot enumerate shader cache for preservation: {}", ec.message());
+        return false;
+    }
+    LOG_WARNING(Render, "Incompatible shader cache preserved ({} files) in {}; rebuilding only "
+                        "the active shader cache", preserved, archive.string());
+    return true;
 }
 
 void DataBase::FinishPreload() {
