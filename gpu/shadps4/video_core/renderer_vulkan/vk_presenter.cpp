@@ -289,6 +289,14 @@ void Presenter::MaliCpuPresentWorker(std::stop_token stop_token) {
             mali_cpu_jobs.pop_front();
         }
         CompleteMaliCpuPresentation(job);
+        {
+            std::scoped_lock lock{mali_cpu_jobs_mutex};
+            ASSERT_MSG(job.frame->id < mali_cpu_inflight.size() &&
+                           mali_cpu_inflight[job.frame->id] != 0,
+                       "Mali CPU present completion without an owned frame");
+            --mali_cpu_inflight[job.frame->id];
+        }
+        mali_cpu_jobs_cv.notify_all();
     }
 }
 
@@ -1186,9 +1194,20 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     }
 
-    // Reset fence for queue submission. Do it here instead of GetRenderFrame() because we may
-    // skip frame because of slow swapchain recreation. If a frame skip occurs, we skip signal
-    // the frame's present fence and future GetRenderFrame() call will hang waiting for this frame.
+#ifdef __ANDROID__
+    if (mali_cpu_async && is_reusing_frame) {
+        // PrepareLastFrame may reuse the last image even when it was never
+        // placed into free_queue. Do not reset its fence or staging memory
+        // while an earlier async AHB job still owns it.
+        std::unique_lock lock{mali_cpu_jobs_mutex};
+        mali_cpu_jobs_cv.wait(lock, [&] {
+            return frame->id < mali_cpu_inflight.size() &&
+                   mali_cpu_inflight[frame->id] == 0;
+        });
+    }
+#endif
+    // Reset the fence only after the previous worker has finished with the
+    // same frame. The worker never requeues a frame until CPU delivery ends.
     const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
@@ -1288,6 +1307,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (mali_cpu_async) {
             {
                 std::scoped_lock lock{mali_cpu_jobs_mutex};
+                ASSERT_MSG(frame->id < mali_cpu_inflight.size(),
+                           "Mali frame ID {} exceeds readback slots", frame->id);
+                ++mali_cpu_inflight[frame->id];
                 mali_cpu_jobs.push_back(job);
             }
             mali_cpu_jobs_cv.notify_one();
