@@ -43,6 +43,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s tools/android/debug/gow3-debug.keystore
+          # CI fallback for intermittent Maven Central misses on published Kotlin BOMs.
+          grep -q 'maven.aliyun.com/repository/central' android-launcher/settings.gradle.kts
           grep -q 'com.gow3.android.bionic.malitest' android-launcher/app/build.gradle.kts
           grep -q 'GOW3_MALI_GC_BATCH_DOWNLOAD' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
           grep -q 'gc_pending_reclaim' gpu/shadps4/video_core/texture_cache/texture_cache.cpp
