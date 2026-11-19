@@ -171,6 +171,7 @@ private:
     Gow3LsfgState::Watcher lsfg_watch{lsfg_requested};
     std::unique_ptr<Lsfg> lsfg;
     bool mali_cpu_async{};
+    bool mali_cpu_last_vsync{};
     std::mutex mali_cpu_jobs_mutex;
     std::condition_variable mali_cpu_jobs_cv;
     std::deque<MaliCpuPresentJob> mali_cpu_jobs;
