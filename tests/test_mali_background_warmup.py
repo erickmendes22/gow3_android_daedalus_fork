@@ -75,6 +75,8 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn('"gow3-cache-schema"', self.code)
         self.assertIn('GOW3_MALI_SHADER_SCHEMA status=reset-old-cache', self.code)
         self.assertIn('db.ArchiveIncompatibleCache()', self.code)
+        self.assertIn('db.RestoreCompatibleArchive(', self.code)
+        self.assertIn('if (restore_compatible_generation())', self.code)
         self.assertNotIn('db.Clear();', self.code)
         self.assertIn('save_profile_and_schema();', self.code)
         self.assertIn('db.Save(Storage::BlobType::ShaderProfile, "profile"', self.code)
