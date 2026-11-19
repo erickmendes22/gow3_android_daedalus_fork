@@ -6,6 +6,7 @@
 #include "common/polyfill_thread.h"
 #include "common/thread.h"
 #include "core/emulator_settings.h"
+#include "shader_recompiler/profile.h"
 
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -17,6 +18,8 @@
 #include <cctype>
 #include <cstdlib>
 #include <condition_variable>
+#include <cstring>
+#include <type_traits>
 #include <functional>
 #include <future>
 #include <mutex>
@@ -425,6 +428,27 @@ bool DataBase::RestoreCompatibleArchive(const std::vector<u8>& profile_bytes,
         file.Read(data);
         return data == expected;
     };
+    // Shader::Profile has bool fields and may contain ABI padding. The active
+    // cache uses field-wise operator==: requiring byte-identical padding here
+    // would silently reject a still-compatible archived shader generation.
+    // First validate size, then compare each real shader capability field.
+    static_assert(std::is_trivially_copyable_v<Shader::Profile>);
+    const auto matches_profile = [&](const std::filesystem::path& path) {
+        if (profile_bytes.size() != sizeof(Shader::Profile)) {
+            return false;
+        }
+        using namespace Common::FS;
+        const auto file = IOFile{path, FileAccessMode::Read};
+        if (!file.IsOpen() || file.GetSize() != sizeof(Shader::Profile)) {
+            return false;
+        }
+        std::vector<u8> stored(sizeof(Shader::Profile));
+        file.Read(stored);
+        Shader::Profile previous{}, current{};
+        std::memcpy(&previous, stored.data(), sizeof(previous));
+        std::memcpy(&current, profile_bytes.data(), sizeof(current));
+        return previous == current;
+    };
     std::error_code ec;
     for (const auto& candidate : std::filesystem::directory_iterator{cache_path, ec}) {
         if (ec) {
@@ -435,7 +459,7 @@ bool DataBase::RestoreCompatibleArchive(const std::vector<u8>& profile_bytes,
             ec.clear();
             continue;
         }
-        if (!matches(candidate.path() / "profile.bin", profile_bytes) ||
+        if (!matches_profile(candidate.path() / "profile.bin") ||
             (!schema_bytes.empty() &&
              !matches(candidate.path() / "gow3-cache-schema.bin", schema_bytes))) {
             continue;
