@@ -79,6 +79,7 @@ jobs:
           grep -q 'GOW3_MALI_ASYNC_PRESENT=${GOW3_MALI_ASYNC_PRESENT:-1}' tools/android/bionic/run-bionic.sh
           grep -q 'PANVK_KBASE_GPU_SEMAPHORE_WAITS=${PANVK_KBASE_GPU_SEMAPHORE_WAITS:-1}' tools/android/bionic/run-bionic.sh
           grep -q 'PANVK_KBASE_SKIP_HEAP_OPS=${PANVK_KBASE_SKIP_HEAP_OPS:-0}' tools/android/bionic/run-bionic.sh
+          grep -q 'static bool WriteMaliCaptureBmp' gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -q 'void Presenter::MaliCpuPresentWorker' gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -q 'AsyncQueueDelay' gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h
           grep -q 'GOW3_UBO_DEVICE' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
