@@ -917,12 +917,11 @@ void Instance::CreateAllocator() {
         .vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
-    // Diagnose >5ms Vulkan driver calls nested in VMA, without changing image
-    // allocation semantics. Active by default only for Android PanVK tracing.
-    // GOW3_MALI_VMA_CALL_TRACE=0 disables this instrumented dispatch.
+    // The expensive vkAllocateMemory calls were identified already. Keep the
+    // timed dispatch OFF in normal gameplay; explicit =1 enables it if needed.
     const char* trace_opt = std::getenv("GOW3_MALI_VMA_CALL_TRACE");
     const bool trace_mali = std::getenv("GOW3_ANDROID_PORT") &&
-        properties.vendorID == 0x13B5 && (!trace_opt || trace_opt[0] != '0');
+        properties.vendorID == 0x13B5 && trace_opt && trace_opt[0] == '1';
     if (trace_mali) {
         functions.vkCreateImage = MaliTimedCreateImage;
         functions.vkAllocateMemory = MaliTimedAllocateMemory;
@@ -940,10 +939,13 @@ void Instance::CreateAllocator() {
     // VkImages to the exact-shape pool (12 hits / 320 RGBA128 requests).
     // This is only a preferred block size: VMA retains Vulkan alignment,
     // dedicated-allocation requirements and the per-allocation budget gate.
-    // Default 0 preserves VMA; 32 is opt-in until device gains are proved.
+    // G720 traces showed 118-232 ms for 256 MiB driver allocations, while
+    // smaller blocks were generally cheaper. Prefer 32 MiB on Android Mali;
+    // keep 0 available to restore the stock VMA policy. Large/dedicated
+    // allocations can still bypass this preference.
     VkDeviceSize preferred_block_size = 0;
     if (std::getenv("GOW3_ANDROID_PORT") && properties.vendorID == 0x13B5) {
-        unsigned long mib = 0;
+        unsigned long mib = 32;
         if (const char* selected = std::getenv("GOW3_MALI_VMA_BLOCK_MIB")) {
             char* end = nullptr;
             const auto parsed = std::strtoul(selected, &end, 10);
@@ -953,7 +955,7 @@ void Instance::CreateAllocator() {
                 mib = parsed;
             } else {
                 LOG_WARNING(Render_Vulkan,
-                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using VMA default",
+                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using 32 MiB Mali default",
                             selected);
             }
         }
