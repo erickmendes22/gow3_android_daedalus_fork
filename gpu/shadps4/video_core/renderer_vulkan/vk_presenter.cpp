@@ -274,6 +274,10 @@ Presenter::~Presenter() {
 
 
 #ifdef __ANDROID__
+// The async presenter is defined before the optional BMP diagnostic helper.
+// Keep this declaration local; no capture work runs unless explicitly enabled.
+static bool WriteMaliCaptureBmp(const std::string& filename, const u8* pixels,
+                                u32 w, u32 h, vk::Format format);
 void Presenter::MaliCpuPresentWorker(std::stop_token stop_token) {
     for (;;) {
         MaliCpuPresentJob job{};
