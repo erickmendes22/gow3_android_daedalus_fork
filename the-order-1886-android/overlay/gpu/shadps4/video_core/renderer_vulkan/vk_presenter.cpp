@@ -951,18 +951,49 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
                                vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
                                {}, {}, pre_barriers);
-        const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-        cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
-        const vk::MemoryBarrier clear_done{
-            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
-                               vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
-                         vk::ImageLayout::eTransferDstOptimal,
-                         MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
-                         vk::Filter::eLinear);
+        const auto fit = MakeImageBlitFit(frame->width, frame->height,
+                                          extent.width, extent.height);
+        // The Android output is usually exactly the game's selected resolution.
+        // A full-coverage transfer overwrites every pixel: do not clear the AHB
+        // and then force a transfer-to-transfer dependency just to discard it.
+        const bool full_coverage =
+            fit.dstOffsets[0].x == 0 && fit.dstOffsets[0].y == 0 &&
+            fit.dstOffsets[1].x == static_cast<s32>(extent.width) &&
+            fit.dstOffsets[1].y == static_cast<s32>(extent.height);
+        if (!full_coverage) {
+            const vk::ClearColorValue black{
+                std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+            cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+                                   black, color_range);
+            const vk::MemoryBarrier clear_done{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eTransfer,
+                                   vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
+        }
+        // When both images have the same dimensions/format, copy instead of
+        // running the driver's general-purpose linear-filtered blit path.
+        // Unequal dimensions retain the original filtered blit and letterbox.
+        const bool direct_copy = frame->width == extent.width &&
+                                 frame->height == extent.height &&
+                                 frame->format == swapchain.GetSurfaceFormat().format;
+        if (direct_copy) {
+            const vk::ImageCopy region{
+                .srcSubresource = MakeImageSubresourceLayers(),
+                .srcOffset = {0, 0, 0},
+                .dstSubresource = MakeImageSubresourceLayers(),
+                .dstOffset = {0, 0, 0},
+                .extent = {extent.width, extent.height, 1},
+            };
+            cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                             swapchain_image, vk::ImageLayout::eTransferDstOptimal, region);
+        } else {
+            cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                             swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+                             fit, vk::Filter::eLinear);
+        }
         if (VideoCore::ConsumeGameOnlyScreenshotRequests() != 0) {
             CaptureScreenshot(instance, scheduler, cmdbuf, *frame);
         }
