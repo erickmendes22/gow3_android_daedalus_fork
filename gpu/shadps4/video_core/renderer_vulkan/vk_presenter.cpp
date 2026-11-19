@@ -1251,6 +1251,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
                          VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
                 .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                // Match Bachata V3's software-present policy: fast CPU reads
+                // prefer HOST_CACHED, including noncoherent types. The worker
+                // already calls vmaInvalidateAllocation after the GPU fence;
+                // VMA can fall back when HOST_CACHED is unavailable on Mali.
+                .preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
             };
             VmaAllocationInfo allocation_info{};
             const VkResult create_result =
