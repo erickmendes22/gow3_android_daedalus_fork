@@ -30,6 +30,7 @@ class MaliAsyncPresentTests(unittest.TestCase):
         self.assertIn('VmaAllocation mali_cpu_readback_allocation{};', header)
         self.assertIn('frame->mali_cpu_readback_size = required;', body)
         self.assertIn('vk::Buffer{frame->mali_cpu_readback}', body)
+        self.assertIn('.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT', body)
         self.assertNotIn('MALI_CPU_PRESENT cannot retire the old staging buffer', body)
 
     def test_worker_preserves_fence_order_and_frame_lifetime(self):
