@@ -920,6 +920,17 @@ bool PipelineCache::CheckCacheProfile() {
         }
     };
 
+    const auto restore_compatible_generation = [&] {
+        if (!mali_schema) {
+            return false;
+        }
+        std::vector<u8> current_profile(sizeof(profile));
+        std::memcpy(current_profile.data(), &profile, sizeof(profile));
+        std::vector<u8> current_schema(sizeof(schema));
+        std::memcpy(current_schema.data(), schema.data(), sizeof(schema));
+        return db.RestoreCompatibleArchive(current_profile, current_schema);
+    };
+
     std::vector<u8> profile_data{};
     db.Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
@@ -935,10 +946,18 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(&cached_profile, profile_data.data(), sizeof(cached_profile));
     }
     if (profile_data.size() != sizeof(Shader::Profile) || cached_profile != profile) {
-        LOG_WARNING(Render, "Pipeline cache isn't compatible with current system: rebuilding it");
+        LOG_WARNING(Render, "Pipeline cache profile changed; preserving previous shader generation");
+        if (EmulatorSettings.IsPipelineCacheArchived()) {
+            // Preserve the pre-existing archived-cache behavior on other targets.
+            save_profile_and_schema();
+            return false;
+        }
         if (!db.ArchiveIncompatibleCache()) {
             LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
             return false;
+        }
+        if (restore_compatible_generation()) {
+            return true;
         }
         save_profile_and_schema();
         return false;
@@ -953,6 +972,9 @@ bool PipelineCache::CheckCacheProfile() {
             if (!db.ArchiveIncompatibleCache()) {
                 LOG_ERROR(Render, "Cannot safely rotate incompatible shader cache; keeping the old files");
                 return false;
+            }
+            if (restore_compatible_generation()) {
+                return true;
             }
             save_profile_and_schema();
             return false;
