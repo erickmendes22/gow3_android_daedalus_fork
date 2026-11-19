@@ -136,6 +136,7 @@ private:
         bool is_reusing_frame{};
         bool is_game_frame{};
         bool perf_sample{};
+        std::chrono::steady_clock::time_point queued_at{};
     };
     void CompleteMaliCpuPresentation(const MaliCpuPresentJob& job);
     void MaliCpuPresentWorker(std::stop_token stop_token);
