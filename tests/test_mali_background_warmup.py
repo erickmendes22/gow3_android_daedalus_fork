@@ -82,6 +82,24 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertIn('db.Save(Storage::BlobType::ShaderProfile, "profile"', self.code)
         self.assertIn('mali_schema = !EmulatorSettings.IsPipelineCacheArchived()', self.code)
 
+    def test_missing_profile_is_not_destructive_and_can_restore_archive(self):
+        start = self.code.index('if (profile_data.empty()) {')
+        end = self.code.index('if (profile_data.size() != sizeof(Shader::Profile))', start)
+        cold_start = self.code[start:end]
+        self.assertIn('const bool has_orphan_blobs =', cold_start)
+        self.assertIn('if (has_orphan_blobs) {', cold_start)
+        self.assertIn('db.ArchiveIncompatibleCache()', cold_start)
+        self.assertIn('if (restore_compatible_generation())', cold_start)
+        self.assertIn('GOW3_MALI_SHADER_CACHE status=restored-compatible-archive', cold_start)
+        self.assertIn('GOW3_MALI_SHADER_CACHE status=new-profile', cold_start)
+        self.assertIn('save_profile_and_schema();', cold_start)
+        self.assertNotIn('db.Clear()', cold_start)
+        # Cold driver-hash cache never adopts arbitrary existing .key files:
+        # restoring an archive requires the exact profile AND schema match.
+        storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
+        self.assertIn('matches(candidate.path() / "profile.bin", profile_bytes)', storage)
+        self.assertIn('matches(candidate.path() / "gow3-cache-schema.bin", schema_bytes)', storage)
+
     def test_shader_cache_closure_drains_pending_writes(self):
         storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
         self.assertIn('accepting_requests = false;', storage)
