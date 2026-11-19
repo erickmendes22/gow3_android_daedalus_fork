@@ -32,8 +32,9 @@ public:
         return opened;
     }
     void FinishPreload();
-    /// gow3: removes every cached blob (an incompatible cache is rebuilt, not ignored).
-    void Clear();
+    /// Keeps incompatible SPIR-V, pipeline keys and metadata for later recovery.
+    /// Returns false if the old cache could not be preserved without data loss.
+    [[nodiscard]] bool ArchiveIncompatibleCache();
 
     bool Save(BlobType type, const std::string& name, std::vector<u8>&& data);
     bool Save(BlobType type, const std::string& name, std::vector<u32>&& data);
