@@ -28,6 +28,13 @@ class MaliFormatUseTests(unittest.TestCase):
         self.assertIn('image_format_properties.result == vk::Result::eSuccess', before_create)
         self.assertNotIn('GOW3_MALI_FORMAT_RUNTIME', INSTANCE)
 
+    def test_core_robust_image_access_stays_enabled_when_robustness2_missing(self):
+        self.assertIn('enable_robust_image_access2 ||', INSTANCE)
+        self.assertIn('feature_chain.get<vk::PhysicalDeviceVulkan13Features>().robustImageAccess', INSTANCE)
+        self.assertIn('.robustImageAccess = vk13_features.robustImageAccess,', INSTANCE)
+        self.assertIn('.robustBufferAccess = features.robustBufferAccess,', INSTANCE)
+        self.assertIn('.robustImageAccess2 = enable_robust_image_access2,', INSTANCE)
+
     def test_format_conversion_not_silently_reinterpreted(self):
         self.assertIn('vk::Format::eD24UnormS8Uint', INSTANCE)
         self.assertIn('vk::Format::eD32SfloatS8Uint', INSTANCE)
