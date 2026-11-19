@@ -517,7 +517,7 @@ public final class Order1886Activity extends Activity {
             Math.max(0,Math.min(2,prefs().getInt("hudSize",1))),
             n->{prefs().edit().putInt("hudSize",n).apply();applyHudStyle();});
         CheckBox showHud=new CheckBox(this);
-        showHud.setText(tr("Mostrar HUD FPS");showHud.setTextColor(WHITE);
+        showHud.setText(tr("Mostrar HUD FPS"));showHud.setTextColor(WHITE);
         showHud.setChecked(prefs().getBoolean("hudVisible",true));
         showHud.setOnCheckedChangeListener((b,enabled)->{
             prefs().edit().putBoolean("hudVisible",enabled).apply();applyHudStyle();
