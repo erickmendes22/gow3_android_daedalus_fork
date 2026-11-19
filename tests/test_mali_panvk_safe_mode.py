@@ -79,6 +79,18 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         self.assertIn("event=draw_skipped", rasterizer)
         self.assertIn("++g_gow3_pending_draws", cache)
 
+    def test_attachmentless_render_area_uses_real_scissor_extent(self):
+        scheduler = SCHEDULER.read_text()
+        self.assertIn('GOW3_MALI_ATTACHMENTLESS_SCISSOR_AREA', scheduler)
+        self.assertIn('!new_state.depth_stencil_attachment.has_depth', scheduler)
+        self.assertIn('!new_state.depth_stencil_attachment.has_stencil', scheduler)
+        self.assertIn('has_color_attachment |= bool(new_state.color_attachments[cb].image_view)', scheduler)
+        self.assertIn('dynamic_state.scissors', scheduler)
+        self.assertIn('effective_state.width = u16(', scheduler)
+        self.assertIn('effective_state.height = u16(', scheduler)
+        self.assertIn('render_state == effective_state', scheduler)
+        self.assertIn('render_state = effective_state;', scheduler)
+
     def test_scheduler_has_bounded_queue_setting(self):
         source = SCHEDULER.read_text()
         self.assertIn('std::getenv("GOW3_VK_MAX_IN_FLIGHT")', source)
