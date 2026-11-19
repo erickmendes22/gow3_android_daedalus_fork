@@ -26,11 +26,10 @@
 
 namespace {
 
-std::mutex submit_mutex{};
-u32 num_requests{};
 std::condition_variable_any request_cv{};
 std::queue<std::packaged_task<void()>> req_queue{};
 std::mutex m_request{};
+bool accepting_requests{}; // protected by m_request, including Close()
 
 mz_zip_archive zip_ar{};
 bool ar_is_read_only{true};
@@ -42,33 +41,24 @@ namespace Storage {
 void ProcessIO(const std::stop_token& stoken) {
     Common::SetCurrentThreadName("shadPS4:PipelineCacheIO");
 
-    while (!stoken.stop_requested()) {
+    for (;;) {
+        std::packaged_task<void()> request{};
         {
-            std::unique_lock lk{submit_mutex};
-            Common::CondvarWait(request_cv, lk, stoken, [&] { return num_requests; });
-        }
-
-        if (stoken.stop_requested()) {
-            break;
-        }
-
-        while (num_requests) {
-            std::packaged_task<void()> request{};
-            {
-                std::scoped_lock lock{m_request};
-                if (req_queue.empty()) {
-                    continue;
+            std::unique_lock lock{m_request};
+            Common::CondvarWait(request_cv, lock, stoken,
+                                [&] { return !req_queue.empty(); });
+            if (req_queue.empty()) {
+                // Stop only after the last accepted shader/profile write.
+                if (stoken.stop_requested()) {
+                    break;
                 }
-                request = std::move(req_queue.front());
-                req_queue.pop();
+                continue;
             }
-
-            if (request.valid()) {
-                request();
-                request.get_future().wait();
-            }
-
-            --num_requests;
+            request = std::move(req_queue.front());
+            req_queue.pop();
+        }
+        if (request.valid()) {
+            request();
         }
     }
 }
@@ -160,6 +150,10 @@ void DataBase::Open() {
         }
     }
 
+    {
+        std::scoped_lock lock{m_request};
+        accepting_requests = true;
+    }
     io_worker = std::jthread{ProcessIO};
     opened = true;
 }
@@ -169,16 +163,21 @@ void DataBase::Close() {
         return;
     }
 
+    {
+        std::scoped_lock lock{m_request};
+        accepting_requests = false;
+    }
+    opened = false;
     io_worker.request_stop();
-    io_worker.join();
+    request_cv.notify_all();
+    io_worker.join(); // The worker drains every request before exiting.
 
     if (EmulatorSettings.IsPipelineCacheArchived()) {
         mz_zip_writer_finalize_archive(&zip_ar);
         mz_zip_writer_end(&zip_ar);
     }
 
-    opened = false;
-    LOG_INFO(Render, "Cache dumped");
+    LOG_INFO(Render, "Shader cache writes flushed and database closed");
 }
 
 template <typename T>
@@ -196,8 +195,7 @@ bool WriteVector(const BlobType type, std::filesystem::path&& path_, std::vector
                 }
             } else {
                 // gow3: write beside and rename into place, so a game that ends during the
-                // write (the queue is not drained at exit) never leaves a truncated blob that
-                // the next start would load.
+                // write never leaves a truncated blob if a process is forcibly killed.
                 using namespace Common::FS;
                 auto temp{path};
                 temp += ".tmp";
@@ -212,11 +210,12 @@ bool WriteVector(const BlobType type, std::filesystem::path&& path_, std::vector
             }
         }};
         std::scoped_lock lock{m_request};
+        if (!accepting_requests) {
+            return false; // Close has started; never enqueue after the drain.
+        }
         req_queue.emplace(std::move(request));
     }
 
-    std::scoped_lock lk{submit_mutex};
-    ++num_requests;
     request_cv.notify_one();
     return true;
 }
