@@ -7,7 +7,12 @@ pluginManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
+        // Maven Central intermittently returned 404 for published Kotlin
+        // artifacts (including kotlin-stdlib and the plugin BOM) on CI.
+        // Keep normal upstream sources and add independent fallback mirrors.
         mavenCentral()
+        maven(url = "https://maven.aliyun.com/repository/central")
+        maven(url = "https://maven.aliyun.com/repository/gradle-plugin")
         gradlePluginPortal()
     }
 }
@@ -19,6 +24,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://maven.aliyun.com/repository/google")
+        maven(url = "https://maven.aliyun.com/repository/central")
     }
 }
 
