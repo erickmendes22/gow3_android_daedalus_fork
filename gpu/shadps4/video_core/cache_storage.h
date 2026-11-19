@@ -7,6 +7,7 @@
 #include "common/singleton.h"
 #include "common/types.h"
 
+#include <atomic>
 #include <functional>
 #include <thread>
 #include <vector>
@@ -29,7 +30,7 @@ public:
     void Open();
     void Close();
     [[nodiscard]] bool IsOpened() const {
-        return opened;
+        return opened.load(std::memory_order_acquire);
     }
     void FinishPreload();
     /// Keeps incompatible SPIR-V, pipeline keys and metadata for later recovery.
@@ -57,7 +58,7 @@ public:
 private:
     std::jthread io_worker{};
     std::filesystem::path cache_path{};
-    bool opened{};
+    std::atomic_bool opened{};
 };
 
 } // namespace Storage
