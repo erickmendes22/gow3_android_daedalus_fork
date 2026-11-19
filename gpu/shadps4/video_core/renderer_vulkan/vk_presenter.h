@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <deque>
 #include <atomic>
 #include <chrono>
@@ -173,6 +174,9 @@ private:
     std::mutex mali_cpu_jobs_mutex;
     std::condition_variable mali_cpu_jobs_cv;
     std::deque<MaliCpuPresentJob> mali_cpu_jobs;
+    // All async queued/running uses of the same Frame are guarded here.
+    // A host redraw may reuse the last image without checking free_queue.
+    std::array<u32, 8> mali_cpu_inflight{};
     std::jthread mali_cpu_worker;
     // AHB state must not be modified by resize and the CPU-present worker concurrently.
     std::mutex mali_cpu_swapchain_mutex;
