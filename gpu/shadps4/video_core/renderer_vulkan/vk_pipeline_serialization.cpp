@@ -934,16 +934,29 @@ bool PipelineCache::CheckCacheProfile() {
     std::vector<u8> profile_data{};
     db.Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
-        // If an interrupted previous session left shader blobs but no profile,
-        // they cannot be trusted as belonging to the current shader ABI.
-        // Preserve them instead of silently attaching a new profile to stale keys.
-        if (!EmulatorSettings.IsPipelineCacheArchived() &&
+        // A first run with a different PanVK hash has its own empty cache
+        // directory. No cache was wiped merely because profile.bin is absent.
+        // A previous interrupted run, however, may have archived a matching
+        // generation; recover only when BOTH profile and shader schema match.
+        const bool has_orphan_blobs =
+            !EmulatorSettings.IsPipelineCacheArchived() &&
             (db.CountBlobs(Storage::BlobType::PipelineKey) != 0 ||
-             db.CountBlobs(Storage::BlobType::ShaderMeta) != 0)) {
+             db.CountBlobs(Storage::BlobType::ShaderMeta) != 0);
+        if (has_orphan_blobs) {
+            // Never stamp an unverified/old .key + .meta with a new profile.
             if (!db.ArchiveIncompatibleCache()) {
-                LOG_ERROR(Render, "Missing shader profile with old blobs; preserving existing cache");
+                LOG_ERROR(Render, "Missing shader profile with orphan blobs; preserving existing cache");
                 return false;
             }
+        }
+        if (restore_compatible_generation()) {
+            std::printf("GOW3_MALI_SHADER_CACHE status=restored-compatible-archive orphan_blobs=%d\n",
+                        int(has_orphan_blobs));
+            return true;
+        }
+        if (mali_schema) {
+            std::printf("GOW3_MALI_SHADER_CACHE status=new-profile orphan_blobs=%d "
+                        "old_generations_preserved=1\n", int(has_orphan_blobs));
         }
         save_profile_and_schema();
         return false;
