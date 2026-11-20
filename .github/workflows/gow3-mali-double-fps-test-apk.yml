@@ -96,6 +96,9 @@ jobs:
           grep -q 'GOW3_MALI_FORMAT_RUNTIME guest=' gpu/shadps4/video_core/texture_cache/image.cpp
           grep -q 'GOW3_MALI_SNORM10_FALLBACK' gpu/shadps4/video_core/texture_cache/image.cpp
           grep -q 'add_host_shader(snorm2101010.comp snorm2101010_comp)' gpu/shadps4/video_core/host_shaders/CMakeLists.txt
+          grep -q 'add_host_shader(snorm2101010.comp snorm2101010_comp)' gpu/CMakeLists.txt
+          grep -q 'eR16G16B16A16Snorm' gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+          grep -q 'guest_cpu_mark_direct_memory_scalar_return(void \*fn)' cpu/guest_cpu_fex.cpp
           grep -q 'PrewarmMaliImagePool' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           grep -q 'guest_cpu_mark_direct_memory_scalar_return' cpu/guest_cpu_fex.cpp
           grep -q 'GOW3_UBO_DEVICE' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
@@ -144,7 +147,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-G720-SNORM10-VMA-DirectMemory-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-G720-SNORM10-Compute-VMA-FEX-DirectMem-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
