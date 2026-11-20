@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -17,6 +18,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_upscale_providers.h"
 #include "video_core/renderer_vulkan/vk_vertex_input_policy.h"
@@ -288,7 +290,8 @@ bool Instance::CreateDevice() {
 #endif
         vk::PhysicalDevicePipelineBinaryFeaturesKHR,
         vk::PhysicalDeviceMaintenance5FeaturesKHR,
-        vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR>();
+        vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR,
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
@@ -348,6 +351,34 @@ bool Instance::CreateDevice() {
                "Required Vulkan feature unavailable: robustImageAccess2");
     ASSERT_MSG(robustness2_features.nullDescriptor,
                "Required Vulkan feature unavailable: nullDescriptor");
+
+    // Only enable 2x2 pipeline shading when the *active* ICD advertises it for
+    // single-sample rendering. Never assume a Turnip version or Adreno SKU supports it.
+    const char* vrs_env = std::getenv("ORDER1886_VRS_2X2");
+    const bool vrs_requested = !vrs_env || vrs_env[0] != '0';
+    const auto vrs_features =
+        feature_chain.get<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
+    bool vrs_2x2_supported = false;
+    if (vrs_requested && vrs_features.pipelineFragmentShadingRate) {
+        const auto has_vrs_extension =
+            std::ranges::find(available_extensions,
+                              std::string(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME)) !=
+            available_extensions.end();
+        if (has_vrs_extension) {
+            const auto [rates_result, rates] = physical_device.getFragmentShadingRatesKHR();
+            if (rates_result == vk::Result::eSuccess) {
+                vrs_2x2_supported = std::ranges::any_of(rates, [](const auto& rate) {
+                    return rate.fragmentSize.width == 2 && rate.fragmentSize.height == 2 &&
+                           (rate.sampleCounts & vk::SampleCountFlagBits::e1) !=
+                               vk::SampleCountFlags{};
+                });
+            }
+            if (vrs_2x2_supported) {
+                vrs_2x2_supported =
+                    add_extension(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+            }
+        }
+    }
 
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
@@ -721,9 +752,15 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR{
             .pipelineExecutableInfo = pipeline_executable_features.pipelineExecutableInfo,
         },
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR{
+            .pipelineFragmentShadingRate = vrs_2x2_supported,
+        },
     };
     if (!pipeline_executable_properties) {
         device_chain.unlink<vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR>();
+    }
+    if (!vrs_2x2_supported) {
+        device_chain.unlink<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
     }
 
     if (!custom_border_color) {
@@ -793,6 +830,12 @@ bool Instance::CreateDevice() {
         return false;
     }
     device = std::move(dev);
+
+    g_order1886_vrs_2x2_enabled.store(vrs_2x2_supported, std::memory_order_release);
+    std::printf("ORDER1886_VRS requested=%d supported_2x2=%d mode=%s (4x4 not implemented)\n",
+                int(vrs_requested), int(vrs_2x2_supported),
+                vrs_2x2_supported ? "selective-2x2" : "1x1");
+    std::fflush(stdout);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
     pipeline_binaries =
