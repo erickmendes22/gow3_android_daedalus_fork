@@ -869,6 +869,33 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
 
 void Runtime::CopyAliasImage(VideoCore::Image* src, VideoCore::Image* dst,
                              const vk::Extent3D& extent) {
+    if (src->transcoded_snorm2101010 != dst->transcoded_snorm2101010) {
+        // Guest aliases may reference a packed 4-byte SNORM10 image while
+        // the physical source is RGBA16_SNORM (8 bytes). VkCmdCopyImage is
+        // invalid for mismatched texel block sizes. Keep the EXACT supplied
+        // alias extent and transfer guest-format bytes through the device-
+        // local tick-safe staging buffer without a CPU wait or conversion.
+        ASSERT_MSG(extent.depth == 1 && src->info.resources.layers == 1 &&
+                       dst->info.resources.layers == 1 && src->info.num_samples == 1 &&
+                       dst->info.num_samples == 1 &&
+                       vk::blockSize(src->info.pixel_format) == 4 &&
+                       vk::blockSize(dst->info.pixel_format) == 4,
+                   "Unsupported mixed SNORM10 alias extent");
+        const auto scratch = staging_pool.Request(
+            u64(extent.width) * extent.height * 4u, VideoCore::MemoryType::DeviceLocal, 16);
+        const vk::BufferImageCopy region{
+            .bufferOffset = scratch.offset,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource{.aspectMask = vk::ImageAspectFlagBits::eColor,
+                              .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+            .imageOffset = {0, 0, 0},
+            .imageExtent = extent,
+        };
+        DownloadImage(src, scratch.buffer, std::span{&region, 1});
+        UploadImage(dst, scratch.buffer, std::span{&region, 1});
+        return;
+    }
     SetBackingSamples(src, src->info.num_samples);
     SetBackingSamples(dst, dst->info.num_samples);
     scheduler.EndRendering();
