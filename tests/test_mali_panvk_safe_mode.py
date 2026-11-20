@@ -96,7 +96,8 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         self.assertIn('std::getenv("GOW3_VK_MAX_IN_FLIGHT")', source)
         self.assertIn("requested >= 1 && requested <= 8", source)
         self.assertIn("work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions)", source)
-        self.assertIn("work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions)", source)
+        self.assertIn("work_semaphore.Wait(retire_tick)", source)
+        self.assertIn("work_semaphore.IsFree(retire_tick)", source)
 
 
 if __name__ == "__main__":
