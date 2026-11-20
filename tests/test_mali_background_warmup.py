@@ -113,6 +113,21 @@ class MaliWarmupSafetyTest(unittest.TestCase):
         self.assertNotIn('while (!stoken.stop_requested())', storage)
         self.assertNotIn('num_requests', storage)
 
+    def test_missing_profile_does_not_log_filesystem_open_error(self):
+        storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
+        begin = storage.index('void LoadVector(BlobType type,')
+        end = storage.index('bool DataBase::Save(', begin)
+        loader = storage[begin:end]
+        self.assertIn('if (type == BlobType::ShaderProfile)', loader)
+        self.assertIn('std::filesystem::exists(path, ec)', loader)
+        self.assertIn('if (!ec && !present)', loader)
+        self.assertLess(loader.index('if (!ec && !present)'),
+                        loader.index('const auto file = IOFile{path, FileAccessMode::Read};'))
+        self.assertIn('save_profile_and_schema();', self.code)
+        # The new per-driver profile is based on actual physical-device
+        # capabilities, never an invented default profile with stale shaders.
+        self.assertNotIn('Shader::Profile fake_profile', self.code)
+
     def test_archive_is_non_destructive_and_restorable(self):
         storage = (ROOT / "gpu/shadps4/video_core/cache_storage.cpp").read_text()
         self.assertIn('bool DataBase::ArchiveIncompatibleCache()', storage)
