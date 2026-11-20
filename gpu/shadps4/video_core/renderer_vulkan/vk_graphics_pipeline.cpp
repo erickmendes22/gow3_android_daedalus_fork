@@ -278,12 +278,17 @@ GraphicsPipeline::GraphicsPipeline(
         // format. TextureCache::Image maps guest SNORM10 to RGBA16_SNORM on
         // Mali when the driver cannot create the packed 32-bit attachment.
         // Do not change vertex formats or turn UNORM into signed data.
+        const char* snorm_option = std::getenv("GOW3_MALI_SNORM10_FALLBACK");
+        constexpr auto rt_features = vk::FormatFeatureFlagBits2::eColorAttachment |
+                                     vk::FormatFeatureFlagBits2::eSampledImage |
+                                     vk::FormatFeatureFlagBits2::eTransferSrc |
+                                     vk::FormatFeatureFlagBits2::eTransferDst;
         if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
             std::getenv("GOW3_ANDROID_PORT") &&
+            (!snorm_option || snorm_option[0] != '0') &&
             format == vk::Format::eA2B10G10R10SnormPack32 &&
-            !instance.IsFormatSupported(format, vk::FormatFeatureFlagBits2::eColorAttachment) &&
-            instance.IsFormatSupported(vk::Format::eR16G16B16A16Snorm,
-                                       vk::FormatFeatureFlagBits2::eColorAttachment)) {
+            !instance.IsFormatSupported(format, rt_features) &&
+            instance.IsFormatSupported(vk::Format::eR16G16B16A16Snorm, rt_features)) {
             color_format = vk::Format::eR16G16B16A16Snorm;
         }
         if (!instance.IsFormatSupported(color_format,
