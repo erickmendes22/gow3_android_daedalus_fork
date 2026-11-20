@@ -30,8 +30,13 @@ gpu_checks={
       "sample_every=90_frames" in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text() and
       "vk::QueryResultFlagBits::eWait" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text(),
   "GPU stage labels at natural render pass boundaries":
-      "shadow-sized depth-only" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
+      "shadow-depth-only" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
       "MarkPass(pipeline, state);" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Inline Vulkan tile clears preserve exact attachment state":
+      "ORDER1886_GPU_INLINE_CLEAR reused=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
+      "compared == new_state" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
+  "Actual attachment mask GPU timing":
+      "MRT-2active" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
   "Tile-friendly post-clear render pass reuse included":
       "ORDER1886_GPU_PASS_COALESCE merged=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
   "Crash regression fixed: speculative shadow-draw skip removed":

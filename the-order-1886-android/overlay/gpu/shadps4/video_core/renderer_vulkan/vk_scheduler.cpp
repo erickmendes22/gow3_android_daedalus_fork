@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <thread>
+#include <bit>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -103,6 +104,79 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
             return;
         }
         if (Order1886MergePostClearPass()) {
+            // On tile GPUs an immediate CLEAR of the same attachments need not
+            // end the render pass, store its tiles, then reload them.
+            // Only substitute vkCmdClearAttachments when every image view,
+            // layout, layer count and render size is IDENTICAL. Preserve all
+            // writes and depth/stencil semantics; this never drops a draw.
+            static const bool inline_clears = [] {
+                const char* env = std::getenv("ORDER1886_INLINE_ATTACHMENT_CLEAR");
+                return !env || env[0] != '0';
+            }();
+            if (inline_clears) {
+                RenderState compared = render_state;
+                for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                    compared.color_attachments[i].is_clear =
+                        new_state.color_attachments[i].is_clear;
+                    compared.color_attachments[i].clear_value =
+                        new_state.color_attachments[i].clear_value;
+                }
+                compared.depth_stencil_attachment.depth_clear =
+                    new_state.depth_stencil_attachment.depth_clear;
+                compared.depth_stencil_attachment.stencil_clear =
+                    new_state.depth_stencil_attachment.stencil_clear;
+                compared.depth_stencil_attachment.clear_value =
+                    new_state.depth_stencil_attachment.clear_value;
+                if (compared == new_state && new_state.num_layers > 0 &&
+                    new_state.num_layers <= 16) {
+                    std::array<vk::ClearAttachment, 9> clears{};
+                    u32 count = 0;
+                    for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                        const auto& color = new_state.color_attachments[i];
+                        if (!color.is_clear || !color.image_view) continue;
+                        clears[count++] = vk::ClearAttachment{
+                            .aspectMask = vk::ImageAspectFlagBits::eColor,
+                            .colorAttachment = i,
+                            .clearValue = vk::ClearValue{
+                                .color = vk::ClearColorValue{.uint32 = color.clear_value}},
+                        };
+                    }
+                    const auto& ds = new_state.depth_stencil_attachment;
+                    vk::ImageAspectFlags aspects{};
+                    if (ds.has_depth && ds.depth_clear)
+                        aspects |= vk::ImageAspectFlagBits::eDepth;
+                    if (ds.has_stencil && ds.stencil_clear)
+                        aspects |= vk::ImageAspectFlagBits::eStencil;
+                    if (aspects && ds.image_view) {
+                        clears[count++] = vk::ClearAttachment{
+                            .aspectMask = aspects,
+                            .colorAttachment = 0,
+                            .clearValue = vk::ClearValue{.depthStencil =
+                                vk::ClearDepthStencilValue{
+                                    .depth = std::bit_cast<float>(ds.clear_value[0]),
+                                    .stencil = ds.clear_value[1]}},
+                        };
+                    }
+                    if (count) {
+                        const vk::ClearRect rect{
+                            .rect = {.offset = {0, 0},
+                                     .extent = {new_state.width, new_state.height}},
+                            .baseArrayLayer = 0,
+                            .layerCount = new_state.num_layers,
+                        };
+                        Record([clears, count, rect](vk::CommandBuffer cmdbuf) {
+                            cmdbuf.clearAttachments(count, clears.data(), 1, &rect);
+                        });
+                        render_state = new_state;
+                        static std::atomic<u64> reused{0};
+                        const u64 n = reused.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if (n == 1 || n % 4096 == 0)
+                            std::printf("ORDER1886_GPU_INLINE_CLEAR reused=%llu\n",
+                                        static_cast<unsigned long long>(n));
+                        return;
+                    }
+                }
+            }
             bool requests_clear = new_state.depth_stencil_attachment.depth_clear ||
                                   new_state.depth_stencil_attachment.stencil_clear;
             for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
@@ -137,25 +211,32 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     // each draw, this preserves the 94k post-clear pass merges seen in 0.1.20.
     if (auto* p = GpuProfiler::Get(); p && p->Records(this) && p->Sampling()) {
         const auto& dep = new_state.depth_stencil_attachment;
-        const auto colors = new_state.num_color_attachments;
-        if (!colors && dep.has_depth) {
-            if (new_state.width == new_state.height &&
-                (new_state.width == 512 || new_state.width == 1024 ||
-                 new_state.width == 2048))
-                p->Mark(0xC100001ULL, [] { return std::string{"shadow-sized depth-only"}; });
-            else
-                p->Mark(0xC100002ULL, [] { return std::string{"scene depth / prepass"}; });
-        } else if (colors >= 3) {
-            p->Mark(0xC100003ULL, [] { return std::string{"G-buffer MRT 3+"}; });
-        } else if (colors == 2) {
-            p->Mark(0xC100004ULL, [] { return std::string{"MRT 2"}; });
-        } else if (colors == 1 && dep.has_depth) {
-            p->Mark(0xC100005ULL, [] { return std::string{"scene color+depth"}; });
-        } else if (colors == 1) {
-            p->Mark(0xC100006ULL, [] { return std::string{"lighting / postprocess"}; });
-        } else {
-            p->Mark(0xC100007ULL, [] { return std::string{"other graphics"}; });
+        const u32 slots = new_state.num_color_attachments;
+        u32 active_mask = 0;
+        for (u32 i = 0; i < slots; ++i) {
+            if (new_state.color_attachments[i].image_view) active_mask |= (1u << i);
         }
+        const u32 active_colors = std::popcount(active_mask);
+        const bool depth = dep.has_depth;
+        const u32 w = new_state.width, h = new_state.height;
+        // This uniquely groups active attachment masks and dimensions without
+        // making per-draw markers or embedding image handles in the profiler.
+        const u64 key = 0xC1A0000000000000ULL |
+                        (u64(w) << 36) | (u64(h) << 20) |
+                        (u64(active_mask) << 11) | (u64(slots) << 3) |
+                        (depth ? 1ULL : 0ULL);
+        p->Mark(key, [active_colors, active_mask, slots, depth, w, h] {
+            const char* kind = active_colors >= 3 ? "MRT-3plus" :
+                               active_colors == 2 ? "MRT-2active" :
+                               active_colors == 1 && depth ? "scene-color-depth" :
+                               active_colors == 1 ? "lighting-post" :
+                               depth && w == h && (w == 512 || w == 1024 || w == 2048)
+                                   ? "shadow-depth-only" :
+                               depth ? "depth-only" : "other";
+            return std::string{kind} + " " + std::to_string(w) + "x" +
+                   std::to_string(h) + " slots=" + std::to_string(slots) +
+                   " mask=" + std::to_string(active_mask);
+        });
     }
     is_rendering = true;
     render_state = new_state;

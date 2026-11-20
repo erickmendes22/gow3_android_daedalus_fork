@@ -492,6 +492,8 @@ public final class Order1886Activity extends Activity {
             "a união de passes Vulkan permanece disponível.");
         toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
                "gpuTileMerge",true);
+        toggle(c,"Reduzir GPU: limpar attachments sem fechar passe (Adreno)",
+               "gpuInlineClear",true);
         toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",
                "gpuMeters",true);
         line(c,"Medição de gargalos",
