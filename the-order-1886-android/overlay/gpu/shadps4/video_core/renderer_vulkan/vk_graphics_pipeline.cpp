@@ -15,6 +15,7 @@
 #include "video_core/renderer_vulkan/vk_blend_rewrite.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "common/elf_info.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -177,6 +178,10 @@ GraphicsPipeline::GraphicsPipeline(
         dynamic_states.push_back(vk::DynamicState::eVertexInputEXT);
     } else if (!sdata.vertex_bindings.empty()) {
         dynamic_states.push_back(vk::DynamicState::eVertexInputBindingStride);
+    }
+
+    if (g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire)) {
+        dynamic_states.push_back(vk::DynamicState::eFragmentShadingRateKHR);
     }
 
     const vk::PipelineDynamicStateCreateInfo dynamic_info = {
