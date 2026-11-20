@@ -1106,12 +1106,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // Require 1024x1024 + zero MRT + depth writes: a scene prepass is retained.
     if (Order1886SkipShadowDepthWork() &&
         pipeline->GetGraphicsKey().mrt_mask == 0 && db_desc.first &&
-        regs.depth_buffer.DepthValid() && regs.depth_control.depth_enable &&
-        regs.depth_control.depth_write_enable && !regs.depth_control.stencil_enable &&
-        !regs.IsClipDisabled()) {
+        regs.depth_buffer.DepthValid() && !FrameCapture::Active()) {
         const auto& image = texture_cache.GetImage(db_desc.first);
-        if (image.info.size.width == 1024 && image.info.size.height == 1024 &&
-            image.info.props.is_depth) {
+        const u32 map_size = image.info.size.width;
+        // The engine uses multiple cascade sizes, not just 1024; depth-only
+        // square 512/1024/2048 surfaces are not the 1280x720 scene depth.
+        if (image.info.props.is_depth && image.info.size.height == map_size &&
+            (map_size == 512 || map_size == 1024 || map_size == 2048)) {
             const auto state = BeginRendering(pipeline);
             if (needs_barrier) {
                 runtime.FlushBarriers();
@@ -1120,8 +1121,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             const u64 skipped = order1886_shadow_draws_skipped.fetch_add(
                 1, std::memory_order_relaxed) + 1;
             if (skipped == 1 || skipped % 4096 == 0) {
-                std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=%llu map=1024x1024\n",
-                            static_cast<unsigned long long>(skipped));
+                std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=%llu map=%ux%u\n",
+                            static_cast<unsigned long long>(skipped), map_size, map_size);
             }
             return;
         }

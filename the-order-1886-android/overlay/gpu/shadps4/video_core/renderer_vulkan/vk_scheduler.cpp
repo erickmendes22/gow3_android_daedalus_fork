@@ -613,9 +613,65 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .pSignalSemaphores = info.signal_semas.data(),
     };
 
+    // Native queue submission time is CPU/driver work, not GPU execution
+    // time. Keep it separate from the sampled GPU timestamps.
+    static const bool meters = [] {
+        const char* env = std::getenv("ORDER1886_GPU_PROFILE");
+        return env && env[0] == '1';
+    }();
+    const auto t_submit = meters ? std::chrono::steady_clock::now()
+                                 : std::chrono::steady_clock::time_point{};
     ImGui::Core::TextureManager::Submit();
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    if (meters) {
+        const auto t_done = std::chrono::steady_clock::now();
+        const u64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           t_done - t_submit).count();
+        static std::atomic<u64> draw_submit_ns{0}, present_submit_ns{0};
+        static std::atomic<u64> draw_submits{0}, present_submits{0};
+        const bool draw_queue = GpuProfiler::Get() && GpuProfiler::Get()->Records(this);
+        (draw_queue ? draw_submit_ns : present_submit_ns).fetch_add(
+            ns, std::memory_order_relaxed);
+        (draw_queue ? draw_submits : present_submits).fetch_add(
+            1, std::memory_order_relaxed);
+        const u64 now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               t_done.time_since_epoch()).count();
+        static std::atomic<u64> previous_report_ns{0};
+        u64 previous = previous_report_ns.load(std::memory_order_relaxed);
+        if (!previous) {
+            previous_report_ns.compare_exchange_strong(previous, now_ns);
+        } else if (now_ns - previous >= 5'000'000'000ULL &&
+                   previous_report_ns.compare_exchange_strong(previous, now_ns)) {
+            static u64 last_tick_wait = 0, last_record_wait = 0;
+            static u64 last_host_wait = 0, last_copy_wait = 0;
+            static u64 last_frames = 0;
+            const u64 tick = Ps4Stats::tick_wait_ns.load(std::memory_order_relaxed);
+            const u64 record = Ps4Stats::sync_recording_ns.load(std::memory_order_relaxed);
+            const u64 host = Ps4Stats::host_copies_wait_ns.load(std::memory_order_relaxed);
+            const u64 copies = Ps4Stats::copy_threads_wait_ns.load(std::memory_order_relaxed);
+            const u64 frames = Ps4Stats::gpu_frames.load(std::memory_order_relaxed);
+            std::printf(
+                "ORDER1886_CPU_GPU_FEED frames=%llu graphics_submits=%llu "
+                "graphics_submit_wall_ms=%.2f present_submits=%llu "
+                "present_submit_wall_ms=%.2f tick_wait_ms=%.2f "
+                "vk_recorder_wait_ms=%.2f host_copy_wait_ms=%.2f "
+                "copy_threads_wait_ms=%.2f window_s=%.2f\n",
+                static_cast<unsigned long long>(frames - last_frames),
+                static_cast<unsigned long long>(draw_submits.exchange(0)),
+                draw_submit_ns.exchange(0) / 1e6,
+                static_cast<unsigned long long>(present_submits.exchange(0)),
+                present_submit_ns.exchange(0) / 1e6,
+                (tick - last_tick_wait) / 1e6, (record - last_record_wait) / 1e6,
+                (host - last_host_wait) / 1e6, (copies - last_copy_wait) / 1e6,
+                double(now_ns - previous) / 1e9);
+            last_tick_wait = tick;
+            last_record_wait = record;
+            last_host_wait = host;
+            last_copy_wait = copies;
+            last_frames = frames;
+        }
+    }
 
     work_semaphore.Refresh();
     AllocateWorkerCommandBuffers();
