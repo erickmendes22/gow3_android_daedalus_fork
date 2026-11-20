@@ -1,6 +1,6 @@
 # GoW III / G720 PanVK — freeze + heavy-scene remediation (2026-11-20)
 
-**Branch:** `fix/gow3-panvk-freeze-heavy-fps-20261120` (based on `analysis/gow3-mali-double-fps-evidence-20261118`). Source fixes are **not** measured device gains; compile/test must pass before issuing a tester APK.
+**Branch:** `fix/gow3-panvk-freeze-heavy-fps-20261120` (based on `analysis/gow3-mali-double-fps-evidence-20261118`). Source fixes are **not** measured device gains. The tester APK is built and delivered after source/native compilation and signing checks; gameplay FPS/freezes are verified **on-device after installing it**, not required before building it.
 
 ## Observed G720 profile
 
@@ -26,4 +26,4 @@ Source log: `GodOfWar3-Logs-20261120-195724.zip`, `android-game.log`. Light fram
 
 Use the same saved position and same resolution (960×540) with the same PanVK driver and warmed shader cache. Check median/p95/p99 frame times, freeze reproduction and `GOW3_MALI_PRESENT_FENCE_STALL`; record image-pool hits/misses, slow image allocations and the shader/barrier counters. Compare flags individually on that save with performance logging disabled during the decisive A/B, retaining source and driver configuration. `GOW3_GPU_PROFILE=1` can be used for a separate *attribution* run, **not** a directly comparable FPS run because profiling breaks passes. No measured heavy-scene speedup is claimed until this A/B.
 
-**Packaging:** The native-only workflow validates these changes without auto-building an APK. Do not promote a release before compilation and on-device frame/visual checks.
+**Tester packaging:** The `gow3-mali-double-fps-test-apk.yml` workflow on this branch compiles native ARM64 code, creates the separately installable, consistently signed Mali test APK and uploads it as an artifact. CI checks compile/package integrity only and MUST NOT block the tester APK on an unmeasurable >2× FPS threshold or a claim of no device freezes. A stable public release can be evaluated after user-side gameplay and visual tests. The native-only workflow remains available separately.
