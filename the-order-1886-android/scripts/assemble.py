@@ -46,6 +46,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_gpu_profiler.h",
+    "gpu/shadps4/video_core/renderer_vulkan/order1886_vrs.h",
     "gpu/shim/window.cpp", "gpu/shim/ps4_write_log.cpp",
     "gpu/shim/gow3_copy.h",
     "gpu/shim/gow3_copy.cpp",
