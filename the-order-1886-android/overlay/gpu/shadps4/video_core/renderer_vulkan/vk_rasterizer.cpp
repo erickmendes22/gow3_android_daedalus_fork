@@ -1078,8 +1078,12 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
     const bool depth_scene = active_colors == 1 &&
                              state.depth_stencil_attachment.has_depth &&
                              regs.depth_control.depth_enable;
-    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) || !geometry_draw ||
-        (active_colors < 2 && !depth_scene)) {
+    // MRT shading is costly even when the guest vertex shader fetches vertices
+    // without explicit Vulkan vertex buffers. Do not require host VB metadata
+    // for multi-target passes: that rejected legitimate PS4 shader-based draws.
+    // A single-target depth scene still requires identified geometry.
+    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
+        (active_colors < 2 && !(depth_scene && geometry_draw))) {
         return false;
     }
     for (u32 i = 0; i < state.num_color_attachments; ++i) {
