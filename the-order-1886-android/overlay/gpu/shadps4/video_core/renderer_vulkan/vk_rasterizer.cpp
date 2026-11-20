@@ -28,6 +28,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_image_binding_contract.h"
 #include "video_core/renderer_vulkan/order1886_image_mode.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
@@ -1053,6 +1054,31 @@ void Rasterizer::DiagPassBoundary(bool force) {
     diag_addresses = force ? std::array<VAddr, 8>{} : addresses;
 }
 
+// Fragment shading must remain exact for the depth prepass, postprocessing,
+ // UI, blending, stencil, feedback loops and sub-720p render targets. Apply 2x2
+ // only to opaque geometry in the expensive full-resolution two-target MRT pass.
+ // The GPU still rasterizes all geometry/depth/stencil samples; only fragment
+ // shader invocations are coarsened, not skipped draws or merged render targets.
+ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
+                                const RenderState& state, bool feedback_loop,
+                                bool geometry_draw) {
+     if (!geometry_draw || feedback_loop || state.width < 960 || state.height < 540 ||
+         !state.depth_stencil_attachment.has_depth || !regs.depth_control.depth_enable ||
+         regs.depth_control.stencil_enable) {
+         return false;
+     }
+     const auto& key = pipeline->GetGraphicsKey();
+     if (key.num_samples != 1 || std::popcount(key.mrt_mask) != 2) {
+         return false;
+     }
+     for (u32 i = 0; i < state.num_color_attachments; ++i) {
+         if ((key.mrt_mask & (1u << i)) && regs.blend_control[i].enable) {
+             return false;
+         }
+     }
+     return true;
+ }
+
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     if (DrawPipe::OnStageB()) {
@@ -1170,6 +1196,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // Timestamp only for real pass changes; no forced split for each pipeline.
     scheduler.BeginRendering(state);
 
+    const bool vrs2x2 =
+        g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
+        Order1886UseVrs2x2(pipeline, regs, state, attachment_feedback_loop,
+                            object_candidate);
+
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
     const auto& fetch_shader = pipeline->GetFetchShader();
     const auto [vertex_offset, instance_offset] = GetDrawOffsets(regs, vs_info, fetch_shader);
@@ -1190,6 +1221,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             }
         };
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+        if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
+            const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
+            const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
+                vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                vk::FragmentShadingRateCombinerOpKHR::eKeep};
+            cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+        }
         draw();
         if (square) [[unlikely]] {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, square);
@@ -1313,6 +1351,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     UpdateDynamicState(pipeline, is_indexed);
     // Timestamp only for real pass changes; no forced split for each pipeline.
     scheduler.BeginRendering(state);
+    // Indirect draws can contain many objects, and their index counts are not
+    // known here. Restrict coarse shading to full-res opaque MRT geometry.
+    const bool vrs2x2 =
+        g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
+        Order1886UseVrs2x2(pipeline, Regs(), state, attachment_feedback_loop, true);
 
     ASSERT(stride == (is_indexed ? sizeof(VkDrawIndexedIndirectCommand)
                                  : sizeof(VkDrawIndirectCommand)));
@@ -1326,6 +1369,13 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
                 break;
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
+            if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
+                const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
+                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
+                cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+            }
             if (is_indexed) {
                 if (counts) {
                     cmdbuf.drawIndexedIndirectCount(args, args_offset, counts, counts_offset, max_count,
