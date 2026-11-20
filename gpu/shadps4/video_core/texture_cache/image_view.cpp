@@ -187,7 +187,10 @@ ImageView::ImageView(const Vulkan::Instance& instance, const ImageViewInfo& info
         // A transcoded image keeps the PS4's BC1/BC3 metadata but its Vulkan
         // pixels really are ETC2. Only remap the matching guest sample view;
         // unrelated BC/RGBA aliases must still fail RobustImage validation.
-        if (image.transcoded_bc_to_etc2 && format == image.info.pixel_format) {
+        if ((image.transcoded_bc_to_etc2 || image.transcoded_snorm2101010) &&
+            format == image.info.pixel_format) {
+            // Only same original PS4 format may see converted physical texels.
+            // Arbitrary mutable-format aliasing still needs the normal guard.
             view_format = backing_format;
         }
         if (image.transcoded_bc_to_etc2 && shader_storage) {
