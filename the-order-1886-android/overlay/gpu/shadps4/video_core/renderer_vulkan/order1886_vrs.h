@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#pragma once
+
+#include <atomic>
+
+namespace Vulkan {
+
+// Set after VkDevice creation, before any graphics pipeline is created.
+// No VRS 4x4 path exists: only the extension-supported 2x2 or exact 1x1.
+inline std::atomic_bool g_order1886_vrs_2x2_enabled{false};
+
+} // namespace Vulkan
