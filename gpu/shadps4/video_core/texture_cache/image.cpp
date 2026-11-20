@@ -1030,15 +1030,31 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         auto alternate_info = format_info;
         alternate_info.format = alternative;
         alternate_info.flags = {};
-        if (instance.IsFormatSupported(alternative, format_features) &&
-            ProbeImageFormat(instance, alternate_info).result == vk::Result::eSuccess) {
+        auto alternate_features = format_features;
+        const auto supported = [&] {
+            return instance.IsFormatSupported(alternative, alternate_features) &&
+                   ProbeImageFormat(instance, alternate_info).result == vk::Result::eSuccess;
+        };
+        bool usable = supported();
+        // The PS4 guest sometimes specifies STORAGE speculatively for an
+        // image never used by imageStore. Match the existing PanVK optional-
+        // storage fallback, but never drop STORAGE when the shader requires it.
+        if (!usable && !info.props.needs_storage &&
+            (alternate_info.usage & vk::ImageUsageFlagBits::eStorage)) {
+            alternate_info.usage &= ~vk::ImageUsageFlagBits::eStorage;
+            alternate_features = FormatFeatureFlags(alternate_info.usage, false);
+            usable = supported();
+        }
+        if (usable) {
             supported_format = alternative;
             format_info = alternate_info;
+            usage_flags = alternate_info.usage;
+            format_features = alternate_features;
             flags = {};
             transcoded_snorm2101010 = true;
             static std::atomic<u32> selected{0};
             if (selected.fetch_add(1, std::memory_order_relaxed) < 4)
-                std::printf("GOW3_MALI_SNORM10_FALLBACK guest=%s host=%s %ux%u mips=%u\\n",
+                std::printf("GOW3_MALI_SNORM10_FALLBACK guest=%s host=%s %ux%u mips=%u\n",
                             vk::to_string(info.pixel_format).c_str(),
                             vk::to_string(alternative).c_str(),
                             info.size.width, info.size.height, info.resources.levels);
