@@ -795,34 +795,32 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     const char* opt = std::getenv("GOW3_MALI_VMA_PREWARM");
     if (opt && opt[0] == '0') return;
 
-    constexpr auto local_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                 VK_IMAGE_USAGE_SAMPLED_BIT;
-    VkImageCreateInfo etc2{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,
+    constexpr auto local_usage = vk::ImageUsageFlagBits::eTransferSrc |
+                                 vk::ImageUsageFlagBits::eTransferDst |
+                                 vk::ImageUsageFlagBits::eSampled;
+    vk::ImageCreateInfo etc2{
+        .flags = {},
+        .imageType = vk::ImageType::e2D,
+        .format = vk::Format::eEtc2R8G8B8A8UnormBlock,
         .extent = {2048, 2048, 1},
         .mipLevels = 11,
         .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
         .usage = local_usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
     };
-    VkImageCreateInfo rgba = etc2;
-    rgba.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
-                 VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
-    rgba.format = VK_FORMAT_R32G32B32A32_UINT;
+    vk::ImageCreateInfo rgba = etc2;
+    rgba.flags = vk::ImageCreateFlagBits::eMutableFormat |
+                 vk::ImageCreateFlagBits::eExtendedUsage;
+    rgba.format = vk::Format::eR32G32B32A32Uint;
     rgba.extent = {4096, 248, 1};
     rgba.mipLevels = 1;
-    rgba.usage = local_usage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                 VK_IMAGE_USAGE_STORAGE_BIT;
+    rgba.usage = local_usage | vk::ImageUsageFlagBits::eColorAttachment |
+                 vk::ImageUsageFlagBits::eStorage;
     if (feedback_loop_supported)
-        rgba.usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+        rgba.usage |= vk::ImageUsageFlagBits::eAttachmentFeedbackLoopEXT;
 
     const VmaAllocationCreateInfo allocation_ci{
         .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
@@ -846,7 +844,8 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
         VmaAllocation allocation = VK_NULL_HANDLE;
         VmaAllocationInfo info{};
         const auto start = std::chrono::steady_clock::now();
-        const VkResult result = vmaCreateImage(allocator, &ci, &allocation_ci,
+        const VkImageCreateInfo raw = static_cast<VkImageCreateInfo>(ci);
+        const VkResult result = vmaCreateImage(allocator, &raw, &allocation_ci,
                                                &image, &allocation, &info);
         const auto ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - start).count();
@@ -856,8 +855,7 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
                         int(ci.format), int(result));
             continue;
         }
-        const bool retained = ReturnBcImage(allocator, vk::ImageCreateInfo{ci},
-                                             image, allocation, info.size);
+        const bool retained = ReturnBcImage(allocator, ci, image, allocation, info.size);
         if (!retained) vmaDestroyImage(allocator, image, allocation);
         std::printf("GOW3_MALI_VMA_PREWARM format=%d retained=%d bytes=%llu ms=%.2f\\n",
                     int(ci.format), int(retained),
