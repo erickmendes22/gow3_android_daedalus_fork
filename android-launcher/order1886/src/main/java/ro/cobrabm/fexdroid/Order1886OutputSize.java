@@ -13,9 +13,9 @@ final class Order1886OutputSize {
     static int[] forSurface(int physicalW, int physicalH, int gameRenderW) {
         if(physicalW<320||physicalH<180)
             throw new IllegalArgumentException("Surface too small");
-        if(gameRenderW!=640&&gameRenderW!=768&&gameRenderW!=1024&&gameRenderW!=1280&&gameRenderW!=1600&&gameRenderW!=1920)
+        if(gameRenderW!=1280&&gameRenderW!=1600&&gameRenderW!=1920)
             throw new IllegalArgumentException("Unsupported render width");
-        // 640/768/1024/1280/1600/1920: 16:9 buffers, never upscaled on the GPU.
+        // 1280 = 720p, 1600 = 900p, 1920 = 1080p, always true 16:9 AHBs.
         final int targetW=gameRenderW;
         final int targetH=gameRenderW*9/16;
         if(physicalW>=targetW && physicalH>=targetH)
