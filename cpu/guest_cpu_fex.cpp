@@ -391,7 +391,8 @@ void guest_cpu_code(uintptr_t base, size_t size) {
     code_ranges.emplace_back(base, size);
 }
 
-extern "C" void guest_cpu_mark_direct_memory_scalar_return(void* fn) {
+extern "C" __attribute__((visibility("default")))
+void guest_cpu_mark_direct_memory_scalar_return(void* fn) {
     if (!fn) return;
     const char* rollback = std::getenv("GOW3_DIRECTMEM_PRESERVE_RDX");
     if (rollback && rollback[0] == '0') return;
