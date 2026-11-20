@@ -126,6 +126,14 @@ jobs:
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
           echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Compile Mali SNORM10 shader to SPIR-V before native link
+        shell: bash -el {0}
+        run: |
+          glslang --target-env vulkan1.3 --vn SNORM2101010_COMP \
+            -o "$RUNNER_TEMP/snorm2101010_comp.h" \
+            gpu/shadps4/video_core/host_shaders/snorm2101010.comp
+          test -s "$RUNNER_TEMP/snorm2101010_comp.h"
+          grep -Fq SNORM2101010_COMP "$RUNNER_TEMP/snorm2101010_comp.h"
       - name: Build pinned Android dependencies
         shell: bash -el {0}
         run: bash tools/android/bionic/build_deps.sh
