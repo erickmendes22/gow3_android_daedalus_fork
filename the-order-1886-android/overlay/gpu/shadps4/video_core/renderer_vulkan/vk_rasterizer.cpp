@@ -1055,40 +1055,43 @@ void Rasterizer::DiagPassBoundary(bool force) {
     diag_addresses = force ? std::array<VAddr, 8>{} : addresses;
 }
 
-// VRS 2x2 for opaque full-resolution MRT shader work. The guest graphics
-// key retains PS4 MSAA settings even when the Adreno path forces a single host
-// sample (AmdGpu::NoMsaa). Testing only key.num_samples == 1 incorrectly
-// rejected every draw in 0.1.23 (60 windows with VRS_DRAW_COUNTS=0).
+// The 0.1.24 broad-VRS path coarsened fragment shaders that still use
+// discard/coverage/depth exports, even with fixed-function blending disabled.
+// Those shaders are NOT opaque: 2x2 execution can discard the same four-pixel
+// block and make the character's alpha-tested geometry look transparent.
 //
-// Stencil/depth coverage remains full resolution under Vulkan VRS: do not
-// reject an opaque G-buffer draw merely because depth/stencil is bound.
-// Do not coarsen blends, attachment feedback loops, single-target post,
-// half-resolution passes or full-screen quads without geometry.
+// Restrict VRS to full-resolution opaque G-buffer/MRT geometry. Single-target
+// scene-depth draws gave no measurable speedup in log 12 (median 2.645 ms,
+// versus 2.325 ms in log 11), so preserve their exact fragment coverage.
+// Keep full-resolution depth/stencil tests and all shadow/UI/post draws exact.
 static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
-                               const RenderState& state, bool feedback_loop,
-                               bool geometry_draw) {
-    if (feedback_loop || state.width < 960 || state.height < 540) {
+                              const RenderState& state, bool feedback_loop,
+                              bool geometry_draw) {
+    if (feedback_loop || state.width < 960 || state.height < 540 ||
+        !state.depth_stencil_attachment.has_depth || !regs.depth_control.depth_enable ||
+        regs.depth_control.stencil_enable) {
         return false;
     }
     const auto& key = pipeline->GetGraphicsKey();
-    const u32 active_colors = std::popcount(key.mrt_mask);
-    // The second large GPU bottleneck is the full-resolution
-    // scene-color-depth pass (about 2.3 ms/frame in log 11). Coarsen
-    // opaque geometry there as well, but never a one-target post/UI draw.
-    const bool depth_scene = active_colors == 1 &&
-                             state.depth_stencil_attachment.has_depth &&
-                             regs.depth_control.depth_enable;
-    // MRT shading is costly even when the guest vertex shader fetches vertices
-    // without explicit Vulkan vertex buffers. Do not require host VB metadata
-    // for multi-target passes: that rejected legitimate PS4 shader-based draws.
-    // A single-target depth scene still requires identified geometry.
     if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
-        (active_colors < 2 && !(depth_scene && geometry_draw))) {
+        std::popcount(key.mrt_mask) < 2) {
         return false;
     }
+
+    // A fragment program may be alpha-tested without any Vulkan blend state.
+    // Reject discard, explicit Z/stencil/sample-mask export and storage side
+    // effects; otherwise 2x2 changes object visibility rather than only cost.
+    const auto* fs = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    if (!fs || fs->has_discard || fs->hw.fs.mrtz_mask != 0 ||
+        fs->has_storage_images || fs->translation_failed) {
+        return false;
+    }
+
+    // Avoid a VRS coarse pass for primitives with no identified geometry
+    // except multi-target graphics where the vertex shader fetches vertices
+    // itself instead of using host Vulkan vertex buffer descriptors.
+    (void)geometry_draw;
     for (u32 i = 0; i < state.num_color_attachments; ++i) {
-        // Use the effective Vulkan pipeline blend state, not the raw guest
-        // blend register: a color format with blend_bypass does not blend.
         if ((key.mrt_mask & (1u << i)) &&
             (key.blend_controls[i].enable || !state.color_attachments[i].image_view)) {
             return false;
