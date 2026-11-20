@@ -12,6 +12,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_per_vertex.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_quad_rect.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "video_core/renderer_vulkan/vk_blend_rewrite.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -141,7 +142,12 @@ GraphicsPipeline::GraphicsPipeline(
         sdata.multisampling = {
             .rasterizationSamples = LiverpoolToVK::NumSamples(
                 key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
+            // With the single-sample Adreno fallback, per-sample shading has
+            // no additional guest samples to preserve, but can force per-pixel
+            // fragment execution and cancel Vulkan VRS 2x2 entirely.
             .sampleShadingEnable =
+                                   !(g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed) &&
+                                     AmdGpu::NoMsaa()) &&
                                    (fs_info.addr_flags.persp_sample_ena ||
                                     fs_info.addr_flags.linear_sample_ena),
         };
