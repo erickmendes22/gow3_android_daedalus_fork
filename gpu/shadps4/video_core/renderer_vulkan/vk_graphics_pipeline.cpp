@@ -272,8 +272,20 @@ GraphicsPipeline::GraphicsPipeline(
     for (s32 i = 0; i < key.num_color_attachments; ++i) {
         const auto& col_buf = key.color_buffers[i];
         const auto format = LiverpoolToVK::SurfaceFormat(col_buf.data_format, col_buf.num_format);
-        const auto color_format =
+        vk::Format color_format =
             instance.GetSupportedFormat(format, vk::FormatFeatureFlagBits2::eColorAttachment);
+        // Dynamic rendering pipelines must advertise the PHYSICAL attachment
+        // format. TextureCache::Image maps guest SNORM10 to RGBA16_SNORM on
+        // Mali when the driver cannot create the packed 32-bit attachment.
+        // Do not change vertex formats or turn UNORM into signed data.
+        if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+            std::getenv("GOW3_ANDROID_PORT") &&
+            format == vk::Format::eA2B10G10R10SnormPack32 &&
+            !instance.IsFormatSupported(format, vk::FormatFeatureFlagBits2::eColorAttachment) &&
+            instance.IsFormatSupported(vk::Format::eR16G16B16A16Snorm,
+                                       vk::FormatFeatureFlagBits2::eColorAttachment)) {
+            color_format = vk::Format::eR16G16B16A16Snorm;
+        }
         if (!instance.IsFormatSupported(color_format,
                                         vk::FormatFeatureFlagBits2::eColorAttachment)) {
             LOG_WARNING(Render_Vulkan,
