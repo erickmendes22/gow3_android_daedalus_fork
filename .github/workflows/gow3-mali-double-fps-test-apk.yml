@@ -1,8 +1,10 @@
-name: GoW III Mali G720 SNORM10 + VMA + DirectMemory Bionic Test APK
+name: GoW III Mali G720 - Four Fixes ARM64 Test APK
 
+# This produces an installable device-test artifact. Real FPS and freeze
+# validation must happen AFTER installation; it is never a CI release gate.
 on:
   push:
-    branches: [analysis/gow3-mali-double-fps-evidence-20261118]
+    branches: [fix/gow3-panvk-freeze-heavy-fps-20261120]
     paths: ['.github/workflows/gow3-mali-double-fps-test-apk.yml']
   workflow_dispatch:
 
@@ -74,6 +76,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_directmem_scalar_fex.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_async_ahb.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_freeze_heavy_scene_regression.py' -v
           python3 -m unittest discover -s tests -p 'test_g720_driver_2631_isolated.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
@@ -151,6 +154,8 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           bash tools/android/bionic/build_pkg.sh
+      # This build cannot observe the user's Mali GPU. Passing here means
+      # "APK compiled and signed", never "gameplay freeze/performance fixed".
       - name: Package, sign, and validate separate Mali diagnostics app
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
@@ -160,7 +165,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-G720-SNORM10-Compute-VMA-FEX-DirectMem-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-G720-Freeze-HeavyFPS-FourFixes-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
