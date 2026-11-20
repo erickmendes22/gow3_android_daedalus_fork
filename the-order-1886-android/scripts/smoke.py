@@ -35,6 +35,17 @@ gpu_checks={
   "Inline Vulkan tile clears preserve exact attachment state":
       "ORDER1886_GPU_INLINE_CLEAR reused=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
       "compared == new_state" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
+  "VRS 2x2 capability header is present":
+      (gpu/"shadps4/video_core/renderer_vulkan/order1886_vrs.h").is_file(),
+  "VRS never requests 4x4":
+      "fragment_size{vrs2x2 ? 2u : 1u" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "4u : 1u" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS pipeline dynamic state enabled only after feature negotiation":
+      "vk::DynamicState::eFragmentShadingRateKHR" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp").read_text() and
+      "vrs_2x2_supported" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text(),
   "Actual attachment mask GPU timing":
       "MRT-2active" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
   "Tile-friendly post-clear render pass reuse included":
