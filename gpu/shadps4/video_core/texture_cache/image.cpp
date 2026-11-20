@@ -1022,10 +1022,26 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         !info.props.is_depth && !info.props.is_block &&
         !info.props.is_volume && info.type == AmdGpu::ImageType::Color2D &&
         info.resources.layers == 1 && info.num_samples == 1;
-    if (mali_packed &&
-        (!instance.IsFormatSupported(info.pixel_format, format_features) ||
-         ProbeImageFormat(instance, format_info).result ==
-             vk::Result::eErrorFormatNotSupported)) {
+    // First try the REAL packed Vulkan image with optional STORAGE removed.
+    // Never double the pixels to 64-bit when the 32-bit native image can work
+    // after the same speculative-storage cleanup already used for other formats.
+    bool native_packed_ok = !mali_packed;
+    if (mali_packed) {
+        native_packed_ok =
+            instance.IsFormatSupported(info.pixel_format, format_features) &&
+            ProbeImageFormat(instance, format_info).result == vk::Result::eSuccess;
+        if (!native_packed_ok && !info.props.needs_storage &&
+            (format_info.usage & vk::ImageUsageFlagBits::eStorage)) {
+            auto native_without_storage = format_info;
+            native_without_storage.usage &= ~vk::ImageUsageFlagBits::eStorage;
+            native_packed_ok =
+                instance.IsFormatSupported(info.pixel_format,
+                    FormatFeatureFlags(native_without_storage.usage, false)) &&
+                ProbeImageFormat(instance, native_without_storage).result ==
+                    vk::Result::eSuccess;
+        }
+    }
+    if (mali_packed && !native_packed_ok) {
         const auto alternative = vk::Format::eR16G16B16A16Snorm;
         auto alternate_info = format_info;
         alternate_info.format = alternative;
