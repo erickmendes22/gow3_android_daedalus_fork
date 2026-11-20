@@ -39,9 +39,13 @@ class MaliFreezeHeavySceneRegression(unittest.TestCase):
         self.assertIn("work_semaphore.CurrentTick()", fn)
         self.assertIn("work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions)", fn)
         self.assertLess(fn.index("work_semaphore.Wait(next_signal_value"),
-                        fn.index("std::scoped_lock lk{submit_mutex}"))
-        self.assertLess(fn.index("std::scoped_lock lk{submit_mutex}"),
+                        fn.index("std::unique_lock lk{submit_mutex}"))
+        self.assertLess(fn.index("std::unique_lock lk{submit_mutex}"),
                         fn.index("work_semaphore.NextTick()"))
+        self.assertIn("lk.unlock();", fn)
+        self.assertIn("work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions)", fn)
+        self.assertLess(fn.index("lk.unlock();"),
+                        fn.index("work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions)"))
 
     def test_rgba128_exact_shape_survives_cross_format_rebind(self):
         c = src("gpu/shadps4/video_core/texture_cache/image.cpp")
