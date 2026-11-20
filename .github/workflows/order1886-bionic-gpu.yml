@@ -246,17 +246,54 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Build dedicated The Order 1886 Android debug APK
+      - name: Restore stable The Order signing key
+        id: signing
+        shell: bash
+        env:
+          ORDER1886_SIGNING_KEY_B64: ${{ secrets.ORDER1886_KEYSTORE_BASE64 }}
+          ORDER1886_SIGNING_PASS: ${{ secrets.ORDER1886_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$ORDER1886_SIGNING_KEY_B64" && -n "$ORDER1886_SIGNING_PASS" ]]; then
+            umask 077
+            mkdir -p "$RUNNER_TEMP/order1886-signing"
+            export ORDER1886_KEYSTORE_FILE="$RUNNER_TEMP/order1886-signing/order1886.p12"
+            printf '%s' "$ORDER1886_SIGNING_KEY_B64" | base64 --decode > "$ORDER1886_KEYSTORE_FILE"
+            keytool -list -keystore "$ORDER1886_KEYSTORE_FILE" -storetype PKCS12 \
+              -storepass "$ORDER1886_SIGNING_PASS" -alias order1886 >/dev/null
+            echo "ORDER1886_KEYSTORE_FILE=$ORDER1886_KEYSTORE_FILE" >> "$GITHUB_ENV"
+            echo "ORDER1886_KEYSTORE_PASSWORD=$ORDER1886_SIGNING_PASS" >> "$GITHUB_ENV"
+            echo "target=assembleRelease" >> "$GITHUB_OUTPUT"
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+            echo "Using persistent The Order 1886 signing certificate."
+          else
+            echo "::warning::Configure ORDER1886_KEYSTORE_BASE64 and ORDER1886_KEYSTORE_PASSWORD repository secrets for upgradable signed APKs."
+            echo "target=assembleDebug" >> "$GITHUB_OUTPUT"
+            echo "variant=debug-ephemeral" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build dedicated The Order 1886 Android APK (retry Maven failures)
         working-directory: android-launcher
         shell: bash
+        env:
+          APK_TARGET: ${{ steps.signing.outputs.target }}
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
+          for attempt in 1 2 3; do
+            echo "Gradle attempt $attempt/3: $APK_TARGET"
+            extra=()
+            if [[ "$attempt" -gt 1 ]]; then extra+=(--refresh-dependencies); fi
+            if ./gradlew ":order1886:$APK_TARGET" --no-daemon --stacktrace "${extra[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then exit 1; fi
+            sleep 20
+          done
       - name: Verify The Order APK contents and package
         shell: bash
         run: |
           set -euo pipefail
-          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
+          apk=$(find android-launcher/order1886/build/outputs/apk -name '*.apk' -print -quit)
           test -f "$apk"
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
@@ -266,13 +303,14 @@ jobs:
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
           unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
           unzip -Z1 "$apk" | grep -q 'assets/order1886-turnip-default.zip'
+          "$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/apksigner" verify --print-certs "$apk"
           echo "Built The Order ARM64 APK: $apk"
           sha256sum "$apk"
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.16-auto-prepare-gamehub26
-          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.17-${{ steps.signing.outputs.variant }}
+          path: android-launcher/order1886/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
         uses: actions/upload-artifact@v4
