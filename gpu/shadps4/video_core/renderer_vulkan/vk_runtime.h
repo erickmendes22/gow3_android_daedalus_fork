@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <future>
 #include "common/types.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_barrier_tracker.h"
@@ -124,6 +125,9 @@ private:
     std::unique_ptr<VideoCore::BlitHelper> blit_helper;
     StagingBufferPool staging_pool;
     std::unique_ptr<BcnTranscodeState> bcn_transcode;
+    // Precompile BCn -> ETC2 away from the first guest texture binding on Mali.
+    // Declared after the state so it joins before Vulkan objects are destroyed.
+    std::future<std::unique_ptr<BcnTranscodeState>> bcn_transcode_prepared;
     std::unique_ptr<SnormTranscodeState> snorm_transcode;
     BarrierTracker barrier_tracker;
     VideoCore::Image::Barriers image_barriers;
