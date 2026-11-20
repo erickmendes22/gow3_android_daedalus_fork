@@ -66,10 +66,14 @@ class MaliSignedFormatTests(unittest.TestCase):
         self.assertIn("cb.dispatch((params.width + 7u) / 8u,", RUNTIME)
         self.assertNotIn("eA2B10G10R10UnormPack32", IMAGE[IMAGE.index("// Mali G720 does not expose"):IMAGE.index("// Mali-only *host* BC1")])
 
-    def test_prewarm_two_measured_cold_descriptions_only(self):
+    def test_prewarm_measured_image_shapes_only_with_budget_guard(self):
         prewarm = IMAGE[IMAGE.index("void PrewarmMaliImagePool("):IMAGE.index("void UniqueImage::Destroy()")]
         self.assertIn(".extent = {2048, 2048, 1}", prewarm)
         self.assertIn("rgba.extent = {4096, 248, 1}", prewarm)
+        for height in (168, 208, 232):
+            self.assertIn(f"rgba{height}.extent.height = {height};", prewarm)
+        self.assertIn("GOW3_MALI_VMA_PREWARM_HEAVY", prewarm)
+        self.assertIn("ScenePoolRetentionEnabled()", prewarm)
         self.assertIn("GOW3_MALI_VMA_PREWARM", prewarm)
         self.assertIn("VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT", prewarm)
         self.assertIn("BcPoolHasBudget(allocator)", prewarm)
