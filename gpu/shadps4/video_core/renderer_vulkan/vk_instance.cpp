@@ -978,6 +978,13 @@ void Instance::CreateAllocator() {
         UNREACHABLE_MSG("Failed to initialize VMA with error {}",
                         vk::to_string(vk::Result{result}));
     }
+    // Front-load the two measured 50+ ms G720 VkImage cold creations into
+    // the Vulkan startup, before any PS4 scene draws. VMA's budget gate and
+    // the exact retired-image pool own these allocations; =0 disables.
+    if (std::getenv("GOW3_ANDROID_PORT") && properties.vendorID == 0x13B5) {
+        VideoCore::PrewarmMaliImagePool(allocator,
+                                        IsAttachmentFeedbackLoopLayoutSupported());
+    }
 }
 
 void Instance::CollectDeviceParameters() {
