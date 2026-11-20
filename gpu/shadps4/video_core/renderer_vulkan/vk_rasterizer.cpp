@@ -2619,8 +2619,13 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
 // Image::GetBarriers, so later writes still see every reading stage.
 static vk::PipelineStageFlags2 MaliReadOnlyTextureStage(Shader::SwStage sw_stage) {
     static const bool exact = [] {
+        // A sampled image is only read by the shader stage that binds it.
+        // Scope to that stage on PanVK; Image::GetBarriers accumulates all
+        // read stages before any subsequent write or layout transition.
+        // An explicit =0 restores the conservative ALL_COMMANDS policy.
         const char* selected = std::getenv("GOW3_MALI_SHADER_STAGE_BARRIERS");
-        return std::getenv("GOW3_MALI_CPU_PRESENT") && selected && selected[0] == '1';
+        return std::getenv("GOW3_MALI_CPU_PRESENT") &&
+               (!selected || selected[0] != '0');
     }();
     if (!exact) return vk::PipelineStageFlagBits2::eAllCommands;
     switch (sw_stage) {
