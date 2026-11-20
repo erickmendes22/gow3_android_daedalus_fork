@@ -684,6 +684,22 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
     // the original global memory barrier (no weakened dependencies).
     const char* local = std::getenv("GOW3_MALI_LOCAL_BUFFER_BARRIERS");
     mali_local_buffer_barriers = split_image_buffer_barriers && local && local[0] == '1';
+    // The first 1920x1080 BC1 -> ETC2 upload in GoW III previously created
+    // this compute pipeline on the GPU command thread (216.9 ms intro stall).
+    // Vulkan allows independent pipeline creation with a null pipeline cache
+    // on a different host thread. Keep the Scheduler/descriptor ownership in
+    // Runtime and join via the future before destruction. No guest pixels or
+    // image dependencies are accessed by this compiler worker.
+    const char* bcn_enabled = std::getenv("GOW3_MALI_BCN_TO_ETC2");
+    const char* bcn_prewarm = std::getenv("GOW3_MALI_BCN_ASYNC_COMPILE");
+    if (std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!bcn_enabled || bcn_enabled[0] != '0') &&
+        (!bcn_prewarm || bcn_prewarm[0] != '0')) {
+        bcn_transcode_prepared = std::async(std::launch::async, [this] {
+            return std::make_unique<BcnTranscodeState>(instance, scheduler);
+        });
+    }
 #endif
 }
 
@@ -841,7 +857,15 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
     }
 
     if (dst->transcoded_bc_to_etc2) {
-        if (!bcn_transcode) bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler);
+        if (!bcn_transcode) {
+            // Usually completed during guest boot. If first use wins the race,
+            // wait for the exact same pipeline rather than creating it twice.
+            if (bcn_transcode_prepared.valid()) {
+                bcn_transcode = bcn_transcode_prepared.get();
+            } else {
+                bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler);
+            }
+        }
         const bool recorded = bcn_transcode->Record(dst, src, upload_copies, staging_pool);
         ASSERT_MSG(recorded, "Mali BC1/BC3 -> ETC2 upload region is not supported");
         for (const auto& copy : upload_copies) {
