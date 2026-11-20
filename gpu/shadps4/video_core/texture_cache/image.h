@@ -173,6 +173,7 @@ public:
         u32 vo_surface : 1;
     } usage{};
     bool transcoded_bc_to_etc2 = false; ///< Physical ETC2; guest metadata stays BC1/BC3.
+    bool transcoded_snorm2101010 = false; ///< Physical RGBA16 SNORM; guest stays packed SNORM10.
     bool mali_read_only_elision = false; ///< skip unnecessary same-layout read/read barriers.
     bool scene_proxy = false; ///< gow3: SceneTargets holds a reduced-size proxy of it
     VAddr track_addr = 0;
