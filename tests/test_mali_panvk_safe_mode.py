@@ -95,7 +95,8 @@ printf 'RESULT=%s:%s:%s:%s:%s:%s' \
         source = SCHEDULER.read_text()
         self.assertIn('std::getenv("GOW3_VK_MAX_IN_FLIGHT")', source)
         self.assertIn("requested >= 1 && requested <= 8", source)
-        self.assertIn("work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions)", source)
+        self.assertIn("work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions)", source)
+        self.assertIn("work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions)", source)
 
 
 if __name__ == "__main__":
