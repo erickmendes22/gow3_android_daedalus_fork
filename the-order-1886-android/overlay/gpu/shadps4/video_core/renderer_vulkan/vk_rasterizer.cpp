@@ -1073,14 +1073,17 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto& regs = Regs();
     // the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
-    const bool is_display_pass = regs.color_buffers[0] &&
+    // No per-draw framebuffer lookup in the normal non-profiled path.
+    // The earlier diagnostic fix must not add CPU work to every draw.
+    const bool motion_enabled = camera_motion->Enabled();
+    const bool profiling_enabled = GpuProfiler::Get() != nullptr;
+    const bool is_display_pass = (motion_enabled || profiling_enabled) &&
+        regs.color_buffers[0] &&
         FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
     if (is_display_pass) {
-        // Fix inherited from the PC port: GPU profiling must work with
-        // temporal upscaling OFF, otherwise no frame ends are recorded.
         NoteFrameStart();
     }
-    if (camera_motion->Enabled() && is_display_pass) {
+    if (motion_enabled && is_display_pass) {
         scene_started = false;
         camera_motion->OnDisplayPass(cb_descs[0].first);
         if (upscaler->OnFrameStart()) {
