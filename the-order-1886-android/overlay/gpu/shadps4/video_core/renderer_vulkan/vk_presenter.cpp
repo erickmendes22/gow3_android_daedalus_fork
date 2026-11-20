@@ -685,7 +685,92 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // the post process pass still sRGB encoded and has to be decoded there instead.
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
-    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+
+    // The mobile compositor already treats the submitted AHardwareBuffer as OPAQUE.
+    // When the guest display buffer has an 8-bit sRGB view, the normal postprocess
+    // pass decodes sRGB on sampling and re-encodes it with unit gamma. This is an
+    // identity operation for the RGB bytes. A direct copy avoids an entire
+    // full-screen fragment-shader pass, its texture sampling, and its render pass.
+    // Do NOT bypass for 10-bit/HDR, gamma changes, FSR/RCAS, scaling, or swizzles.
+    bool copy_srgb_direct = false;
+    vk::Image copy_source{};
+#ifdef __ANDROID__
+    if (!upscaled && !frame_dump && !frame->is_hdr && pp_settings.gamma == 1.0f &&
+        !pp_settings.hdr && !pp_settings.srgb_input &&
+        image_size.width == frame->width && image_size.height == frame->height &&
+        !Ps4Graphics::FsrPassRuns(fsr_settings.enable, fsr_settings.use_rcas,
+                                  int(image_size.width), int(image_size.height),
+                                  int(frame->width), int(frame->height))) {
+        const auto& image = texture_cache.GetImage(image_id);
+        const auto src_format = image.info.pixel_format;
+        const auto view_format = view_info.format;
+        const auto dst_format = frame->format;
+        const bool rgba =
+            view_format == vk::Format::eR8G8B8A8Srgb &&
+            (src_format == vk::Format::eR8G8B8A8Srgb ||
+             src_format == vk::Format::eR8G8B8A8Unorm) &&
+            dst_format == vk::Format::eR8G8B8A8Unorm;
+        const bool bgra =
+            view_format == vk::Format::eB8G8R8A8Srgb &&
+            (src_format == vk::Format::eB8G8R8A8Srgb ||
+             src_format == vk::Format::eB8G8R8A8Unorm) &&
+            dst_format == vk::Format::eB8G8R8A8Unorm;
+        copy_srgb_direct = rgba || bgra;
+        if (copy_srgb_direct) {
+            copy_source = image.GetImage();
+        }
+    }
+    // One-time size/path report, not per-frame profiling or instrumentation.
+    static bool reported_present_path = false;
+    if (!reported_present_path) {
+        reported_present_path = true;
+        std::fprintf(stderr,
+                     "ORDER1886_DISPLAY_PATH source=%ux%u view_format=%d output=%ux%u "
+                     "surface_format=%d direct_srgb=%d\n",
+                     image_size.width, image_size.height, int(view_info.format),
+                     frame->width, frame->height, int(frame->format),
+                     int(copy_srgb_direct));
+    }
+#endif
+    if (copy_srgb_direct) {
+        auto& image = texture_cache.GetImage(image_id);
+        runtime.Transit(&image, vk::ImageLayout::eTransferSrcOptimal,
+                        vk::PipelineStageFlagBits2::eCopy,
+                        vk::AccessFlagBits2::eTransferRead);
+        runtime.FlushBarriers();
+        const vk::ImageMemoryBarrier2 to_dst{
+            .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .image = frame->image,
+            .subresourceRange{frame_subresources},
+        };
+        cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_dst});
+        const vk::ImageCopy copy_region{
+            .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .extent = {image_size.width, image_size.height, 1},
+        };
+        cmdbuf.copyImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
+                         vk::ImageLayout::eTransferDstOptimal, copy_region);
+        const vk::ImageMemoryBarrier2 to_present{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = frame->image,
+            .subresourceRange{frame_subresources},
+        };
+        cmdbuf.pipelineBarrier2(
+            {.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_present});
+    } else {
+        pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    }
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).
         const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
