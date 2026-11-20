@@ -86,6 +86,8 @@ jobs:
           grep -q 'void Presenter::MaliCpuPresentWorker' gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -q 'AsyncQueueDelay' gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h
           grep -q 'GOW3_MALI_SHADER_CACHE status=new-profile' gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+          grep -q 'if (type == BlobType::ShaderProfile)' gpu/shadps4/video_core/cache_storage.cpp
+          grep -q 'std::filesystem::exists(path, ec)' gpu/shadps4/video_core/cache_storage.cpp
           grep -q 'matches_profile(candidate.path() / "profile.bin")' gpu/shadps4/video_core/cache_storage.cpp
           grep -q 'return previous == current;' gpu/shadps4/video_core/cache_storage.cpp
           grep -q 'GOW3_MALI_FORMAT_RUNTIME guest=' gpu/shadps4/video_core/texture_cache/image.cpp
@@ -135,7 +137,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-G720-Cache-Recovery-FieldwiseProfile-BachataV3-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-G720-Profile-Quiet-Fix-BachataV3-v2.1.8-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
