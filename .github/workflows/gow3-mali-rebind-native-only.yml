@@ -7,6 +7,7 @@ on:
       - analysis/gow3-mali-draw-criticalpath-20261109
       - perf/gow3-mali-bachata-gc-batch-20261112
       - analysis/gow3-mali-double-fps-evidence-20261118
+      - fix/gow3-panvk-freeze-heavy-fps-20261120
     paths:
       - '.github/workflows/gow3-mali-rebind-native-only.yml'
       - 'gpu/shadps4/video_core/texture_cache/image.cpp'
@@ -29,6 +30,11 @@ on:
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
       - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h'
       - 'tests/test_mali_uniform_buffer_port.py'
+      - 'tests/test_mali_async_ahb.py'
+      - 'tests/test_mali_freeze_heavy_scene_regression.py'
+      - 'tests/test_mali_snorm10_vma_prewarm.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.h'
       - 'tests/test_mali_causal_counts.py'
       - 'tests/test_mali_afbc_color_rt.py'
       - 'gpu/shadps4/video_core/texture_cache/image_info.cpp'
@@ -112,6 +118,9 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_graphics_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_async_ahb.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_snorm10_vma_prewarm.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_freeze_heavy_scene_regression.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_afbc_color_rt.py' -v
       - uses: android-actions/setup-android@v3
