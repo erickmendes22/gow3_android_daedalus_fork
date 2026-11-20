@@ -52,9 +52,9 @@ void main() {
         uint g = scale_to_16(sign_extend((packed >> 10u) & 1023u, 10u), 511);
         uint b = scale_to_16(sign_extend((packed >> 20u) & 1023u, 10u), 511);
         uint a = scale_to_16(sign_extend((packed >> 30u) & 3u, 2u), 1);
-        uint output = pc.output_start_words + 2u * index;
-        dest_words[output] = r | (g << 16u);
-        dest_words[output + 1u] = b | (a << 16u);
+        uint output_word = pc.output_start_words + 2u * index;
+        dest_words[output_word] = r | (g << 16u);
+        dest_words[output_word + 1u] = b | (a << 16u);
     } else {
         uint input = pc.input_start_words + 2u * index;
         uint rg = source_words[input];
