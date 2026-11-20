@@ -56,9 +56,9 @@ void main() {
         dest_words[output_word] = r | (g << 16u);
         dest_words[output_word + 1u] = b | (a << 16u);
     } else {
-        uint input = pc.input_start_words + 2u * index;
-        uint rg = source_words[input];
-        uint ba = source_words[input + 1u];
+        uint input_word = pc.input_start_words + 2u * index;
+        uint rg = source_words[input_word];
+        uint ba = source_words[input_word + 1u];
         uint r = uint(scale_from_16(rg & 65535u, 511)) & 1023u;
         uint g = uint(scale_from_16(rg >> 16u, 511)) & 1023u;
         uint b = uint(scale_from_16(ba & 65535u, 511)) & 1023u;
