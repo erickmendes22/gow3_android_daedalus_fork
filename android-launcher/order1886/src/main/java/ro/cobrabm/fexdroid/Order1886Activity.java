@@ -487,12 +487,9 @@ public final class Order1886Activity extends Activity {
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
                "enginePerf",true);
-        line(c,"Menos trabalho de GPU (não altera a resolução)",
-            "Desativa a geometria dos passes de sombra de 1024x1024 do jogo. "+
-            "A limpeza de profundidade e as sincronizações são mantidas; "+
-            "pode remover sombras. Desative esta opção caso a imagem fique incorreta.");
-        toggle(c,"Reduzir GPU: não desenhar sombras de profundidade de 1024px",
-               "gpuShadowSkip",true);
+        line(c,"Redução de GPU compatível",
+            "Mantém o desenho de sombras para evitar o crash da versão 0.1.21; "+
+            "a união de passes Vulkan permanece disponível.");
         toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
                "gpuTileMerge",true);
         toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",

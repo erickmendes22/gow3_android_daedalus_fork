@@ -70,7 +70,6 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_LANGUAGE",Integer.toString(language>=0&&language<=29?language:1));
         env.put("ORDER1886_ENGINE_PERF",p.getBoolean("enginePerf",true)?"1":"0");
         env.put("ORDER1886_LIGHT_GUARD",p.getBoolean("gpuLightGuard",true)?"1":"0");
-        env.put("ORDER1886_SHADOW_DEPTH_SKIP",p.getBoolean("gpuShadowSkip",true)?"1":"0");
         env.put("ORDER1886_COALESCE_CLEAR_PASS",p.getBoolean("gpuTileMerge",true)?"1":"0");
         env.put("ORDER1886_GPU_PROFILE",p.getBoolean("gpuMeters",true)?"1":"0");
         env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");

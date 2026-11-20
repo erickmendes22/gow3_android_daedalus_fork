@@ -57,20 +57,10 @@ static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushDa
     if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
         data.ud_regs[1] = 0x7F80000FU;
 }
-// Android-only performance profile: remove raster and vertex work from
-// known 1024x1024 depth-only sun-cascade passes. Color, compute and scene depth
-// are never skipped; depth-clear and resource transitions still execute.
-static bool Order1886SkipShadowDepthWork() {
-    static const bool enabled = [] {
-        const char* value = std::getenv("ORDER1886_SHADOW_DEPTH_SKIP");
-        const bool on = value && value[0] == '1';
-        std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP requested=%d depth=1024x1024-only\n",
-                    int(on));
-        return on;
-    }();
-    return enabled;
-}
-static std::atomic<u64> order1886_shadow_draws_skipped{0};
+// Shadow-map draws must not be dropped by dimensions alone. The experimental
+// 512/1024/2048 depth-skip path suppressed a 512x512 draw just before a
+// boot-to-menu boost::container::bad_alloc in the 0.1.21 Android log. All
+// depth draws and their bindings must execute until proven safe by GPU markers.
 static std::atomic<u64> next_mapped_ranges_identity{1};
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
@@ -1101,32 +1091,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
-    // Unlike post-effect toggles, this removes actual geometry draws from GPU
-    // processing while keeping the shadow-map depth clear and transitions.
-    // Require 1024x1024 + zero MRT + depth writes: a scene prepass is retained.
-    if (Order1886SkipShadowDepthWork() &&
-        pipeline->GetGraphicsKey().mrt_mask == 0 && db_desc.first &&
-        regs.depth_buffer.DepthValid() && !FrameCapture::Active()) {
-        const auto& image = texture_cache.GetImage(db_desc.first);
-        const u32 map_size = image.info.size.width;
-        // The engine uses multiple cascade sizes, not just 1024; depth-only
-        // square 512/1024/2048 surfaces are not the 1280x720 scene depth.
-        if (image.info.props.is_depth && image.info.size.height == map_size &&
-            (map_size == 512 || map_size == 1024 || map_size == 2048)) {
-            const auto state = BeginRendering(pipeline);
-            if (needs_barrier) {
-                runtime.FlushBarriers();
-            }
-            scheduler.BeginRendering(state);
-            const u64 skipped = order1886_shadow_draws_skipped.fetch_add(
-                1, std::memory_order_relaxed) + 1;
-            if (skipped == 1 || skipped % 4096 == 0) {
-                std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=%llu map=%ux%u\n",
-                            static_cast<unsigned long long>(skipped), map_size, map_size);
-            }
-            return;
-        }
-    }
+    // No speculative shadow-depth draw suppression: preserve complete GPU state.
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
