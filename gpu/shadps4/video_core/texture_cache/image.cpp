@@ -1007,6 +1007,44 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
         .usage = usage_flags,
         .flags = flags,
     };
+    // Mali G720 does not expose A2B10G10R10_SNORM (format 9). A SINT or
+    // UNORM packed reinterpretation corrupts negative values and hardware
+    // texture filtering. Use RGBA16_SNORM as the physical image so shaders,
+    // filtering, blending and color attachment writes retain signed-normalized
+    // semantics. Upload/download are transposed on GPU by SnormTranscodeState;
+    // no host-side per-texel conversion or extra CPU readback is introduced.
+    // Do not change aliases, MSAA, volumes or external surface formats.
+    const char* packed_opt = std::getenv("GOW3_MALI_SNORM10_FALLBACK");
+    const bool mali_packed = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!packed_opt || packed_opt[0] != '0') &&
+        info.pixel_format == vk::Format::eA2B10G10R10SnormPack32 &&
+        !info.props.is_depth && !info.props.is_block &&
+        !info.props.is_volume && info.type == AmdGpu::ImageType::Color2D &&
+        info.resources.layers == 1 && info.num_samples == 1;
+    if (mali_packed &&
+        (!instance.IsFormatSupported(info.pixel_format, format_features) ||
+         ProbeImageFormat(instance, format_info).result ==
+             vk::Result::eErrorFormatNotSupported)) {
+        const auto alternative = vk::Format::eR16G16B16A16Snorm;
+        auto alternate_info = format_info;
+        alternate_info.format = alternative;
+        alternate_info.flags = {};
+        if (instance.IsFormatSupported(alternative, format_features) &&
+            ProbeImageFormat(instance, alternate_info).result == vk::Result::eSuccess) {
+            supported_format = alternative;
+            format_info = alternate_info;
+            flags = {};
+            transcoded_snorm2101010 = true;
+            static std::atomic<u32> selected{0};
+            if (selected.fetch_add(1, std::memory_order_relaxed) < 4)
+                std::printf("GOW3_MALI_SNORM10_FALLBACK guest=%s host=%s %ux%u mips=%u\\n",
+                            vk::to_string(info.pixel_format).c_str(),
+                            vk::to_string(alternative).c_str(),
+                            info.size.width, info.size.height, info.resources.levels);
+        }
+    }
+
     // Mali-only *host* BC1/BC3 -> ETC2 transcode. The guest image format,
     // guest_size, tiling and mip metadata remain BCn; only the physical image
     // format changes. Never use this for storage/attachment, 3D or MSAA.
