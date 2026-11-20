@@ -823,6 +823,21 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
         FlushBarriers();
     }
 
+    if (dst->transcoded_snorm2101010) {
+        if (!snorm_transcode)
+            snorm_transcode = std::make_unique<SnormTranscodeState>(instance, scheduler);
+        ASSERT_MSG(snorm_transcode->Record(dst, src, upload_copies, staging_pool, true),
+                   "Mali SNORM10 -> RGBA16_SNORM upload region is not supported");
+        for (const auto& copy : upload_copies) {
+            const auto copy_size = BufferImageCopySize(copy, dst->info.pixel_format);
+            AccessBuffer(src, copy.bufferOffset, copy_size,
+                         vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderRead);
+        }
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+        return;
+    }
+
     if (dst->transcoded_bc_to_etc2) {
         if (!bcn_transcode) bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler);
         const bool recorded = bcn_transcode->Record(dst, src, upload_copies, staging_pool);
@@ -894,6 +909,20 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
     }
     if (needs_flush) {
         FlushBarriers();
+    }
+
+    if (src->transcoded_snorm2101010) {
+        if (!snorm_transcode)
+            snorm_transcode = std::make_unique<SnormTranscodeState>(instance, scheduler);
+        ASSERT_MSG(snorm_transcode->Record(src, dst, download_copies, staging_pool, false),
+                   "Mali RGBA16_SNORM -> SNORM10 download region is not supported");
+        for (const auto& copy : download_copies) {
+            const auto copy_size = BufferImageCopySize(copy, src->info.pixel_format);
+            AccessBuffer(dst, copy.bufferOffset, copy_size,
+                         vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderWrite);
+        }
+        return;
     }
 
     scheduler.Record([image = src->GetImage(), buffer = dst->Handle(),
