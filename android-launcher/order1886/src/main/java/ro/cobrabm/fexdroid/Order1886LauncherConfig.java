@@ -69,6 +69,9 @@ final class Order1886LauncherConfig {
         int language=p.getInt("language",1);
         env.put("ORDER1886_LANGUAGE",Integer.toString(language>=0&&language<=29?language:1));
         env.put("ORDER1886_ENGINE_PERF",p.getBoolean("enginePerf",true)?"1":"0");
+        env.put("ORDER1886_LIGHT_GUARD",p.getBoolean("gpuLightGuard",true)?"1":"0");
+        env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");
+        env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
         env.put("ORDER1886_PIPELINE_BINARIES","0");
         env.put("ORDER1886_PARALLEL_WARMUP","0");

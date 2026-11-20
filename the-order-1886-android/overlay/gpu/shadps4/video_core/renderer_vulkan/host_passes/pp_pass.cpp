@@ -1,6 +1,8 @@
 //  SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 //  SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstdio>
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 
 #include "common/assert.h"
@@ -183,6 +185,12 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
 
 void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
                                 vk::Extent2D input_size, Frame& frame, Settings settings) {
+    static const bool skip_clear = [] {
+        const char* value = std::getenv("ORDER1886_PP_NOCLEAR");
+        const bool enabled = !value || value[0] != '0';
+        std::printf("ORDER1886_OPT_PATCH2_PP_NOCLEAR enabled=%d\n", int(enabled));
+        return enabled;
+    }();
     if (EmulatorSettings.IsVkHostMarkersEnabled()) {
         cmdbuf.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
             .pLabelName = "Host/Post processing",
@@ -198,7 +206,8 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
         {
             .imageView = frame.image_view,
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eDontCare, // The full-screen triangle overwrites every pixel.
+            .loadOp = skip_clear ? vk::AttachmentLoadOp::eDontCare : vk::AttachmentLoadOp::eClear,
+            // The full-screen opaque triangle overwrites every pixel.
             .storeOp = vk::AttachmentStoreOp::eStore,
         },
     }};

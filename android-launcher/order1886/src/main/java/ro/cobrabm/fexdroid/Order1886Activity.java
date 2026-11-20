@@ -535,6 +535,12 @@ public final class Order1886Activity extends Activity {
         LinearLayout patches=card(body,"Patches gráficos 01.02");
         line(patches,"Validados no código da edição enviada",
             "O preparador verifica os bytes da versão selecionada e modifica somente a imagem derivada; o eboot.bin nunca é alterado.");
+        line(patches,"Patches Vulkan de desempenho",
+            "1 e 2 são otimizações internas do renderizador, aplicadas sem alterar a resolução. "+
+            "A terceira tenta trocar a conversão do quadro por um blit direto quando os formatos são compatíveis.");
+        toggle(patches,"Patch 1: ignorar texturas de luzes inativas","gpuLightGuard",true);
+        toggle(patches,"Patch 2: remover limpeza redundante da imagem","gpuPpNoClear",true);
+        toggle(patches,"Patch 3: blit BGRA para RGBA sem shader (se compatível)","gpuFastBgraBlit",true);
         toggle(patches,"Desativar motion blur","disableMotionBlur",false);
         toggle(patches,"Desativar profundidade de campo","disableDepthOfField",false);
         toggle(patches,"Desativar film grain","disableFilmGrain",false);

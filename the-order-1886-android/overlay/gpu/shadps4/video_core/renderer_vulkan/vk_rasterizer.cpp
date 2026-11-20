@@ -83,6 +83,8 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     pipeline_cache.SetSrtSync([this](Shader::Info& info) {
         ReadBackGpuWrittenSrtSources(info);
     });
+    std::printf("ORDER1886_OPT_PATCH1_LIGHT_GUARD enabled=%d shader=0x804aeead\n",
+                int(Shader::g_order1886_light_guard_enabled));
     // Before the rasterizer is bound: Liverpool enqueues buffers only once it sees it.
     draw_prep = std::make_unique<DrawPreparation>(pipeline_cache);
     scene_targets = std::make_unique<SceneTargets>(instance, scheduler, runtime, texture_cache);

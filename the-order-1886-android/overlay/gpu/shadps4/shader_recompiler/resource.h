@@ -274,6 +274,13 @@ struct BufferResource {
 };
 using BufferResourceList = boost::container::static_vector<BufferResource, NUM_BUFFERS>;
 
+// Applied once at process startup; the choice is visible in the Android launcher.
+// Changes do not require a different resolution or a custom game executable.
+inline const bool g_order1886_light_guard_enabled = [] {
+    const char* value = std::getenv("ORDER1886_LIGHT_GUARD");
+    return !value || value[0] != '0';
+}();
+
 // The Order's 16-light point sprite shader uses a packed uniform table. An
 // inactive light never samples these T# slots, but leftover descriptors there
 // produce costly and potentially invalid texture/pipeline specializations.
@@ -281,7 +288,7 @@ using BufferResourceList = boost::container::static_vector<BufferResource, NUM_B
 // No other shader, resource kind, or table shape is modified.
 template <typename InfoT>
 constexpr bool Order1886UnusedLightImage(const InfoT& info, u32 sharp_offset) {
-    if (info.pgm_hash != 0x804aeead) return false;
+    if (info.pgm_hash != 0x804aeead || !g_order1886_light_guard_enabled) return false;
     const auto flat = info.FlatUserData();
     if (flat.size() != 708) return false;
     const u32 count = flat[657];

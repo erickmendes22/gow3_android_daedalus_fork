@@ -693,6 +693,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // full-screen fragment-shader pass, its texture sampling, and its render pass.
     // Do NOT bypass for 10-bit/HDR, gamma changes, FSR/RCAS, scaling, or swizzles.
     bool copy_srgb_direct = false;
+    bool blit_bgra_direct = false;
     vk::Image copy_source{};
 #ifdef __ANDROID__
     if (!upscaled && !frame_dump && !frame->is_hdr && pp_settings.gamma == 1.0f &&
@@ -716,7 +717,24 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
              src_format == vk::Format::eB8G8R8A8Unorm) &&
             dst_format == vk::Format::eB8G8R8A8Unorm;
         copy_srgb_direct = rgba || bgra;
-        if (copy_srgb_direct) {
+        // Android AHB commonly uses RGBA UNORM while the PS4 display is BGRA sRGB.
+        // If the actual image is BGRA UNORM (not BGRA SRGB), a nearest blit
+        // converts channel order without a fullscreen shader. It preserves the
+        // stored sRGB-encoded byte values because neither image uses sRGB format.
+        // If the native image is SRGB, fall back: a blit would decode RGB and darken it.
+        const char* blit_env = std::getenv("ORDER1886_FAST_BGRA_BLIT");
+        const bool want_blit = !blit_env || blit_env[0] != '0';
+        if (!copy_srgb_direct && want_blit &&
+            src_format == vk::Format::eB8G8R8A8Unorm &&
+            view_format == vk::Format::eB8G8R8A8Srgb &&
+            dst_format == vk::Format::eR8G8B8A8Unorm) {
+            static const bool src_can_blit = [] (vk::PhysicalDevice physical) {
+                return bool(physical.getFormatProperties(vk::Format::eB8G8R8A8Unorm)
+                    .optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc);
+            }(instance.GetPhysicalDevice());
+            blit_bgra_direct = src_can_blit;
+        }
+        if (copy_srgb_direct || blit_bgra_direct) {
             copy_source = image.GetImage();
         }
     }
@@ -726,13 +744,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         reported_present_path = true;
         std::fprintf(stderr,
                      "ORDER1886_DISPLAY_PATH source=%ux%u view_format=%d output=%ux%u "
-                     "surface_format=%d direct_srgb=%d\n",
+                     "surface_format=%d direct_srgb=%d direct_bgra_blit=%d backing_format=%d\n",
                      image_size.width, image_size.height, int(view_info.format),
                      frame->width, frame->height, int(frame->format),
-                     int(copy_srgb_direct));
+                     int(copy_srgb_direct), int(blit_bgra_direct),
+                     upscaled ? -1 : int(texture_cache.GetImage(image_id).info.pixel_format));
     }
 #endif
-    if (copy_srgb_direct) {
+    if (copy_srgb_direct || blit_bgra_direct) {
         auto& image = texture_cache.GetImage(image_id);
         runtime.Transit(&image, vk::ImageLayout::eTransferSrcOptimal,
                         vk::PipelineStageFlagBits2::eCopy,
@@ -754,8 +773,21 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
             .extent = {image_size.width, image_size.height, 1},
         };
-        cmdbuf.copyImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
-                         vk::ImageLayout::eTransferDstOptimal, copy_region);
+        if (blit_bgra_direct) {
+            const vk::ImageBlit blit_region{
+                .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                .srcOffsets = {{{0, 0, 0},
+                                {s32(image_size.width), s32(image_size.height), 1}}},
+                .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                .dstOffsets = {{{0, 0, 0},
+                                {s32(image_size.width), s32(image_size.height), 1}}},
+            };
+            cmdbuf.blitImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
+                             vk::ImageLayout::eTransferDstOptimal, blit_region, vk::Filter::eNearest);
+        } else {
+            cmdbuf.copyImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
+                             vk::ImageLayout::eTransferDstOptimal, copy_region);
+        }
         const vk::ImageMemoryBarrier2 to_present{
             .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
             .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
