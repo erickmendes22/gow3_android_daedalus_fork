@@ -85,5 +85,38 @@ class MaliFreezeHeavySceneRegression(unittest.TestCase):
         self.assertIn("GOW3_MALI_PRECISE_UBO_BARRIERS", c)
         self.assertIn("eAllGraphics", c)
 
+
+    def test_first_mali_bc_texture_uses_early_async_compile_with_safe_fallback(self):
+        runtime = src("gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp")
+        header = src("gpu/shadps4/video_core/renderer_vulkan/vk_runtime.h")
+        ctor = runtime[runtime.index("Runtime::Runtime("):runtime.index("Runtime::~Runtime()")]
+        upload = runtime[runtime.index("void Runtime::UploadImage("):runtime.index("void Runtime::CopyAliasImage(")]
+        self.assertIn("std::future<std::unique_ptr<BcnTranscodeState>> bcn_transcode_prepared;", header)
+        self.assertLess(header.index("std::unique_ptr<BcnTranscodeState> bcn_transcode;"),
+                        header.index("std::future<std::unique_ptr<BcnTranscodeState>>"))
+        self.assertIn("vendorID == 0x13B5", ctor)
+        self.assertIn('GOW3_MALI_BCN_ASYNC_COMPILE', ctor)
+        self.assertIn('GOW3_MALI_BCN_TO_ETC2', ctor)
+        self.assertIn("std::async(std::launch::async", ctor)
+        self.assertIn("std::make_unique<BcnTranscodeState>(instance, scheduler)", ctor)
+        self.assertIn("bcn_transcode_prepared.valid()", upload)
+        self.assertIn("bcn_transcode = bcn_transcode_prepared.get()", upload)
+        self.assertIn("bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler)", upload)
+        self.assertLess(upload.index("bcn_transcode_prepared.valid()"),
+                        upload.index("bcn_transcode->Record("))
+
+    def test_mali_upload_bytes_only_count_selected_mips(self):
+        cache = src("gpu/shadps4/video_core/texture_cache/texture_cache.cpp")
+        refresh = cache[cache.index("void TextureCache::RefreshImage("):cache.index("vk::Sampler TextureCache::GetSampler(")]
+        self.assertIn("u64 scheduled_upload_bytes = 0;", refresh)
+        self.assertIn("scheduled_upload_bytes += mip_size;", refresh)
+        self.assertNotIn("image_upload_bytes.fetch_add(image.info.guest_size", refresh)
+        self.assertLess(refresh.index("if (image.mip_hashes[m] == hash)"),
+                        refresh.index("scheduled_upload_bytes += mip_size;"))
+        self.assertLess(refresh.index("if (image_copies.empty())"),
+                        refresh.index("image_upload_bytes.fetch_add(scheduled_upload_bytes"))
+        self.assertLess(refresh.index("image_upload_bytes.fetch_add(scheduled_upload_bytes"),
+                        refresh.index("buffer_cache.ObtainBufferForImage("))
+
 if __name__ == "__main__":
     unittest.main()
