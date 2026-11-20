@@ -3,7 +3,7 @@
 // Vulkan 10:10:10:2 SNORM is absent on PanVK-G720, but 16-bit channel
 // signed normalization retains 10-bit RGB precision for Vulkan filtering
 // and color attachments. No float-to-UNORM reinterpretation is permitted.
-layout(local_size_x = 64) in;
+layout(local_size_x = 8, local_size_y = 8) in;
 layout(set = 0, binding = 0, std430) readonly buffer Source { uint source_words[]; };
 layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint dest_words[]; };
 layout(push_constant) uniform Parameters {
@@ -41,11 +41,11 @@ int scale_from_16(uint raw, int max_code) {
 }
 
 void main() {
-    uint index = gl_GlobalInvocationID.x;
-    uint count = pc.width * pc.height;
-    if (index >= count) return;
-    uint x = index % pc.width;
-    uint row = index / pc.width;
+    uvec2 texel = gl_GlobalInvocationID.xy;
+    if (texel.x >= pc.width || texel.y >= pc.height) return;
+    uint x = texel.x;
+    uint row = texel.y;
+    uint index = row * pc.width + x;
     if (pc.direction == 0u) {
         uint packed = source_words[pc.input_start_words + row * pc.input_row_texels + x];
         uint r = scale_to_16(sign_extend(packed & 1023u, 10u), 511);
