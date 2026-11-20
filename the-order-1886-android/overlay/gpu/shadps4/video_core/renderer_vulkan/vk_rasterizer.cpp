@@ -1200,6 +1200,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
         Order1886UseVrs2x2(pipeline, regs, state, attachment_feedback_loop,
                             object_candidate);
+    if (vrs2x2) {
+        g_order1886_vrs_2x2_draws.fetch_add(1, std::memory_order_relaxed);
+    }
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
     const auto& fetch_shader = pipeline->GetFetchShader();
@@ -1356,6 +1359,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const bool vrs2x2 =
         g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
         Order1886UseVrs2x2(pipeline, Regs(), state, attachment_feedback_loop, true);
+    if (vrs2x2) {
+        g_order1886_vrs_2x2_draws.fetch_add(1, std::memory_order_relaxed);
+    }
 
     ASSERT(stride == (is_indexed ? sizeof(VkDrawIndexedIndirectCommand)
                                  : sizeof(VkDrawIndirectCommand)));
