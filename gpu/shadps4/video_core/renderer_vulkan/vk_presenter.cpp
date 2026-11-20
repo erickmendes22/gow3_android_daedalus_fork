@@ -316,7 +316,21 @@ void Presenter::CompleteMaliCpuPresentation(const MaliCpuPresentJob& job) {
         // A global device.waitIdle() serializes unrelated PanVK work per frame.
         const auto mali_fence_start = mali_perf_sample ? MaliPerfStats::Clock::now()
                                                       : MaliPerfStats::TimePoint{};
-        const auto done = instance.GetDevice().waitForFences(frame->present_done, true, ~0ull);
+        // Finite Vulkan waits make a driver stall visible and distinguish it
+        // from the optional host-redraw lock. Do not free/recycle or map an
+        // unsignaled frame: that would create a GPU use-after-free.
+        vk::Result done = vk::Result::eTimeout;
+        u32 fence_polls = 0;
+        while (done == vk::Result::eTimeout) {
+            done = instance.GetDevice().waitForFences(frame->present_done, true, 100'000'000ull);
+            if (done == vk::Result::eTimeout && (++fence_polls == 20 ||
+                                                   (fence_polls > 20 && fence_polls % 100 == 0))) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW3_MALI_PRESENT_FENCE_STALL frame={} waited_ms={} "
+                            "queued_jobs_waiting; GPU completion still required",
+                            frame->id, fence_polls * 100);
+            }
+        }
         if (mali_perf_sample)
             MaliPerfStats::Record(MaliPerfStats::Stage::FenceWait, mali_fence_start);
         ASSERT_MSG(done == vk::Result::eSuccess,
@@ -510,6 +524,24 @@ Frame* Presenter::PrepareLastFrame() {
 
     Frame* frame = last_submit_frame;
 
+#ifdef __ANDROID__
+    if (mali_cpu_async) {
+        // A repeated host frame is optional. Never block the guest PM4 thread
+        // waiting for the AHB worker or a GPU fence which that worker owns.
+        // It is safe to skip the redraw; the next guest frame is unaffected.
+        {
+            std::scoped_lock lock{mali_cpu_jobs_mutex};
+            if (frame->id >= mali_cpu_inflight.size() ||
+                mali_cpu_inflight[frame->id] != 0) {
+                return nullptr;
+            }
+        }
+        const vk::Result state = instance.GetDevice().getFenceStatus(frame->present_done);
+        if (state == vk::Result::eNotReady) return nullptr;
+        ASSERT_MSG(state == vk::Result::eSuccess,
+                   "PanVK repeated-frame fence status: {}", vk::to_string(state));
+    } else
+#endif
     while (true) {
         vk::Result result = instance.GetDevice().waitForFences(frame->present_done, false,
                                                                std::numeric_limits<u64>::max());
@@ -1211,14 +1243,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
 #ifdef __ANDROID__
     if (mali_cpu_async && is_reusing_frame) {
-        // PrepareLastFrame may reuse the last image even when it was never
-        // placed into free_queue. Do not reset its fence or staging memory
-        // while an earlier async AHB job still owns it.
-        std::unique_lock lock{mali_cpu_jobs_mutex};
-        mali_cpu_jobs_cv.wait(lock, [&] {
-            return frame->id < mali_cpu_inflight.size() &&
-                   mali_cpu_inflight[frame->id] == 0;
-        });
+        // An optional redraw must not wait behind a stalled CPU-present job.
+        // Never reset the old fence or overwrite its staging buffer until
+        // the worker has released the frame.
+        std::scoped_lock lock{mali_cpu_jobs_mutex};
+        if (frame->id >= mali_cpu_inflight.size() ||
+            mali_cpu_inflight[frame->id] != 0) return;
     }
 #endif
     // Reset the fence only after the previous worker has finished with the
