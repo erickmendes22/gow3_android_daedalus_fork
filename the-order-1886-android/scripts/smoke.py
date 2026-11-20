@@ -44,7 +44,7 @@ gpu_checks={
   "VRS never applies to alpha-discard or coverage-export fragment shaders":
       "fs->has_discard" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
-      "fs->hw.fs.mrtz_mask != 0" in
+      "exports.coverage_to_mask_enable" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "VRS keeps single-target scene draws at exact 1x1":
       "std::popcount(key.mrt_mask) < 2" in

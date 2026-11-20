@@ -1089,7 +1089,14 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
         g_order1886_vrs_rejected_discard.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    if (fs->hw.fs.mrtz_mask != 0) {
+    // Shader::Info contains translated shader metadata, but PS hardware
+    // export flags live in the guest GPU registers (the same source used by
+    // PipelineCache::BuildCommon). Alpha-to-coverage, Z, stencil or sample
+    // mask writes must retain precise per-pixel fragment shading.
+    const auto& exports = regs.depth_shader_control;
+    if (exports.z_export_enable || exports.stencil_op_val_export_enable ||
+        exports.stencil_test_val_export_enable || exports.mask_export_enable ||
+        exports.coverage_to_mask_enable) {
         g_order1886_vrs_rejected_coverage.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
