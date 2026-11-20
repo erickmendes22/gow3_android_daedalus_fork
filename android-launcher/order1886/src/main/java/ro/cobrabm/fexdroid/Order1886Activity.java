@@ -493,6 +493,12 @@ public final class Order1886Activity extends Activity {
             "pode remover sombras. Desative esta opção caso a imagem fique incorreta.");
         toggle(c,"Reduzir GPU: não desenhar sombras de profundidade de 1024px",
                "gpuShadowSkip",true);
+        toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
+               "gpuTileMerge",true);
+        line(c,"Passes Vulkan móveis",
+            "Quando um render target acabou de ser limpo, o próximo draw no mesmo "+
+            "alvo não precisa encerrar o passe e recarregar os tiles; só funde "+
+            "se o próximo draw não pedir nova limpeza.");
         line(c,"Motor do jogo: perfil experimental",
             "Usa opções já existentes no eboot 01.02 para reduzir MSAA e simulação de tecido. "+
             "Desative caso apareçam falhas; o ganho de GPU precisa ser testado.");

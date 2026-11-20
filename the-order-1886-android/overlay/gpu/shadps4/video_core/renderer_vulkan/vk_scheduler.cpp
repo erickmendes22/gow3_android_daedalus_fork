@@ -83,9 +83,54 @@ void Scheduler::RecordFullBarrier(vk::CommandBuffer cmdbuf) {
     });
 }
 
+// Preserve an existing Vulkan rendering pass across the PS4's first-clear
+// state transition. A cleared attachment is still resident in tile memory;
+// ending it merely because the next draw requests LOAD (not CLEAR) forces
+// an unnecessary tile store followed by a reload on Adreno/Mali.
+static bool Order1886MergePostClearPass() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("ORDER1886_COALESCE_CLEAR_PASS");
+        const bool on = !env || env[0] != '0';
+        std::printf("ORDER1886_GPU_PASS_COALESCE enabled=%d\n", int(on));
+        return on;
+    }();
+    return enabled;
+}
+
 void Scheduler::BeginRendering(const RenderState& new_state) {
-    if (is_rendering && render_state == new_state) {
-        return;
+    if (is_rendering) {
+        if (render_state == new_state) {
+            return;
+        }
+        if (Order1886MergePostClearPass()) {
+            bool requests_clear = new_state.depth_stencil_attachment.depth_clear ||
+                                  new_state.depth_stencil_attachment.stencil_clear;
+            for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                requests_clear |= new_state.color_attachments[i].is_clear != 0;
+            }
+            if (!requests_clear) {
+                RenderState prior = render_state;
+                for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                    prior.color_attachments[i].is_clear = 0;
+                    prior.color_attachments[i].clear_value =
+                        new_state.color_attachments[i].clear_value;
+                }
+                prior.depth_stencil_attachment.depth_clear = false;
+                prior.depth_stencil_attachment.stencil_clear = false;
+                prior.depth_stencil_attachment.clear_value =
+                    new_state.depth_stencil_attachment.clear_value;
+                if (prior == new_state) {
+                    // The clear has already happened; retain the tile contents.
+                    render_state = new_state;
+                    static std::atomic<u32> merged{0};
+                    const u32 count = merged.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (count == 1 || count % 4096 == 0) {
+                        std::printf("ORDER1886_GPU_PASS_COALESCE merged=%u\n", count);
+                    }
+                    return;
+                }
+            }
+        }
     }
     EndRendering();
     is_rendering = true;

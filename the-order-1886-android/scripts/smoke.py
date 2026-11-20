@@ -26,6 +26,8 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "Tile-friendly post-clear render pass reuse included":
+      "ORDER1886_GPU_PASS_COALESCE merged=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
   "Shadow 1024 depth-only draw skipping included in native overlay":
       "ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "Mobile present barrier scope no longer ALL_COMMANDS":
