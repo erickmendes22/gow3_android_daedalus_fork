@@ -776,11 +776,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         if (blit_bgra_direct) {
             const vk::ImageBlit blit_region{
                 .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-                .srcOffsets = {{{0, 0, 0},
-                                {s32(image_size.width), s32(image_size.height), 1}}},
+                .srcOffsets = std::array{
+                    vk::Offset3D{.x = 0, .y = 0, .z = 0},
+                    vk::Offset3D{.x = s32(image_size.width),
+                                 .y = s32(image_size.height), .z = 1},
+                },
                 .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-                .dstOffsets = {{{0, 0, 0},
-                                {s32(image_size.width), s32(image_size.height), 1}}},
+                .dstOffsets = std::array{
+                    vk::Offset3D{.x = 0, .y = 0, .z = 0},
+                    vk::Offset3D{.x = s32(image_size.width),
+                                 .y = s32(image_size.height), .z = 1},
+                },
             };
             cmdbuf.blitImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
                              vk::ImageLayout::eTransferDstOptimal, blit_region, vk::Filter::eNearest);

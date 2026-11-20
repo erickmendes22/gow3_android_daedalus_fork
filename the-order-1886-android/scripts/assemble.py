@@ -63,6 +63,10 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp",
     "gpu/shadps4/shader_recompiler/recompiler.cpp",
     "gpu/shadps4/shader_recompiler/info.h",
+    # Mandatory native GPU patches 1 and 2. Previously omitted from FILES, so
+    # the APK silently used upstream code even when the overlays were edited.
+    "gpu/shadps4/shader_recompiler/resource.h",
+    "gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp",
     "gpu/shadps4/video_core/buffer_cache/buffer_cache.h",
     "gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp",

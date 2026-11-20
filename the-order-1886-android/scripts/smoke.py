@@ -26,6 +26,14 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "Patch 1 included in generated GPU shader resource code":
+      "Order1886UnusedLightImage" in (gpu/"shadps4/shader_recompiler/resource.h").read_text() and
+      "ORDER1886_LIGHT_GUARD" in (gpu/"shadps4/shader_recompiler/resource.h").read_text(),
+  "Patch 2 included in generated GPU post-process code":
+      "ORDER1886_PP_NOCLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp").read_text() and
+      "vk::AttachmentLoadOp::eDontCare" in (gpu/"shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp").read_text(),
+  "Patch 3 installed in generated Vulkan presenter":
+      "ORDER1886_FAST_BGRA_BLIT" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
   "Android SaveDataDialog controls wired": "PollAndroidChoiceControls" in (gpu/"shim/ps4_overlay.cpp").read_text(),
   "Android ImGui headless WSI optional": "Order1886OptionalHeadlessWsi" in (gpu/"third_party/imgui/backends/imgui_impl_vulkan.cpp").read_text(),
   "ARM64 real SRT implementation": 'order1886_arm64_srt.inc' in (gpu/"shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text(),
