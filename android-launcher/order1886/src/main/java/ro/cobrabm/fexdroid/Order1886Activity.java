@@ -485,6 +485,11 @@ public final class Order1886Activity extends Activity {
             n->{prefs().edit().putInt("language",n).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
+        toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
+               "enginePerf",true);
+        line(c,"Motor do jogo: perfil experimental",
+            "Usa opções já existentes no eboot 01.02 para reduzir MSAA e simulação de tecido. "+
+            "Desative caso apareçam falhas; o ganho de GPU precisa ser testado.");
         toggle(c,"Preencher tela Android (Fill; desativado = Fit)","fullscreen",false);
         CheckBox showTouch=new CheckBox(this);
         showTouch.setText(tr("Controles PlayStation na tela"));showTouch.setTextColor(WHITE);
