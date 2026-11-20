@@ -1570,7 +1570,10 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
-    Gow3Stats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
+    // Count actual mip regions scheduled, not the entire guest allocation.
+    // Previously this included hashed/unchanged mips and inflated the reported
+    // 80 MiB transition burst even when no Vulkan upload was recorded.
+    u64 scheduled_upload_bytes = 0;
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
         const u32 width = std::max(image.info.size.width >> m, 1u);
@@ -1591,6 +1594,7 @@ void TextureCache::RefreshImage(Image& image) {
 
         const u32 extent_width = mip_pitch ? std::min(mip_pitch, width) : width;
         const u32 extent_height = mip_height ? std::min(mip_height, height) : height;
+        scheduled_upload_bytes += mip_size;
         image_copies.push_back({
             .bufferOffset = mip_offset,
             .bufferRowLength = mip_pitch,
@@ -1610,6 +1614,8 @@ void TextureCache::RefreshImage(Image& image) {
         image.flags &= ~ImageFlagBits::Dirty;
         return;
     }
+    Gow3Stats::image_upload_bytes.fetch_add(scheduled_upload_bytes,
+                                            std::memory_order_relaxed);
 
     scheduler.EndRendering();
 
