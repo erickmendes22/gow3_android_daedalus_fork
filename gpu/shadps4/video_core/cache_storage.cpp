@@ -239,6 +239,18 @@ void LoadVector(BlobType type, std::filesystem::path& path, std::vector<T>& v) {
         v.resize(stat.m_uncomp_size / sizeof(T));
         mz_zip_reader_extract_to_mem(&zip_ar, index, v.data(), stat.m_uncomp_size, 0);
     } else {
+        // A missing profile.bin on first run or after driver migration is
+        // normal. IOFile emits an error just for probing a missing file,
+        // which misrepresents a safe cold cache as a cache corruption.
+        // Leave v empty for CheckCacheProfile() to construct the REAL current
+        // Shader::Profile; never stamp arbitrary old shader blobs as valid.
+        if (type == BlobType::ShaderProfile) {
+            std::error_code ec;
+            const bool present = std::filesystem::exists(path, ec);
+            if (!ec && !present) {
+                return;
+            }
+        }
         const auto file = IOFile{path, FileAccessMode::Read};
         v.resize(file.GetSize() / sizeof(T));
         file.Read(v);
