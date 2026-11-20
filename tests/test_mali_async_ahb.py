@@ -41,8 +41,9 @@ class MaliAsyncPresentTests(unittest.TestCase):
         self.assertIn('mali_cpu_inflight', header)
         self.assertIn('mali_cpu_jobs_cv.wait(lock, [&]', body)
         self.assertIn('work', body.lower())
-        wait = body.index('waitForFences(frame->present_done, true, ~0ull);',
+        wait = body.index("waitForFences(frame->present_done, true, 100'000'000ull);",
                           body.index('void Presenter::CompleteMaliCpuPresentation'))
+        self.assertIn("GOW3_MALI_PRESENT_FENCE_STALL", body)
         invalidate = body.index('vmaInvalidateAllocation', wait)
         delivery = body.index('swapchain.PresentCpuPixels(', invalidate)
         release = body.index('free_queue.push(frame);', delivery)
@@ -51,7 +52,7 @@ class MaliAsyncPresentTests(unittest.TestCase):
         self.assertLess(delivery, release)
         self.assertIn('mali_cpu_worker.join();', body)
         self.assertIn('mali_cpu_jobs_cv.notify_all();', body)
-        self.assertIn('mali_cpu_inflight[frame->id] == 0', body)
+        self.assertIn('mali_cpu_inflight[frame->id] != 0', body)
 
     def test_ahb_resize_is_serialized_with_worker(self):
         body = PRESENTER.read_text()
