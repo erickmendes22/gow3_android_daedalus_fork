@@ -96,8 +96,19 @@ final class Order1886SaveManager {
                     byte[] data = new byte[BUFFER]; int n;
                     while ((n = in.read(data)) != -1) out.write(data, 0, n);
                 }
-                if (dest.exists() && !dest.delete()) throw new IOException("Save de destino ocupado");
-                if (!tmp.renameTo(dest)) throw new IOException("Nao foi possivel ativar save importado");
+                // Preserve the previous save if the final rename fails.
+                File previous = new File(dest.getParentFile(), dest.getName() + ".order-previous");
+                requireInside(previous, tempRoot);
+                if (previous.exists()) throw new IOException("Backup temporario anterior bloqueia importacao");
+                if (dest.exists() && !dest.renameTo(previous))
+                    throw new IOException("Nao foi possivel preservar save anterior");
+                if (!tmp.renameTo(dest)) {
+                    if (previous.exists() && !previous.renameTo(dest))
+                        throw new IOException("Falha ao ativar e restaurar save anterior");
+                    throw new IOException("Nao foi possivel ativar save importado");
+                }
+                if (previous.exists() && !previous.delete())
+                    throw new IOException("Save importado mas backup anterior nao foi removido");
             }
         }
     }
