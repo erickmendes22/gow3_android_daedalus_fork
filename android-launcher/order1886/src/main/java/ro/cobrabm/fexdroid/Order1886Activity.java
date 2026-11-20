@@ -490,6 +490,8 @@ public final class Order1886Activity extends Activity {
         line(c,"Redução de GPU compatível",
             "Mantém o desenho de sombras para evitar o crash da versão 0.1.21; "+
             "a união de passes Vulkan permanece disponível.");
+        toggle(c,"VRS 2×2 em geometria MRT (sem VRS 4×4)", "vrs2x2",true);
+        line(c,"VRS 2×2", "Aplicado apenas se o driver suportar; passes de UI, pós, blend e profundidade isolada permanecem em 1×1.");
         toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
                "gpuTileMerge",true);
         toggle(c,"Reduzir GPU: limpar attachments sem fechar passe (Adreno)",
@@ -825,6 +827,7 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_READBACKS",Integer.toString(
             "precise".equals(prefs().getString("readback","relaxed"))?2:
             "selective".equals(prefs().getString("readback","relaxed"))?3:1));
+        env.put("ORDER1886_VRS_2X2",prefs().getBoolean("vrs2x2",true)?"1":"0");
         env.put("ORDER1886_VSYNC",prefs().getBoolean("vsync",false)?"1":"0");
         env.put("ORDER1886_BACKGROUND_WARMUP",prefs().getBoolean("warmup",false)?"1":"0");
         env.put("ORDER1886_DISPLAY_HZ",
