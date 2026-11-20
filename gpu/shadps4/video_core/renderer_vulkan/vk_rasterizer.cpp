@@ -2230,9 +2230,25 @@ void Rasterizer::ResetBindings(bool is_compute) {
     for (auto& image_id : bound_images) {
         texture_cache.GetImage(image_id).binding = {};
     }
-    for (const auto [buffer, offset, size, is_written] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
+    // The G720 trace has >200K UBO bindings per 6 seconds. Those reads
+    // should not turn a subsequent precise buffer hazard into an
+    // ALL_GRAPHICS dependency on stages which never accessed that buffer.
+    // UBO eligibility is already limited to read-only VS/FS guest buffers.
+    static const bool precise_mali_ubo = [] {
+        const char* option = std::getenv("GOW3_MALI_PRECISE_UBO_BARRIERS");
+        return std::getenv("GOW3_MALI_CPU_PRESENT") &&
+               (!option || option[0] != '0');
+    }();
+    for (const auto [buffer, offset, size, is_written, is_uniform, shader_stage]
+         : bound_buffers) {
+        auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
+                                    : vk::PipelineStageFlagBits2::eAllGraphics;
+        if (precise_mali_ubo && is_uniform && !is_written && !is_compute) {
+            if (shader_stage == Shader::SwStage::Vertex)
+                dst_stage = vk::PipelineStageFlagBits2::eVertexShader;
+            else if (shader_stage == Shader::SwStage::Fragment)
+                dst_stage = vk::PipelineStageFlagBits2::eFragmentShader;
+        }
         const auto write_flag =
             is_written ? vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eNone;
         runtime.AccessBuffer(buffer, offset, size, dst_stage,
@@ -2542,7 +2558,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 push_data.AddOffset(binding.buffer, adjust);
                 buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
-                bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
+                bound_buffers.emplace_back(buffer, offset, size, desc.is_written,
+                                           uniform, stage.sw_stage);
                 if (desc.is_written) {
                     // Raw storage-buffer writes can also make an aliased cached image stale.
                     texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
