@@ -1054,30 +1054,34 @@ void Rasterizer::DiagPassBoundary(bool force) {
     diag_addresses = force ? std::array<VAddr, 8>{} : addresses;
 }
 
-// Fragment shading must remain exact for the depth prepass, postprocessing,
- // UI, blending, stencil, feedback loops and sub-720p render targets. Apply 2x2
- // only to opaque geometry in the expensive full-resolution two-target MRT pass.
- // The GPU still rasterizes all geometry/depth/stencil samples; only fragment
- // shader invocations are coarsened, not skipped draws or merged render targets.
- static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
-                                const RenderState& state, bool feedback_loop,
-                                bool geometry_draw) {
-     if (!geometry_draw || feedback_loop || state.width < 960 || state.height < 540 ||
-         !state.depth_stencil_attachment.has_depth || !regs.depth_control.depth_enable ||
-         regs.depth_control.stencil_enable) {
-         return false;
-     }
-     const auto& key = pipeline->GetGraphicsKey();
-     if (key.num_samples != 1 || std::popcount(key.mrt_mask) != 2) {
-         return false;
-     }
-     for (u32 i = 0; i < state.num_color_attachments; ++i) {
-         if ((key.mrt_mask & (1u << i)) && regs.blend_control[i].enable) {
-             return false;
-         }
-     }
-     return true;
- }
+// VRS 2x2 for opaque full-resolution MRT shader work. The guest graphics
+// key retains PS4 MSAA settings even when the Adreno path forces a single host
+// sample (AmdGpu::NoMsaa). Testing only key.num_samples == 1 incorrectly
+// rejected every draw in 0.1.23 (60 windows with VRS_DRAW_COUNTS=0).
+//
+// Stencil/depth coverage remains full resolution under Vulkan VRS: do not
+// reject an opaque G-buffer draw merely because depth/stencil is bound.
+// Do not coarsen blends, attachment feedback loops, single-target post,
+// half-resolution passes or full-screen quads without geometry.
+static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
+                               const RenderState& state, bool feedback_loop,
+                               bool geometry_draw) {
+    if (feedback_loop || state.width < 960 || state.height < 540) {
+        return false;
+    }
+    const auto& key = pipeline->GetGraphicsKey();
+    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
+        std::popcount(key.mrt_mask) < 2 || !geometry_draw) {
+        return false;
+    }
+    for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        if ((key.mrt_mask & (1u << i)) &&
+            (regs.blend_control[i].enable || !state.color_attachments[i].image_view)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
