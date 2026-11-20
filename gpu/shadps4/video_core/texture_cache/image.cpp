@@ -851,13 +851,13 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
             std::chrono::steady_clock::now() - start).count();
         if (result != VK_SUCCESS) {
             // Optional prewarming must never make a supported game fail boot.
-            std::printf("GOW3_MALI_VMA_PREWARM format=%d status=skipped result=%d\\n",
+            std::printf("GOW3_MALI_VMA_PREWARM format=%d status=skipped result=%d\n",
                         int(ci.format), int(result));
             continue;
         }
         const bool retained = ReturnBcImage(allocator, ci, image, allocation, info.size);
         if (!retained) vmaDestroyImage(allocator, image, allocation);
-        std::printf("GOW3_MALI_VMA_PREWARM format=%d retained=%d bytes=%llu ms=%.2f\\n",
+        std::printf("GOW3_MALI_VMA_PREWARM format=%d retained=%d bytes=%llu ms=%.2f\n",
                     int(ci.format), int(retained),
                     (unsigned long long)info.size, ms);
     }
