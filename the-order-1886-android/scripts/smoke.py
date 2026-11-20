@@ -26,6 +26,12 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "GPU timestamp profiler sampled and nonblocking":
+      "sample_every=90_frames" in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text() and
+      "vk::QueryResultFlagBits::eWait" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text(),
+  "GPU stage labels at natural render pass boundaries":
+      "shadow-sized depth-only" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
+      "MarkPass(pipeline, state);" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "Tile-friendly post-clear render pass reuse included":
       "ORDER1886_GPU_PASS_COALESCE merged=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
   "Shadow 1024 depth-only draw skipping included in native overlay":

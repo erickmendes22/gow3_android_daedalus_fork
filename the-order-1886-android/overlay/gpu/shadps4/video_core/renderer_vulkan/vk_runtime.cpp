@@ -120,6 +120,9 @@ void Runtime::TickFrame() {
 void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* dst,
                          std::span<const vk::BufferCopy> copies) {
     scheduler.EndRendering();
+    if (auto* p = GpuProfiler::Get(); p && p->Records(&scheduler) && p->Sampling()) {
+        p->Mark(0xC100008ULL, [] { return std::string{"buffer copies"}; });
+    }
 
     // many regions (HLE copy shaders) are tracked as one bounding range per buffer:
     // conservative for barriers, and two tree lookups instead of two per region.

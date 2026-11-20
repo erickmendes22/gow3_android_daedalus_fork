@@ -133,6 +133,30 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         }
     }
     EndRendering();
+    // Timestamp only at an existing render-pass boundary. Unlike profiling
+    // each draw, this preserves the 94k post-clear pass merges seen in 0.1.20.
+    if (auto* p = GpuProfiler::Get(); p && p->Records(this) && p->Sampling()) {
+        const auto& dep = new_state.depth_stencil_attachment;
+        const auto colors = new_state.num_color_attachments;
+        if (!colors && dep.has_depth) {
+            if (new_state.width == new_state.height &&
+                (new_state.width == 512 || new_state.width == 1024 ||
+                 new_state.width == 2048))
+                p->Mark(0xC100001ULL, [] { return std::string{"shadow-sized depth-only"}; });
+            else
+                p->Mark(0xC100002ULL, [] { return std::string{"scene depth / prepass"}; });
+        } else if (colors >= 3) {
+            p->Mark(0xC100003ULL, [] { return std::string{"G-buffer MRT 3+"}; });
+        } else if (colors == 2) {
+            p->Mark(0xC100004ULL, [] { return std::string{"MRT 2"}; });
+        } else if (colors == 1 && dep.has_depth) {
+            p->Mark(0xC100005ULL, [] { return std::string{"scene color+depth"}; });
+        } else if (colors == 1) {
+            p->Mark(0xC100006ULL, [] { return std::string{"lighting / postprocess"}; });
+        } else {
+            p->Mark(0xC100007ULL, [] { return std::string{"other graphics"}; });
+        }
+    }
     is_rendering = true;
     render_state = new_state;
 

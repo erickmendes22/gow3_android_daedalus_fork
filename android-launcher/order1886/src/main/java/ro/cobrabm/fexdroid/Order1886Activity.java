@@ -495,6 +495,12 @@ public final class Order1886Activity extends Activity {
                "gpuShadowSkip",true);
         toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
                "gpuTileMerge",true);
+        toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",
+               "gpuMeters",true);
+        line(c,"Medição de gargalos",
+            "O Vulkan mede um frame a cada 90: sombras, G-buffer, cena, pós, "+
+            "compute e cópias. Resultados de GPU e CPU são agregados no log "+
+            "sem criar registros por draw nem esperar a GPU responder.");
         line(c,"Passes Vulkan móveis",
             "Quando um render target acabou de ser limpo, o próximo draw no mesmo "+
             "alvo não precisa encerrar o passe e recarregar os tiles; só funde "+
