@@ -487,6 +487,12 @@ public final class Order1886Activity extends Activity {
         toggle(c,"Shaders assíncronos", "asyncShaders",true);
         toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
                "enginePerf",true);
+        line(c,"Menos trabalho de GPU (não altera a resolução)",
+            "Desativa a geometria dos passes de sombra de 1024x1024 do jogo. "+
+            "A limpeza de profundidade e as sincronizações são mantidas; "+
+            "pode remover sombras. Desative esta opção caso a imagem fique incorreta.");
+        toggle(c,"Reduzir GPU: não desenhar sombras de profundidade de 1024px",
+               "gpuShadowSkip",true);
         line(c,"Motor do jogo: perfil experimental",
             "Usa opções já existentes no eboot 01.02 para reduzir MSAA e simulação de tecido. "+
             "Desative caso apareçam falhas; o ganho de GPU precisa ser testado.");

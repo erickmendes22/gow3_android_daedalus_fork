@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 21
-        versionName = "0.1.19-vulkan-patches"
+        versionCode = 22
+        versionName = "0.1.20-gpu-work-reduction"
     }
     // Stable signing for upgrade-in-place. Keystore and password are injected by CI
     // secrets; never put private signing material in the public source tree.

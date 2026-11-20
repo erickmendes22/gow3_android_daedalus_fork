@@ -57,6 +57,20 @@ static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushDa
     if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
         data.ud_regs[1] = 0x7F80000FU;
 }
+// Android-only performance profile: remove raster and vertex work from
+// known 1024x1024 depth-only sun-cascade passes. Color, compute and scene depth
+// are never skipped; depth-clear and resource transitions still execute.
+static bool Order1886SkipShadowDepthWork() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("ORDER1886_SHADOW_DEPTH_SKIP");
+        const bool on = value && value[0] == '1';
+        std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP requested=%d depth=1024x1024-only\n",
+                    int(on));
+        return on;
+    }();
+    return enabled;
+}
+static std::atomic<u64> order1886_shadow_draws_skipped{0};
 static std::atomic<u64> next_mapped_ranges_identity{1};
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
@@ -989,6 +1003,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
             return;
         }
     }
+    // Zero-vertex/instance commands do not generate fragments or GPU writes.
+    // Drop them before pipeline specialization, binding and command recording.
+    if (Regs().num_indices == 0 || Regs().num_instances.NumInstances() == 0) {
+        return;
+    }
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline({}, prepared);
     const PreparedDraw* used_prepared = pipeline_cache.UsedPrepared();
     if (prepared) {
@@ -1054,8 +1073,14 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto& regs = Regs();
     // the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
-    if (camera_motion->Enabled() && regs.color_buffers[0] &&
-        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+    const bool is_display_pass = regs.color_buffers[0] &&
+        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
+    if (is_display_pass) {
+        // Fix inherited from the PC port: GPU profiling must work with
+        // temporal upscaling OFF, otherwise no frame ends are recorded.
+        NoteFrameStart();
+    }
+    if (camera_motion->Enabled() && is_display_pass) {
         scene_started = false;
         camera_motion->OnDisplayPass(cb_descs[0].first);
         if (upscaler->OnFrameStart()) {
@@ -1064,7 +1089,6 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
         camera_motion->SetJitter(upscaler->Jitter());
         object_motion->OnFrameStart();
-        NoteFrameStart();
         static const char* scene_debug = std::getenv("ORDER1886_SCENE_DEBUG");
         scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
         scene_targets->debug = scene_debug_frame;
@@ -1074,6 +1098,31 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
+    // Unlike post-effect toggles, this removes actual geometry draws from GPU
+    // processing while keeping the shadow-map depth clear and transitions.
+    // Require 1024x1024 + zero MRT + depth writes: a scene prepass is retained.
+    if (Order1886SkipShadowDepthWork() &&
+        pipeline->GetGraphicsKey().mrt_mask == 0 && db_desc.first &&
+        regs.depth_buffer.DepthValid() && regs.depth_control.depth_enable &&
+        regs.depth_control.depth_write_enable && !regs.depth_control.stencil_enable &&
+        !regs.IsClipDisabled()) {
+        const auto& image = texture_cache.GetImage(db_desc.first);
+        if (image.info.size.width == 1024 && image.info.size.height == 1024 &&
+            image.info.props.is_depth) {
+            const auto state = BeginRendering(pipeline);
+            if (needs_barrier) {
+                runtime.FlushBarriers();
+            }
+            scheduler.BeginRendering(state);
+            const u64 skipped = order1886_shadow_draws_skipped.fetch_add(
+                1, std::memory_order_relaxed) + 1;
+            if (skipped == 1 || skipped % 4096 == 0) {
+                std::printf("ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=%llu map=1024x1024\n",
+                            static_cast<unsigned long long>(skipped));
+            }
+            return;
+        }
+    }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,

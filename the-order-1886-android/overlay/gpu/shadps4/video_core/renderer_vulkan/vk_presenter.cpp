@@ -1061,7 +1061,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite |
+                                 vk::AccessFlagBits::eTransferWrite,
                 .dstAccessMask = vk::AccessFlagBits::eTransferRead,
                 .oldLayout = vk::ImageLayout::eGeneral,
                 .newLayout = vk::ImageLayout::eTransferSrcOptimal,
@@ -1071,9 +1072,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                               vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                               {}, {}, pre_barriers);
+        // Narrow synchronization on the tiler. Frame contents were produced by
+        // a postprocess color attachment or the direct transfer copy; neither
+        // requires waiting for unrelated compute or all shader stages.
+        cmdbuf.pipelineBarrier(
+            vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
+            {}, {}, pre_barriers);
         const auto fit = MakeImageBlitFit(frame->width, frame->height,
                                           extent.width, extent.height);
         // The Android output is usually exactly the game's selected resolution.
@@ -1147,9 +1153,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eAllCommands,
-                               vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
+        // No ALL_COMMANDS wait after the copy: output only transitions to
+        // compositor presentation, overlay color output or another transfer.
+        cmdbuf.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                vk::PipelineStageFlagBits::eTransfer |
+                vk::PipelineStageFlagBits::eBottomOfPipe,
+            vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
             Ps4Overlay::Render(cmdbuf, swapchain.ImageView(), extent);
             const vk::ImageMemoryBarrier to_present{

@@ -26,6 +26,12 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "Shadow 1024 depth-only draw skipping included in native overlay":
+      "ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Mobile present barrier scope no longer ALL_COMMANDS":
+      "No ALL_COMMANDS wait after the copy" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
+  "GPU profiler frame records when the temporal upscaler is off":
+      "if (is_display_pass)" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "Patch 1 included in generated GPU shader resource code":
       "Order1886UnusedLightImage" in (gpu/"shadps4/shader_recompiler/resource.h").read_text() and
       "ORDER1886_LIGHT_GUARD" in (gpu/"shadps4/shader_recompiler/resource.h").read_text(),
