@@ -490,8 +490,8 @@ public final class Order1886Activity extends Activity {
         line(c,"Redução de GPU compatível",
             "Mantém o desenho de sombras para evitar o crash da versão 0.1.21; "+
             "a união de passes Vulkan permanece disponível.");
-        toggle(c,"VRS 2×2 em geometria MRT (sem VRS 4×4)", "vrs2x2",true);
-        line(c,"VRS 2×2", "Aplicado apenas se o driver suportar; passes de UI, pós, blend e profundidade isolada permanecem em 1×1.");
+        toggle(c,"VRS 2×2 em geometria da cena (sem VRS 4×4)", "vrs2x2",true);
+        line(c,"VRS 2×2", "Somente em geometria opaca compatível (MRT e cena com profundidade); UI, pós e blend permanecem em 1×1.");
         toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
                "gpuTileMerge",true);
         toggle(c,"Reduzir GPU: limpar attachments sem fechar passe (Adreno)",
