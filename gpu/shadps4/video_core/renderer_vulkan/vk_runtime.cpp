@@ -940,6 +940,42 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
 
 void Runtime::CopyImage(VideoCore::Image* src, VideoCore::Image* dst) {
     const u32 num_mips = std::min(src->info.resources.levels, dst->info.resources.levels);
+    // Unlike BC1->ETC2, SNORM10 changes the host bytes-per-pixel from 4
+    // to 8. VkCmdCopyImage across these two physical formats is invalid.
+    // Preserve PS4 guest bytes by downloading into the existing tick-safe GPU
+    // staging arena, then uploading through the appropriate conversion. The
+    // Runtime buffer hazards order the two operations; no CPU wait is needed.
+    if (src->transcoded_snorm2101010 != dst->transcoded_snorm2101010) {
+        ASSERT_MSG(src->info.num_samples == 1 && dst->info.num_samples == 1 &&
+                       src->info.resources.layers == 1 && dst->info.resources.layers == 1 &&
+                       ConvertImageType(src->info.type) == vk::ImageType::e2D &&
+                       ConvertImageType(dst->info.type) == vk::ImageType::e2D &&
+                       vk::blockSize(src->info.pixel_format) == 4 &&
+                       vk::blockSize(dst->info.pixel_format) == 4,
+                   "SNORM10 mixed physical image copy needs a 4-byte PS4 2D image pair");
+        for (u32 mip = 0; mip < num_mips; ++mip) {
+            const u32 width = std::min(std::max(src->info.size.width >> mip, 1u),
+                                       std::max(dst->info.size.width >> mip, 1u));
+            const u32 height = std::min(std::max(src->info.size.height >> mip, 1u),
+                                        std::max(dst->info.size.height >> mip, 1u));
+            const auto staging = staging_pool.Request(
+                u64(width) * height * 4u, VideoCore::MemoryType::DeviceLocal, 16);
+            const vk::BufferImageCopy region{
+                .bufferOffset = staging.offset,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource{.aspectMask = vk::ImageAspectFlagBits::eColor,
+                                  .mipLevel = mip, .baseArrayLayer = 0, .layerCount = 1},
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {width, height, 1},
+            };
+            DownloadImage(src, staging.buffer, std::span{&region, 1});
+            UploadImage(dst, staging.buffer, std::span{&region, 1});
+        }
+        dst->flags |= (src->flags & VideoCore::ImageFlagBits::GpuModified);
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+        return;
+    }
 
     // Format mismatch warning (safe but useful)
     if (src->info.pixel_format != dst->info.pixel_format) {
