@@ -98,7 +98,8 @@ class TestMaliBcnToEtc2(unittest.TestCase):
         self.assertIn('transcoded_bc_to_etc2 = true', IMAGE)
         self.assertIn('flags = {};', IMAGE)
         self.assertIn('usage_flags = target_usage', IMAGE)
-        self.assertIn('transcoded_bc_to_etc2 && format == image.info.pixel_format', VIEW)
+        self.assertIn('image.transcoded_bc_to_etc2 || image.transcoded_snorm2101010', VIEW)
+        self.assertIn('format == image.info.pixel_format', VIEW)
         self.assertIn('view_format = backing_format', VIEW)
 
     def test_shader_receives_original_guest_bc_and_uses_gpu_compute(self):
