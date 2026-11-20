@@ -5,6 +5,7 @@
 
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
 namespace Vulkan {
@@ -120,6 +121,12 @@ void GpuProfiler::Print() {
         const auto& [key, total] = sorted[i];
         std::printf("ORDER1886_GPU_STAGE ms_frame=%.3f count_frame=%.2f stage=%s\n",
                     total.ms / frames, double(total.segments) / frames, described[key].c_str());
+    }
+    if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
+        const auto draws = g_order1886_vrs_2x2_draws.exchange(
+            0, std::memory_order_relaxed);
+        std::printf("ORDER1886_VRS_DRAW_COUNTS rate=2x2 draws=%llu\n",
+                    static_cast<unsigned long long>(draws));
     }
     totals.clear();
     frames = 0;
