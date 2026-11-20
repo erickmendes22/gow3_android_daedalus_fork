@@ -16,6 +16,7 @@
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/host_shaders/bcn_to_etc2_comp.h"
+#include "video_core/host_shaders/snorm2101010_comp.h"
 #include <array>
 #include <algorithm>
 #include <limits>
@@ -372,6 +373,205 @@ struct BcnTranscodeState {
                 });
                 // StreamBuffer::Reserve and RequestLarge both retain storage
                 // until scheduler.IsFree(tick); there is no deferred hold to release.
+            }
+        }
+        return true;
+    }
+};
+
+
+struct SnormTranscodeState {
+    const Instance& instance;
+    Scheduler& scheduler;
+    bool use_push_descriptors{};
+    const std::array<vk::DescriptorPoolSize, 1> sizes{{
+        {vk::DescriptorType::eStorageBuffer, 256},
+    }};
+    DescriptorHeap descriptor_heap;
+    vk::UniqueDescriptorSetLayout descriptor_layout;
+    vk::UniquePipelineLayout pipeline_layout;
+    vk::UniquePipeline pipeline;
+
+    struct Params {
+        u32 width, height, input_row_texels, output_row_texels;
+        u32 input_start_words, output_start_words, direction;
+    };
+    static_assert(sizeof(Params) == 28);
+
+    SnormTranscodeState(const Instance& inst, Scheduler& sched)
+        : instance{inst}, scheduler{sched},
+          use_push_descriptors{inst.MaxPushDescriptors() >= 2},
+          descriptor_heap{inst, sched.GetWorkSemaphore(), sizes, 128} {
+        const auto device = instance.GetDevice();
+        const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+            {.binding = 0, .descriptorType = vk::DescriptorType::eStorageBuffer,
+             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+            {.binding = 1, .descriptorType = vk::DescriptorType::eStorageBuffer,
+             .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        }};
+        const vk::DescriptorSetLayoutCreateInfo descriptor_ci{
+            .flags = use_push_descriptors
+                         ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+                         : vk::DescriptorSetLayoutCreateFlags{},
+            .bindingCount = static_cast<u32>(bindings.size()),
+            .pBindings = bindings.data(),
+        };
+        auto [lr, layout] = device.createDescriptorSetLayoutUnique(descriptor_ci);
+        ASSERT_MSG(lr == vk::Result::eSuccess, "SNORM10 descriptor layout failed: {}",
+                   vk::to_string(lr));
+        descriptor_layout = std::move(layout);
+        const vk::DescriptorSetLayout raw_layout = *descriptor_layout;
+        const vk::PushConstantRange push{
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            .offset = 0, .size = sizeof(Params),
+        };
+        const vk::PipelineLayoutCreateInfo layout_ci{
+            .setLayoutCount = 1, .pSetLayouts = &raw_layout,
+            .pushConstantRangeCount = 1, .pPushConstantRanges = &push,
+        };
+        auto [pr, pipeline_layout_handle] = device.createPipelineLayoutUnique(layout_ci);
+        ASSERT_MSG(pr == vk::Result::eSuccess, "SNORM10 pipeline layout failed: {}",
+                   vk::to_string(pr));
+        pipeline_layout = std::move(pipeline_layout_handle);
+        const auto shader = CompileSPV(std::span<const u32>{SNORM2101010_COMP}, device);
+        const vk::PipelineShaderStageCreateInfo stage{
+            .stage = vk::ShaderStageFlagBits::eCompute, .module = shader, .pName = "main",
+        };
+        const vk::ComputePipelineCreateInfo create{
+            .stage = stage, .layout = *pipeline_layout,
+        };
+        auto [cr, created] = device.createComputePipelineUnique(VK_NULL_HANDLE, create);
+        device.destroyShaderModule(shader);
+        ASSERT_MSG(cr == vk::Result::eSuccess, "SNORM10 GPU converter failed: {}",
+                   vk::to_string(cr));
+        pipeline = std::move(created);
+    }
+
+    bool Record(VideoCore::Image* image, const VideoCore::Buffer* other,
+                std::span<const vk::BufferImageCopy> regions, StagingBufferPool& staging,
+                bool upload) {
+        const auto& limits = instance.GetPhysicalDevice().getProperties().limits;
+        const u64 alignment = std::max<u64>(16, limits.minStorageBufferOffsetAlignment);
+        // Validate ALL regions before recording any Vulkan commands. An
+        // unsupported transfer must not leave a partially updated mip chain.
+        for (const auto& copy : regions) {
+            const u64 width = copy.imageExtent.width, height = copy.imageExtent.height;
+            const u64 row = copy.bufferRowLength ? copy.bufferRowLength : width;
+            const u64 rows = copy.bufferImageHeight ? copy.bufferImageHeight : height;
+            const u64 pixels = width * height;
+            if (!width || !height || width > UINT32_MAX / height ||
+                copy.imageExtent.depth != 1 || copy.imageOffset.z != 0 ||
+                copy.imageOffset.x < 0 || copy.imageOffset.y < 0 ||
+                !copy.imageSubresource.layerCount || row < width || rows < height ||
+                (pixels + 63u) / 64u > limits.maxComputeWorkGroupCount[0] ||
+                pixels * 8u > limits.maxStorageBufferRange)
+                return false;
+            const u64 per_layer = row * rows * 4u;
+            const u64 last_pixel = ((height - 1u) * row + width) * 4u;
+            const u64 last_layer = u64(copy.imageSubresource.layerCount - 1u) * per_layer;
+            if (copy.bufferOffset > other->SizeBytes() ||
+                last_layer + last_pixel > other->SizeBytes() - copy.bufferOffset ||
+                (copy.bufferOffset % 4u) != 0)
+                return false;
+        }
+        const auto device = instance.GetDevice();
+        for (const auto& copy : regions) {
+            const u32 width = copy.imageExtent.width, height = copy.imageExtent.height;
+            const u32 row = copy.bufferRowLength ? copy.bufferRowLength : width;
+            const u32 rows = copy.bufferImageHeight ? copy.bufferImageHeight : height;
+            const u64 scratch_bytes = u64(width) * height * 8u;
+            for (u32 layer = 0; layer < copy.imageSubresource.layerCount; ++layer) {
+                const u64 guest_start = copy.bufferOffset + u64(layer) * row * rows * 4u;
+                const u64 guest_base = guest_start / alignment * alignment;
+                const u64 guest_span = guest_start - guest_base +
+                                       (u64(height - 1u) * row + width) * 4u;
+                if (guest_span > limits.maxStorageBufferRange ||
+                    guest_start - guest_base > UINT32_MAX) return false;
+                const auto scratch = staging.Request(
+                    scratch_bytes, VideoCore::MemoryType::DeviceLocal, alignment);
+                const vk::DescriptorBufferInfo guest_info{
+                    .buffer = other->Handle(), .offset = guest_base, .range = guest_span,
+                };
+                const vk::DescriptorBufferInfo scratch_info{
+                    .buffer = scratch.buffer->Handle(), .offset = scratch.offset,
+                    .range = scratch_bytes,
+                };
+                const vk::DescriptorBufferInfo in = upload ? guest_info : scratch_info;
+                const vk::DescriptorBufferInfo out = upload ? scratch_info : guest_info;
+                const vk::DescriptorSet set = use_push_descriptors
+                    ? vk::DescriptorSet{} : descriptor_heap.Commit(*descriptor_layout);
+                const std::array<vk::WriteDescriptorSet, 2> writes{{
+                    {.dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &in},
+                    {.dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+                     .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &out},
+                }};
+                if (!use_push_descriptors) device.updateDescriptorSets(writes, {});
+                const Params params{
+                    .width = width, .height = height,
+                    .input_row_texels = upload ? row : width,
+                    .output_row_texels = upload ? width : row,
+                    .input_start_words = upload ? u32((guest_start - guest_base) / 4u) : 0u,
+                    .output_start_words = upload ? 0u : u32((guest_start - guest_base) / 4u),
+                    .direction = upload ? 0u : 1u,
+                };
+                vk::BufferImageCopy image_copy = copy;
+                image_copy.bufferOffset = scratch.offset;
+                image_copy.bufferRowLength = 0;
+                image_copy.bufferImageHeight = 0;
+                image_copy.imageSubresource.baseArrayLayer += layer;
+                image_copy.imageSubresource.layerCount = 1;
+                const vk::BufferMemoryBarrier2 scratch_barrier{
+                    .srcStageMask = upload ? vk::PipelineStageFlagBits2::eComputeShader
+                                           : vk::PipelineStageFlagBits2::eCopy,
+                    .srcAccessMask = upload ? vk::AccessFlagBits2::eShaderWrite
+                                            : vk::AccessFlagBits2::eTransferWrite,
+                    .dstStageMask = upload ? vk::PipelineStageFlagBits2::eCopy
+                                           : vk::PipelineStageFlagBits2::eComputeShader,
+                    .dstAccessMask = upload ? vk::AccessFlagBits2::eTransferRead
+                                            : vk::AccessFlagBits2::eShaderRead,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .buffer = scratch.buffer->Handle(), .offset = scratch.offset,
+                    .size = scratch_bytes,
+                };
+                scheduler.Record([
+                    pipeline = *pipeline, layout = *pipeline_layout,
+                    image_handle = image->GetImage(), scratch_buffer = scratch.buffer->Handle(),
+                    set, push = use_push_descriptors, in, out, params, image_copy,
+                    scratch_barrier, upload
+                ](vk::CommandBuffer cb) {
+                    const vk::DependencyInfo barrier{
+                        .bufferMemoryBarrierCount = 1,
+                        .pBufferMemoryBarriers = &scratch_barrier,
+                    };
+                    if (!upload) {
+                        cb.copyImageToBuffer(image_handle,
+                                             vk::ImageLayout::eTransferSrcOptimal,
+                                             scratch_buffer, image_copy);
+                        cb.pipelineBarrier2(barrier);
+                    }
+                    cb.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+                    if (push) {
+                        const std::array<vk::WriteDescriptorSet, 2> w{{
+                            {.dstBinding = 0, .descriptorCount = 1,
+                             .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &in},
+                            {.dstBinding = 1, .descriptorCount = 1,
+                             .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &out},
+                        }};
+                        cb.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, w);
+                    } else {
+                        cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, set, {});
+                    }
+                    cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0,
+                                     sizeof(Params), &params);
+                    cb.dispatch((params.width * params.height + 63u) / 64u, 1u, 1u);
+                    if (upload) {
+                        cb.pipelineBarrier2(barrier);
+                        cb.copyBufferToImage(scratch_buffer, image_handle,
+                                             vk::ImageLayout::eTransferDstOptimal, image_copy);
+                    }
+                });
             }
         }
         return true;
