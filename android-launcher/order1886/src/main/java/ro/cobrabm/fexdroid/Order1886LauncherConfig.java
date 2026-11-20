@@ -30,7 +30,8 @@ final class Order1886LauncherConfig {
         if(Integer.bitCount(anisotropy)!=1||anisotropy>16)throw new IOException("Anisotropia inválida");
         if(framesQueued<0||framesQueued>2)throw new IOException("Frames adiantados inválido");
         if(fps!=30&&fps!=60)throw new IOException("FPS inválido");
-        if(width!=1920&&width!=1600&&width!=1280)throw new IOException("Resolução inválida");
+        if(width!=1920&&width!=1600&&width!=1280&&width!=1024&&width!=768&&width!=640)
+            throw new IOException("Resolução inválida");
         if(!"original".equals(aspect)&&!"16:9".equals(aspect))throw new IOException("Proporção inválida");
         // Exact size() and scene_size() rules from order1886_resolution.py.
         int height="16:9".equals(aspect)?Math.round((width*9f/16f)/8f)*8:
