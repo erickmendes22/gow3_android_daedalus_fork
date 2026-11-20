@@ -95,6 +95,9 @@ jobs:
           grep -q 'return previous == current;' gpu/shadps4/video_core/cache_storage.cpp
           grep -q 'GOW3_MALI_FORMAT_RUNTIME guest=' gpu/shadps4/video_core/texture_cache/image.cpp
           grep -q 'GOW3_MALI_SNORM10_FALLBACK' gpu/shadps4/video_core/texture_cache/image.cpp
+          grep -Fq 'layout(local_size_x = 8, local_size_y = 8)' gpu/shadps4/video_core/host_shaders/snorm2101010.comp
+          grep -Fq 'gl_GlobalInvocationID.xy' gpu/shadps4/video_core/host_shaders/snorm2101010.comp
+          grep -Fq 'maxComputeWorkGroupCount[1]' gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp
           grep -q 'add_host_shader(snorm2101010.comp snorm2101010_comp)' gpu/shadps4/video_core/host_shaders/CMakeLists.txt
           grep -q 'add_host_shader(snorm2101010.comp snorm2101010_comp)' gpu/CMakeLists.txt
           grep -q 'eR16G16B16A16Snorm' gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
