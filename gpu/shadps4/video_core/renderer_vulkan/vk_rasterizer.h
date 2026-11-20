@@ -390,6 +390,10 @@ private:
         u64 offset;
         u32 size;
         bool is_written;
+        // Only a shader's read-only UBO may use stage-scoped hazards.
+        // Other buffers retain the conservative ALL_GRAPHICS policy.
+        bool is_uniform;
+        Shader::SwStage shader_stage;
     };
     boost::container::static_vector<BoundBuffer, Shader::NUM_BUFFERS> bound_buffers;
 
