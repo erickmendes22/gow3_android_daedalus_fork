@@ -1083,8 +1083,10 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
         return false;
     }
     for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        // Use the effective Vulkan pipeline blend state, not the raw guest
+        // blend register: a color format with blend_bypass does not blend.
         if ((key.mrt_mask & (1u << i)) &&
-            (regs.blend_control[i].enable || !state.color_attachments[i].image_view)) {
+            (key.blend_controls[i].enable || !state.color_attachments[i].image_view)) {
             return false;
         }
     }
