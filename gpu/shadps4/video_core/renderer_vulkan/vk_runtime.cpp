@@ -463,7 +463,8 @@ struct SnormTranscodeState {
                 copy.imageExtent.depth != 1 || copy.imageOffset.z != 0 ||
                 copy.imageOffset.x < 0 || copy.imageOffset.y < 0 ||
                 !copy.imageSubresource.layerCount || row < width || rows < height ||
-                (pixels + 63u) / 64u > limits.maxComputeWorkGroupCount[0] ||
+                (width + 7u) / 8u > limits.maxComputeWorkGroupCount[0] ||
+                (height + 7u) / 8u > limits.maxComputeWorkGroupCount[1] ||
                 pixels * 8u > limits.maxStorageBufferRange)
                 return false;
             const u64 per_layer = row * rows * 4u;
@@ -565,7 +566,8 @@ struct SnormTranscodeState {
                     }
                     cb.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0,
                                      sizeof(Params), &params);
-                    cb.dispatch((params.width * params.height + 63u) / 64u, 1u, 1u);
+                    cb.dispatch((params.width + 7u) / 8u,
+                                (params.height + 7u) / 8u, 1u);
                     if (upload) {
                         cb.pipelineBarrier2(barrier);
                         cb.copyBufferToImage(scratch_buffer, image_handle,
