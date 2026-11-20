@@ -37,7 +37,6 @@ jobs:
           python3 the-order-1886-android/scripts/smoke.py order-android
           # Patch only the packaged Android Python toolchain, not the PC port.
           python3 the-order-1886-android/scripts/patch_android_preparation.py order-source/scripts/order1886_mods.py
-          python3 the-order-1886-android/scripts/patch_android_resolution.py order-source/scripts/order1886_resolution.py
           python3 the-order-1886-android/scripts/test_android_paths.py order-source/scripts/order1886_mods.py
       - name: Setup Android SDK and NDK r29
         uses: android-actions/setup-android@v3
