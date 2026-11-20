@@ -552,15 +552,8 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
-    // Compare Bachata's deeper timeline queue with GoW3's old PanVK cap=2.
     // Only one out of 32 lock/record/submit operations are timed.
     const bool mali_submit_sample = MaliPerfStats::SampleSubmit();
-    const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
-                                               : MaliPerfStats::TimePoint{};
-    std::scoped_lock lk{submit_mutex};
-    if (mali_submit_sample)
-        MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
-    const u64 signal_value = work_semaphore.NextTick();
 
     // BACHATA ARM64's bounded timeline policy: do not issue
     // vkGetSemaphoreCounterValue on every submit (a costly Turnip ioctl).
@@ -588,16 +581,32 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                !(opt_out && opt_out[0] == '1');
     }();
-    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
-        // Every forced wait is measured: this is precisely the suspected
-        // 60->5 FPS menu bottleneck, unlike AHB copy timing. The readback,
-        // guest-memory and presentation fences remain intact.
+    // Throttle *before* taking the global graphics-queue submit mutex.
+    // PanVK heavy frames spend 60-140ms blocked on timeline ticks; holding
+    // this mutex across a GPU wait prevents other scheduler instances from
+    // submitting work required by the presenter or texture staging queue.
+    // The tick is the next to be submitted on this Scheduler (single-producer).
+    const u64 next_signal_value = work_semaphore.CurrentTick();
+    if (bounded_submit && next_signal_value > MaxAndroidInFlightSubmissions) {
         const bool mali_timing = MaliPerfStats::Enabled();
         const auto throttle_start = mali_timing ? MaliPerfStats::Clock::now()
                                                 : MaliPerfStats::TimePoint{};
-        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+        work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions);
         if (mali_timing)
             MaliPerfStats::Record(MaliPerfStats::Stage::SubmitThrottle, throttle_start);
+    }
+    const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
+                                               : MaliPerfStats::TimePoint{};
+    std::scoped_lock lk{submit_mutex};
+    if (mali_submit_sample)
+        MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
+    const u64 signal_value = work_semaphore.NextTick();
+    // Defend the cap even if a second producer advanced this scheduler's
+    // timeline while we were outside the shared queue lock. Normally there
+    // is only one producer and this recheck has no wait or driver call.
+    if (bounded_submit && signal_value > next_signal_value &&
+        signal_value > MaxAndroidInFlightSubmissions) {
+        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
     }
 
 #if TRACY_GPU_ENABLED
