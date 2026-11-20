@@ -5,7 +5,17 @@ name: GoW III Mali G720 - Four Fixes ARM64 Test APK
 on:
   push:
     branches: [fix/gow3-panvk-freeze-heavy-fps-20261120]
-    paths: ['.github/workflows/gow3-mali-double-fps-test-apk.yml']
+    paths:
+      - '.github/workflows/gow3-mali-double-fps-test-apk.yml'
+      - 'tests/test_android_readback_affinity.py'
+      - 'tests/test_mali_freeze_heavy_scene_regression.py'
+      - 'tests/test_mali_async_ahb.py'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp'
+      - 'gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h'
+      - 'gpu/shadps4/video_core/texture_cache/image.cpp'
+      - 'tools/android/bionic/run-bionic.sh'
   workflow_dispatch:
 
 permissions:
