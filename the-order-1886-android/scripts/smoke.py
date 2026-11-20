@@ -41,6 +41,14 @@ gpu_checks={
       "fragment_size{vrs2x2 ? 2u : 1u" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
       "4u : 1u" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS never applies to alpha-discard or coverage-export fragment shaders":
+      "fs->has_discard" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "fs->hw.fs.mrtz_mask != 0" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS keeps single-target scene draws at exact 1x1":
+      "std::popcount(key.mrt_mask) < 2" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "VRS pipeline dynamic state enabled only after feature negotiation":
       "vk::DynamicState::eFragmentShadingRateKHR" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp").read_text() and

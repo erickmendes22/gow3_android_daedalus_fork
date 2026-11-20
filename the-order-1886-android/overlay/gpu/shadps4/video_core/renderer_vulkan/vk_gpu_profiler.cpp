@@ -125,8 +125,18 @@ void GpuProfiler::Print() {
     if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
         const auto draws = g_order1886_vrs_2x2_draws.exchange(
             0, std::memory_order_relaxed);
-        std::printf("ORDER1886_VRS_DRAW_COUNTS rate=2x2 draws=%llu\n",
-                    static_cast<unsigned long long>(draws));
+        const auto discard = g_order1886_vrs_rejected_discard.exchange(
+            0, std::memory_order_relaxed);
+        const auto coverage = g_order1886_vrs_rejected_coverage.exchange(
+            0, std::memory_order_relaxed);
+        const auto effects = g_order1886_vrs_rejected_side_effects.exchange(
+            0, std::memory_order_relaxed);
+        std::printf("ORDER1886_VRS_DRAW_COUNTS rate=2x2 draws=%llu rejected_discard=%llu "
+                    "rejected_coverage=%llu rejected_side_effects=%llu\n",
+                    static_cast<unsigned long long>(draws),
+                    static_cast<unsigned long long>(discard),
+                    static_cast<unsigned long long>(coverage),
+                    static_cast<unsigned long long>(effects));
     }
     totals.clear();
     frames = 0;

@@ -1082,8 +1082,19 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
     // Reject discard, explicit Z/stencil/sample-mask export and storage side
     // effects; otherwise 2x2 changes object visibility rather than only cost.
     const auto* fs = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
-    if (!fs || fs->has_discard || fs->hw.fs.mrtz_mask != 0 ||
-        fs->has_storage_images || fs->translation_failed) {
+    if (!fs) {
+        return false;
+    }
+    if (fs->has_discard) {
+        g_order1886_vrs_rejected_discard.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (fs->hw.fs.mrtz_mask != 0) {
+        g_order1886_vrs_rejected_coverage.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (fs->has_storage_images || fs->translation_failed) {
+        g_order1886_vrs_rejected_side_effects.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
@@ -1255,6 +1266,15 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         draw();
         if (square) [[unlikely]] {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, square);
+            // The second blend-rewrite draw must never inherit 2x2 from
+            // the primary geometry draw; it restores per-pixel composition.
+            if (vrs2x2) {
+                const vk::Extent2D full_rate{1u, 1u};
+                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> ops{
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
+                cmdbuf.setFragmentShadingRateKHR(full_rate, ops);
+            }
             draw();
         }
     });
@@ -1397,7 +1417,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
             if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
-                const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
+                const bool primary_vrs = vrs2x2 && bound == handle;
+                const vk::Extent2D fragment_size{primary_vrs ? 2u : 1u,
+                                                 primary_vrs ? 2u : 1u};
                 const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
                     vk::FragmentShadingRateCombinerOpKHR::eKeep,
                     vk::FragmentShadingRateCombinerOpKHR::eKeep};
