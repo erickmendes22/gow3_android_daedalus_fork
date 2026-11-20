@@ -1071,8 +1071,15 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
         return false;
     }
     const auto& key = pipeline->GetGraphicsKey();
-    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
-        std::popcount(key.mrt_mask) < 2 || !geometry_draw) {
+    const u32 active_colors = std::popcount(key.mrt_mask);
+    // The second large GPU bottleneck is the full-resolution
+    // scene-color-depth pass (about 2.3 ms/frame in log 11). Coarsen
+    // opaque geometry there as well, but never a one-target post/UI draw.
+    const bool depth_scene = active_colors == 1 &&
+                             state.depth_stencil_attachment.has_depth &&
+                             regs.depth_control.depth_enable;
+    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) || !geometry_draw ||
+        (active_colors < 2 && !depth_scene)) {
         return false;
     }
     for (u32 i = 0; i < state.num_color_attachments; ++i) {
