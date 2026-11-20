@@ -607,10 +607,14 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     if (bounded_submit) {
         for (;;) {
             const u64 pending_tick = work_semaphore.CurrentTick();
-            if (pending_tick <= MaxAndroidInFlightSubmissions ||
-                pending_tick <= next_signal_value) break;
+            if (pending_tick <= MaxAndroidInFlightSubmissions) break;
+            const u64 retire_tick = pending_tick - MaxAndroidInFlightSubmissions;
+            // A completed tick makes another wait redundant. Crucially,
+            // comparing against a stale pre-lock tick here could loop forever
+            // after a concurrent submission advanced this timeline.
+            if (work_semaphore.IsFree(retire_tick)) break;
             lk.unlock();
-            work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions);
+            work_semaphore.Wait(retire_tick);
             lk.lock();
         }
     }
