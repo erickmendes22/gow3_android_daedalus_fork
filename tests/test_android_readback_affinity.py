@@ -17,7 +17,17 @@ class ReadbackAffinityTests(unittest.TestCase):
         self.assertIn("requested >= 1 && requested <= 8", submit)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")', submit)
         self.assertIn('std::getenv("GOW3_VK_POLL_EACH_SUBMIT")', submit)
-        self.assertIn("work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions)", submit)
+        # The PanVK throttle must precede the queue submit lock, otherwise a
+        # completed readback/presenter scheduler may starve behind the PM4 wait.
+        self.assertIn("work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions)", submit)
+        self.assertIn("work_semaphore.Wait(retire_tick)", submit)
+        self.assertIn("work_semaphore.IsFree(retire_tick)", submit)
+        self.assertLess(
+            submit.index("work_semaphore.Wait(next_signal_value - MaxAndroidInFlightSubmissions)"),
+            submit.index("std::unique_lock lk{submit_mutex}"))
+        self.assertLess(
+            submit.index("std::unique_lock lk{submit_mutex}"),
+            submit.index("work_semaphore.NextTick()"))
         self.assertIn("if (!bounded_submit) {\n        work_semaphore.Refresh();", submit)
         self.assertEqual(submit.count("work_semaphore.Refresh();"), 1)
         self.assertIn("PopPendingOperations();", submit)
