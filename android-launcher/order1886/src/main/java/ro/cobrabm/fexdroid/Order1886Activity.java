@@ -45,13 +45,14 @@ public final class Order1886Activity extends Activity {
                              WHITE=0xffe9e9eb, MUTED=0xffa6abb3, EDGE=0xff39404b;
     private static final int REQ_PKG=111, REQ_UPDATE=112, REQ_FOLDER=113,
                              REQ_DRIVER=114, REQ_BOOT=115, REQ_EXPORT=116,
-                             REQ_STORAGE=117;
+                             REQ_STORAGE=117, REQ_SAVE_EXPORT=118, REQ_SAVE_IMPORT=119;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final AtomicBoolean working=new AtomicBoolean();
     private File base,gameDir,logFile,manualBoot;
     private Order1886PadBridge pad;
     private Order1886AudioBridge audio;
     private Order1886Content content;
+    private Order1886SaveManager saveManager;
     private Order1886Preparation preparer;
     private Order1886DriverStore drivers;
     private FrameLayout screen, gameFrame;
@@ -206,6 +207,7 @@ public final class Order1886Activity extends Activity {
         manualBoot=new File(base,"manual-boot-linked.bin");
         logFile=new File(base,"last-runtime.log");
         content=new Order1886Content(this);
+        saveManager=new Order1886SaveManager(this,base);
         preparer=new Order1886Preparation(this,new File(base,"user"));
         drivers=new Order1886DriverStore(this);
         pad=new Order1886PadBridge(new File(base,"pad.state"));
@@ -580,6 +582,10 @@ public final class Order1886Activity extends Activity {
             "liborder1886_probe.so").isFile()?"Bibliotecas nativas presentes":"Bibliotecas nativas ausentes");
         actions(c,button("Importar boot-linked.bin",false,v->selectFile(REQ_BOOT)),
                   button("Exportar log",false,v->exportLog()));
+        actions(c,button("Exportar saves ZIP",true,v->exportSaves()),
+                  button("Importar saves ZIP",false,v->importSaves()));
+        line(c,"Backup de saves","Inclui todos os usuarios, identificadores CUSA, metadados .sce_sys e SaveDataMemory. "
+            +"Importe ou exporte com o jogo fechado; arquivos existentes com mesmo nome serao substituidos.");
         actions(c,button("Diagnóstico do runtime",true,v->diagnose()),
                   button("Preparar no celular",false,v->prepareGame()));
         if(gameDir!=null)line(c,"Jogo selecionado",gameDir.getAbsolutePath());
@@ -682,6 +688,18 @@ public final class Order1886Activity extends Activity {
                     show("Imagem preparada importada: "+(manualBoot.length()/1048576)+" MB");
                 });
                 break;
+            case REQ_SAVE_EXPORT:
+                if(gameOpen){show("Feche o jogo antes de exportar saves.");break;}
+                runTask("Exportando saves ZIP...",()->{
+                    saveManager.exportTo(uri);show("Saves exportados com metadados.");
+                });
+                break;
+            case REQ_SAVE_IMPORT:
+                if(gameOpen){show("Feche o jogo antes de importar saves.");break;}
+                runTask("Importando saves ZIP...",()->{
+                    saveManager.importFrom(uri);show("Saves e metadados importados.");
+                });
+                break;
             case REQ_EXPORT:
                 try(InputStream in=new FileInputStream(logFile);
                     OutputStream out=getContentResolver().openOutputStream(uri)){
@@ -738,6 +756,21 @@ public final class Order1886Activity extends Activity {
         if(!prefs().edit().putString("preparedSignature",prepSignature()).commit())
             throw new IOException("Não foi possível salvar perfil preparado");
         show("Jogo preparado no Android. Pronto para tentar iniciar.");
+    }
+    private void exportSaves(){
+        if(gameOpen||working.get()){show("Feche o jogo e termine a operacao anterior.");return;}
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
+        i.putExtra(Intent.EXTRA_TITLE,"TheOrder1886-saves.zip");
+        i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(i,REQ_SAVE_EXPORT);
+    }
+    private void importSaves(){
+        if(gameOpen||working.get()){show("Feche o jogo e termine a operacao anterior.");return;}
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(i,REQ_SAVE_IMPORT);
     }
     private void exportLog(){
         if(!logFile.isFile()){show("Nenhum log gerado.");return;}
