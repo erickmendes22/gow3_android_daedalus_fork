@@ -59,6 +59,11 @@ class MaliSignedFormatTests(unittest.TestCase):
         self.assertIn("vk::PipelineStageFlagBits2::eComputeShader", RUNTIME)
         self.assertIn("scale_to_16", SHADER)
         self.assertIn("scale_from_16", SHADER)
+        self.assertIn("layout(local_size_x = 8, local_size_y = 8)", SHADER)
+        self.assertIn("uvec2 texel = gl_GlobalInvocationID.xy;", SHADER)
+        self.assertIn("(width + 7u) / 8u > limits.maxComputeWorkGroupCount[0]", RUNTIME)
+        self.assertIn("(height + 7u) / 8u > limits.maxComputeWorkGroupCount[1]", RUNTIME)
+        self.assertIn("cb.dispatch((params.width + 7u) / 8u,", RUNTIME)
         self.assertNotIn("eA2B10G10R10UnormPack32", IMAGE[IMAGE.index("// Mali G720 does not expose"):IMAGE.index("// Mali-only *host* BC1")])
 
     def test_prewarm_two_measured_cold_descriptions_only(self):
