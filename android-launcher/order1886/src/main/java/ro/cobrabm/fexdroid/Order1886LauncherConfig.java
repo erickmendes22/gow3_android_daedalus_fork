@@ -68,6 +68,7 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_VBLANK_HZ","60");
         int language=p.getInt("language",1);
         env.put("ORDER1886_LANGUAGE",Integer.toString(language>=0&&language<=29?language:1));
+        env.put("ORDER1886_ENGINE_PERF",p.getBoolean("enginePerf",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
         env.put("ORDER1886_PIPELINE_BINARIES","0");
         env.put("ORDER1886_PARALLEL_WARMUP","0");
