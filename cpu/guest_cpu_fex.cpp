@@ -83,6 +83,9 @@ void* stub_functions[StubBytes / StubSize];
 std::atomic<size_t> stub_count;
 std::mutex stub_lock;
 std::unordered_map<void*, uintptr_t> stub_of;
+// Only the scalar i32 sceKernelAllocateDirectMemory host ABI: x1 is undefined.
+// Preserve guest RDX rather than exporting the random AArch64 x1 as a second return.
+std::atomic<void*> direct_memory_scalar_return{};
 
 struct Hook {
     uintptr_t address;
@@ -184,7 +187,10 @@ void CallHost(CPUState& s, void* fn) {
     HostResult result;
     gow3cpu_host_call(fn, &args, &result);
     s.gregs[REG_RAX] = result.x[0];
-    s.gregs[REG_RDX] = result.x[1];
+    if (fn != direct_memory_scalar_return.load(std::memory_order_relaxed)) {
+        // Other guest imports may return a true 128-bit integer in RDX:RAX.
+        s.gregs[REG_RDX] = result.x[1];
+    }
     std::memcpy(Xmm(s, 0), &result.v[0], sizeof(result.v[0]));
     std::memcpy(Xmm(s, 1), &result.v[1], sizeof(result.v[1]));
 }
@@ -383,6 +389,13 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
 void guest_cpu_code(uintptr_t base, size_t size) {
     std::unique_lock lock(code_lock);
     code_ranges.emplace_back(base, size);
+}
+
+extern "C" void guest_cpu_mark_direct_memory_scalar_return(void* fn) {
+    if (!fn) return;
+    const char* rollback = std::getenv("GOW3_DIRECTMEM_PRESERVE_RDX");
+    if (rollback && rollback[0] == '0') return;
+    direct_memory_scalar_return.store(fn, std::memory_order_release);
 }
 
 uintptr_t guest_cpu_host_function(void* fn) {
