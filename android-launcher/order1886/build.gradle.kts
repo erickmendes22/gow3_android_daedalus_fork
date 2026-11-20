@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 19
-        versionName = "0.1.17-save-manager"
+        versionCode = 20
+        versionName = "0.1.18-gpu-perf-signed"
     }
     // Stable signing for upgrade-in-place. Keystore and password are injected by CI
     // secrets; never put private signing material in the public source tree.
