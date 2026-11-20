@@ -43,9 +43,13 @@ class MaliWarmupSafetyTest(unittest.TestCase):
 
     def test_mali_warmup_is_batched_without_dropping_entries(self):
         self.assertIn("warm.mali = mali;", self.code)
-        self.assertIn("warm.mali && pump_started - warm.last_batch < 4ms", self.code)
-        self.assertIn("warm.built.Take(warm.mali ? 8 : 64)", self.code)
-        self.assertIn("warm.read.Take(warm.mali ? 8 : 32)", self.code)
+        self.assertIn("warm.mali && pump_started - warm.last_batch < 12ms", self.code)
+        self.assertIn("warm.built.Take(warm.mali ? 2 : 64)", self.code)
+        self.assertIn("warm.read.Take(warm.mali ? 2 : 32)", self.code)
+        self.assertIn("now - warm.last_batch < (warm.mali ? 12ms : 4ms)", self.code)
+        # No dropped entries: each completed compilation is published or
+        # rejected through the original queue, with the desktop path intact.
+        self.assertIn("warm.pool->Idle()", self.code)
         self.assertIn("warm.done.fetch_add(1, std::memory_order_relaxed)", self.code)
         self.assertIn("warm.pool->Push(", self.code)
 
