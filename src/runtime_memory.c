@@ -654,7 +654,20 @@ static const RuntimeExport exports[]={
     {"sceKernelVirtualQuery",virtual_query}, {"sceKernelGetDirectMemoryType",direct_memory_type},
     {"sceKernelBatchMap",batch_map}, {"sceKernelBatchMap2",batch_map2},
 };
+// The Bionic/FEX scalar i32 import must not expose the ARM64 host's undefined
+// x1 register as a second 64-bit guest return. Weak: non-FEX guest CPUs keep
+// their original import ABI without adding any runtime dependency.
+#if defined(__ANDROID__)
+extern void guest_cpu_mark_direct_memory_scalar_return(void *fn) __attribute__((weak));
+#endif
 uintptr_t runtime_memory_resolve(const char *name) {
+#if defined(__ANDROID__)
+    if (guest_cpu_mark_direct_memory_scalar_return &&
+        (!strcmp(name, "rTXw65xmLIA#libkernel") ||
+         !strcmp(name, "sceKernelAllocateDirectMemory"))) {
+        guest_cpu_mark_direct_memory_scalar_return((void *)direct_allocate);
+    }
+#endif
     /* Direct-memory NIDs are exercised by test_runtime.c before names are loaded. */
     if (!strcmp(name, "pO96TwzOm5E#libkernel")) return (uintptr_t)direct_size;
     if (!strcmp(name, "rTXw65xmLIA#libkernel")) return (uintptr_t)direct_allocate;
