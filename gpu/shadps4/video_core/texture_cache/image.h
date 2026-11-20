@@ -97,6 +97,11 @@ public:
 // allocations alive after the Vulkan instance is destroyed.
 void FlushMaliBcImagePool(VmaAllocator allocator);
 
+// Allocate and immediately retire two *exact* Mali image shapes seen
+// stalling during gameplay, before the guest starts submitting draws.
+// No guest pixels are touched, and unmatched images remain on the normal path.
+void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported);
+
 
 struct Image {
     explicit Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime,
