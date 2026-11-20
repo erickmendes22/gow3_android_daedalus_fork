@@ -507,15 +507,19 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     }();
     const auto reserved_shape = [&](const BcPool& pool, const RetiredBcImage& candidate) {
         const bool etc2 = IsEtc2Image(candidate.create);
+        const bool rgba128 = IsRgba128Image(candidate.create);
         const bool transient_image = protect_transient && IsTransientImage(candidate.create);
-        if (!etc2 && !transient_image) return false;
+        // The G720 log shows repeated 4096x(168/208/232) RGBA128
+        // allocations while rebind withdrew idle RGBA128 handles. Reserve
+        // one exact completed image per shape for the next guest transition.
+        if (!etc2 && !rgba128 && !transient_image) return false;
         size_t identical = 0;
         for (const auto& other : pool.images) {
             if (other.allocator == allocator &&
                 SameBcCreate(other.create, candidate.create)) ++identical;
         }
-        return etc2 ? ProtectLastRetiredEtc2(identical)
-                    : ProtectLastRetiredTransient(identical);
+        return (etc2 || rgba128) ? ProtectLastRetiredEtc2(identical)
+                                 : ProtectLastRetiredTransient(identical);
     };
     {
         std::scoped_lock lock{bc.mutex, rgba.mutex, transient.mutex};
@@ -822,6 +826,21 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     if (feedback_loop_supported)
         rgba.usage |= vk::ImageUsageFlagBits::eAttachmentFeedbackLoopEXT;
 
+    // Same exact Vulkan format/usage as the existing RGBA128 warmup.
+    // The 20 Nov heavy-scene trace created these three heights at 28-54ms
+    // apiece. Prewarm only one of each; exact matching and all heap/quota
+    // checks below remain mandatory, never reinterpret a smaller VkImage.
+    vk::ImageCreateInfo rgba168 = rgba;
+    rgba168.extent.height = 168;
+    vk::ImageCreateInfo rgba208 = rgba;
+    rgba208.extent.height = 208;
+    vk::ImageCreateInfo rgba232 = rgba;
+    rgba232.extent.height = 232;
+    const bool warm_heavy_shapes = [] {
+        const char* option = std::getenv("GOW3_MALI_VMA_PREWARM_HEAVY");
+        return (!option || option[0] != '0') && ScenePoolRetentionEnabled();
+    }();
+
     const VmaAllocationCreateInfo allocation_ci{
         .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
@@ -835,9 +854,11 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
         const char* v = std::getenv("GOW3_MALI_RGBA128_IMAGE_POOL");
         return !v || v[0] != '0';
     }();
-    for (const auto& ci : {etc2, rgba}) {
+    for (const auto& ci : {etc2, rgba168, rgba208, rgba232, rgba}) {
         if ((ci.format == etc2.format && !bc_enabled) ||
             (ci.format == rgba.format && !rgba_enabled)) continue;
+        if (ci.format == rgba.format && ci.extent.height != 248 && !warm_heavy_shapes)
+            continue;
         // Never allocate extra memory once VMA's shared heap is pressured.
         if (!BcPoolHasBudget(allocator)) break;
         VkImage image = VK_NULL_HANDLE;
