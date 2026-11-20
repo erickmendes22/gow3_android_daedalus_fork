@@ -1,0 +1,69 @@
+#version 450
+// Reversible guest-packed SNORM 2/10/10/10 <-> host RGBA16_SNORM.
+// Vulkan 10:10:10:2 SNORM is absent on PanVK-G720, but 16-bit channel
+// signed normalization retains 10-bit RGB precision for Vulkan filtering
+// and color attachments. No float-to-UNORM reinterpretation is permitted.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, std430) readonly buffer Source { uint source_words[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer Destination { uint dest_words[]; };
+layout(push_constant) uniform Parameters {
+    uint width;
+    uint height;
+    uint input_row_texels;
+    uint output_row_texels;
+    uint input_start_words;
+    uint output_start_words;
+    uint direction; // 0 = PS4 32-bit packed -> Vulkan 64-bit 16SNORM
+} pc;
+
+int sign_extend(uint x, uint bits) {
+    return int(x << (32u - bits)) >> int(32u - bits);
+}
+
+uint scale_to_16(int value, int max_code) {
+    // SNORM reserves two negative encodings for -1. Keep the extremal
+    // negative distinct so a readback can reconstruct the guest bit code.
+    if (value <= -max_code - 1) return 0x8000u;
+    int bounded = clamp(value, -max_code, max_code);
+    int scaled = bounded >= 0
+        ? (bounded * 32767 + max_code / 2) / max_code
+        : (bounded * 32767 - max_code / 2) / max_code;
+    return uint(scaled) & 0xffffu;
+}
+
+int scale_from_16(uint raw, int max_code) {
+    int value = int(raw << 16) >> 16;
+    if (value <= -32768) return -max_code - 1;
+    int bounded = clamp(value, -32767, 32767);
+    return bounded >= 0
+        ? (bounded * max_code + 16383) / 32767
+        : (bounded * max_code - 16383) / 32767;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    uint count = pc.width * pc.height;
+    if (index >= count) return;
+    uint x = index % pc.width;
+    uint row = index / pc.width;
+    if (pc.direction == 0u) {
+        uint packed = source_words[pc.input_start_words + row * pc.input_row_texels + x];
+        uint r = scale_to_16(sign_extend(packed & 1023u, 10u), 511);
+        uint g = scale_to_16(sign_extend((packed >> 10u) & 1023u, 10u), 511);
+        uint b = scale_to_16(sign_extend((packed >> 20u) & 1023u, 10u), 511);
+        uint a = scale_to_16(sign_extend((packed >> 30u) & 3u, 2u), 1);
+        uint output = pc.output_start_words + 2u * index;
+        dest_words[output] = r | (g << 16u);
+        dest_words[output + 1u] = b | (a << 16u);
+    } else {
+        uint input = pc.input_start_words + 2u * index;
+        uint rg = source_words[input];
+        uint ba = source_words[input + 1u];
+        uint r = uint(scale_from_16(rg & 65535u, 511)) & 1023u;
+        uint g = uint(scale_from_16(rg >> 16u, 511)) & 1023u;
+        uint b = uint(scale_from_16(ba & 65535u, 511)) & 1023u;
+        uint a = uint(scale_from_16(ba >> 16u, 1)) & 3u;
+        dest_words[pc.output_start_words + row * pc.output_row_texels + x] =
+            r | (g << 10u) | (b << 20u) | (a << 30u);
+    }
+}
