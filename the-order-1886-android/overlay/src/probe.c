@@ -919,7 +919,16 @@ int main(int argc, char **argv) {
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
     entered_game=1;
 #if defined(GUEST_CPU_NATIVE)
-    static struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};
+    static struct { uint64_t argc; const char *argv[6]; } params = {1, {"/app0/eboot.bin", NULL}};
+    const char *engine_perf = getenv("ORDER1886_ENGINE_PERF");
+    if (engine_perf && engine_perf[0] == '1') {
+        params.argc = 4;
+        params.argv[1] = "-disablecloth";
+        params.argv[2] = "-msaa";
+        params.argv[3] = "1";
+        params.argv[4] = NULL;
+        printf("ORDER1886_ENGINE_PERF guest args: -disablecloth -msaa 1\n");
+    }
 #endif
 #ifdef _WIN32
     typedef void (ABI *Entry)(void *, void (ABI *)(void));
@@ -935,15 +944,23 @@ int main(int argc, char **argv) {
     guest_cpu_thread_stack(stack+MAIN_STACK-64,MAIN_STACK-64);
     /* FEX guest pointers must be in the low guest address range; the PIE host's static
      * params and string literals may be outside the game's 40-bit pointer encoding. */
-    struct GuestMainArgs { uint64_t argc; const char *argv[2]; };
+    struct GuestMainArgs { uint64_t argc; const char *argv[6]; };
     struct GuestMainArgs *guest_params=runtime_low_map(4096,PROT_READ|PROT_WRITE);
     if (!guest_params) fail("cannot allocate low memory for guest argv");
-    const char guest_program[]="/app0/eboot.bin";
-    char *guest_path=(char*)(guest_params+1);
-    memcpy(guest_path,guest_program,sizeof(guest_program));
-    guest_params->argc=1;
-    guest_params->argv[0]=guest_path;
-    guest_params->argv[1]=NULL;
+    const char *engine_perf = getenv("ORDER1886_ENGINE_PERF");
+    const int perf = engine_perf && engine_perf[0] == '1';
+    const char *guest_strings[4] = {"/app0/eboot.bin", "-disablecloth", "-msaa", "1"};
+    const size_t guest_argc = perf ? 4 : 1;
+    char *cursor=(char*)(guest_params+1);
+    for (size_t i=0;i<guest_argc;++i) {
+        const size_t bytes=strlen(guest_strings[i])+1;
+        memcpy(cursor,guest_strings[i],bytes);
+        guest_params->argv[i]=cursor;
+        cursor+=bytes;
+    }
+    guest_params->argc=guest_argc;
+    guest_params->argv[guest_argc]=NULL;
+    if (perf) printf("ORDER1886_ENGINE_PERF guest args: -disablecloth -msaa 1\n");
     const uint64_t entry_args[2]={(uint64_t)(uintptr_t)guest_params,guest_cpu_host_function((void*)guest_exit)};
     guest_cpu_call((uintptr_t)(image+entry),2,entry_args);
 #endif
