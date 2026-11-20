@@ -785,6 +785,86 @@ UniqueImage::~UniqueImage() {
     Destroy();
 }
 
+void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) {
+    // Both descriptions come from the recorded *actual* cold allocations on
+    // Poco X7 Pro G720: ETC2 2048x2048 mip11 (56.16 ms) and RGBA128
+    // 4096x248 mip1 (51.45 ms). This runs on the startup thread, before
+    // in-game rendering; all resources are immediately returned to the same
+    // budget-guarded, exact-VkImageCreateInfo pool as ordinary retired images.
+    // Never prewarm on non-Mali; the caller enforces the GPU vendor check.
+    const char* opt = std::getenv("GOW3_MALI_VMA_PREWARM");
+    if (opt && opt[0] == '0') return;
+
+    constexpr auto local_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                 VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageCreateInfo etc2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,
+        .extent = {2048, 2048, 1},
+        .mipLevels = 11,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = local_usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImageCreateInfo rgba = etc2;
+    rgba.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+                 VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+    rgba.format = VK_FORMAT_R32G32B32A32_UINT;
+    rgba.extent = {4096, 248, 1};
+    rgba.mipLevels = 1;
+    rgba.usage = local_usage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                 VK_IMAGE_USAGE_STORAGE_BIT;
+    if (feedback_loop_supported)
+        rgba.usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+
+    const VmaAllocationCreateInfo allocation_ci{
+        .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+    const bool bc_enabled = [] {
+        const char* v = std::getenv("GOW3_MALI_BC_IMAGE_POOL");
+        const char* e = std::getenv("GOW3_MALI_BCN_TO_ETC2");
+        return (!v || v[0] != '0') && (!e || e[0] != '0');
+    }();
+    const bool rgba_enabled = [] {
+        const char* v = std::getenv("GOW3_MALI_RGBA128_IMAGE_POOL");
+        return !v || v[0] != '0';
+    }();
+    for (const auto& ci : {etc2, rgba}) {
+        if ((ci.format == etc2.format && !bc_enabled) ||
+            (ci.format == rgba.format && !rgba_enabled)) continue;
+        // Never allocate extra memory once VMA's shared heap is pressured.
+        if (!BcPoolHasBudget(allocator)) break;
+        VkImage image = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        VmaAllocationInfo info{};
+        const auto start = std::chrono::steady_clock::now();
+        const VkResult result = vmaCreateImage(allocator, &ci, &allocation_ci,
+                                               &image, &allocation, &info);
+        const auto ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+        if (result != VK_SUCCESS) {
+            // Optional prewarming must never make a supported game fail boot.
+            std::printf("GOW3_MALI_VMA_PREWARM format=%d status=skipped result=%d\\n",
+                        int(ci.format), int(result));
+            continue;
+        }
+        const bool retained = ReturnBcImage(allocator, vk::ImageCreateInfo{ci},
+                                             image, allocation, info.size);
+        if (!retained) vmaDestroyImage(allocator, image, allocation);
+        std::printf("GOW3_MALI_VMA_PREWARM format=%d retained=%d bytes=%llu ms=%.2f\\n",
+                    int(ci.format), int(retained),
+                    (unsigned long long)info.size, ms);
+    }
+}
+
 void UniqueImage::Destroy() {
     if (image) {
         const VkImage raw = static_cast<VkImage>(image);
