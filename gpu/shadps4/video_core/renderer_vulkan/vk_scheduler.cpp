@@ -597,17 +597,24 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
     const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                : MaliPerfStats::TimePoint{};
-    std::scoped_lock lk{submit_mutex};
+    std::unique_lock lk{submit_mutex};
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
-    const u64 signal_value = work_semaphore.NextTick();
-    // Defend the cap even if a second producer advanced this scheduler's
-    // timeline while we were outside the shared queue lock. Normally there
-    // is only one producer and this recheck has no wait or driver call.
-    if (bounded_submit && signal_value > next_signal_value &&
-        signal_value > MaxAndroidInFlightSubmissions) {
-        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+    // A second producer may have moved the timeline while we waited outside
+    // the lock. Repeat the throttle without holding the queue mutex and
+    // reacquire it before reserving the submission tick. The fast path has
+    // no extra semaphore query. This preserves the exact in-flight bound.
+    if (bounded_submit) {
+        for (;;) {
+            const u64 pending_tick = work_semaphore.CurrentTick();
+            if (pending_tick <= MaxAndroidInFlightSubmissions ||
+                pending_tick <= next_signal_value) break;
+            lk.unlock();
+            work_semaphore.Wait(pending_tick - MaxAndroidInFlightSubmissions);
+            lk.lock();
+        }
     }
+    const u64 signal_value = work_semaphore.NextTick();
 
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
