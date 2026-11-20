@@ -1379,9 +1379,11 @@ void PipelineCache::PumpWarmUp() {
     // A draw calls PumpWarmUp on every pipeline lookup. The former path
     // acquired the built-queue mutex every draw and could publish 64
     // pipelines in a single draw, competing with the PM4 thread.
-    // Mali batches both ready publications and stage merges every 4 ms.
+    // GoW III was still publishing up to 8+8 Vulkan objects every 4 ms
+    // while the interactive draw thread uploaded intro/menu textures.
+    // Limit the main-thread burst; work stays queued and no cache entry is lost.
     // Desktop retains its previous eager pipeline publication behavior.
-    if (warm.mali && pump_started - warm.last_batch < 4ms) {
+    if (warm.mali && pump_started - warm.last_batch < 12ms) {
         return;
     }
     if (warm.last_pump.time_since_epoch().count()) {
@@ -1397,7 +1399,7 @@ void PipelineCache::PumpWarmUp() {
     };
 
     // Built pipelines: the first one ready for a key wins (the game may have compiled it).
-    for (auto& built : warm.built.Take(warm.mali ? 8 : 64)) {
+    for (auto& built : warm.built.Take(warm.mali ? 2 : 64)) {
         // The worker owns private Shader::Info snapshots. Publish only after
         // restoring stable live stage pointers.
         if (built.graphics) {
@@ -1414,7 +1416,7 @@ void PipelineCache::PumpWarmUp() {
     }
 
     const auto now = std::chrono::steady_clock::now();
-    if (now - warm.last_batch < 4ms) {
+    if (now - warm.last_batch < (warm.mali ? 12ms : 4ms)) {
         return;
     }
     warm.last_batch = now;
@@ -1423,9 +1425,9 @@ void PipelineCache::PumpWarmUp() {
     Gow3Overlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
 
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
-    // Limit the GPU thread's serialized shader metadata merging to eight
-    // entries per Mali batch. Work remains queued; it is not discarded.
-    for (auto& entry : warm.read.Take(warm.mali ? 8 : 32)) {
+    // Keep Mali's per-batch metadata merge short while streaming textures.
+    // Work remains queued; it is not discarded.
+    for (auto& entry : warm.read.Take(warm.mali ? 2 : 32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key)) {
