@@ -456,13 +456,10 @@ public final class Order1886Activity extends Activity {
         String[] fps={"30 FPS (padrão)","60 FPS (experimental)"};
         selectSpinner(c,"Taxa do jogo",fps,prefs().getInt("fps",30)==60?1:0,
             n->{prefs().edit().putInt("fps",n==0?30:60).apply();selectionChange();});
-        String[] widths={"1920 (nativo)","1600 (900p)","1280 (720p)",
-                         "1024 (576p, desempenho)","768 (432p, desempenho)","640 (360p, experimental)"};
+        String[] widths={"1920 (nativo)","1600 (900p)","1280 (720p)"};
         int width=prefs().getInt("width",1920);
-        int widthIndex=width==1600?1:width==1280?2:width==1024?3:width==768?4:width==640?5:0;
-        selectSpinner(c,"Largura de renderização",widths,widthIndex,
-            n->{int selected=new int[]{1920,1600,1280,1024,768,640}[n];
-                prefs().edit().putInt("width",selected).apply();selectionChange();});
+        selectSpinner(c,"Largura de renderização",widths,width==1280?2:width==1600?1:0,
+            n->{prefs().edit().putInt("width",n==0?1920:n==1?1600:1280).apply();selectionChange();});
         selectSpinner(c,"Enquadramento",new String[]{"Cinematográfico original","16:9 experimental"},
             "16:9".equals(prefs().getString("aspect","original"))?1:0,
             n->{prefs().edit().putString("aspect",n==0?"original":"16:9").apply();selectionChange();});
