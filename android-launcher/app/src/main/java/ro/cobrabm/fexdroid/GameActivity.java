@@ -657,7 +657,7 @@ public final class GameActivity extends Activity {
                 // PC 0.72 +25% PC-only Shrine result; optional here until Android tests.
                 // Precise Readback 2 required; game-revision check in probe fails closed.
                 env.put("SOTC_RB_HOT",
-                        "1".equals(setting("sotc_pc072_fast_readbacks")) &&
+                        !"0".equals(setting("sotc_pc072_fast_readbacks_050")) &&
                         !"0".equals(setting("sotc_readbacks")) &&
                         !"1".equals(setting("sotc_readbacks")) ? "1" : "0");
                 // Exact native SotC sequential GPU readbacks with bounded prefetch.
