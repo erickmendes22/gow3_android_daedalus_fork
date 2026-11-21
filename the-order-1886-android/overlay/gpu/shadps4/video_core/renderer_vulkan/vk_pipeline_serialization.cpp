@@ -1001,9 +1001,16 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
     // Build graphics from current register values on first use. Do not clear
     // any shader/game/save data or change the working MSAA configuration.
     if (AmdGpu::NoMsaa()) {
-        std::printf("ORDER1886_CACHE_REPLAY graphics=live reason=single-msaa\n");
+        // The old full-pipeline replay was unsafe (render targets depend on
+        // live guest registers). Preload *modules* from ShaderMeta instead.
+        // This does not replay a GraphicsPipeline or a stale render state.
+        StartBackgroundWarmUp();
+        if (!background) {
+            StartOnDemand();
+        }
+        std::printf("ORDER1886_CACHE_REPLAY graphics=live shader_modules=%s\n",
+                    background ? "background-only" : "on-demand");
         std::fflush(stdout);
-        StartOnDemand();
         return;
     }
 #endif
@@ -1153,6 +1160,9 @@ struct PipelineCache::BackgroundWarmup {
     u64 pump_ns = 0, pump_max_ns = 0, pump_gap_max_ns = 0;
     u32 batches = 0;
     bool finished = false;
+    // Single-sample Adreno: reuse only cached SPIR-V modules, never pipelines
+    // with serialized framebuffer state (known second-launch black screen).
+    bool shaders_only = false;
     u32 loaded = 0, threads = 0;
     std::chrono::steady_clock::time_point started, last_batch;
     std::chrono::steady_clock::time_point last_pump{}, last_report{};
@@ -1160,12 +1170,6 @@ struct PipelineCache::BackgroundWarmup {
 };
 
 bool PipelineCache::StartBackgroundWarmUp() {
-#ifdef __ANDROID__
-    if (AmdGpu::NoMsaa()) {
-        // Use the same live path regardless of sync/background warm-up mode.
-        return false;
-    }
-#endif
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
         return false;
     }
@@ -1175,12 +1179,59 @@ bool PipelineCache::StartBackgroundWarmUp() {
     background = new BackgroundWarmup;
     auto& warm = *background;
     warm.started = std::chrono::steady_clock::now();
-    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    warm.shaders_only = AmdGpu::NoMsaa();
+    // One low-priority shader reader/compiler avoids stealing cores from FEX.
+    warm.threads = warm.shaders_only ? 1u
+        : WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     // The first job reads the whole store; with one thread the builds queue behind it.
     warm.pool->Push([this, &warm] {
         const auto reader_started = std::chrono::steady_clock::now();
         auto& db = Storage::DataBase::Instance();
+        if (warm.shaders_only) {
+            // ShaderMeta is recorded during normal gameplay even in NoMsaa.
+            // No graphics keys or offline framebuffer state are needed.
+            warm.total = u32(db.CountBlobs(Storage::BlobType::ShaderMeta));
+            db.ForEachBlob(
+                Storage::BlobType::ShaderMeta,
+                [&](std::vector<u8>&& meta_data) {
+                    BackgroundWarmup::Entry entry{};
+                    auto stage = std::make_shared<WarmStage>();
+                    stage->device = instance.GetDevice();
+                    stage->program = std::make_unique<Program>();
+                    stage->effective_info = std::make_unique<Shader::Info>();
+                    stage->spec.info = &stage->program->info;
+                    const auto io_started = std::chrono::steady_clock::now();
+                    try {
+                        Serialization::Archive ar{std::move(meta_data)};
+                        if (LoadShaderMeta(ar, stage->program->info, *stage->effective_info,
+                                           stage->fetch, stage->spec, stage->perm_idx)) {
+                            std::vector<u32> spv;
+                            db.Load(Storage::BlobType::ShaderBinary,
+                                fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
+                                            stage->perm_idx), spv);
+                            if (!spv.empty()) {
+                                const auto t = std::chrono::steady_clock::now();
+                                stage->module = CompileSPV(spv, stage->device);
+                                warm.module_ns += ElapsedNs(t);
+                                ++warm.modules;
+                            }
+                        }
+                    } catch (...) {
+                        // Corrupt/stale cache entries must never break gameplay.
+                    }
+                    warm.shader_io_ns += ElapsedNs(io_started);
+                    if (!stage->module) stage->merged = true;
+                    entry.stages[0] = std::move(stage);
+                    entry.queued = std::chrono::steady_clock::now();
+                    warm.read.Push(std::move(entry));
+                    ++warm.entries;
+                },
+                [&] { return warm.stopping.load(std::memory_order_relaxed); });
+            warm.reader_ns = ElapsedNs(reader_started);
+            warm.reading = false;
+            return true;
+        }
         warm.total = u32(db.CountBlobs(Storage::BlobType::PipelineKey));
         db.ForEachBlob(
             Storage::BlobType::PipelineKey,
@@ -1191,7 +1242,8 @@ bool PipelineCache::StartBackgroundWarmUp() {
         warm.reading = false;
         return true;
     });
-    std::printf("Pipeline warm-up: loading in the background (%u threads)\n", warm.threads);
+    std::printf("ORDER1886_SHADER_WARMUP mode=%s threads=%u (graphics replay disabled)\n",
+                warm.shaders_only ? "shader-modules-only" : "full-pipelines", warm.threads);
     return true;
 }
 
@@ -1352,6 +1404,20 @@ void PipelineCache::PumpWarmUp() {
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
     for (auto& entry : warm.read.Take(32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
+        if (warm.shaders_only) {
+            // Publish already-compiled SPIR-V modules only. Never construct
+            // a GraphicsPipeline from archived attachments/guest registers.
+            auto& stage = entry.stages[0];
+            if (stage && stage->module) {
+                std::unique_lock lock{programs_mutex};
+                if (!stage->merged) {
+                    MergeWarmStage(*stage);
+                }
+                warm.loaded += stage->info != nullptr;
+            }
+            warm.done.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key)) {
             warm.done.fetch_add(1, std::memory_order_relaxed); // the game compiled it first
@@ -1426,10 +1492,16 @@ void PipelineCache::PumpWarmUp() {
     if (warm.reading || !warm.read.Empty() || !warm.pool->Idle() || !warm.built.Empty()) {
         return;
     }
-    std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
-                warm.loaded, warm.total.load(),
-                std::chrono::duration<double>(now - warm.started).count(), warm.threads);
-    LOG_INFO(Render, "Preloaded {} pipelines in the background", warm.loaded);
+    if (warm.shaders_only) {
+        std::printf("ORDER1886_SHADER_WARMUP done modules=%u merged=%u metadata=%u wall_s=%.2f\n",
+                    warm.modules.load(), warm.loaded, warm.total.load(),
+                    std::chrono::duration<double>(now - warm.started).count());
+    } else {
+        std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
+                    warm.loaded, warm.total.load(),
+                    std::chrono::duration<double>(now - warm.started).count(), warm.threads);
+        LOG_INFO(Render, "Preloaded {} pipelines in the background", warm.loaded);
+    }
     ReportPipelineBinaryCache();
     std::printf("Warm-up profile: reader wall %.3f s, entries %.3f s, shader IO/meta %.3f s, "
                 "modules %.3f s (%u); GPU pump %.3f s, max %.3f ms, gap max %.3f ms, "

@@ -1067,14 +1067,23 @@ void Rasterizer::DiagPassBoundary(bool force) {
 static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
                               const RenderState& state, bool feedback_loop,
                               bool geometry_draw) {
-    if (feedback_loop || state.width < 960 || state.height < 540 ||
+    if (feedback_loop ||
         !state.depth_stencil_attachment.has_depth || !regs.depth_control.depth_enable ||
         regs.depth_control.stencil_enable) {
         return false;
     }
+    const bool fullres_mrt = state.width >= 960 && state.height >= 540;
+    const bool halfres_scene = state.width == 640 && state.height == 360 &&
+        geometry_draw && regs.depth_control.depth_write_enable &&
+        !regs.IsClipDisabled();
+    if (!fullres_mrt && !halfres_scene) {
+        return false;
+    }
     const auto& key = pipeline->GetGraphicsKey();
+    const u32 active_targets = std::popcount(key.mrt_mask);
     if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
-        std::popcount(key.mrt_mask) < 2) {
+        (fullres_mrt && active_targets < 2) ||
+        (halfres_scene && active_targets != 1)) {
         return false;
     }
 
@@ -1105,15 +1114,17 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
         return false;
     }
 
-    // Avoid a VRS coarse pass for primitives with no identified geometry
-    // except multi-target graphics where the vertex shader fetches vertices
-    // itself instead of using host Vulkan vertex buffer descriptors.
-    (void)geometry_draw;
+    // Full-res MRT may fetch vertices directly from guest shader buffers.
+    // The new half-res path instead requires identified depth-writing geometry;
+    // opaque fullscreen effects with depth disabled retain precise 1x1.
     for (u32 i = 0; i < state.num_color_attachments; ++i) {
         if ((key.mrt_mask & (1u << i)) &&
             (key.blend_controls[i].enable || !state.color_attachments[i].image_view)) {
             return false;
         }
+    }
+    if (halfres_scene) {
+        g_order1886_vrs_halfres_2x2_draws.fetch_add(1, std::memory_order_relaxed);
     }
     return true;
 }

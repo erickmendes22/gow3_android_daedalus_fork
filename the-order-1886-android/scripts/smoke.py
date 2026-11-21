@@ -46,9 +46,20 @@ gpu_checks={
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
       "exports.coverage_to_mask_enable" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
-  "VRS keeps single-target scene draws at exact 1x1":
-      "std::popcount(key.mrt_mask) < 2" in
+  "VRS only coarsens depth-writing opaque half-resolution geometry":
+      "halfres_scene" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "regs.depth_control.depth_write_enable" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "fs->has_discard" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Adreno single sample background cache restores shader modules only":
+      "warm.shaders_only" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "Storage::BlobType::ShaderMeta" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "ORDER1886_CACHE_REPLAY graphics=live shader_modules=" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text(),
   "VRS pipeline dynamic state enabled only after feature negotiation":
       "vk::DynamicState::eFragmentShadingRateKHR" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp").read_text() and
