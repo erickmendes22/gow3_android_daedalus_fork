@@ -51,10 +51,14 @@ u32 DefaultWorkerCount() {
     if (const char* env = std::getenv("ORDER1886_PREP_WORKERS")) {
         return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
     }
-    // The Order baseline prepares resources on the executing GPU thread. Speculative
-    // SRT snapshots remain unverified; controlled runs with workers enabled hit malformed
-    // descriptors. Positive overrides remain available for diagnostic comparisons.
+    // A single low-priority worker prepares ONLY pipeline keys/stage
+    // specialization. Resource sharps and vertex streams remain on the
+    // ordered GPU thread to avoid malformed speculative descriptors.
+#ifdef __ANDROID__
+    return Ps4Threads::Available() >= 8 ? 1u : 0u;
+#else
     return 0;
+#endif
 }
 
 /// Flattened user data of one submission: chunks never move, so the GPU thread can read a
@@ -449,7 +453,17 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
                 prep_worker.stages.clear();
                 prep_worker.failed = false;
                 sel.draw_indirect_params = {};
-                if (pipeline_cache.PrepareGraphicsPipeline(sel)) {
+                // Protect all speculative guest pointer reads, including
+                // those before GetProgram's nested fault recovery point.
+                auto* parent_fault_recover = runtime_fault_recover;
+                sigjmp_buf guest_recover;
+                bool selected = false;
+                if (sigsetjmp(guest_recover, 0) == 0) {
+                    runtime_fault_recover = &guest_recover;
+                    selected = pipeline_cache.PrepareGraphicsPipeline(sel);
+                }
+                runtime_fault_recover = parent_fault_recover;
+                if (selected) {
                     draw.reg_checksum = checksum;
                     draw.key = sel.graphics_key;
                     draw.num_stages = static_cast<u32>(prep_worker.stages.size());
@@ -464,14 +478,12 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
                             .flat = arena.Append(*stage.flat),
                             .flat_size = static_cast<u32>(stage.flat->size()),
                         };
-                        PrepareResources(prep_worker.infos.at(stage.program), draw.stages[i],
-                                         arena);
+                        // Zero prefilled resource counts mean FindPreparedStage
+                        // must use live shader sharps on the GPU thread.
                     }
+                    // Fetch shader inputs can also reference GPU-written guest
+                    // memory; defer all vertex input reads to the GPU thread.
                     draw.vertex.valid = false;
-                    const auto* vs = sel.infos[static_cast<u32>(Shader::SwStage::Vertex)];
-                    if (vs && sel.fetch_shader) {
-                        PrepareVertexInputs(*vs, *sel.fetch_shader, *regs, draw.vertex, arena);
-                    }
                     draw.state.store(PreparedDraw::Ready, std::memory_order_release);
                 } else {
                     draw.state.store(PreparedDraw::Unavailable, std::memory_order_release);
