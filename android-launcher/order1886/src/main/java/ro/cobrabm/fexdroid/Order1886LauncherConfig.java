@@ -75,6 +75,8 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_COALESCE_CLEAR_PASS",p.getBoolean("gpuTileMerge",true)?"1":"0");
         env.put("ORDER1886_INLINE_ATTACHMENT_CLEAR",p.getBoolean("gpuInlineClear",true)?"1":"0");
         env.put("ORDER1886_GPU_PROFILE",p.getBoolean("gpuMeters",true)?"1":"0");
+        // When the user enables GPU meters, report which Vulkan wait sites block the CPU.
+        env.put("GOW3_PERF_DIAG",p.getBoolean("gpuMeters",true)?"1":"0");
         env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");
         env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
