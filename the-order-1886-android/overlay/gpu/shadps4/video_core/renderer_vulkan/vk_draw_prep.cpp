@@ -499,7 +499,15 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
 
 void DrawPreparation::Count(bool was_used) {
     ++(was_used ? used : unused);
+#ifdef __ANDROID__
+    // Existing counters, five-second summary only. No per-draw logging.
+    static const bool stats = [] {
+        const char* v = std::getenv("ORDER1886_PIPE_STATS");
+        return !v || v[0] != '0';
+    }();
+#else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
+#endif
     // The clock is read every 1024 draws: per draw it was 8% of the GPU thread.
     if (!stats || ((used + unused) & 1023) != 0) {
         return;
