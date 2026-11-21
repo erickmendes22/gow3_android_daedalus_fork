@@ -1,0 +1,34 @@
+name: Export Android build-tools APK signer for local signing
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths: ['.github/workflows/sotc-apksigner-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Prepare build-tools v35 for APK v2/v3 offline signing
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;35.0.0'
+          bt="$ANDROID_HOME/build-tools/35.0.0"
+          test -x "$bt/apksigner"
+          test -f "$bt/lib/apksigner.jar"
+          test -x "$bt/zipalign"
+          mkdir -p build-tools-offline/lib
+          cp "$bt/apksigner" "$bt/zipalign" build-tools-offline/
+          cp "$bt/lib/apksigner.jar" build-tools-offline/lib/
+          tar -czf build-tools-android-signing-linux.tar.gz -C build-tools-offline .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apksigner-zipalign-linux-35
+          path: build-tools-android-signing-linux.tar.gz
+          retention-days: 3
