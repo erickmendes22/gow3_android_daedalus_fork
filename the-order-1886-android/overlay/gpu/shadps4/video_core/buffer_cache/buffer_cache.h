@@ -211,6 +211,7 @@ private:
     };
     struct SunBatch {
         u64 tick{};
+        u64 serial{}; // submission ticks alone do not distinguish same-tick snapshots
         Vulkan::StagingBufferRef staging{};
         std::vector<SunCopy> items;
     };
@@ -219,7 +220,9 @@ private:
     std::mutex sun_mutex;
     RangeSet sun_ranges;
     std::deque<SunBatch> sun_batches;
-    u64 last_delivered_sun_tick{};
+    u64 next_sun_batch_serial{};
+    u64 last_delivered_sun_serial{};
+    bool sun_snapshot_gap{}; // backlog prevented recording latest GPU-written data
 
     /// Deferred readbacks (from TOport 32efe96, GPL-2.0). A guest write beside (not on)
     /// GPU-written bytes of a page goes on at once; those bytes are copied to host memory in the
