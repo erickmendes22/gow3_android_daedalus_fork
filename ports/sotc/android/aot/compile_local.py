@@ -85,7 +85,7 @@ def patch_records(path: Path, image_bytes: int) -> list[tuple[int,bytes]]:
         if cursor+16>len(data):
             raise ValueError(f"Truncated patch #{i}")
         off,n=struct.unpack_from("<QQ",data,cursor);cursor+=16
-        target=PATCH_BASE+off
+        target=off
         if n<1 or n>4096 or target>image_bytes or n>image_bytes-target or cursor+n>len(data):
             raise ValueError(f"Patch #{i} outside image or larger than native runtime limit")
         for start,end in ranges:
@@ -99,8 +99,9 @@ def patch_records(path: Path, image_bytes: int) -> list[tuple[int,bytes]]:
 def stage_native_boot(boot: Path, patches: Path, dest: Path) -> dict:
     info=boot_info(boot)
     records=patch_records(patches,info["image_bytes"])
-    # BBPATCH2 records store addresses relative to PATCH_BASE (0x400000).
-    # stage_native_boot MUST write at image_start + PATCH_BASE + record_offset.
+    # src/probe.c apply_patches() uses guest image-relative BBPATCH2 offsets.
+    # The 0x400000 header is ONLY the origin for pointer relocation values.
+    # Adding 0x400000 corrupts executable metadata, including .eh_frame FDEs.
     # Important: no game original modified; patch all verified guest-code and
     # guest-data bytes BEFORE translation, or the AOT units would be stale.
     dest.parent.mkdir(parents=True,exist_ok=True)
