@@ -8,7 +8,7 @@
 - Eboot SHA-256: 21982727c6f97fd415b3af5e99c5e071619c4dcc2248787a701a31a45ab0a4e0.
 - libc.prx e libSceFios2.prx foram vinculados sem erro.
 - Imagem BBPROBE5: 85.769.980 bytes, 2 módulos, 197 bindings, 687 imports, 714.353 relocations.
-- Imagem AOT preparada com 68 patches e 396 bytes alterados, SHA-256 61b0ecf9abde6609152e3282e09e2006392b53a6479a0c19e3f97d1a21af0ad8.
+- Imagem AOT preparada com 68 patches (396 bytes de payload; 222 bytes efetivamente distintos do original), SHA-256 de6603499b32e3ac0528982a7bb21eccc3a0302591c3a171a52a8ba8f817020a.
 - Três funções red-zone: 0xedfb30, 0xf67d2b e 0xf52530. Ainda requerem equivalência funcional no ARM64.
 
 Todos os arquivos do jogo permaneceram no ambiente de trabalho privado. Não enviar executáveis, PRX ou dados do jogo ao GitHub Actions. A imagem preparada ainda contém código x86 para o compilador, NÃO código ARM64 executável.
@@ -39,3 +39,7 @@ Com --dry-run apenas valida e prepara a imagem, sem gerar libSotcAot.so.
 - Medir FPS, física, vídeos e estabilidade com os mesmos trechos (especialmente a floresta).
 
 Não alegar correção completa, gameplay nem ganho de FPS antes dos testes reais. A remoção de TSO não elimina a necessidade de sincronização explícita correta.
+
+## 21/11/2026 — correção real do BBPATCH2
+
+O primeiro compilador abortou com `bad FDE #12150`: o preparador antigo somava incorretamente `0x400000` ao deslocamento de cada patch, destruindo `.eh_frame` no endereço `0x139a4e8`. O `src/probe.c` de 0.1.53 comprova que `memcpy(image+offset)` usa offset DIRETO; `0x400000` é somente base de valores de ponteiro para relocação. A imagem corrigida passou `--scan`: 58.984 FDEs nos três módulos, 1.288 landing pads, 11 funções descobertas. O compilador real foi iniciado em 64 shards sem `--tso`, em ambiente privado; não enviar esses bytes a CI público.
