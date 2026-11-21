@@ -26,7 +26,7 @@ class Pc072Android(unittest.TestCase):
         self.assertIn('env.put("SOTC_POOL_OWNER","1");',java)
         self.assertIn('env.put("SOTC_RB_HOT",',java)
         self.assertIn('!"0".equals(setting("sotc_pc072_fast_readbacks_050"))',java)
-        self.assertIn('(values["sotc_pc072_fast_readbacks"]?:"0")=="1"',screen)
+        self.assertIn('(values["sotc_pc072_fast_readbacks_050"]?:"1")=="1"',screen)
         self.assertIn('values["sotc_readbacks"]?:"2"',screen)
         self.assertIn('values["sotc_vsync"]?:',screen)
     def test_renderer_no_unsafe_changes(self):
