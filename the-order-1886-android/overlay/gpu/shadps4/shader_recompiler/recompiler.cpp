@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include "common/logging/classes.h"
 #include "shader_recompiler/frontend/control_flow_graph.h"
 #include "shader_recompiler/frontend/decode.h"
@@ -72,7 +73,16 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     // Ensure first instruction is expected.
     constexpr u32 token_mov_vcchi = 0xBEEB03FF;
     if (code[0] != token_mov_vcchi) {
-        LOG_WARNING(Render_Recompiler, "First instruction is not s_mov_b32 vcc_hi, #imm");
+        // Thousands of first-use shaders can hit this legal fallback in one scene.
+        // Preserve the warning and exact total without flooding Android logcat.
+        // No translation or shader instruction is skipped.
+        static std::atomic<u32> noncanonical_count{0};
+        const u32 count = noncanonical_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || (count % 256u) == 0) {
+            LOG_WARNING(Render_Recompiler,
+                        "First instruction is not s_mov_b32 vcc_hi, #imm (occurrences={})",
+                        count);
+        }
     }
 
     Gcn::GcnCodeSlice slice(code.data(), code.data() + code.size());
