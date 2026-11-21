@@ -381,7 +381,7 @@ bool BufferCache::DeliverSunCopies() {
     const u64 n = deliveries.fetch_add(1, std::memory_order_relaxed) + 1;
     if (n == 1 || (n % 512) == 0)
         std::printf("ORDER1886_SUN_SYNC_DELIVER batches=%llu ranges=%zu\n",
-                    static_cast<unsigned long long>(n), newest->items.size());
+                    static_cast<unsigned long long>(n), newest.items.size());
     return true;
 }
 
