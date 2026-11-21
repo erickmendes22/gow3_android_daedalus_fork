@@ -540,7 +540,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         // workers and one capture worker by default, without losing async
         // compilation. For A/B measurements, GOW3_GPU_COMPILER_WORKERS=1..6
         // restores/reduces the pool; the original desktop policy is unchanged.
+#ifdef __ANDROID__
+        // The standalone The Order Bionic launcher does not export GOW3_ANDROID_PORT.
+        // Determine the CPU budget from the target platform, not from a Gow3-only flag.
+        const bool android_port = true;
+#else
         const bool android_port = std::getenv("GOW3_ANDROID_PORT") != nullptr;
+#endif
         auto count = android_port ? 2u : std::clamp(Gow3Threads::Available() / 2, 1u, 6u);
         const auto capture_count = android_port ? 1u :
             std::min(2u, std::max(1u, Gow3Threads::Available() / 4));
@@ -962,6 +968,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         const auto pipeline_hash = std::hash<GraphicsPipelineKey>{}(sel.graphics_key);
         LOG_INFO(Render_Vulkan, "Compiling graphics pipeline {:#x}", pipeline_hash);
         CompileTimer timer;
+        const auto hitch_begin = std::chrono::steady_clock::now();
 
         GraphicsPipeline::SerializationSupport sdata{};
         it.value() = std::make_unique<GraphicsPipeline>(
@@ -970,6 +977,17 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
 
         RegisterPipelineData(sel.graphics_key, pipeline_hash, sdata);
         ++num_new_pipelines;
+        // Never drop the guest draw to hide shader compilation. Capture exceptional
+        // first-use pipeline stalls so they can be distinguished from GPU execution.
+        const auto hitch_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - hitch_begin).count();
+        if (hitch_ms >= 12.0) {
+            static std::atomic<u32> reported{0};
+            if (reported.fetch_add(1, std::memory_order_relaxed) < 24) {
+                std::printf("ORDER1886_PIPELINE_HITCH type=graphics hash=%zx ms=%.2f\n",
+                            pipeline_hash, hitch_ms);
+            }
+        }
 
         if (EmulatorSettings.IsShaderCollect()) {
             for (auto stage = 0; stage < MaxShaderStages; ++stage) {
@@ -996,6 +1014,7 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         const auto pipeline_hash = std::hash<ComputePipelineKey>{}(compute_key);
         LOG_INFO(Render_Vulkan, "Compiling compute pipeline {:#x}", pipeline_hash);
         CompileTimer timer;
+        const auto hitch_begin = std::chrono::steady_clock::now();
 
         ComputePipeline::SerializationSupport sdata{};
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
@@ -1003,6 +1022,15 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
                                                        sel.modules[0], sdata, false);
         RegisterPipelineData(compute_key, sdata);
         ++num_new_pipelines;
+        const auto hitch_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - hitch_begin).count();
+        if (hitch_ms >= 12.0) {
+            static std::atomic<u32> reported{0};
+            if (reported.fetch_add(1, std::memory_order_relaxed) < 24) {
+                std::printf("ORDER1886_PIPELINE_HITCH type=compute hash=%zx ms=%.2f\n",
+                            pipeline_hash, hitch_ms);
+            }
+        }
 
         if (EmulatorSettings.IsShaderCollect()) {
             auto& m = sel.modules[0];
