@@ -276,7 +276,7 @@ public:
                                  UFFD_FEATURE_WP_HUGETLBFS_SHMEM |
                                  UFFD_FEATURE_WP_UNPOPULATED;
         if ((api.features & required) != required) {
-            std::printf("ORDER1886_UFFD preflight=unsupported features=%#llx required=%#llx\\n",
+            std::printf("ORDER1886_UFFD preflight=unsupported features=%#llx required=%#llx\n",
                         static_cast<unsigned long long>(api.features),
                         static_cast<unsigned long long>(required));
             close(uffd);
@@ -304,7 +304,9 @@ public:
                         wp.range.len = PM_PAGE_SIZE;
                         wp.mode = UFFDIO_WRITEPROTECT_MODE_WP;
                         if (ioctl(uffd, UFFDIO_WRITEPROTECT, &wp) == 0) {
-                            wp.mode = 0;
+                            // The runtime clears WP with DONTWAKE and then
+                            // explicitly wakes the faulting guest thread.
+                            wp.mode = UFFDIO_WRITEPROTECT_MODE_DONTWAKE;
                             probe_ok = ioctl(uffd, UFFDIO_WRITEPROTECT, &wp) == 0;
                         }
                         uffdio_range range{reg.range.start, reg.range.len};
@@ -316,11 +318,11 @@ public:
             close(probe_fd);
         }
         if (!probe_ok) {
-            std::printf("ORDER1886_UFFD preflight=unsupported reason=shmem-wp-registration\\n");
+            std::printf("ORDER1886_UFFD preflight=unsupported reason=shmem-wp-registration\n");
             close(uffd);
             throw std::runtime_error("userfaultfd shared mapping registration");
         }
-        std::printf("ORDER1886_UFFD preflight=supported mode=shared-memfd-wp\\n");
+        std::printf("ORDER1886_UFFD preflight=supported mode=shared-memfd-wp\n");
 
         // Read faults (readbacks) still arrive as signals.
         Core::Signals::Instance()->RegisterAccessViolationHandler(
@@ -461,11 +463,11 @@ PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
     if (try_uffd) {
         try {
             impl = std::make_unique<UffdImpl>(rasterizer_);
-            std::printf("ORDER1886_UFFD backend=active\\n");
+            std::printf("ORDER1886_UFFD backend=active\n");
             LOG_INFO(Config, "Memory tracking method: userfaultfd");
             return;
         } catch (const std::runtime_error& e) {
-            std::printf("ORDER1886_UFFD backend=signal-fallback reason=%s\\n", e.what());
+            std::printf("ORDER1886_UFFD backend=signal-fallback reason=%s\n", e.what());
         }
     }
     LOG_INFO(Config, "Memory tracking method: signals");
