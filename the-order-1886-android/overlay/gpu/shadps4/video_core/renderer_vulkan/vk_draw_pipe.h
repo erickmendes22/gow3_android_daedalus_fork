@@ -112,11 +112,14 @@ public:
         ++drains_by_reason[slot];
         const u64 start = Common::FencedRDTSC();
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        unsigned backoff = 0;
         for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
             if (spins < 4096) {
                 COMMON_CPU_RELAX();
             } else {
-                std::this_thread::yield();
+                // Release the CPU for the recorder and guest after a long drain.
+                // Normal short waits still use the original low-latency spin.
+                Ps4Threads::Backoff(backoff);
             }
             // Do not spin forever when Vulkan pipeline creation or a Stage B
             // driver call wedges. The old loop could occupy the phone's CPU
@@ -163,13 +166,19 @@ private:
     }
 
     void WaitForSpace(u64 at, u64 size) {
+        // Normally the 16 MiB ring has room. Avoid clock_gettime on EVERY
+        // draw/dispatch packet (many thousands per frame on The Order).
+        if (at + size - consumed.load(std::memory_order_acquire) <= Capacity) {
+            return;
+        }
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         u32 spins = 0;
+        unsigned backoff = 0;
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
             if (++spins < 4096) {
                 COMMON_CPU_RELAX();
             } else {
-                std::this_thread::yield();
+                Ps4Threads::Backoff(backoff);
             }
             if ((spins & 4095u) == 0 && std::chrono::steady_clock::now() > deadline) {
                 LOG_CRITICAL(Render_Vulkan,
