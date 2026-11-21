@@ -26,6 +26,12 @@ jobs:
           mkdir -p build-tools-offline/lib
           cp "$bt/apksigner" "$bt/zipalign" build-tools-offline/
           cp "$bt/lib/apksigner.jar" build-tools-offline/lib/
+          sudo apt-get update -qq
+          sudo apt-get install -y libc++1
+          cxx=$(ldconfig -p | awk '/libc\+\+\.so\.1 / {print $NF; exit}')
+          test -s "$cxx"
+          cp -L "$cxx" build-tools-offline/libc++.so
+          echo 'Ship libc++ runtime to run zipalign on minimal Linux hosts'
           tar -czf build-tools-android-signing-linux.tar.gz -C build-tools-offline .
       - uses: actions/upload-artifact@v4
         with:
