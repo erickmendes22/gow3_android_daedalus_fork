@@ -41,7 +41,7 @@ class Pc072Android(unittest.TestCase):
         self.assertNotIn('SotcDirtyWord::Update',stage)
         self.assertNotIn('SotcInflight::Overlaps',stage)
     def test_runtime_and_ui_version_agree(self):
-        self.assertIn("version='0.1.51-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
-        self.assertIn('0.1.51-pc-staging-async',read("ports/sotc/android/sign_sotc_apk.sh"))
-        self.assertIn('versionCode = 10052',read("android-launcher/app/build.gradle.kts"))
+        self.assertIn("version='0.1.52-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
+        self.assertIn('0.1.52-gpu-work',read("ports/sotc/android/sign_sotc_apk.sh"))
+        self.assertIn('versionCode = 10053',read("android-launcher/app/build.gradle.kts"))
 if __name__=="__main__":unittest.main()
