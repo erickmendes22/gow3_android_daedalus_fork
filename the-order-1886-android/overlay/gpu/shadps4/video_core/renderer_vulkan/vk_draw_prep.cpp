@@ -498,10 +498,10 @@ void DrawPreparation::WorkerLoop(std::stop_token stop, u32 index) {
 void DrawPreparation::Count(bool was_used) {
     ++(was_used ? used : unused);
 #ifdef __ANDROID__
-    // Existing counters, five-second summary only. No per-draw logging.
+    // Keep diagnostics opt-in, not forced on in gameplay.
     static const bool stats = [] {
         const char* v = std::getenv("ORDER1886_PIPE_STATS");
-        return !v || v[0] != '0';
+        return v && v[0] == '1';
     }();
 #else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
