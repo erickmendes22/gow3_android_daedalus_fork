@@ -85,12 +85,13 @@ def patch_records(path: Path, image_bytes: int) -> list[tuple[int,bytes]]:
         if cursor+16>len(data):
             raise ValueError(f"Truncated patch #{i}")
         off,n=struct.unpack_from("<QQ",data,cursor);cursor+=16
-        if n<1 or n>4096 or off>image_bytes or n>image_bytes-off or cursor+n>len(data):
+        target=PATCH_BASE+off
+        if n<1 or n>4096 or target>image_bytes or n>image_bytes-target or cursor+n>len(data):
             raise ValueError(f"Patch #{i} outside image or larger than native runtime limit")
         for start,end in ranges:
-            if start<off+n and off<end:
+            if start<target+n and target<end:
                 raise ValueError("Overlapping SotC patch records are not AOT-safe")
-        ranges.append((off,off+n));records.append((off,data[cursor:cursor+n]));cursor+=n
+        ranges.append((target,target+n));records.append((target,data[cursor:cursor+n]));cursor+=n
     if cursor!=len(data):
         raise ValueError("Trailing BBPATCH2 data")
     return records
@@ -98,6 +99,8 @@ def patch_records(path: Path, image_bytes: int) -> list[tuple[int,bytes]]:
 def stage_native_boot(boot: Path, patches: Path, dest: Path) -> dict:
     info=boot_info(boot)
     records=patch_records(patches,info["image_bytes"])
+    # BBPATCH2 records store addresses relative to PATCH_BASE (0x400000).
+    # stage_native_boot MUST write at image_start + PATCH_BASE + record_offset.
     # Important: no game original modified; patch all verified guest-code and
     # guest-data bytes BEFORE translation, or the AOT units would be stale.
     dest.parent.mkdir(parents=True,exist_ok=True)
