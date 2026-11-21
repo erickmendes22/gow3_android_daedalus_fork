@@ -1407,6 +1407,15 @@ void PipelineCache::PumpWarmUp() {
     if (!background || background->finished) {
         return;
     }
+    // The Order has tens of thousands of draws in a 5-second interval.
+    // Pumping the background cache on EACH draw took two clock reads and
+    // checked mutex-backed inboxes even when the next 4-ms batch wasn't due.
+    // Keep first-use rendering hot and process up to 64 items every 32
+    // pipeline lookups; even at 30 fps this yields many pumps per second.
+    static thread_local u32 draw_lookup_counter = 0;
+    if ((++draw_lookup_counter & 31u) != 0) {
+        return;
+    }
     auto& warm = *background;
     using namespace std::chrono_literals;
     const auto pump_started = std::chrono::steady_clock::now();
