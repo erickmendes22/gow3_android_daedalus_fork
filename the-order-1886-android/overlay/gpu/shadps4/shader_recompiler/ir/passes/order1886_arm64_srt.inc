@@ -1109,10 +1109,17 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
         }
     }
     if (unresolved) {
-        LOG_WARNING(Render_Recompiler,
-                    "ORDER1886_SRT_UNRESOLVED: shader={:#x}, {} uniform CPU offsets "
-                    "cannot be flattened, retaining GPU fallback",
-                    info.pgm_hash, unresolved);
+        // New SRT-heavy shaders may arrive in large bursts during gameplay.
+        // Keep the original GPU fallback and sample diagnostics, rather than
+        // issuing hundreds of synchronous logcat warnings in one transition.
+        static std::atomic<u32> unresolved_reports{0};
+        const u32 seen = unresolved_reports.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (seen <= 16 || (seen % 128u) == 0) {
+            LOG_WARNING(Render_Recompiler,
+                        "ORDER1886_SRT_UNRESOLVED: shader={:#x}, {} uniform CPU offsets "
+                        "cannot be flattened, retaining GPU fallback (occurrences={})",
+                        info.pgm_hash, unresolved, seen);
+        }
     }
     program.push_back(OpEnd);
     const size_t size = program.size() * sizeof(u32);
