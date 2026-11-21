@@ -1456,10 +1456,16 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
 
     auto it_pgm = program_cache.find(params.hash); // this thread is the only writer
-    const bool compile_async = AsyncCompilation() && hw_stage != HwStage::Compute &&
-                               !sel.regs->stage_enable.hs_en &&
+    // Compute pipelines are first-use hotspots too. Enable the background
+    // shader compiler for both graphics and compute, preserving SRT capture
+    // on the GPU thread before guest memory is reused.
+    const bool compile_async = AsyncCompilation() &&
+                               (hw_stage == HwStage::Compute || !sel.regs->stage_enable.hs_en) &&
                                !EmulatorSettings.IsShaderCollect();
-    if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
+    const bool keep_draws = std::getenv("ORDER1886_ALLOW_ASYNC_DRAW_DROPS") == nullptr;
+    const bool ordered_async = compile_async && keep_draws;
+    if ((!compile_async || ordered_async) && it_pgm != program_cache.end() &&
+        it_pgm->second->pending) {
         {
             PhaseTimer waiting{g_ps4_compile_wait_ns};
             it_pgm->second->pending->job.Wait();
@@ -1474,10 +1480,21 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
     if (it_pgm == program_cache.end()) {
         auto new_program = std::make_unique<Program>(hw_stage, sw_stage, params);
-        if (compile_async) {
-            QueueShader(*new_program, hw_stage, sw_stage, params, runtime_info, binding, 0, true);
-            std::unique_lock lock{programs_mutex};
-            program_cache.emplace(params.hash, std::move(new_program));
+        if (compile_async &&
+            QueueShader(*new_program, hw_stage, sw_stage, params, runtime_info, binding, 0, true)) {
+            auto* queued = new_program.get();
+            {
+                std::unique_lock lock{programs_mutex};
+                program_cache.emplace(params.hash, std::move(new_program));
+            }
+            if (ordered_async) {
+                // No lost draw: finish the worker's SPIR-V stage before binding
+                // this first-use guest shader. Previously this returned {} and
+                // permanently discarded the draw that caused the compilation.
+                { PhaseTimer wait{g_ps4_compile_wait_ns}; queued->pending->job.Wait(); }
+                PublishShaders();
+                return GetProgram(sel, hw_stage, sw_stage, params, binding);
+            }
             return {};
         }
         auto start = binding;
@@ -1505,8 +1522,27 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         return {};
     }
     if (program->modules.empty() && compile_async) {
-        QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, 0, true);
-        return {};
+        if (QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, 0, true)) {
+            if (ordered_async) {
+                { PhaseTimer wait{g_ps4_compile_wait_ns}; program->pending->job.Wait(); }
+                PublishShaders();
+                return GetProgram(sel, hw_stage, sw_stage, params, binding);
+            }
+            return {};
+        }
+        // All workers busy: build locally rather than silently skipping a draw.
+        auto& info = program->info;
+        auto start = binding;
+        const auto module = CompileModule(info, runtime_info, params.code, 0, binding);
+        if (srt_sync) srt_sync(info);
+        auto spec = Shader::StageSpecialization(info, runtime_info, profile, start);
+        const auto perm_hash = HashCombine(params.hash, 0);
+        RegisterShaderMeta(info, info, spec.fetch_shader_data, spec, perm_hash, 0);
+        program->AddPermut(module, std::move(spec));
+        { std::unique_lock lock{programs_mutex};
+          program->info_template = std::make_unique<Shader::Info>(info); }
+        return std::make_tuple(&info, module, program->modules[0].spec.fetch_shader_data,
+                               perm_hash);
     }
     if (!program->info_template) {
         // Programs loaded by the pipeline cache warm-up get their template on first use.
@@ -1541,9 +1577,14 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                     program->failed_permutations.end()) {
             return {};
         }
-        if (compile_async) {
-            QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding, perm_idx, false,
-                        std::move(spec));
+        if (compile_async &&
+            QueueShader(*program, hw_stage, sw_stage, params, runtime_info, binding,
+                        perm_idx, false, spec)) {
+            if (ordered_async) {
+                { PhaseTimer wait{g_ps4_compile_wait_ns}; program->pending->job.Wait(); }
+                PublishShaders();
+                return GetProgram(sel, hw_stage, sw_stage, params, binding);
+            }
             return {};
         }
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
