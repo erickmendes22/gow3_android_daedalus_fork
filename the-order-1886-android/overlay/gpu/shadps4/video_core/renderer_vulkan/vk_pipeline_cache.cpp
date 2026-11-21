@@ -960,8 +960,40 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
                 pending_graphics.emplace(sel.graphics_key, std::move(build));
             }
         }
-        ++g_ps4_pending_draws;
-        return nullptr;
+        // Do not discard the guest draw while the worker prepares its
+        // pipeline. The PS4 draw order is observable by depth, UAV and compute
+        // dependencies; without a full state-preserving replay queue we must
+        // wait for the dependency here and then record the ORIGINAL draw.
+        const char* drop_override = std::getenv("ORDER1886_ALLOW_ASYNC_DRAW_DROPS");
+        const bool allow_drops = drop_override && drop_override[0] == '1';
+        if (allow_drops) {
+            ++g_ps4_pending_draws;
+            return nullptr;
+        }
+        const auto requested_key = sel.graphics_key;
+        auto pending = pending_graphics.find(requested_key);
+        if (pending != pending_graphics.end()) {
+            const auto start = std::chrono::steady_clock::now();
+            { PhaseTimer wait{g_ps4_compile_wait_ns}; pending.value()->job.Wait(); }
+            PublishGraphics();
+            const auto ready = graphics_pipelines.find(requested_key);
+            if (ready != graphics_pipelines.end()) {
+                const auto elapsed = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (elapsed >= 12.0) {
+                    static std::atomic<u32> logged{0};
+                    if (logged.fetch_add(1, std::memory_order_relaxed) < 32) {
+                        std::printf("ORDER1886_PIPELINE_ASYNC_WAIT type=graphics hash=%zx ms=%.2f\n",
+                                    std::hash<GraphicsPipelineKey>{}(requested_key), elapsed);
+                    }
+                }
+                return ready.value().get();
+            }
+            // Worker failed: synchronous fallback for this exact draw, not a
+            // permanent absence of geometry; avoid retrying a failed task.
+            pending_graphics.erase(requested_key);
+        }
+        // Queue saturation or worker failure: fall back to synchronous build.
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
