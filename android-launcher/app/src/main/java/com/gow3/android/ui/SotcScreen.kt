@@ -237,7 +237,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "PC 0.72: readbacks rápidos (+FPS, experimental)"
                                       else "PC 0.72: fast GPU readbacks (experimental)",
-                        (values["sotc_pc072_fast_readbacks_050"]?:"1")=="1",
+                        (values["sotc_pc072_fast_readbacks_050"]?:"0")=="1",
                         {save("sotc_pc072_fast_readbacks_050",if(it)"1" else "0")})
                     Text(if(pt) "Cópias antecipadas de dados GPU: potencial de ganho no Santuário. Exige Readback 2 e correção do pool de páginas do PC 0.71. Ativado na 0.1.50 somente após verificação da versão do jogo; desative aqui se houver defeitos. O ganho de até 25% foi medido somente no PC."
                          else "Speculative GPU copies: possible Shrine FPS gain. Requires Readback 2 and the PC 0.71 page-pool fix. Enabled in 0.1.50 only after checking the game executable; disable here if defects occur. Up-to-25% measured on PC only.",

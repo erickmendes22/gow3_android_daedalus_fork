@@ -120,7 +120,7 @@ echo "SotC readback streaming: enabled=$SOTC_RB_STREAM max_kib=$SOTC_RB_STREAM_M
 # PC v0.71 T38 64KiB pool ownership / PC v0.72 speculative readbacks.
 # The FEX probe disables fast readbacks if the release-call site is unverified.
 export SOTC_POOL_OWNER=${SOTC_POOL_OWNER:-1}
-export SOTC_RB_HOT=${SOTC_RB_HOT:-1}
+export SOTC_RB_HOT=${SOTC_RB_HOT:-0}
 case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid pool owner/fast readbacks" >&2; exit 2 ;; esac
 if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
 echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (verified site required; set SOTC_RB_HOT=0 to compare)"
