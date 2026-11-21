@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 27
-        versionName = "0.1.25-vrs2x2-opacity-fix"
+        versionCode = 32
+        versionName = "0.1.30-rollback-frame-pacing"
     }
     // Stable signing for upgrade-in-place. Keystore and password are injected by CI
     // secrets; never put private signing material in the public source tree.
