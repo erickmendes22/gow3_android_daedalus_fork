@@ -646,6 +646,8 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_STAGING_LARGE_POW2","1");
                 env.put("SOTC_STAGING_LARGE_KEEP_MB","128");
                 env.put("SOTC_BUF_ASYNC_KB","256");
+                env.put("SOTC_FILL_HLE_GPU","1");
+                env.put("SOTC_TEX_ASYNC_KB","512");
                 env.put("SOTC_COPY_BATCH","1");
                 env.put("SOTC_RB_NARROW","64");
                 // PC 0.72 +25% PC-only Shrine result; optional here until Android tests.

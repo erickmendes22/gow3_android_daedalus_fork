@@ -539,6 +539,8 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Upstream PC streaming wins, ported to Android without skipping GPU work.
     from stage_sotc_pc_streaming_051 import patch_pc_streaming
     patch_pc_streaming(out)
+    from stage_sotc_gpu_work_052 import patch_gpu_work
+    patch_gpu_work(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
