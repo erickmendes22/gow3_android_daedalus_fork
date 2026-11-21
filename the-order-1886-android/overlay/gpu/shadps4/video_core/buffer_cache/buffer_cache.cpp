@@ -285,6 +285,9 @@ void BufferCache::KeepPageSynchronized(VAddr addr, u64 size, u64 shader) {
     // An expanding cascade buffer must not leave a dirty tail unsynchronized.
     if (sun_ranges.Contains(addr, size)) return;
     sun_ranges.Add(addr, size);
+    // Older snapshots were recorded without this newly tracked cascade
+    // range. Reject them until the next producer dispatch captures it.
+    sun_snapshot_gap = true;
     static std::atomic<u32> reports{0};
     if (reports.fetch_add(1, std::memory_order_relaxed) < 24)
         std::printf("ORDER1886_SUN_SYNC_REGISTER shader=%#llx addr=%#llx size=%llu\n",
