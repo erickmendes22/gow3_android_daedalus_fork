@@ -250,6 +250,14 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
         // before this readback completes.
         WaitDeferredReadbacks(window_start, window_end - window_start);
         DownloadMemory(arena, window_start, window_end - window_start);
+        if (sun_page) {
+            // An exact GPU download supersedes all earlier snapshots. The
+            // guest is about to overwrite this cascade AABB: NEVER replay an
+            // older deferred GPU snapshot onto these new CPU bytes later.
+            // A fresh producer dispatch will record and re-enable a snapshot.
+            std::scoped_lock lock{sun_mutex};
+            sun_snapshot_gap = true;
+        }
         if (is_write) {
             memory_tracker->MarkRegionAsCpuModified(device_addr, size);
         }
