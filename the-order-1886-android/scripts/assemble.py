@@ -72,6 +72,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp",
     "gpu/shadps4/video_core/buffer_cache/buffer_cache.h",
     "gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp",
+    "gpu/shadps4/video_core/cache_storage.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.h",
     "gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h",
