@@ -1049,9 +1049,46 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         const auto hitch_begin = std::chrono::steady_clock::now();
 
         ComputePipeline::SerializationSupport sdata{};
-        it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
-                                                       *pipeline_cache, compute_key, *sel.infos[0],
-                                                       sel.modules[0], sdata, false);
+        bool compiled_on_worker = false;
+        if (AsyncCompilation() && compiler->HasCapacity() &&
+            !EmulatorSettings.IsShaderCollect()) {
+            // Unlike graphics, compute dispatches have no draw replay mechanism.
+            // Offload expensive vkCreateComputePipelines to a worker, but wait
+            // BEFORE recording the dependent dispatch. The guest descriptor
+            // user-data is copied so the worker never dereferences live registers.
+            auto info = std::make_shared<Shader::Info>(*sel.infos[0]);
+            auto user_data = std::make_shared<std::vector<u32>>(
+                sel.infos[0]->user_data.begin(), sel.infos[0]->user_data.end());
+            info->user_data = *user_data;
+            const auto key = compute_key;
+            const auto module = sel.modules[0];
+            AsyncJob<std::unique_ptr<ComputePipeline>> job;
+            if (job.Start(*compiler, [this, info, user_data, key, module, &sdata] {
+                    PhaseTimer compile{g_ps4_async_ns};
+                    return std::make_unique<ComputePipeline>(
+                        instance, scheduler, desc_heap, profile,
+                        *worker_pipeline_caches[AsyncCompiler::WorkerIndex()],
+                        key, *info, module, sdata, false);
+                }, true)) {
+                { PhaseTimer wait{g_ps4_compile_wait_ns}; job.Wait(); }
+                if (auto result = job.Poll()) {
+                    it.value() = std::move(*result);
+                    it.value()->PublishInfo(sel.infos[0]);
+                    compiled_on_worker = true;
+                } else {
+                    LOG_WARNING(Render_Vulkan,
+                                "The Order compute async compilation failed: {}; retrying inline",
+                                job.Error());
+                }
+            }
+        }
+        if (!compiled_on_worker) {
+            // Queue saturation/failure: preserve compute side effects by
+            // building the pipeline synchronously rather than dropping work.
+            it.value() = std::make_unique<ComputePipeline>(
+                instance, scheduler, desc_heap, profile, *pipeline_cache,
+                compute_key, *sel.infos[0], sel.modules[0], sdata, false);
+        }
         RegisterPipelineData(compute_key, sdata);
         ++num_new_pipelines;
         const auto hitch_ms = std::chrono::duration<double, std::milli>(
