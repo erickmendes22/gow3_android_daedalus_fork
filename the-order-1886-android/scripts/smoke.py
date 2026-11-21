@@ -26,6 +26,24 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  # Regression tests tied to observed 0.1.29 CPU-feed and lighting failures.
+  "The Order compute queue does not drain for private CS register/NOP packets":
+      "needs_drawpipe_barrier = false" in
+      (gpu/"shadps4/video_core/amdgpu/liverpool.cpp").read_text() and
+      "rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute);" in
+      (gpu/"shadps4/video_core/amdgpu/liverpool.cpp").read_text() and
+      "opcode == PM4ItOpcode::SetShReg" in
+      (gpu/"shadps4/video_core/amdgpu/liverpool.cpp").read_text(),
+  "Release speculative pipeline worker is off by default":
+      "return 0;" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_draw_prep.cpp").read_text(),
+  "Sun AABB readback requires newest completed snapshot, not any old one":
+      "sun_batches.back()" in
+      (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "if (sun_snapshot_gap || sun_batches.empty()) return false;" in
+      (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "sun_ranges.Contains(addr, size)" in
+      (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text(),
   "GPU timestamp profiler sampled and nonblocking":
       "sample_every=90_frames" in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text() and
       "vk::QueryResultFlagBits::eWait" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text(),
