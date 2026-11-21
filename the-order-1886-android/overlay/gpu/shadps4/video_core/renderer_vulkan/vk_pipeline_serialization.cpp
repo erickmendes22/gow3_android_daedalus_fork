@@ -1189,18 +1189,67 @@ bool PipelineCache::StartBackgroundWarmUp() {
     warm.pool->Push([this, &warm] {
         const auto reader_started = std::chrono::steady_clock::now();
         auto& db = Storage::DataBase::Instance();
-        warm.total = u32(db.CountBlobs(Storage::BlobType::PipelineKey));
-        db.ForEachBlob(
-            Storage::BlobType::PipelineKey,
-            [&](std::vector<u8>&& data) { ReadWarmEntry(warm, std::move(data)); },
-            [&] { return warm.stopping.load(std::memory_order_relaxed); });
+        if (warm.shader_only) {
+            // A valid SPIR-V + ShaderMeta pair can exist even when a matching
+            // graphics-pipeline key was never checkpointed. The previous warm-up
+            // restored only 63 stages out of 65 pipeline keys in CUSA00785.
+            // Enumerate every versioned shader metadata record directly; never
+            // reconstruct a VkGraphicsPipeline from stale attachment state.
+            warm.total = u32(db.CountBlobs(Storage::BlobType::ShaderMeta));
+            db.ForEachBlob(
+                Storage::BlobType::ShaderMeta,
+                [&](std::vector<u8>&& data) {
+                    ++warm.entries;
+                    const auto started = std::chrono::steady_clock::now();
+                    auto stage = std::make_shared<WarmStage>();
+                    stage->device = instance.GetDevice();
+                    stage->program = std::make_unique<Program>();
+                    stage->effective_info = std::make_unique<Shader::Info>();
+                    stage->spec.info = &stage->program->info;
+                    Serialization::Archive meta_ar{std::move(data)};
+                    bool valid = LoadShaderMeta(meta_ar, stage->program->info,
+                                                *stage->effective_info, stage->fetch,
+                                                stage->spec, stage->perm_idx);
+                    u64 module_time = 0;
+                    if (valid) {
+                        std::vector<u32> spv;
+                        db.Load(Storage::BlobType::ShaderBinary,
+                                fmt::format("{:#018x}_{}", stage->program->info.pgm_hash,
+                                            stage->perm_idx), spv);
+                        if (!spv.empty()) {
+                            const auto module_started = std::chrono::steady_clock::now();
+                            stage->module = CompileSPV(spv, stage->device);
+                            module_time = ElapsedNs(module_started);
+                            warm.module_ns += module_time;
+                            ++warm.modules;
+                        }
+                    }
+                    warm.shader_io_ns += ElapsedNs(started) - module_time;
+                    if (!stage->module) {
+                        ++warm.done;
+                        return;
+                    }
+                    BackgroundWarmup::Entry entry{};
+                    entry.stages[0] = std::move(stage);
+                    entry.queued = std::chrono::steady_clock::now();
+                    warm.read.Push(std::move(entry));
+                },
+                [&] { return warm.stopping.load(std::memory_order_relaxed); });
+        } else {
+            warm.total = u32(db.CountBlobs(Storage::BlobType::PipelineKey));
+            db.ForEachBlob(
+                Storage::BlobType::PipelineKey,
+                [&](std::vector<u8>&& data) { ReadWarmEntry(warm, std::move(data)); },
+                [&] { return warm.stopping.load(std::memory_order_relaxed); });
+        }
         warm.stages.clear();
         warm.reader_ns = ElapsedNs(reader_started);
         warm.reading = false;
         return true;
     });
-    std::printf("ORDER1886_SHADER_PREWARM start mode=%s reader_threads=%u\n",
-                warm.shader_only ? "shader-only-live-graphics" : "full", warm.threads);
+    std::printf("ORDER1886_SHADER_PREWARM start mode=%s reader_threads=%u metadata_scan=%d\n",
+                warm.shader_only ? "shader-only-live-graphics" : "full", warm.threads,
+                int(warm.shader_only));
     return true;
 }
 
