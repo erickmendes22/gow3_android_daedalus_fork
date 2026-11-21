@@ -273,7 +273,9 @@ void BufferCache::KeepPageSynchronized(VAddr addr, u64 size, u64 shader) {
         size > std::numeric_limits<VAddr>::max() - addr)
         return;
     std::scoped_lock lock{sun_mutex};
-    if (sun_ranges.Intersects(addr, size)) return;
+    // Partial overlap does not mean the whole GPU-written range is tracked.
+    // An expanding cascade buffer must not leave a dirty tail unsynchronized.
+    if (sun_ranges.Contains(addr, size)) return;
     sun_ranges.Add(addr, size);
     static std::atomic<u32> reports{0};
     if (reports.fetch_add(1, std::memory_order_relaxed) < 24)
@@ -305,7 +307,12 @@ void BufferCache::RecordSunCopies() {
         staging_pool.FreeDeferred(sun_batches.front().staging);
         sun_batches.pop_front();
     }
-    if (sun_batches.size() >= 16) return; // CPU fault falls back to exact sync
+    if (sun_batches.size() >= 16) {
+        // No snapshot of the newest dispatch exists. A CPU writer must NOT
+        // accept an older completed one as current lighting data.
+        sun_snapshot_gap = true;
+        return; // CPU fault falls back to exact sync
+    }
     u64 total = 0;
     for (const auto [start, end] : ranges) {
         total += Common::AlignUp(end - start, 16);
@@ -313,6 +320,7 @@ void BufferCache::RecordSunCopies() {
     }
     if (!total) return;
     SunBatch batch{};
+    batch.serial = ++next_sun_batch_serial;
     batch.staging = staging_pool.Request(total, MemoryType::HostCached, 0, true);
     u64 offset = 0;
     for (const auto [start, end] : ranges) {
@@ -326,6 +334,7 @@ void BufferCache::RecordSunCopies() {
     }
     batch.tick = scheduler.CurrentTick();
     sun_batches.push_back(std::move(batch));
+    sun_snapshot_gap = false;
     static std::atomic<u64> copies{0};
     const u64 n = copies.fetch_add(1, std::memory_order_relaxed) + 1;
     if (n == 1 || (n % 512) == 0)
@@ -336,18 +345,21 @@ void BufferCache::RecordSunCopies() {
 
 bool BufferCache::DeliverSunCopies() {
     std::scoped_lock lock{sun_mutex};
-    const SunBatch* newest = nullptr;
-    for (const auto& batch : sun_batches) {
-        if (scheduler.IsFree(batch.tick)) newest = &batch;
-    }
-    if (!newest) return false;
-    if (newest->tick == last_delivered_sun_tick) return true;
-    newest->staging.buffer->Invalidate(newest->staging.offset, newest->staging.size);
-    for (const auto& item : newest->items) {
+    // A completed *older* snapshot is NOT a valid substitute for the latest
+    // GPU dispatch. On a missing/in-flight snapshot return false, so the
+    // calling CPU write-fault path does an exact synchronized readback instead
+    // of reintroducing stale cascade AABBs (light/shadow flicker).
+    if (sun_snapshot_gap || sun_batches.empty()) return false;
+    const SunBatch& newest = sun_batches.back();
+    if (!scheduler.IsFree(newest.tick)) return false;
+    // Several compute dispatches can record snapshots in one submission tick.
+    if (newest.serial == last_delivered_sun_serial) return true;
+    newest.staging.buffer->Invalidate(newest.staging.offset, newest.staging.size);
+    for (const auto& item : newest.items) {
         memory->TryWriteBacking(reinterpret_cast<void*>(item.addr),
-                                newest->staging.mapped + item.staging_offset, item.size);
+                                newest.staging.mapped + item.staging_offset, item.size);
     }
-    last_delivered_sun_tick = newest->tick;
+    last_delivered_sun_serial = newest.serial;
     static std::atomic<u64> deliveries{0};
     const u64 n = deliveries.fetch_add(1, std::memory_order_relaxed) + 1;
     if (n == 1 || (n % 512) == 0)
