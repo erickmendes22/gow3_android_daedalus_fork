@@ -484,7 +484,16 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (!draw_pipe || !OnStageA()) {
         return;
     }
+    // Log which handoff actually starves the GPU in heavy gameplay.
+    // Work and TSC counts were already tracked; only the summary was off.
+#ifdef __ANDROID__
+    static const bool stats = [] {
+        const char* v = std::getenv("ORDER1886_PIPE_STATS");
+        return !v || v[0] != '0';
+    }();
+#else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
+#endif
     if (!stats) {
         draw_pipe->Drain(reason);
         return;
@@ -908,7 +917,14 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
 }
 
 void Rasterizer::PrintPipeStats() {
+#ifdef __ANDROID__
+    static const bool stats = [] {
+        const char* v = std::getenv("ORDER1886_PIPE_STATS");
+        return !v || v[0] != '0';
+    }();
+#else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
+#endif
     if (!stats || (draw_pipe->packets & 1023) != 0) {
         return;
     }
