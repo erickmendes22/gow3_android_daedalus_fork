@@ -18,6 +18,7 @@
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "video_core/renderer_vulkan/vk_upscale_providers.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -335,6 +336,18 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     std::fprintf(stderr, "The Order: Vulkan startup phase: ready for pipeline cache\n");
 #endif
 
+    // On Android single-sample, restore only validated shader SPIR-V in a
+    // low-priority background reader. Never replay graphics pipelines built
+    // without the live attachment/interpolation state that caused black frames.
+    // Do this before the on-demand policy that otherwise bypasses warm-up.
+    const char* background_warmup = std::getenv("ORDER1886_BACKGROUND_WARMUP");
+#ifdef __ANDROID__
+    if (AmdGpu::NoMsaa() && (!background_warmup || *background_warmup != '0') &&
+        rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
+        return;
+    }
+#endif
+
     const bool binary_cache = EmulatorSettingsImpl::Flag("ORDER1886_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
     const bool capture_only = EmulatorSettingsImpl::Flag("ORDER1886_PIPELINE_BINARY_ISOLATED", false) &&
@@ -348,7 +361,6 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     // by default the cached pipelines load while the game runs (a corner note shows the
     // progress). Otherwise rebuilding them takes up to minutes before the first game frame:
     // show what is happening instead of a black window.
-    const char* background_warmup = std::getenv("ORDER1886_BACKGROUND_WARMUP");
     if ((!background_warmup || *background_warmup != '0') &&
         rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
