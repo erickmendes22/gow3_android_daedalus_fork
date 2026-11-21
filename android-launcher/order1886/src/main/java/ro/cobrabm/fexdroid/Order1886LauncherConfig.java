@@ -63,9 +63,9 @@ final class Order1886LauncherConfig {
     static void environment(Context ctx,File user,Map<String,String> env){
         SharedPreferences p=ctx.getSharedPreferences("order1886",Context.MODE_PRIVATE);
         env.put("ORDER1886_CONFIG",new File(user,"runtime.ini").getAbsolutePath());
-        // Explicitly keep x86-TSO by default. The off switch is experimental
-        // because the PS4 game runs several guest worker threads on weaker ARM ordering.
-        env.put("ORDER1886_FEX_TSO",p.getBoolean("fexDisableTso",false)?"0":"1");
+        // Force the known-correct x86 memory ordering after a no-TSO guest
+        // SIGSEGV. Ignore any persisted experimental off preference.
+        env.put("ORDER1886_FEX_TSO","1");
         env.put("ORDER1886_USER_DIR",user.getAbsolutePath());
         env.put("ORDER1886_FPS_LIMIT",Integer.toString(p.getInt("fps",30)));
         env.put("ORDER1886_VBLANK_HZ","60");
