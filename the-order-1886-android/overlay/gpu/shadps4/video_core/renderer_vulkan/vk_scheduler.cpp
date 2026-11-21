@@ -764,7 +764,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                                           ? total_compiles - last_compile_count
                                           : total_compiles;
             std::printf("ORDER1886_COMPILER_FEED new_pipelines_and_shaders=%u "
-                        "compile_wall_ms=%.2f window_s=%.2f\\n",
+                        "compile_wall_ms=%.2f window_s=%.2f\n",
                         compile_delta, compile_delta_ns / 1e6,
                         double(now_ns - previous) / 1e9);
             last_compile_ns = total_compile_ns;
