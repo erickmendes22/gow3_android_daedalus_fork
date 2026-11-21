@@ -27,10 +27,15 @@ jobs:
           cp "$bt/apksigner" "$bt/zipalign" build-tools-offline/
           cp "$bt/lib/apksigner.jar" build-tools-offline/lib/
           sudo apt-get update -qq
-          sudo apt-get install -y libc++1
+          sudo apt-get install -y libc++1 libc++abi1 libunwind-14
           cxx=$(ldconfig -p | awk '/libc\+\+\.so\.1 / {print $NF; exit}')
           test -s "$cxx"
           cp -L "$cxx" build-tools-offline/libc++.so
+          abi=$(ldconfig -p | awk '/libc\+\+abi\.so\.1 / {print $NF; exit}')
+          test -s "$abi"
+          cp -L "$abi" build-tools-offline/libc++abi.so.1
+          unwind=$(ldconfig -p | awk '/libunwind\.so\.1 / {print $NF; exit}')
+          if [ -n "$unwind" ] && [ -s "$unwind" ]; then cp -L "$unwind" build-tools-offline/libunwind.so.1; fi
           echo 'Ship libc++ runtime to run zipalign on minimal Linux hosts'
           tar -czf build-tools-android-signing-linux.tar.gz -C build-tools-offline .
       - uses: actions/upload-artifact@v4
