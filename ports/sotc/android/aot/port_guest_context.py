@@ -18,15 +18,20 @@ REQUIRED = (
     "guest_state.h", "host_call_arm64.S",
 )
 
-CONTEXT_STATE = r"""
-// SotC's sceFiber HLE persists the guest x86-64 state; the Linux thread owns
-// GS/FS, segment tables and its physical host stack. Never transfer those.
-struct SotcGuestContext {
+CONTEXT_API = r"""
+// SotC's sceFiber HLE expects this exact guest-context ABI.
+typedef struct {
     uint64_t gpr[16];
     uint64_t rip;
     uint32_t mxcsr;
     uint16_t fcw;
-};
+} SotcGuestContext;
+int guest_context_get(SotcGuestContext* out);
+int guest_context_set(const SotcGuestContext* in);
+"""
+
+CONTEXT_STATE = r"""
+// Guest x86-64 state may move between fibers, not the host thread's TLS.
 static_assert(sizeof(SotcGuestContext) == 144);
 thread_local GuestState* sotc_host_state = nullptr;
 thread_local uint64_t sotc_host_return = 0;
@@ -120,7 +125,10 @@ def generate(upstream: Path, out: Path) -> dict:
             (out / name).write_text(main)
         else:
             shutil.copy2(cpu / name, out / name)
-    shutil.copy2(header, out / "guest_cpu.h")
+    header_text = once(header.read_text(), "#pragma GCC visibility pop",
+                       CONTEXT_API + "#pragma GCC visibility pop",
+                       "SotC guest context ABI exports")
+    (out / "guest_cpu.h").write_text(header_text)
     return dict(upstream=str(upstream), output=str(out), upstream_pin=UPSTREAM_PIN,
                 fex=False, tso=False, fiber_context_abi=True,
                 required_files=list(REQUIRED))
