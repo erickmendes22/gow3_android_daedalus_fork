@@ -1,0 +1,28 @@
+name: SotC ARM64 AOT preflight (no FEX APK changes)
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-bootstrap-054]
+    paths:
+      - "ports/sotc/android/aot/**"
+      - "tests/test_sotc_arm64_aot_bootstrap.py"
+      - ".github/workflows/sotc-arm64-aot-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax checks (no game or compiler files)
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/aot/compile_local.py tests/test_sotc_arm64_aot_bootstrap.py
+      - name: Guard BBPROBE5 codegen, original game files, patches and x86 TSO
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_sotc_arm64_aot_bootstrap.py' -v
+          grep -Fq '"--tso", "--resume-entries", "--no-callee-saved"' ports/sotc/android/aot/compile_local.py
+          grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
+          ! grep -Fq 'TLOU_TSO_NO_TSO=1' ports/sotc/android/aot/compile_local.py
