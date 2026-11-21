@@ -1153,6 +1153,7 @@ struct PipelineCache::BackgroundWarmup {
     u64 pump_ns = 0, pump_max_ns = 0, pump_gap_max_ns = 0;
     u32 batches = 0;
     bool finished = false;
+    bool shader_only = false; // Android single-MSAA: restore shader modules, never archived graphics state.
     u32 loaded = 0, threads = 0;
     std::chrono::steady_clock::time_point started, last_batch;
     std::chrono::steady_clock::time_point last_pump{}, last_report{};
@@ -1160,11 +1161,14 @@ struct PipelineCache::BackgroundWarmup {
 };
 
 bool PipelineCache::StartBackgroundWarmUp() {
+    // The archived graphics keys do not encode the live auxiliary GS and
+    // single-MSAA render target state on Adreno. However, individual shader
+    // binaries and metadata already have versioned validation and can safely
+    // be restored independently. Never reconstruct archived graphics pipelines.
 #ifdef __ANDROID__
-    if (AmdGpu::NoMsaa()) {
-        // Use the same live path regardless of sync/background warm-up mode.
-        return false;
-    }
+    const bool shader_only = AmdGpu::NoMsaa();
+#else
+    const bool shader_only = false;
 #endif
     if (!Storage::DataBase::Instance().ConcurrentReads()) {
         return false;
@@ -1174,8 +1178,12 @@ bool PipelineCache::StartBackgroundWarmUp() {
     }
     background = new BackgroundWarmup;
     auto& warm = *background;
+    warm.shader_only = shader_only;
     warm.started = std::chrono::steady_clock::now();
-    warm.threads = WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
+    // A single low-priority reader avoids starving the guest GPU command
+    // processor while staging already compiled SPIR-V from disk.
+    warm.threads = shader_only ? 1u :
+        WarmupThreadCount(std::max(1u, std::thread::hardware_concurrency()));
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
     // The first job reads the whole store; with one thread the builds queue behind it.
     warm.pool->Push([this, &warm] {
@@ -1191,7 +1199,8 @@ bool PipelineCache::StartBackgroundWarmUp() {
         warm.reading = false;
         return true;
     });
-    std::printf("Pipeline warm-up: loading in the background (%u threads)\n", warm.threads);
+    std::printf("ORDER1886_SHADER_PREWARM start mode=%s reader_threads=%u\n",
+                warm.shader_only ? "shader-only-live-graphics" : "full", warm.threads);
     return true;
 }
 
@@ -1350,8 +1359,22 @@ void PipelineCache::PumpWarmUp() {
     Ps4Overlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
 
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
-    for (auto& entry : warm.read.Take(32)) {
+    for (auto& entry : warm.read.Take(warm.shader_only ? 8 : 32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
+        if (warm.shader_only) {
+            // Safe path for Adreno without mixed samples: load only versioned,
+            // previously compiled shader modules into program_cache. The live
+            // GetGraphicsPipeline path still computes all attachments, runtime
+            // specialization and the auxiliary interpolation geometry stage.
+            // No draw is dropped, and no stale VkGraphicsPipeline is restored.
+            std::unique_lock lock{programs_mutex};
+            for (const auto& stage_ptr : entry.stages) {
+                if (!stage_ptr || stage_ptr->merged || !stage_ptr->module) continue;
+                if (MergeWarmStage(*stage_ptr)) ++warm.loaded;
+            }
+            warm.done.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
         if (entry.compute ? compute_pipelines.contains(entry.compute_key)
                           : graphics_pipelines.contains(entry.graphics_key)) {
             warm.done.fetch_add(1, std::memory_order_relaxed); // the game compiled it first
@@ -1426,9 +1449,16 @@ void PipelineCache::PumpWarmUp() {
     if (warm.reading || !warm.read.Empty() || !warm.pool->Idle() || !warm.built.Empty()) {
         return;
     }
-    std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
-                warm.loaded, warm.total.load(),
-                std::chrono::duration<double>(now - warm.started).count(), warm.threads);
+    if (warm.shader_only) {
+        std::printf("ORDER1886_SHADER_PREWARM completed modules_restored=%u archive_keys=%u "
+                    "elapsed_s=%.2f reader_threads=%u\n",
+                    warm.loaded, warm.total.load(),
+                    std::chrono::duration<double>(now - warm.started).count(), warm.threads);
+    } else {
+        std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
+                    warm.loaded, warm.total.load(),
+                    std::chrono::duration<double>(now - warm.started).count(), warm.threads);
+    }
     LOG_INFO(Render, "Preloaded {} pipelines in the background", warm.loaded);
     ReportPipelineBinaryCache();
     std::printf("Warm-up profile: reader wall %.3f s, entries %.3f s, shader IO/meta %.3f s, "
