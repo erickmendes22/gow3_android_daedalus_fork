@@ -17,9 +17,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include "common/rdtsc.h"
 #include "common/arch.h"
@@ -121,11 +123,13 @@ public:
             if (polls < 1024) {
                 COMMON_CPU_RELAX();
             } else {
+                std::unique_lock lock(progress_mutex);
                 waiting_for_progress.store(true, std::memory_order_release);
-                const u64 last = consumed.load(std::memory_order_acquire);
-                if (last != head) {
-                    consumed.wait(last, std::memory_order_relaxed);
-                }
+                // Bounded wait: retain the 10-second worker watchdog even if
+                // Stage B becomes blocked and never publishes another packet.
+                progress_cv.wait_for(lock, std::chrono::milliseconds(1), [&] {
+                    return consumed.load(std::memory_order_acquire) == head;
+                });
                 waiting_for_progress.store(false, std::memory_order_release);
             }
             if ((polls & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
@@ -185,11 +189,12 @@ private:
             if (polls < 1024) {
                 COMMON_CPU_RELAX();
             } else {
+                std::unique_lock lock(progress_mutex);
                 waiting_for_progress.store(true, std::memory_order_release);
-                const u64 last = consumed.load(std::memory_order_acquire);
-                if (at + size - last > Capacity) {
-                    consumed.wait(last, std::memory_order_relaxed);
-                }
+                progress_cv.wait_for(lock, std::chrono::milliseconds(1), [&] {
+                    return at + size -
+                        consumed.load(std::memory_order_acquire) <= Capacity;
+                });
                 waiting_for_progress.store(false, std::memory_order_release);
             }
             if ((polls++ & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
@@ -248,8 +253,9 @@ private:
             if (header->size == 0) {
                 at += Capacity - at % Capacity;
                 consumed.store(at, std::memory_order_release);
-                if (waiting_for_progress.exchange(false, std::memory_order_acq_rel)) {
-                    consumed.notify_one();
+                if (waiting_for_progress.load(std::memory_order_acquire)) {
+                    std::scoped_lock lock{progress_mutex};
+                    progress_cv.notify_one();
                 }
                 continue;
             }
@@ -258,8 +264,9 @@ private:
             busy_cycles.fetch_add(Common::FencedRDTSC() - start, std::memory_order_relaxed);
             at += header->size;
             consumed.store(at, std::memory_order_release);
-            if (waiting_for_progress.exchange(false, std::memory_order_acq_rel)) {
-                consumed.notify_one();
+            if (waiting_for_progress.load(std::memory_order_acquire)) {
+                std::scoped_lock lock{progress_mutex};
+                progress_cv.notify_one();
             }
         }
     }
@@ -273,6 +280,8 @@ private:
     alignas(64) std::atomic<u64> published{0};
     alignas(64) std::atomic<u64> consumed{0};
     std::atomic<bool> waiting_for_progress{false};
+    std::mutex progress_mutex;
+    std::condition_variable progress_cv;
     alignas(64) std::atomic<u32> wake{0};
     std::atomic<bool> sleeping{false};
     std::atomic<u32> stage_b_tid{0};
