@@ -21,7 +21,7 @@ import sys
 
 HEADER = struct.Struct("<8s12Q")
 SUPPORTED = {"CUSA08809", "CUSA08034"}
-AOT_COMPILER_VERSIONS = ("3-tlou-string", "4-tlou-tso-aligned-ar-v1",
+AOT_COMPILER_VERSIONS = ("1", "3-tlou-string", "4-tlou-tso-aligned-ar-v1",
                          "5-tlou-tso-outlined-unaligned-v1")
 AOT_FLAGS = ("--resume-entries", "--no-callee-saved")
 MAX_IMAGE = 512 * 1024 * 1024
