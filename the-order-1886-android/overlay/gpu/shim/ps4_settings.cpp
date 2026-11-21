@@ -180,19 +180,14 @@ void Load() {
             Set(v, key, value);
         }
     }
-    // The Order's asynchronous shader/pipeline path returns nullptr for a pending
-    // pipeline and the renderer drops the entire corresponding guest draw.
-    // Guest draws are not replayed after compilation, so meshes/materials can
-    // remain absent in one-shot scene passes. Render correctness takes
-    // precedence here: compile on first use before executing the draw.
-    // Explicit opt-in remains possible for benchmarking the old behavior.
-    const char* allow_skipped_draws = std::getenv("ORDER1886_ALLOW_ASYNC_DRAW_DROPS");
-    if (!allow_skipped_draws || allow_skipped_draws[0] != '1') {
-        if (v.async_shaders.load()) {
-            std::printf("GPU: The Order accuracy mode: synchronous first-use shader/pipeline compilation; no async draw drops\n");
-        }
-        v.async_shaders = false;
-    }
+    // The Order uses ordered async compilation: compile shaders/pipelines on
+    // workers, but wait at the dependency boundary so no guest draw or compute
+    // dispatch is dropped while a pipeline is pending. The old skip-draws path
+    // requires a separate explicit environment override for regression tests.
+    std::printf("ORDER1886_ASYNC_POLICY requested=%d mode=%s draws_preserved=%d\n",
+                int(v.async_shaders.load()),
+                v.async_shaders.load() ? "ordered-async" : "synchronous",
+                std::getenv("ORDER1886_ALLOW_ASYNC_DRAW_DROPS") == nullptr);
     v.requested_upscaler = v.upscaler.load();
     // No inherited engine reconstruction, cheats, HUD, or speculative readbacks. Sharpening
     // (rcas) and asynchronous shaders are launcher settings and keep the values read above.
