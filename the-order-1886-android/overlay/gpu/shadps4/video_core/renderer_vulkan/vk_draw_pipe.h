@@ -119,7 +119,11 @@ public:
         // spin latency and parks after prolonged waits without losing the watchdog.
         unsigned backoff = 0;
         for (u32 polls = 0; consumed.load(std::memory_order_acquire) != head; ++polls) {
-            Ps4Threads::Backoff(backoff);
+            if (polls < 1024) {
+                COMMON_CPU_RELAX();
+            } else {
+                Ps4Threads::Backoff(backoff);
+            }
             // Poll count is independent from Backoff's capped counter.
             if ((polls & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
                 LOG_CRITICAL(Render_Vulkan,
@@ -176,7 +180,11 @@ private:
         u32 polls = 0;
         unsigned backoff = 0;
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
-            Ps4Threads::Backoff(backoff);
+            if (polls < 1024) {
+                COMMON_CPU_RELAX();
+            } else {
+                Ps4Threads::Backoff(backoff);
+            }
             if ((polls++ & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
                 LOG_CRITICAL(Render_Vulkan,
                              "ORDER1886_DRAW_PIPE_HANG ring full: head={} consumed={} bytes={}",
@@ -203,10 +211,10 @@ private:
                         return std::max(0, std::atoi(env));
                     }
 #ifdef __ANDROID__
-                    // A8xx mobile has eight heterogeneous CPUs and FEX guest workers.
-                    // Avoid a permanently busy draw-recorder thread between bursts.
-                    // A published packet wakes the futex immediately via notify_one.
-                    return 0;
+                    // Keep a short spin for intra-frame packet bursts, but reduce
+                    // competition with the FEX guest workers on heterogeneous Android
+                    // CPUs. A published packet also wakes a parked worker immediately.
+                    return 15;
 #else
                     return Ps4Threads::Available() >= 12 ? 200 : 50;
 #endif
