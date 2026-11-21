@@ -111,8 +111,8 @@ case "$BB_READBACKS" in
 esac
 # Native SotC precise readback streaming, only pages marked GPU modified.
 # Reuses the original synchronization and heap guards; 512KiB bounded cap.
-export SOTC_RB_STREAM=${SOTC_RB_STREAM:-1}
-export SOTC_RB_STREAM_MAX_KB=${SOTC_RB_STREAM_MAX_KB:-512}
+export SOTC_RB_STREAM=1
+export SOTC_RB_STREAM_MAX_KB=1024
 case "$SOTC_RB_STREAM" in 0|1) ;; *) echo "Invalid SOTC_RB_STREAM" >&2; exit 2 ;; esac
 case "$SOTC_RB_STREAM_MAX_KB" in 512|1024) ;; *) echo "Invalid SOTC_RB_STREAM_MAX_KB" >&2; exit 2 ;; esac
 if [ "$BB_READBACKS" != "2" ]; then export SOTC_RB_STREAM=0; fi
@@ -125,7 +125,15 @@ case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid poo
 if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
 echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (verified site required; set SOTC_RB_HOT=0 to compare)"
 # Independent asynchronous GPU readback execution toggle.
-export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
+export SOTC_RB_ASYNC=1
+# Measured PC v0.76 streaming paths, guarded by coherent staging / join on submit.
+# 128 MiB idle large staging per memory type on Android, not PC's 256 MiB.
+export SOTC_STAGING_LARGE_POW2=1
+export SOTC_STAGING_LARGE_KEEP_MB=128
+export SOTC_BUF_ASYNC_KB=256
+export SOTC_COPY_BATCH=1
+export SOTC_RB_NARROW=64
+echo "SotC PC streaming: staging pow2=$SOTC_STAGING_LARGE_POW2 cap=$SOTC_STAGING_LARGE_KEEP_MB MiB async upload >=$SOTC_BUF_ASYNC_KB KiB"
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
 # and explicitly fills those images with zero texels (black) until a later flip.
 # SotC Android prioritizes complete materials over area-transition frame time:
@@ -155,42 +163,42 @@ echo "SotC render coherence: mode=$BB_READBACKS async=$SOTC_RB_ASYNC"
 # for geometry draws while asynchronous shaders/pipelines are still being
 # compiled (vk_pipeline_cache.cpp). With a cold shader cache this produces
 # missing geometry and transient flicker, not merely poor FPS.
-# Async graphics pipeline build test (OFF by default). The PC renderer may
+# Async graphics pipeline build: previously selected ON and now fixed. The PC renderer may
 # temporarily skip >6-index draws whose pipeline is still compiling; this
-# can cause missing objects/pop-in, so leave OFF unless testing A/B.
+# can cause temporary missing objects/pop-in on first compile.
 # Translation and boot preload stay synchronous to isolate this one change.
-export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}
+export SOTC_ASYNC_SHADERS=1
 export SOTC_ASYNC_TRANSLATE=0
 export SOTC_ASYNC_PRELOAD=0
 # Separate compute deferral. With recording thread + graphics workers this
-# would otherwise default ON and silently alter the shader-only A/B test.
-export SOTC_ASYNC_COMPUTE=${SOTC_ASYNC_COMPUTE:-0}
+# would otherwise default ON; both now remain enabled.
+export SOTC_ASYNC_COMPUTE=1
 # Safe AHB fullscreen transfer optimization; defaults ON only when the blit
 # overwrites the entire output surface; letterbox retains clear+barrier.
-export SOTC_PRESENT_FULL_BLIT=${SOTC_PRESENT_FULL_BLIT:-1}
+export SOTC_PRESENT_FULL_BLIT=1
 echo "SotC Vulkan compute async=$SOTC_ASYNC_COMPUTE present fullscreen blit=$SOTC_PRESENT_FULL_BLIT"
-echo "SotC experimental async graphics pipelines: $SOTC_ASYNC_SHADERS (1 may cause temporary missing geometry)"
+echo "SotC active graphics pipeline workers: $SOTC_ASYNC_SHADERS (1 may cause temporary missing geometry)"
 # Native A/B for stale descriptor reuse vs Vulkan command recording.
 # Keep Wave32, TAA, texture LOD, shaders and readbacks unchanged.
 # Android host Vulkan command-state memoization only; unlike SOTC_FAST_BIND
 # these do not skip guest resource/buffer/texture tracking.
 # Set any one to 0 for a reversible comparison without losing the good Turnip.
-export SOTC_PIPELINE_BIND_MEMO=${SOTC_PIPELINE_BIND_MEMO:-1}
-export SOTC_VERTEX_INPUT_MEMO=${SOTC_VERTEX_INPUT_MEMO:-1}
-export SOTC_DESCRIPTOR_SLOT_REUSE=${SOTC_DESCRIPTOR_SLOT_REUSE:-1}
+export SOTC_PIPELINE_BIND_MEMO=1
+export SOTC_VERTEX_INPUT_MEMO=1
+export SOTC_DESCRIPTOR_SLOT_REUSE=1
 echo "SotC host Vulkan fastpaths: pipeline=$SOTC_PIPELINE_BIND_MEMO vertex=$SOTC_VERTEX_INPUT_MEMO descriptor_slots=$SOTC_DESCRIPTOR_SLOT_REUSE"
 # Real CPU bottleneck optimization. The CP still refreshes flattened SRTs
 # from live guest memory, validates exact shader specialization inputs and
 # chooses the same module; draw receives an exact per-op snapshot via swap.
 # OFF restores the 0.1.27 path with the original full data copies.
-export SOTC_STAGE_SPEC_MEMO=${SOTC_STAGE_SPEC_MEMO:-1}
-export SOTC_STAGE_SNAPSHOT_SWAP=${SOTC_STAGE_SNAPSHOT_SWAP:-1}
-export SOTC_REG_SNAPSHOT_MEMO=${SOTC_REG_SNAPSHOT_MEMO:-1}
-# Experimental: OFF until validated on real SotC gameplay.
-export SOTC_RT_MEMO=${SOTC_RT_MEMO:-1}
+export SOTC_STAGE_SPEC_MEMO=1
+export SOTC_STAGE_SNAPSHOT_SWAP=1
+export SOTC_REG_SNAPSHOT_MEMO=1
+# The verified user profile uses the conservative render-target memo.
+export SOTC_RT_MEMO=1
 # Native Bionic guest-memory region cache (64 writes journal, 512 direct slots).
 # 0 restores generation-only eight-entry cache and all old lock checks.
-export SOTC_VM_RANGE_CACHE=${SOTC_VM_RANGE_CACHE:-1}
+export SOTC_VM_RANGE_CACHE=1
 case "$SOTC_VM_RANGE_CACHE" in
   0|1) ;;
   *) echo "Invalid SOTC_VM_RANGE_CACHE (expected 0/1)" >&2; exit 2 ;;
@@ -208,11 +216,11 @@ if [ "${SOTC_PERF_PROFILE:-0}" = "1" ]; then
 else
     unset SOTC_FPS SOTC_DRAW_SPLIT SOTC_CMD_STATS
 fi
-export SOTC_FAST_BIND=${SOTC_FAST_BIND:-0}
-export SOTC_RECORD_THREAD=${SOTC_RECORD_THREAD:-0}
-echo "SotC GPU A/B: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD rb_async=$SOTC_RB_ASYNC (0=conservative)"
+export SOTC_FAST_BIND=1
+export SOTC_RECORD_THREAD=1
+echo "SotC fixed engine: fast_bind=$SOTC_FAST_BIND record_thread=$SOTC_RECORD_THREAD rb_async=$SOTC_RB_ASYNC (0=conservative)"
 if [ "$SOTC_ASYNC_SHADERS" = "1" ]; then
-  echo "SotC render completeness: experimental async graphics pipeline build; queued geometry draws can be skipped until ready"
+  echo "SotC pipeline workers: async graphics pipeline build; queued geometry draws can be skipped until ready"
 else
   echo "SotC render completeness: synchronous graphics shaders and pipelines; no async draw skips"
 fi

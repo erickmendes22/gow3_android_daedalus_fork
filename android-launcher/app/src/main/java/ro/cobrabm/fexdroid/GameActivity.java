@@ -570,7 +570,7 @@ public final class GameActivity extends Activity {
                 String modes="30".equals(fps) ? "" : fps;
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
-                env.put("SOTC_VSYNC","0".equals(setting("sotc_vsync")) ? "0" : "1");
+                env.put("SOTC_VSYNC","1");
                 // Per-game readback level: 0 Disabled, 1 Relaxed, 2 Precise.
                 String rbMode=setting("sotc_readbacks");
                 if(!"0".equals(rbMode) && !"1".equals(rbMode) && !"2".equals(rbMode)) rbMode="2";
@@ -602,35 +602,27 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_BACHATA_PERF",String.join(",",bachataEffects));
                 // Experimental parallel graphics pipeline compilation; OFF by
                 // default because the original PC renderer can skip in-flight draws.
-                env.put("SOTC_ASYNC_SHADERS",
-                        "1".equals(setting("sotc_async_shaders")) ? "1" : "0");
+                env.put("SOTC_ASYNC_SHADERS","1");
                 // This previously defaulted to ON *implicitly* whenever
                 // pipeline workers and Vulkan recording thread were active.
                 // It is now explicit, independent, and OFF by default.
-                env.put("SOTC_ASYNC_COMPUTE",
-                        "1".equals(setting("sotc_async_compute")) ? "1" : "0");
+                env.put("SOTC_ASYNC_COMPUTE","1");
                 // Skip only redundant clear/barrier before a full-coverage AHB
                 // blit; partial/letterbox blits always retain both operations.
-                env.put("SOTC_PRESENT_FULL_BLIT",
-                        "0".equals(setting("sotc_present_full_blit")) ? "0" : "1");
+                env.put("SOTC_PRESENT_FULL_BLIT","1");
                 // Exact, cache-safe CP-side FS/CS module specialization reuse.
                 // Never skips live guest SRT refreshes, draw or Vulkan work.
-                env.put("SOTC_STAGE_SPEC_MEMO",
-                        "0".equals(setting("sotc_stage_spec_memo")) ? "0" : "1");
+                env.put("SOTC_STAGE_SPEC_MEMO","1");
                 // Per-draw SRT vector ownership crosses the CP->draw ring
                 // only after the consumer owns the slot; copy fallback on OFF.
-                env.put("SOTC_STAGE_SNAPSHOT_SWAP",
-                        "0".equals(setting("sotc_stage_snapshot_swap")) ? "0" : "1");
+                env.put("SOTC_STAGE_SNAPSHOT_SWAP","1");
                 // CP-owned last-published register chunks; ordered draw stream unchanged.
-                env.put("SOTC_REG_SNAPSHOT_MEMO",
-                        "0".equals(setting("sotc_reg_snapshot_memo")) ? "0" : "1");
+                env.put("SOTC_REG_SNAPSHOT_MEMO","1");
                 // Never enable speculative render-pass reuse by default.
-                env.put("SOTC_RT_MEMO",
-                        "0".equals(setting("sotc_rt_memo")) ? "0" : "1");
+                env.put("SOTC_RT_MEMO","1");
                 // SotC-only VM journal and 512-slot direct cache, fail-closed
                 // to the original Bionic pthread RW lock on any uncertainty.
-                env.put("SOTC_VM_RANGE_CACHE",
-                        "0".equals(setting("sotc_vm_range_cache")) ? "0" : "1");
+                env.put("SOTC_VM_RANGE_CACHE","1");
                 // Existing, native SotC frame-split profiler (not an FPS boost).
                 // The Bionic launcher script unsets getenv-presence switches
                 // when this diagnostic setting is disabled.
@@ -638,22 +630,24 @@ public final class GameActivity extends Activity {
                         "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
-                env.put("SOTC_PIPELINE_BIND_MEMO",
-                        "0".equals(setting("sotc_pipeline_bind_memo")) ? "0" : "1");
-                env.put("SOTC_VERTEX_INPUT_MEMO",
-                        "0".equals(setting("sotc_vertex_input_memo")) ? "0" : "1");
-                env.put("SOTC_DESCRIPTOR_SLOT_REUSE",
-                        "0".equals(setting("sotc_descriptor_slot_reuse")) ? "0" : "1");
-                env.put("SOTC_FAST_BIND",
-                        "1".equals(setting("sotc_fast_bind")) ? "1" : "0");
-                env.put("SOTC_RECORD_THREAD",
-                        "1".equals(setting("sotc_record_thread")) ? "1" : "0");
+                env.put("SOTC_PIPELINE_BIND_MEMO","1");
+                env.put("SOTC_VERTEX_INPUT_MEMO","1");
+                env.put("SOTC_DESCRIPTOR_SLOT_REUSE","1");
+                env.put("SOTC_FAST_BIND","1");
+                env.put("SOTC_RECORD_THREAD","1");
                 // Asynchronous GPU readback is a reversible SotC-only setting.
-                env.put("SOTC_RB_ASYNC",
-                        "1".equals(setting("sotc_rb_async")) ? "1" : "0");
+                env.put("SOTC_RB_ASYNC","1");
                 // PC 0.71 T38: double-free guard on the game's 64KiB direct page pool.
                 // Keep enabled even when PC 0.72 fast GPU readbacks are OFF.
                 env.put("SOTC_POOL_OWNER","1");
+                // PC 0.76: bounded reuse of large staging buffers and async
+                // copies of geometry while the draw thread records commands.
+                // Coherent staging, all submit/readback sync barriers preserved.
+                env.put("SOTC_STAGING_LARGE_POW2","1");
+                env.put("SOTC_STAGING_LARGE_KEEP_MB","128");
+                env.put("SOTC_BUF_ASYNC_KB","256");
+                env.put("SOTC_COPY_BATCH","1");
+                env.put("SOTC_RB_NARROW","64");
                 // PC 0.72 +25% PC-only Shrine result; optional here until Android tests.
                 // Precise Readback 2 required; game-revision check in probe fails closed.
                 env.put("SOTC_RB_HOT",
@@ -661,13 +655,10 @@ public final class GameActivity extends Activity {
                         !"0".equals(setting("sotc_readbacks")) &&
                         !"1".equals(setting("sotc_readbacks")) ? "1" : "0");
                 // Exact native SotC sequential GPU readbacks with bounded prefetch.
-                env.put("SOTC_RB_STREAM",
-                        "0".equals(setting("sotc_rb_stream")) ? "0" : "1");
-                env.put("SOTC_RB_STREAM_MAX_KB","512");
-                // 0.1.40: the ORIGINAL 0.1.34 options and their saved values
-                // above are unchanged. Only four 0.1.35 tunings can be enabled,
-                // each by a NEW opt-in key, absent (OFF) for all existing users.
-                if ("1".equals(setting("sotc_trial039_readback_1m"))) env.put("SOTC_RB_STREAM_MAX_KB","1024");
+                env.put("SOTC_RB_STREAM","1");
+                env.put("SOTC_RB_STREAM_MAX_KB","1024");
+                // Three remaining experimental tunings stay opt-in.
+                // 1 MiB readback stream and all active, safe CPU/GPU paths are permanent.
                 if ("1".equals(setting("sotc_trial039_dma_32m"))) env.put("SOTC_DMA_MERGE_MAX","32");
                 if ("1".equals(setting("sotc_trial039_cpu_31p"))) env.put("SOTC_WRITE_AHEAD_PAGES","31");
                 if ("1".equals(setting("sotc_trial039_arena_8p"))) env.put("SOTC_ARENA_GROUP","8");
@@ -825,7 +816,7 @@ public final class GameActivity extends Activity {
         final long frames=bionicRuntime() ? Gow3Present.framesIfLoaded() : DisplayBridge.directFrames();
         if (!hadError && frames>0) status.setVisibility(View.GONE);
         if (sotcFpsHud!=null) {
-            final boolean visible=!"0".equals(setting("sotc_show_fps"));
+            final boolean visible=true;
             sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
             if (sotcFpsLastFrames<0 || now<sotcFpsLastAtMillis ||
                 frames<sotcFpsLastFrames) {
