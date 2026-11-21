@@ -28,7 +28,7 @@ class SotcFastpathIntegration(unittest.TestCase):
         for env, key in (("SOTC_PIPELINE_BIND_MEMO", "sotc_pipeline_bind_memo"),
                          ("SOTC_VERTEX_INPUT_MEMO", "sotc_vertex_input_memo"),
                          ("SOTC_DESCRIPTOR_SLOT_REUSE", "sotc_descriptor_slot_reuse")):
-            self.assertIn("export "+env+"=$"+"{"+env+":-1}", RUN)
+            self.assertIn("export "+env+"=1", RUN)
             self.assertIn('env.put("'+env+'",', GAME)
             self.assertNotIn('save("'+key+'",', UI)
             self.assertIn('env.put("'+env+'","1");', GAME)

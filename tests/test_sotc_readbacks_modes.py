@@ -25,7 +25,7 @@ class ReadbackModes(unittest.TestCase):
         self.assertIn('case "$BB_READBACKS" in',RUN)
         self.assertIn("sotc_readbacks=2",PACK)
     def test_rt_memo_enabled_with_fallback(self):
-        self.assertIn("export SOTC_RT_MEMO="+chr(36)+"{SOTC_RT_MEMO:-1}",RUN)
+        self.assertIn("export SOTC_RT_MEMO=1",RUN)
         self.assertIn("sotc_rt_memo=1",PACK)
         self.assertIn('env.put("SOTC_RT_MEMO",',JAVA)
         self.assertNotIn('save("sotc_rt_memo",',UI)

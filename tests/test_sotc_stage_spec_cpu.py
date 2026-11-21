@@ -77,7 +77,7 @@ class SotcStageSpecCpuTest(unittest.TestCase):
         pack=PACKAGE.read_text()
         for key,setting in [('SOTC_STAGE_SPEC_MEMO','sotc_stage_spec_memo'),
                             ('SOTC_STAGE_SNAPSHOT_SWAP','sotc_stage_snapshot_swap')]:
-            self.assertIn('export '+key+'=$'+'{'+key+':-1}',run)
+            self.assertIn('export '+key+'=1',run)
             self.assertIn('env.put("'+key+'",',java)
             self.assertNotIn('save("'+setting+'",ui)
             self.assertIn('env.put("'+key+'","1");',java)
