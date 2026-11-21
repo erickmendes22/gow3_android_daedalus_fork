@@ -317,17 +317,17 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     }();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_DYNAMICL1CACHE,
                          dynamic_l1 ? "1" : "0");
+    // The 2026-11-21 The Order run with tso=0 deterministically faulted
+    // on a guest access to 0x2 during startup. Never expose an unvalidated
+    // weak-memory x86 mode to the production game runtime.
     const char* tso_override = std::getenv("ORDER1886_FEX_TSO");
-    if (tso_override && (tso_override[0] == '0' || tso_override[0] == '1') &&
-        tso_override[1] == '\0') {
-        const bool tso = tso_override[0] == '1';
-        FEXCore::Config::Set(FEXCore::Config::CONFIG_TSOENABLED, tso ? "1" : "0");
-        if (!tso) {
-            FEXCore::Config::Set(FEXCore::Config::CONFIG_HALFBARRIERTSOENABLED, "0");
-            FEXCore::Config::Set(FEXCore::Config::CONFIG_VECTORTSOENABLED, "0");
-            FEXCore::Config::Set(FEXCore::Config::CONFIG_MEMCPYSETTSOENABLED, "0");
-        }
+    if (tso_override && tso_override[0] == '0' && tso_override[1] == '\0') {
+        std::printf("ORDER1886_FEX_TSO_OFF_REJECTED reason=guest-startup-sigsegv-20261121\n");
     }
+    FEXCore::Config::Set(FEXCore::Config::CONFIG_TSOENABLED, "1");
+    // Use FEX's documented default half barrier even if a stale profile had
+    // disabled it. Vector/memcpy TSO remain FEX's safe normal defaults.
+    FEXCore::Config::Set(FEXCore::Config::CONFIG_HALFBARRIERTSOENABLED, "1");
     const bool effective_tso = FEXCore::Config::Get_TSOENABLED()();
     const bool half_barrier = FEXCore::Config::Get_HALFBARRIERTSOENABLED()();
     const bool vector_tso = FEXCore::Config::Get_VECTORTSOENABLED()();
