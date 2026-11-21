@@ -1499,8 +1499,13 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         // pointers in the registers; ahead of the GPU thread that memory may already be
         // reused. A fault returns here (runtime_fault_recover) and the draw is left to the GPU
         // thread. A jump out of the specialization leaks its partial allocations (rare).
+        // Preserve any outer safety boundary around speculative PM4 decoding.
+        // The old fault branch left runtime_fault_recover pointing at a dead
+        // stack buffer; another fault could longjmp into a returned function.
+        auto* previous_fault_recover = runtime_fault_recover;
         sigjmp_buf recover;
         if (sigsetjmp(recover, 0)) {
+            runtime_fault_recover = previous_fault_recover;
             worker.failed = true;
             return {};
         }
@@ -1510,7 +1515,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
         }
         auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
-        runtime_fault_recover = nullptr;
+        runtime_fault_recover = previous_fault_recover;
         const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
         if (it == program->modules.end()) {
             worker.failed = true;
