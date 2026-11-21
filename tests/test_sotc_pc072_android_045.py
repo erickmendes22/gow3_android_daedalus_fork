@@ -28,7 +28,8 @@ class Pc072Android(unittest.TestCase):
         self.assertIn('!"0".equals(setting("sotc_pc072_fast_readbacks_050"))',java)
         self.assertIn('(values["sotc_pc072_fast_readbacks_050"]?:"1")=="1"',screen)
         self.assertIn('values["sotc_readbacks"]?:"2"',screen)
-        self.assertIn('values["sotc_vsync"]?:',screen)
+        self.assertNotIn('save("sotc_vsync",',screen)
+        self.assertIn('env.put("SOTC_VSYNC","1");',java)
     def test_renderer_no_unsafe_changes(self):
         script=read("ports/sotc/android/run-sotc-bionic.sh")
         stage=read("ports/sotc/android/stage_renderer.py")
@@ -40,7 +41,7 @@ class Pc072Android(unittest.TestCase):
         self.assertNotIn('SotcDirtyWord::Update',stage)
         self.assertNotIn('SotcInflight::Overlaps',stage)
     def test_runtime_and_ui_version_agree(self):
-        self.assertIn("version='0.1.50-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
-        self.assertIn('0.1.50-wave64-readback',read("ports/sotc/android/sign_sotc_apk.sh"))
-        self.assertIn('versionCode = 10051',read("android-launcher/app/build.gradle.kts"))
+        self.assertIn("version='0.1.51-boot-test'",read("ports/sotc/android/package_sotc_runtime.py"))
+        self.assertIn('0.1.51-pc-staging-async',read("ports/sotc/android/sign_sotc_apk.sh"))
+        self.assertIn('versionCode = 10052',read("android-launcher/app/build.gradle.kts"))
 if __name__=="__main__":unittest.main()

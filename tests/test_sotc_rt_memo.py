@@ -21,7 +21,8 @@ class SotcRtMemo(unittest.TestCase):
         stage=(ROOT/"ports/sotc/android/stage_renderer.py").read_text()
         self.assertIn("export SOTC_RT_MEMO=$"+"{SOTC_RT_MEMO:-1}",run)
         self.assertIn('env.put("SOTC_RT_MEMO",',java)
-        self.assertIn('save("sotc_rt_memo",if(it)"1" else "0")',ui)
+        self.assertNotIn('save("sotc_rt_memo",',ui)
+        self.assertIn('env.put("SOTC_RT_MEMO","1");',java)
         self.assertIn("patch_sotc_rt_memo(out)",stage)
 
     @unittest.skipUnless(UPSTREAM.is_dir(),"Pinned renderer checkout required")

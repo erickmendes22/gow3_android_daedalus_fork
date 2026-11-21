@@ -28,7 +28,8 @@ class ReadbackModes(unittest.TestCase):
         self.assertIn("export SOTC_RT_MEMO="+chr(36)+"{SOTC_RT_MEMO:-1}",RUN)
         self.assertIn("sotc_rt_memo=1",PACK)
         self.assertIn('env.put("SOTC_RT_MEMO",',JAVA)
-        self.assertIn('save("sotc_rt_memo",if(it)"1" else "0")',UI)
+        self.assertNotIn('save("sotc_rt_memo",',UI)
+        self.assertIn('env.put("SOTC_RT_MEMO","1");',JAVA)
         self.assertIn("patch_sotc_rt_memo(out)",(ROOT/"ports/sotc/android/stage_renderer.py").read_text())
 
 if __name__=="__main__": unittest.main()

@@ -70,7 +70,7 @@ class SotcStageSpecCpuTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'source drift'):
                 module.patch_sotc_stage_spec_cpu(gpu)
 
-    def test_reversible_independent_runtime_controls_and_srt_fidelity(self):
+    def test_permanent_cpu_fastpaths_and_srt_fidelity(self):
         run=RUN.read_text()
         java=JAVA.read_text()
         ui=UI.read_text()
@@ -79,7 +79,8 @@ class SotcStageSpecCpuTest(unittest.TestCase):
                             ('SOTC_STAGE_SNAPSHOT_SWAP','sotc_stage_snapshot_swap')]:
             self.assertIn('export '+key+'=$'+'{'+key+':-1}',run)
             self.assertIn('env.put("'+key+'",',java)
-            self.assertIn('save("'+setting+'",if(it)"1" else "0")',ui)
+            self.assertNotIn('save("'+setting+'",ui)
+            self.assertIn('env.put("'+key+'","1");',java)
             self.assertIn(setting+'=1',pack)
         self.assertIn('patch_sotc_stage_spec_cpu(out)',RENDERER.read_text())
         self.assertIn('export BB_READBACKS=${BB_READBACKS:-2}',run)
