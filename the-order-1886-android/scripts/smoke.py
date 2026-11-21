@@ -53,6 +53,14 @@ gpu_checks={
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
       "fs->has_discard" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Adreno native driver cache replay stays disabled to avoid second-launch black screen":
+      "ORDER1886_CACHE_REPLAY driver=disabled reason=single-msaa" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text(),
+  "Adreno module warmup never replays serialized graphics pipeline state":
+      "if (warm.shaders_only)" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "warm.done.fetch_add(1, std::memory_order_relaxed);\n            continue;" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text(),
   "Adreno single sample background cache restores shader modules only":
       "warm.shaders_only" in
       (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
