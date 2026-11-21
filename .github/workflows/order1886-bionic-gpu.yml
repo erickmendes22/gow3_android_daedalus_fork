@@ -3,7 +3,7 @@ run-name: The Order 1886 0.1.28 / ${{ github.ref_name }} / ${{ github.event_name
 
 on:
   push:
-    branches: [port/the-order-1886-bionic, fix/order1886-adreno830-pervertex-interpolation]
+    branches: [port/the-order-1886-bionic, fix/order1886-adreno830-pervertex-interpolation, work/order1886-perf-root-causes-20261121]
     paths:
       - ".github/workflows/order1886-bionic-gpu.yml"
       - "the-order-1886-android/overlay/gpu/**"
