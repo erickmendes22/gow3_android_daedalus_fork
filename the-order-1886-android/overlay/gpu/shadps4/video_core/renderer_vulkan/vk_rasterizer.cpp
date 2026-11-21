@@ -487,12 +487,12 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (!draw_pipe || !OnStageA()) {
         return;
     }
-    // Log which handoff actually starves the GPU in heavy gameplay.
-    // Work and TSC counts were already tracked; only the summary was off.
+    // Detailed timing and site hash lookups are not free on ARM64, and
+    // 0.1.29 enabled them in every retail frame. Only profile on request.
 #ifdef __ANDROID__
     static const bool stats = [] {
         const char* v = std::getenv("ORDER1886_PIPE_STATS");
-        return !v || v[0] != '0';
+        return v && v[0] == '1';
     }();
 #else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
@@ -923,7 +923,7 @@ void Rasterizer::PrintPipeStats() {
 #ifdef __ANDROID__
     static const bool stats = [] {
         const char* v = std::getenv("ORDER1886_PIPE_STATS");
-        return !v || v[0] != '0';
+        return v && v[0] == '1';
     }();
 #else
     static const bool stats = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
