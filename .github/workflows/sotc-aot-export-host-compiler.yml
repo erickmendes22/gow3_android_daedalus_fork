@@ -1,0 +1,34 @@
+name: SotC AOT toolchain export (official host binary only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths: ['.github/workflows/sotc-aot-export-host-compiler.yml']
+permissions:
+  contents: read
+jobs:
+  get-host-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch SHA256-verified official bb-recomp Linux AppImage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p host-toolchain
+          curl -fL --retry 3 --connect-timeout 20 --max-time 180 -o /tmp/recomp.AppImage https://github.com/ducvd89/Bloodborne-android-rebuild-tool/releases/download/v1.3.0/Bloodborne-Android-Rebuild-Tool-x86_64.AppImage
+          echo 'fba05242a8e1bc68e23d511c0ea8fb649f588b7b088d4f170cdbbf343ec4c9f8  /tmp/recomp.AppImage' | sha256sum -c
+          chmod +x /tmp/recomp.AppImage
+          cd host-toolchain
+          /tmp/recomp.AppImage --appimage-extract > /tmp/extract.log
+          find squashfs-root -maxdepth 5 -type f \( -name 'libbbrecomp.so' -o -name 'bb-recomp' -o -name '*bbrecomp*' \) -print
+          find squashfs-root -type d -name bundle -print
+          du -sh squashfs-root
+          tar -czf ../host-toolchain.tar.gz squashfs-root
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bb-recomp-host-linux-x86_64-v1.3.0-official
+          path: host-toolchain.tar.gz
+          if-no-files-found: error
+          retention-days: 3
