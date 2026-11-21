@@ -1109,10 +1109,16 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
         }
     }
     if (unresolved) {
-        LOG_WARNING(Render_Recompiler,
-                    "ORDER1886_SRT_UNRESOLVED: shader={:#x}, {} uniform CPU offsets "
-                    "cannot be flattened, retaining GPU fallback",
-                    info.pgm_hash, unresolved);
+        static std::atomic<u32> unresolved_reports{0};
+        const u32 seen = unresolved_reports.fetch_add(1, std::memory_order_relaxed) + 1;
+        // Keep exact GPU fallback and initial shader IDs, but avoid hundreds
+        // of synchronous Android log writes while entering a new area.
+        if (seen <= 16 || (seen % 128) == 0) {
+            LOG_WARNING(Render_Recompiler,
+                        "ORDER1886_SRT_UNRESOLVED: shader={:#x}, {} uniform CPU offsets "
+                        "cannot be flattened, retaining GPU fallback (count={})",
+                        info.pgm_hash, unresolved, seen);
+        }
     }
     program.push_back(OpEnd);
     const size_t size = program.size() * sizeof(u32);

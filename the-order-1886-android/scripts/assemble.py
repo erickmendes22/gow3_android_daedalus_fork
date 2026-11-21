@@ -83,6 +83,7 @@ FILES = [
     "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp",
     "gpu/shadps4/video_core/renderer_vulkan/vk_runtime.cpp",
+    "gpu/shadps4/video_core/texture_cache/image.cpp",
     "gpu/shadps4/video_core/texture_cache/blit_helper.cpp",
     "gpu/shadps4/video_core/texture_cache/blit_helper.h",
     "gpu/shadps4/video_core/host_shaders/ms_depth_to_color.frag",

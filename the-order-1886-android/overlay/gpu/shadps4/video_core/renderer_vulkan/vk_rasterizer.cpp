@@ -55,9 +55,16 @@ namespace Vulkan {
 static bool IsBachataOrder1886Edition() {
     return Common::ElfInfo::Instance().GameSerial() == "CUSA00785";
 }
+static bool IsOrderEvsmShadowShader(u64 hash) {
+    return IsBachataOrder1886Edition() &&
+           (hash == 0x9846aaffULL || hash == 0x8ea0ef5bULL);
+}
 static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushData& data) {
-    if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
-        data.ud_regs[1] = 0x7F80000FU;
+    if (!IsOrderEvsmShadowShader(info.pgm_hash)) return;
+    // The PS4's EVSM/HTILE decode expects an uncompressed tile mask. The
+    // second shader was missing from the Android compatibility path.
+    data.ud_regs[1] = 0x7F80000FU;
+    data.ud_regs[4] = 0x7F80000FU;
 }
 // Shadow-map draws must not be dropped by dimensions alone. The experimental
 // 512/1024/2048 depth-skip path suppressed a 512x512 draw just before a
@@ -1114,6 +1121,15 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
         g_order1886_vrs_rejected_side_effects.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
+    // Shadow-map samplers must keep pixel-precise gradients/coverage. VRS on
+    // depth-sampling material shaders can make shadow edges flicker even when
+    // the shader has no alpha discard or fixed-function blending.
+    for (const auto& image : fs->images) {
+        if (image.is_depth) {
+            g_order1886_vrs_rejected_side_effects.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+    }
 
     // Full-res MRT may fetch vertices directly from guest shader buffers.
     // The new half-res path instead requires identified depth-writing geometry;
@@ -1646,6 +1662,43 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         return;
     }
 
+    const bool order_evsm_shadow = IsOrderEvsmShadowShader(cs.pgm_hash);
+    if (order_evsm_shadow) {
+        // Upstream TOport EVSM/HTILE correction, adapted for Android Bionic.
+        // A depth-reduction kernel does not write real tiled HTILE metadata.
+        // If the following conversion sees zero zmask, it treats occupied
+        // tiles as empty and the sun's shadows blink or disappear.
+        auto& mutable_cs = const_cast<Shader::Info&>(cs);
+        if (mutable_cs.flattened_ud_buf.size() > 1)
+            mutable_cs.flattened_ud_buf[1] = 0x7F80000FU;
+        if (mutable_cs.flattened_ud_buf.size() > 4)
+            mutable_cs.flattened_ud_buf[4] = 0x7F80000FU;
+        for (const auto& desc : cs.buffers) {
+            if (desc.IsSpecial() || desc.is_written) continue;
+            const auto sharp = desc.GetSharp(cs);
+            const VAddr address = sharp.base_address;
+            // Do not overwrite arbitrary uniform buffers: only registered
+            // HTILE surfaces that the conversion shader actually reads.
+            if (!address ||
+                texture_cache.IsMeta(address) != VideoCore::SurfaceMetadata::Type::HTile)
+                continue;
+            const u64 bytes = memory->ClampRangeSize(address, sharp.GetSize()) & ~u64(3);
+            if (bytes < 4 || bytes > std::numeric_limits<u32>::max()) break;
+            const auto [buffer, offset] =
+                buffer_cache.ObtainBuffer(address, static_cast<u32>(bytes), true);
+            runtime.FillBuffer(buffer, offset, bytes, 0x0000000FU);
+            runtime.FlushBarriers();
+            static std::atomic<u64> htile_fills{0};
+            const u64 n = htile_fills.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (n == 1 || n % 4096 == 0)
+                std::printf("ORDER1886_EVSM_HTILE_FILL count=%llu shader=%#llx bytes=%llu\n",
+                            static_cast<unsigned long long>(n),
+                            static_cast<unsigned long long>(cs.pgm_hash),
+                            static_cast<unsigned long long>(bytes));
+            break;
+        }
+    }
+
     buffer_cache.WatchWrittenBuffers(ReadbackWatchedShader(cs.pgm_hash));
     buffer_cache.SetCurrentDispatch(cs.pgm_hash);
     const bool bound = BindResources(pipeline);
@@ -1660,6 +1713,25 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     }
 
     scheduler.EndRendering();
+    if (order_evsm_shadow) {
+        // The depth-store -> EVSM shader-read dependency must be complete.
+        // A memory barrier is legal here only after ending dynamic rendering.
+        scheduler.Record([](vk::CommandBuffer cmdbuf) {
+            const vk::MemoryBarrier2 barrier{
+                .srcStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits2::eLateFragmentTests |
+                                vk::PipelineStageFlagBits2::eTransfer,
+                .srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
+                                 vk::AccessFlagBits2::eTransferWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+            };
+            cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+                .memoryBarrierCount = 1,
+                .pMemoryBarriers = &barrier,
+            });
+        });
+    }
     mark();
     pipeline->BindResources(set_writes, push_data);
 
