@@ -1557,6 +1557,9 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     if (sw_stage == SwStage::Fragment) {
         runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
     }
+    // StageSpecialization advances the mutable descriptor binding cursor. A
+    // suspended first-use permutation must restore it before retrying.
+    const auto binding_before_specialization = binding;
     auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
 
     size_t perm_idx = program->modules.size();
@@ -1583,6 +1586,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             if (ordered_async) {
                 { PhaseTimer wait{g_ps4_compile_wait_ns}; program->pending->job.Wait(); }
                 PublishShaders();
+                binding = binding_before_specialization;
                 return GetProgram(sel, hw_stage, sw_stage, params, binding);
             }
             return {};
