@@ -498,6 +498,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Adreno Wave64 must retain the LDS barriers already used on Wave32.
     from stage_adreno_lds_integrity import patch_adreno_lds_integrity
     patch_adreno_lds_integrity(out)
+    # Upstream 0.74.2: absent workgroup lanes in 64-wide compute reductions.
+    from stage_wave64_absent_lanes import patch_wave64_absent_lanes
+    patch_wave64_absent_lanes(out)
     # Recover dynamically indexed material/lighting textures on Android.
     # Staged SotC-only; vertex shader workaround remains explicitly excluded.
     from stage_fragment_tsharp import patch_fragment_tsharp

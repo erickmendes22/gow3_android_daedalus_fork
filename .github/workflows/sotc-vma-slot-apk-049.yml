@@ -1,7 +1,7 @@
-name: SotC 0.1.49 validated VMA cache locality ARM64 Android APK
+name: SotC 0.1.50 validated VMA cache locality ARM64 Android APK
 on:
   push:
-    branches: [perf/sotc-vma-slot-locality-049]
+    branches: [fix/sotc-wave64-fps-green-050]
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,8 +29,9 @@ jobs:
           submodules: recursive
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_sotc_lowres.py ports/sotc/android/stage_sotc_perf_profile.py ports/sotc/android/stage_sotc_stage_spec_cpu.py ports/sotc/android/stage_sotc_reg_snapshot.py ports/sotc/android/stage_sotc_rt_memo.py ports/sotc/android/analyze_frame_profile.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_sotc_lowres.py ports/sotc/android/stage_sotc_perf_profile.py ports/sotc/android/stage_sotc_stage_spec_cpu.py ports/sotc/android/stage_sotc_reg_snapshot.py ports/sotc/android/stage_sotc_rt_memo.py ports/sotc/android/analyze_frame_profile.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/stage_wave64_absent_lanes.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m unittest discover -s tests -p 'test_sotc_wave64_absent_lanes.py' -v
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_LINGER=${SOTC_LOD_LINGER:-1}' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq 'export SOTC_LOD_POOL_LOW=${SOTC_LOD_POOL_LOW:-8}' ports/sotc/android/run-sotc-bionic.sh
@@ -155,6 +156,8 @@ jobs:
           grep -Fq 'UseAdrenoWave32()' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'if (UseAdrenoWave32()) return 32u;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'SotC Adreno Wave32' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
+          grep -Fq 'FoldAbsentLaneReads(program, num_threads);' out/sotc-android/gpu/shadps4/shader_recompiler/ir/passes/lower_wave64_pass.cpp
+          grep -Fq '39u : 136u;' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
           grep -Fq 'OpCopyWindow' "$srt/flatten_extended_userdata_pass.cpp"
           grep -Fq 'CopyFlatbufPlacement' "$srt/flatten_extended_userdata_pass.cpp"
           grep -Fq 'SrtWalkerCode(walker_func)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
@@ -278,7 +281,7 @@ jobs:
           import tarfile,json
           with tarfile.open('out/release/sotc-runtime.tar.gz','r:gz') as t:
               manifest=json.load(t.extractfile('runtime-manifest.json'))
-              assert manifest['version']=='0.1.49-boot-test',manifest
+              assert manifest['version']=='0.1.50-boot-test',manifest
           print('PASS: PC 0.71 runtime guard compiled, PC 0.72 fast reads opt-in and version verified')
           PY
           if grep -Fq 'God_of_War_III_Remastered.xml' "$RUNNER_TEMP/sotc-payload-files.txt"; then
@@ -294,10 +297,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.49-vma-slot-locality
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.50-wave64-readback
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.49-vma-slot-locality-arm64.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.49-vma-slot-locality-arm64.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.50-wave64-readback-arm64.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.50-wave64-readback-arm64.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

@@ -120,10 +120,10 @@ echo "SotC readback streaming: enabled=$SOTC_RB_STREAM max_kib=$SOTC_RB_STREAM_M
 # PC v0.71 T38 64KiB pool ownership / PC v0.72 speculative readbacks.
 # The FEX probe disables fast readbacks if the release-call site is unverified.
 export SOTC_POOL_OWNER=${SOTC_POOL_OWNER:-1}
-export SOTC_RB_HOT=${SOTC_RB_HOT:-0}
+export SOTC_RB_HOT=${SOTC_RB_HOT:-1}
 case "$SOTC_POOL_OWNER:$SOTC_RB_HOT" in 0:0|0:1|1:0|1:1) ;; *) echo "Invalid pool owner/fast readbacks" >&2; exit 2 ;; esac
 if [ "$SOTC_POOL_OWNER" != 1 ] || [ "$BB_READBACKS" != 2 ]; then SOTC_RB_HOT=0; export SOTC_RB_HOT; fi
-echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (OFF by default)"
+echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (verified site required; set SOTC_RB_HOT=0 to compare)"
 # Independent asynchronous GPU readback execution toggle.
 export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
@@ -228,7 +228,7 @@ case "${SOTC_ADRENO_WAVE32:-0}" in
     1) sotc_gpu_profile=wave32 ;;
     *) sotc_gpu_profile=wave64 ;;
 esac
-export BB_GPU_USER_DIR="$base/gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-$sotc_gpu_profile/lds-meta1"
+export BB_GPU_USER_DIR="$base/gpu-user-srt-phi7-tess-gs-position-turnip-nomultipos-$sotc_gpu_profile/lds-meta1-wave64-fold050"
 mkdir -p "$BB_GPU_USER_DIR"
 echo "SotC GPU cache revision: srt-phi7-tess-gs-position-turnip-nomultipos; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
