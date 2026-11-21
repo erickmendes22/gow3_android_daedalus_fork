@@ -94,8 +94,8 @@ def patch_prefetch(gpu: Path) -> None:
     cpp=swap(cpp,'#include "core/emulator_settings.h"',
                    '#include "core/emulator_settings.h"\n#include "core/memory.h"',
                    "GetBackingPointer header")
-    cpp=swap(cpp,"const auto& cs_pgm = liverpool->GetCsRegs();",
-                 "const auto& cs_pgm = cs_override ? *cs_override : liverpool->GetCsRegs();",
+    cpp=swap(cpp,"    case HwStage::Compute: {\n        const auto& cs_pgm = liverpool->GetCsRegs();",
+                 "    case HwStage::Compute: {\n        const auto& cs_pgm = cs_override ? *cs_override : liverpool->GetCsRegs();",
                  "compute registers override")
     cpp=swap(cpp,
 """            RunAsyncTranslate(*job->translate);
