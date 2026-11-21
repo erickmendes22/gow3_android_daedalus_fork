@@ -1486,8 +1486,12 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             const auto* regs_set = reinterpret_cast<const PM4CmdSetData*>(header);
             constexpr u32 cs_first = 0x200;
             const u32 cs_last = cs_first + sizeof(ComputeProgram) / sizeof(u32);
+            const u32 write_words = header->type3.NumWords() - 1;
             if (regs_set->reg_offset >= cs_first &&
-                regs_set->reg_offset <= cs_last) {
+                regs_set->reg_offset < cs_last &&
+                write_words <= cs_last - regs_set->reg_offset) {
+                // Do not skip the barrier for a register range that
+                // straddles private CS state and shared graphics state.
                 needs_drawpipe_barrier = false;
             }
         }
