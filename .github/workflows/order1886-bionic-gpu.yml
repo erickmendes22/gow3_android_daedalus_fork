@@ -267,9 +267,12 @@ jobs:
             echo "variant=release" >> "$GITHUB_OUTPUT"
             echo "Using persistent The Order 1886 signing certificate."
           else
-            echo "::warning::Configure ORDER1886_KEYSTORE_BASE64 and ORDER1886_KEYSTORE_PASSWORD repository secrets for upgradable signed APKs."
-            echo "target=assembleDebug" >> "$GITHUB_OUTPUT"
-            echo "variant=debug-ephemeral" >> "$GITHUB_OUTPUT"
+            # Build the same optimized Release variant without a private key.
+            # It will be aligned and signed OFFLINE with the retained key, not
+            # distributed as an incompatible/debuggable debug package.
+            echo "::notice::No repository signing secrets; staging unsigned Release for offline persistent signing."
+            echo "target=assembleRelease" >> "$GITHUB_OUTPUT"
+            echo "variant=release-unsigned" >> "$GITHUB_OUTPUT"
           fi
       - name: Build dedicated The Order 1886 Android APK (retry Maven failures)
         working-directory: android-launcher
@@ -303,18 +306,21 @@ jobs:
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
           unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
           unzip -Z1 "$apk" | grep -q 'assets/order1886-turnip-default.zip'
-          apk_sign_info=$("$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/apksigner" verify --print-certs "$apk")
-          echo "$apk_sign_info"
           if [[ "${{ steps.signing.outputs.variant }}" == "release" ]]; then
+            apk_sign_info=$("$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/apksigner" verify --print-certs "$apk")
+            echo "$apk_sign_info"
             # Certificate matching the persistent PKCS12 key saved offline.
             grep -Eiq 'd8210ae8d373970842640c611eee3280cf49929b257bb0ba3cc90240e7923663' <<< "$apk_sign_info"
+          else
+            test "${{ steps.signing.outputs.variant }}" = "release-unsigned"
+            echo "Unsigned Release APK requires offline persistent signing before installation."
           fi
           echo "Built The Order ARM64 APK: $apk"
           sha256sum "$apk"
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.25-${{ steps.signing.outputs.variant }}
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.30-${{ steps.signing.outputs.variant }}
           path: android-launcher/order1886/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
