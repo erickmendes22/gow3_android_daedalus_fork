@@ -540,7 +540,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         // workers and one capture worker by default, without losing async
         // compilation. For A/B measurements, GOW3_GPU_COMPILER_WORKERS=1..6
         // restores/reduces the pool; the original desktop policy is unchanged.
+        // This shader compiler runs inside the Android-targeted GPU overlay. Detect
+        // the target OS rather than a launcher environment variable which was
+        // missing in 0.1.30 (android=0, compile=4, capture=2 on Adreno 840).
+#if defined(__ANDROID__)
+        const bool android_port = true;
+#else
         const bool android_port = std::getenv("GOW3_ANDROID_PORT") != nullptr;
+#endif
         auto count = android_port ? 2u : std::clamp(Gow3Threads::Available() / 2, 1u, 6u);
         const auto capture_count = android_port ? 1u :
             std::min(2u, std::max(1u, Gow3Threads::Available() / 4));
