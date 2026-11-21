@@ -40,7 +40,8 @@ class TestSotcArm64Aot(unittest.TestCase):
         self.root=Path(self.tmp.name)
         self.boot=self.root/"boot-linked.bin"
         self.patches=self.root/"patches.bin"
-        self.original=bytes(range(128))
+        self.payload=bytes(range(128))
+        self.original=b"\0"*aot.PATCH_BASE+self.payload
         image_fixture(self.boot,self.original)
         patch_fixture(self.patches,[(12,b"\xaa\xbb"),(63,b"\xcc")])
 
@@ -60,12 +61,12 @@ class TestSotcArm64Aot(unittest.TestCase):
         info=aot.stage_native_boot(self.boot,self.patches,out)
         self.assertEqual(info["patch_count"],2)
         data=out.read_bytes()
-        i=info["table_bytes"]
+        i=info["table_bytes"]+aot.PATCH_BASE
         self.assertEqual(data[i+12:i+14],b"\xaa\xbb")
         self.assertEqual(data[i+63],0xcc)
-        self.assertEqual(data[i:i+12],self.original[:12])
-        self.assertEqual(self.boot.read_bytes()[i:i+128],self.original)
-        self.assertEqual(aot.boot_info(out)["image_bytes"],128)
+        self.assertEqual(data[i:i+12],self.payload[:12])
+        self.assertEqual(self.boot.read_bytes()[i:i+128],self.payload)
+        self.assertEqual(aot.boot_info(out)["image_bytes"],aot.PATCH_BASE+128)
         self.assertEqual(info["patched_image_sha256"],hashlib.sha256(data[i:]).hexdigest())
 
     def test_reject_overlap_and_overflow(self):
