@@ -1,0 +1,48 @@
+name: SotC ARM64 strict AOT native CPU (no FEX, no game uploads)
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths:
+      - 'ports/sotc/android/aot/port_guest_context.py'
+      - 'ports/sotc/android/aot/build_native_cpu.sh'
+      - '.github/workflows/sotc-arm64-aot-cpu-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-aot-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate preinstalled Android NDK
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?Android SDK missing}"
+          test -d "$ANDROID_HOME/ndk"
+          ndk=$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          test -n "$ndk"
+          test -f "$ndk/build/cmake/android.toolchain.cmake"
+          echo "SOTC_NDK=$ndk" >> "$GITHUB_ENV"
+          echo "Using Android NDK: $ndk"
+      - name: Build native ARM64 CPU using pinned Bloodborne AOT
+        run: |
+          set -euo pipefail
+          bash ports/sotc/android/aot/build_native_cpu.sh
+      - name: Verify no FEX and AArch64 ABI
+        run: |
+          set -euo pipefail
+          readelf -h out/sotc-arm64-aot/libgow3cpu.so | grep -F 'AArch64'
+          ! readelf -d out/sotc-arm64-aot/libgow3cpu.so | grep -Ei 'FEX|libFEXCore'
+          grep -F 'guest_context_get' out/sotc-arm64-aot/symbols.txt
+          grep -F 'guest_context_set' out/sotc-arm64-aot/symbols.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-arm64-aot-cpu-no-tso
+          path: |
+            out/sotc-arm64-aot/libgow3cpu.so
+            out/sotc-arm64-aot/libbbcpu.so
+            out/sotc-arm64-aot/native-cpu-sha256.txt
+            out/sotc-arm64-aot/symbols.txt
+          if-no-files-found: error
+          retention-days: 7
