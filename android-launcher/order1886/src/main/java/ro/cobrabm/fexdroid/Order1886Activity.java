@@ -45,16 +45,18 @@ public final class Order1886Activity extends Activity {
                              WHITE=0xffe9e9eb, MUTED=0xffa6abb3, EDGE=0xff39404b;
     private static final int REQ_PKG=111, REQ_UPDATE=112, REQ_FOLDER=113,
                              REQ_DRIVER=114, REQ_BOOT=115, REQ_EXPORT=116,
-                             REQ_STORAGE=117;
+                             REQ_STORAGE=117, REQ_SAVE_EXPORT=118, REQ_SAVE_IMPORT=119;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final AtomicBoolean working=new AtomicBoolean();
     private File base,gameDir,logFile,manualBoot;
     private Order1886PadBridge pad;
     private Order1886AudioBridge audio;
     private Order1886Content content;
+    private Order1886SaveManager saveManager;
     private Order1886Preparation preparer;
     private Order1886DriverStore drivers;
-    private FrameLayout screen, gameFrame, touchLayer;
+    private FrameLayout screen, gameFrame;
+    private Order1886TouchOverlay touchLayer;
     private LinearLayout mainUI,body,tabs;
     private SurfaceView surface;
     private TextView status,gameHud,gameTitle;
@@ -63,24 +65,33 @@ public final class Order1886Activity extends Activity {
     private boolean presentStarted, gameOpen;
     private int page=0, pendingStorage=0;
     private String statusText="Pronto para configurar o jogo.";
-    private int leftX=128,leftY=128,rightX=128,rightY=128;
-    private boolean virtualLeftActive,virtualRightActive;
-    private final Set<String> virtualKeys=new LinkedHashSet<>();
-    private long previousFrameCount;
+    private AlertDialog gameMenuDialog;
+    private float swipeX, swipeY;
+    private boolean swipeCandidate, swipeConsumed, editingControls;
+    private long previousFrameCount, previousFpsMs;
+    private float fpsSmoothed=-1f;
     private final Runnable fpsPoll=new Runnable(){
         @Override public void run(){
             if(!gameOpen)return;
             try {
                 long count=Order1886Present.framesIfLoaded();
-                long delta=Math.max(0,count-previousFrameCount);
+                long now=android.os.SystemClock.elapsedRealtime();
+                long elapsed=now-previousFpsMs;
+                if(previousFpsMs>0 && elapsed>=250 && count>=previousFrameCount){
+                    float fps=1000f*(count-previousFrameCount)/elapsed;
+                    fpsSmoothed=fpsSmoothed<0f?fps:(0.5f*fpsSmoothed+0.5f*fps);
+                    if(gameHud!=null)gameHud.setText(String.format(Locale.US,"%.1f FPS",fpsSmoothed));
+                }
                 previousFrameCount=count;
-                if(gameHud!=null)gameHud.setText("FPS "+delta+"  |  "+drivers.description());
+                previousFpsMs=now;
             }catch(Throwable ignored){}
-            main.postDelayed(this,1000);
+            main.postDelayed(this,500);
         }
     };
 
     private android.content.SharedPreferences prefs(){return getSharedPreferences("order1886",MODE_PRIVATE);}
+    private String tr(String text){return Order1886UiText.translate(this,text);}
+    private String[] translated(String[] texts){String[] v=new String[texts.length];for(int i=0;i<texts.length;i++)v[i]=tr(texts[i]);return v;}
     // The Order: v0.1.8 dependency-aware SRT flattening changes shader metadata; rebuild derived cache.
     // Touch only derived CUSA shader data, never game PKGs, saves or user settings.
     private static void deleteShaderCacheTree(File root,File file) throws IOException {
@@ -134,13 +145,13 @@ public final class Order1886Activity extends Activity {
         return d;
     }
     private TextView label(String text,int sp,int color,boolean bold){
-        TextView v=new TextView(this);v.setText(text);v.setTextColor(color);
+        TextView v=new TextView(this);v.setText(tr(text));v.setTextColor(color);
         v.setTextSize(sp);if(bold)v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         v.setIncludeFontPadding(false);return v;
     }
     private Button button(String name, boolean accent,View.OnClickListener listener){
         Button b=new Button(this);
-        b.setAllCaps(false);b.setText(name);b.setTextSize(13);
+        b.setAllCaps(false);b.setText(tr(name));b.setTextSize(13);
         b.setTextColor(accent?INK:WHITE);
         b.setBackground(shape(accent?GOLD:0xff272e38,accent?0:EDGE,9));
         b.setPadding(dp(10),dp(3),dp(10),dp(3));
@@ -163,7 +174,7 @@ public final class Order1886Activity extends Activity {
         c.setBackground(shape(PANEL,EDGE,12));
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.bottomMargin=dp(12);
         parent.addView(c,cp);
-        if(caption!=null){TextView t=label(caption.toUpperCase(Locale.ROOT),12,GOLD,true);c.addView(t);gap(c,9);}
+        if(caption!=null){TextView t=label(tr(caption).toUpperCase(Locale.ROOT),12,GOLD,true);c.addView(t);gap(c,9);}
         return c;
     }
     private void actions(LinearLayout target,Button... buttons){
@@ -178,9 +189,11 @@ public final class Order1886Activity extends Activity {
         target.addView(row);
     }
     private void show(String message){
+        message=tr(message);
         statusText=message;
+        final String translatedMessage=message;
         main.post(() -> {
-            if(status!=null)status.setText(message);
+            if(status!=null)status.setText(translatedMessage);
             if(!gameOpen&&page==0)updateHomeHeader();
         });
     }
@@ -194,9 +207,11 @@ public final class Order1886Activity extends Activity {
         manualBoot=new File(base,"manual-boot-linked.bin");
         logFile=new File(base,"last-runtime.log");
         content=new Order1886Content(this);
+        saveManager=new Order1886SaveManager(this,base);
         preparer=new Order1886Preparation(this,new File(base,"user"));
         drivers=new Order1886DriverStore(this);
         pad=new Order1886PadBridge(new File(base,"pad.state"));
+        pad.setRightStickZRZ(prefs().getBoolean("rightStickZRZ",false));
         audio=new Order1886AudioBridge(new File(base,"audio.fifo"));
         String path=prefs().getString("gameDir",null);
         if(path!=null){File f=new File(path);if(isGame(f))gameDir=f;}
@@ -235,30 +250,100 @@ public final class Order1886Activity extends Activity {
         screen.addView(gameFrame,fill);gameFrame.setVisibility(View.GONE);
         surface=new SurfaceView(this);
         gameFrame.addView(surface,new FrameLayout.LayoutParams(-1,-1));
-        touchLayer=new FrameLayout(this);
+        touchLayer=new Order1886TouchOverlay(this,pad);
         gameFrame.addView(touchLayer,new FrameLayout.LayoutParams(-1,-1));
-        gameHud=label("FPS —",12,GOLD,true);
-        gameHud.setBackground(shape(0xaa151b21,0,6));
-        gameHud.setPadding(dp(8),dp(5),dp(8),dp(5));
-        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT);
-        hp.setMargins(0,dp(10),dp(15),0);
-        gameFrame.addView(gameHud,hp);
-        Button back=button("☰  MENU",false,v->new AlertDialog.Builder(this)
-            .setTitle("The Order: 1886")
-            .setItems(new String[]{"Retomar","Mostrar/ocultar controles","Voltar ao launcher","Exportar log"},
-                      (dlg,i)->{
-                          if(i==1){
-                              boolean enabled=!prefs().getBoolean("onscreen",true);
-                              prefs().edit().putBoolean("onscreen",enabled).apply();
-                              setupTouchControls();
-                          }else if(i==2)stopGame();
-                          else if(i==3)exportLog();
-                          if(gameOpen)setGameImmersive(true);
-                      })
-            .show());
-        FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(dp(117),dp(43),Gravity.TOP|Gravity.LEFT);
-        bp.setMargins(dp(13),dp(10),0,0);gameFrame.addView(back,bp);
+        gameHud=label("— FPS",14,GOLD,true);
+        gameFrame.addView(gameHud,new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT));
+        applyHudStyle();
+        // Game menu is driven by dispatchTouchEvent and Android's system Back gesture.
+        // Do not overlay a permanent invisible button on the PlayStation controls.
         setContentView(screen);
+    }
+
+    private void applyHudStyle(){
+        if(gameHud==null)return;
+        int size=prefs().getInt("hudSize",1);
+        gameHud.setTextSize(size==0?12:size==2?18:15);
+        gameHud.setTextColor(GOLD);
+        gameHud.setBackground(shape(0xb5111720,0x775f5c51,8));
+        gameHud.setPadding(dp(9),dp(5),dp(9),dp(5));
+        int position=prefs().getInt("hudPosition",2);
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)gameHud.getLayoutParams();
+        params.gravity=Gravity.TOP|(position==0?Gravity.LEFT:
+            position==1?Gravity.CENTER_HORIZONTAL:Gravity.RIGHT);
+        params.leftMargin=position==0?dp(12):0;
+        params.rightMargin=position==2?dp(12):0;
+        params.topMargin=dp(10);
+        gameHud.setLayoutParams(params);
+        gameHud.setVisibility(prefs().getBoolean("hudVisible",true)?View.VISIBLE:View.GONE);
+    }
+    private void showGameMenu(){
+        if(!gameOpen || gameMenuDialog!=null && gameMenuDialog.isShowing())return;
+        if(touchLayer!=null)touchLayer.release();
+        final boolean controls=prefs().getBoolean("onscreen",true);
+        final boolean fill=prefs().getBoolean("fullscreen",false);
+        final boolean hud=prefs().getBoolean("hudVisible",true);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("THE ORDER 1886 / DAEDALUS")
+            .setItems(translated(new String[]{
+                "Retomar jogo",
+                controls?"Ocultar controles PlayStation":"Mostrar controles PlayStation",
+                "Editar posição dos controles",
+                "Restaurar layout clássico",
+                fill?"Enquadramento: Ajustar (Fit)":"Enquadramento: Preencher (Fill)",
+                hud?"Ocultar HUD de FPS":"Mostrar HUD de FPS",
+                "Exportar log",
+                "Voltar ao launcher / Sair do jogo"
+            }),(d,index)->{
+                switch(index){
+                    case 1:
+                        prefs().edit().putBoolean("onscreen",!controls).apply();
+                        setupTouchControls();
+                        break;
+                    case 2:
+                        prefs().edit().putBoolean("onscreen",true).apply();
+                        setupTouchControls();
+                        editingControls=true;
+                        touchLayer.edit(()->{editingControls=false;setupTouchControls();});
+                        break;
+                    case 3:
+                        touchLayer.resetLayout();
+                        setupTouchControls();
+                        break;
+                    case 4:
+                        prefs().edit().putBoolean("fullscreen",!fill).apply();
+                        if(presentStarted)Order1886Present.setFullscreen(!fill);
+                        break;
+                    case 5:
+                        prefs().edit().putBoolean("hudVisible",!hud).apply();
+                        applyHudStyle();
+                        break;
+                    case 6:
+                        exportLog();
+                        break;
+                    case 7:
+                        stopGame();
+                        break;
+                    default:break;
+                }
+            }).create();
+        gameMenuDialog=dialog;
+        dialog.setOnDismissListener(d->{
+            gameMenuDialog=null;
+            if(gameOpen)setGameImmersive(true);
+        });
+        dialog.show();
+        android.view.Window window=dialog.getWindow();
+        if(window!=null){
+            window.setBackgroundDrawable(shape(PANEL,EDGE,12));
+            window.setGravity(Gravity.RIGHT|Gravity.TOP);
+            window.setLayout(Math.min(dp(380),
+                (int)(getResources().getDisplayMetrics().widthPixels*.82f)),-1);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams params=window.getAttributes();
+            params.dimAmount=.55f;
+            window.setAttributes(params);
+        }
     }
     private void updateHomeHeader(){ /* Status updates stay in the fixed footer; do not rebuild during a job. */ }
     private void render(){
@@ -284,13 +369,26 @@ public final class Order1886Activity extends Activity {
               new File(dir,"sce_sys/param.sfo").isFile();
     }
     private File currentImage(){
-        if(preparer.prepared())return preparer.image();
-        return manualBoot.isFile()?manualBoot:null;
+        // Avoid booting a stale preparation when game folder/eboot/settings change.
+        String recorded=prefs().getString("preparedSignature","");
+        if(preparer.prepared()&&prepSignature().equals(recorded))return preparer.image();
+        return "manual".equals(recorded)&&manualBoot.isFile()?manualBoot:null;
+    }
+    private String disabledEffects(){
+        ArrayList<String> effects=new ArrayList<>();
+        if(prefs().getBoolean("disableMotionBlur",false))effects.add("motion_blur");
+        if(prefs().getBoolean("disableDepthOfField",false))effects.add("depth_of_field");
+        if(prefs().getBoolean("disableFilmGrain",false))effects.add("film_grain");
+        if(prefs().getBoolean("disableChromatic",false))effects.add("chromatic_aberration");
+        return String.join(",",effects);
     }
     private String prepSignature(){
         return prefs().getInt("fps",30)+":"+
             prefs().getString("aspect","original")+":"+
-            prefs().getInt("width",1920);
+            prefs().getInt("width",1920)+":"+disabledEffects()+":"+prefs().getString("readback","relaxed")+":"+prefs().getInt("language",1)+":"+
+            (gameDir==null?"none":gameDir.getAbsolutePath())+":"+
+            (gameDir==null?0:new File(gameDir,"eboot.bin").length())+":"+
+            (gameDir==null?0:new File(gameDir,"eboot.bin").lastModified());
     }
     private void renderHome(){
         LinearLayout headline=card(body,"Biblioteca de jogos");
@@ -325,7 +423,7 @@ public final class Order1886Activity extends Activity {
         TextView t=label(title,14,WHITE,false);
         box.addView(t,new LinearLayout.LayoutParams(0,-2,1f));
         Spinner spinner=new Spinner(this);
-        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,items);
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,translated(items));
         spinner.setAdapter(adapter);spinner.setSelection(selected);
         spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
             private boolean initialized;
@@ -342,7 +440,7 @@ public final class Order1886Activity extends Activity {
         show("Configuração salva. Prepare novamente o jogo se mudou FPS, proporção ou resolução.");
     }
     private void toggle(LinearLayout card,String label,String key,boolean def){
-        CheckBox box=new CheckBox(this);box.setText(label);box.setTextColor(WHITE);
+        CheckBox box=new CheckBox(this);box.setText(tr(label));box.setTextColor(WHITE);
         box.setChecked(prefs().getBoolean(key,def));
         box.setOnCheckedChangeListener((b,checked)->{
             prefs().edit().putBoolean(key,checked).apply();selectionChange();
@@ -351,10 +449,14 @@ public final class Order1886Activity extends Activity {
     }
     private void renderGraphics(){
         LinearLayout c=card(body,"Configurações reais de vídeo");
+        String uiLang=prefs().getString("appLanguage","auto");
+        selectSpinner(c,"Idioma do aplicativo",new String[]{"Automático (sistema)","Português (Brasil)","English"},
+            "pt".equals(uiLang)?1:"en".equals(uiLang)?2:0,
+            n->{prefs().edit().putString("appLanguage",n==1?"pt":n==2?"en":"auto").apply();render();});
         String[] fps={"30 FPS (padrão)","60 FPS (experimental)"};
         selectSpinner(c,"Taxa do jogo",fps,prefs().getInt("fps",30)==60?1:0,
             n->{prefs().edit().putInt("fps",n==0?30:60).apply();selectionChange();});
-        String[] widths={"1920 (nativo)","1600","1280"};
+        String[] widths={"1920 (nativo)","1600 (900p)","1280 (720p)"};
         int width=prefs().getInt("width",1920);
         selectSpinner(c,"Largura de renderização",widths,width==1280?2:width==1600?1:0,
             n->{prefs().edit().putInt("width",n==0?1920:n==1?1600:1280).apply();selectionChange();});
@@ -378,18 +480,95 @@ public final class Order1886Activity extends Activity {
         selectSpinner(c,"Frames adiantados",new String[]{"0 (sem limite)","1 (padrão)","2"},
             prefs().getInt("framesQueued",1),
             n->{prefs().edit().putInt("framesQueued",n).apply();selectionChange();});
-        selectSpinner(c,"Idioma do jogo",new String[]{"Inglês","Português (Brasil)","Português (Portugal)"},
-            prefs().getInt("language",1)==17?1:prefs().getInt("language",1)==7?2:0,
-            n->{prefs().edit().putInt("language",n==1?17:n==2?7:1).apply();selectionChange();});
+        selectSpinner(c,"Idioma do jogo",new String[]{"日本語","English (United States)","Français (France)","Español (España)","Deutsch","Italiano","Nederlands","Português (Portugal)","Русский","한국어","繁體中文","简体中文","Suomi","Svenska","Dansk","Norsk","Polski","Português (Brasil)","English (United Kingdom)","Türkçe","Español (Latinoamérica)","العربية","Français (Canada)","Čeština","Magyar","Ελληνικά","Română","ไทย","Tiếng Việt","Bahasa Indonesia"},
+            Math.max(0,Math.min(29,prefs().getInt("language",1))),
+            n->{prefs().edit().putInt("language",n).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
-        toggle(c,"Shaders assíncronos", "asyncShaders",true);
-        toggle(c,"Preencher tela (OFF = preservar proporção original)","fullscreen",false);
-        toggle(c,"Controles virtuais","onscreen",true);
-        selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Normal","Grande"},
-            Math.max(0,Math.min(2,prefs().getInt("controlSize",0))),
-            n->{prefs().edit().putInt("controlSize",n).apply();selectionChange();});
+        toggle(c,"Shaders assíncronos (não descartar draws)", "asyncShaders",true);
+        toggle(c,"FEX: desativar TSO (experimental)", "fexDisableTso",false);
+        line(c,"TSO do FEX", "Padrão: ativado para preservar a sincronização x86 entre threads. "+
+            "Desativar pode melhorar desempenho ou causar travamentos e falhas; reinicie o jogo após mudar.");
+        toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
+               "enginePerf",true);
+        line(c,"Redução de GPU compatível",
+            "Mantém o desenho de sombras para evitar o crash da versão 0.1.21; "+
+            "a união de passes Vulkan permanece disponível.");
+        toggle(c,"VRS 2×2 em geometria opaca (sem VRS 4×4)", "vrs2x2",true);
+        line(c,"VRS 2×2", "MRT em resolução cheia e geometria opaca com profundidade 640x360; shaders com descarte, cobertura, stencil e blend mantêm 1×1.");
+        toggle(c,"Reduzir GPU: juntar passes após a limpeza de imagem",
+               "gpuTileMerge",true);
+        toggle(c,"Reduzir GPU: limpar attachments sem fechar passe (Adreno)",
+               "gpuInlineClear",true);
+        toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",
+               "gpuMeters",true);
+        line(c,"Medição de gargalos",
+            "O Vulkan mede um frame a cada 90: sombras, G-buffer, cena, pós, "+
+            "compute e cópias. Resultados de GPU e CPU são agregados no log "+
+            "sem criar registros por draw nem esperar a GPU responder.");
+        line(c,"Passes Vulkan móveis",
+            "Quando um render target acabou de ser limpo, o próximo draw no mesmo "+
+            "alvo não precisa encerrar o passe e recarregar os tiles; só funde "+
+            "se o próximo draw não pedir nova limpeza.");
+        line(c,"Motor do jogo: perfil experimental",
+            "Usa opções já existentes no eboot 01.02 para reduzir MSAA e simulação de tecido. "+
+            "Desative caso apareçam falhas; o ganho de GPU precisa ser testado.");
+        toggle(c,"Preencher tela Android (Fill; desativado = Fit)","fullscreen",false);
+        CheckBox showTouch=new CheckBox(this);
+        showTouch.setText(tr("Controles PlayStation na tela"));showTouch.setTextColor(WHITE);
+        showTouch.setChecked(prefs().getBoolean("onscreen",true));
+        showTouch.setOnCheckedChangeListener((v,enabled)->{
+            prefs().edit().putBoolean("onscreen",enabled).apply();
+            setupTouchControls();
+        });
+        c.addView(showTouch);
+        toggle(c,"Analógico direito: usar Z/RZ (controle físico)","rightStickZRZ",false);
+        selectSpinner(c,"Tamanho dos controles",new String[]{"Compacto","Clássico","Grande"},
+            Math.max(0,Math.min(2,prefs().getInt("controlSize",1))),
+            n->{
+                prefs().edit().putInt("controlSize",n).apply();
+                if(touchLayer!=null)touchLayer.invalidate();
+            });
+        final int[] alphaLevels={50,65,78,90,100};
+        int savedOpacity=prefs().getInt("controlOpacity",78), alphaIndex=2;
+        for(int i=0;i<alphaLevels.length;i++)if(savedOpacity==alphaLevels[i])alphaIndex=i;
+        selectSpinner(c,"Opacidade dos controles",
+            new String[]{"50%","65%","78%","90%","100%"},alphaIndex,
+            n->{
+                prefs().edit().putInt("controlOpacity",alphaLevels[n]).apply();
+                if(touchLayer!=null)touchLayer.setAlpha(alphaLevels[n]/100f);
+            });
+
+        selectSpinner(c,"Posição HUD FPS",
+            new String[]{"Topo esquerdo","Topo central","Topo direito"},
+            Math.max(0,Math.min(2,prefs().getInt("hudPosition",2))),
+            n->{prefs().edit().putInt("hudPosition",n).apply();applyHudStyle();});
+        selectSpinner(c,"Tamanho HUD FPS",new String[]{"Pequeno","Normal","Grande"},
+            Math.max(0,Math.min(2,prefs().getInt("hudSize",1))),
+            n->{prefs().edit().putInt("hudSize",n).apply();applyHudStyle();});
+        CheckBox showHud=new CheckBox(this);
+        showHud.setText(tr("Mostrar HUD FPS"));showHud.setTextColor(WHITE);
+        showHud.setChecked(prefs().getBoolean("hudVisible",true));
+        showHud.setOnCheckedChangeListener((b,enabled)->{
+            prefs().edit().putBoolean("hudVisible",enabled).apply();applyHudStyle();
+        });
+        c.addView(showHud);
         toggle(c,"Aquecimento de shaders em segundo plano (experimental)","warmup",false);
         actions(c,button("Aplicar e preparar jogo",true,v->prepareGame()));
+        LinearLayout patches=card(body,"Patches gráficos 01.02");
+        line(patches,"Validados no código da edição enviada",
+            "O preparador verifica os bytes da versão selecionada e modifica somente a imagem derivada; o eboot.bin nunca é alterado.");
+        line(patches,"Patches Vulkan de desempenho",
+            "1 e 2 são otimizações internas do renderizador, aplicadas sem alterar a resolução. "+
+            "A terceira tenta trocar a conversão do quadro por um blit direto quando os formatos são compatíveis.");
+        toggle(patches,"Patch 1: ignorar texturas de luzes inativas","gpuLightGuard",true);
+        toggle(patches,"Patch 2: remover limpeza redundante da imagem","gpuPpNoClear",true);
+        toggle(patches,"Patch 3: blit BGRA para RGBA sem shader (se compatível)","gpuFastBgraBlit",true);
+        toggle(patches,"Desativar motion blur","disableMotionBlur",false);
+        toggle(patches,"Desativar profundidade de campo","disableDepthOfField",false);
+        toggle(patches,"Desativar film grain","disableFilmGrain",false);
+        toggle(patches,"Desativar aberração cromática","disableChromatic",false);
+        line(patches,"60 FPS, 16:9 e resolução",
+            "Já disponíveis acima. 60 FPS pode causar QTEs travados nos capítulos 6 e 9.");
         LinearLayout note=card(body,"Sobre as configurações");
         line(note,"O jogo aplica patches verificados na imagem preparada.",
             "30/60 FPS, proporção e resolução exigem nova preparação. "+
@@ -400,12 +579,19 @@ public final class Order1886Activity extends Activity {
     private void renderDrivers(){
         LinearLayout c=card(body,"Driver Vulkan");
         line(c,"Driver atual: "+drivers.description(),
-            "Sistema ou Turnip personalizado. Arquivos ZIP AdrenoTools com meta.json; "+
-            "pacotes incompatíveis com ARM64 são recusados.");
-        actions(c,button("Usar driver do sistema",false,v->{
+            "A Turnip GameHub 26.3 + DD GMEM + PWR_MAX (Experimental) acompanha o APK "+
+            "e é usada automaticamente em Adreno. Outras GPUs usam o Vulkan do sistema.");
+        actions(c,button("Usar Turnip 26.3 (padrão)",true,v->{
+            try{
+                drivers.select(Order1886DriverStore.BUNDLED);
+                render();
+                show("Turnip GameHub 26.3 selecionada. Incluída no APK.");
+            }catch(Exception e){show("Driver indisponível: "+e.getMessage());}
+        }),button("Usar sistema",false,v->{
             try{drivers.select("system");render();show("Vulkan do sistema selecionado.");}
             catch(Exception e){show(e.getMessage());}
-        }),button("Importar Turnip ZIP",true,v->pickDriver()));
+        }));
+        actions(c,button("Importar outro driver ZIP",false,v->pickDriver()));
         List<DriverArchive.Installed> list=drivers.installed();
         for(DriverArchive.Installed item:list){
             LinearLayout row=horizontal();row.setPadding(0,dp(8),0,dp(4));
@@ -419,9 +605,9 @@ public final class Order1886Activity extends Activity {
         }
         LinearLayout note=card(body,"Compatibilidade do driver");
         line(note,"O driver é carregado diretamente pelo runtime Vulkan.",
-            "Para Snapdragon/Adreno, importe uma Turnip compatível com Android e com a sua GPU. "+
-            "A seleção é persistida e aplicada na próxima inicialização. "+
-            "Se falhar, volte para Driver do sistema.");
+            "GameHub Turnip 26.3 experimental é o padrão no Snapdragon/Adreno. "+
+            "Outros drivers podem ser importados; a escolha manual permanece salva. "+
+            "Se houver falha de compatibilidade, selecione o Vulkan do sistema.");
     }
     private void renderTools(){
         LinearLayout c=card(body,"Arquivos e diagnóstico");
@@ -429,6 +615,10 @@ public final class Order1886Activity extends Activity {
             "liborder1886_probe.so").isFile()?"Bibliotecas nativas presentes":"Bibliotecas nativas ausentes");
         actions(c,button("Importar boot-linked.bin",false,v->selectFile(REQ_BOOT)),
                   button("Exportar log",false,v->exportLog()));
+        actions(c,button("Exportar saves ZIP",true,v->exportSaves()),
+                  button("Importar saves ZIP",false,v->importSaves()));
+        line(c,"Backup de saves","Inclui todos os usuarios, identificadores CUSA, metadados .sce_sys e SaveDataMemory. "
+            +"Importe ou exporte com o jogo fechado; arquivos existentes com mesmo nome serao substituidos.");
         actions(c,button("Diagnóstico do runtime",true,v->diagnose()),
                   button("Preparar no celular",false,v->prepareGame()));
         if(gameDir!=null)line(c,"Jogo selecionado",gameDir.getAbsolutePath());
@@ -486,10 +676,13 @@ public final class Order1886Activity extends Activity {
                 try {
                     File dir=Order1886Content.localDocument(this,uri,true);
                     if(!isGame(dir))throw new IOException("Pasta sem eboot.bin ou sce_sys/param.sfo.");
-                    gameDir=dir;
-                    prefs().edit().putString("gameDir",dir.getAbsolutePath())
-                        .remove("preparedSignature").apply();
-                    show("Pasta selecionada: "+dir.getName()+". Prepare o jogo para iniciar.");
+                    runTask("Pasta selecionada. Preparação automática iniciada...",()->{
+                        gameDir=dir;
+                        if(!prefs().edit().putString("gameDir",dir.getAbsolutePath())
+                                .remove("preparedSignature").commit())
+                            throw new IOException("Falha ao salvar pasta selecionada");
+                        doPrepare();
+                    });
                     page=0;render();
                 }catch(Exception e){show("Pasta inválida: "+e.getMessage());}
                 break;
@@ -503,7 +696,9 @@ public final class Order1886Activity extends Activity {
                 runTask(update?"Instalando atualização PKG...":"Instalando jogo PKG...",()->{
                     File installed=content.install(uri,update,gameDir,this::show);
                     gameDir=installed;
-                    prefs().edit().putString("gameDir",installed.getAbsolutePath()).remove("preparedSignature").apply();
+                    if(!prefs().edit().putString("gameDir",installed.getAbsolutePath())
+                            .remove("preparedSignature").commit())
+                        throw new IOException("Falha ao salvar PKG instalado");
                     show("PKG instalado. Preparando imagem do jogo...");
                     doPrepare();
                 });
@@ -526,6 +721,18 @@ public final class Order1886Activity extends Activity {
                     show("Imagem preparada importada: "+(manualBoot.length()/1048576)+" MB");
                 });
                 break;
+            case REQ_SAVE_EXPORT:
+                if(gameOpen){show("Feche o jogo antes de exportar saves.");break;}
+                runTask("Exportando saves ZIP...",()->{
+                    saveManager.exportTo(uri);show("Saves exportados com metadados.");
+                });
+                break;
+            case REQ_SAVE_IMPORT:
+                if(gameOpen){show("Feche o jogo antes de importar saves.");break;}
+                runTask("Importando saves ZIP...",()->{
+                    saveManager.importFrom(uri);show("Saves e metadados importados.");
+                });
+                break;
             case REQ_EXPORT:
                 try(InputStream in=new FileInputStream(logFile);
                     OutputStream out=getContentResolver().openOutputStream(uri)){
@@ -538,13 +745,22 @@ public final class Order1886Activity extends Activity {
         }
     }
     private interface Work{void perform() throws Exception;}
-    private void runTask(String beginning,Work task){
+    private void runTask(String beginning,Work task){runTask(beginning,task,null);}
+    private void runTask(String beginning,Work task,Runnable afterSuccess){
         if(!working.compareAndSet(false,true)){show("Operação anterior ainda ativa.");return;}
         show(beginning);
         new Thread(()->{
-            try{task.perform();}
+            boolean succeeded=false;
+            try{task.perform();succeeded=true;}
             catch(Exception e){writeError(e);show("Falha: "+e.getMessage());}
-            finally{working.set(false);main.post(this::render);}
+            finally{
+                working.set(false);
+                final boolean success=succeeded;
+                main.post(()->{
+                    render();
+                    if(success&&afterSuccess!=null)afterSuccess.run();
+                });
+            }
         },"order1886-task").start();
     }
     private void writeError(Exception e){
@@ -561,13 +777,33 @@ public final class Order1886Activity extends Activity {
     }
     private void doPrepare()throws Exception{
         if(gameDir==null)throw new IOException("Nenhum jogo selecionado");
+        // The default Adreno Turnip is installed from the signed APK before running.
+        if(Order1886DriverStore.BUNDLED.equals(drivers.selected())){
+            show("Instalando Turnip GameHub 26.3 embutida...");
+            drivers.ensureBundledDefault();
+        }
         preparer.prepare(gameDir,prefs().getInt("fps",30),
                 prefs().getString("aspect","original"),prefs().getInt("width",1920),
                 prefs().getString("readback","relaxed"),
-                prefs().getInt("language",1),this::show);
+                prefs().getInt("language",1),disabledEffects(),this::show);
         if(!prefs().edit().putString("preparedSignature",prepSignature()).commit())
             throw new IOException("Não foi possível salvar perfil preparado");
         show("Jogo preparado no Android. Pronto para tentar iniciar.");
+    }
+    private void exportSaves(){
+        if(gameOpen||working.get()){show("Feche o jogo e termine a operacao anterior.");return;}
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
+        i.putExtra(Intent.EXTRA_TITLE,"TheOrder1886-saves.zip");
+        i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(i,REQ_SAVE_EXPORT);
+    }
+    private void importSaves(){
+        if(gameOpen||working.get()){show("Feche o jogo e termine a operacao anterior.");return;}
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(i,REQ_SAVE_IMPORT);
     }
     private void exportLog(){
         if(!logFile.isFile()){show("Nenhum log gerado.");return;}
@@ -594,13 +830,25 @@ public final class Order1886Activity extends Activity {
         env.put("ORDER1886_READBACKS",Integer.toString(
             "precise".equals(prefs().getString("readback","relaxed"))?2:
             "selective".equals(prefs().getString("readback","relaxed"))?3:1));
+        env.put("ORDER1886_VRS_2X2",prefs().getBoolean("vrs2x2",true)?"1":"0");
         env.put("ORDER1886_VSYNC",prefs().getBoolean("vsync",false)?"1":"0");
         env.put("ORDER1886_BACKGROUND_WARMUP",prefs().getBoolean("warmup",false)?"1":"0");
         env.put("ORDER1886_DISPLAY_HZ",
             Integer.toString(Math.round(getWindowManager().getDefaultDisplay().getRefreshRate())));
         if(surface!=null&&surface.getWidth()>=320&&surface.getHeight()>=180) {
-            env.put("ORDER1886_SCREEN_W",Integer.toString(surface.getWidth()));
-            env.put("ORDER1886_SCREEN_H",Integer.toString(surface.getHeight()));
+            final int physicalW=surface.getWidth(), physicalH=surface.getHeight();
+            // The selected render resolution also determines the Android AHardwareBuffer
+            // resolution. SurfaceFlinger alone upscales from e.g. 1280x720 to the device.
+            // Preserve the 16:9 buffer (including the game's cinematic letterboxing);
+            // Fit/Fill is still handled by order1886present through ASurfaceTransaction.
+            final int[] output=Order1886OutputSize.forSurface(
+                physicalW,physicalH,prefs().getInt("width",1920));
+            env.put("ORDER1886_SCREEN_W",Integer.toString(output[0]));
+            env.put("ORDER1886_SCREEN_H",Integer.toString(output[1]));
+            android.util.Log.i("TheOrder1886","AHardwareBuffer "+
+                output[0]+"x"+output[1]+"; Android compositor to "+
+                physicalW+"x"+physicalH+" (render width "+
+                prefs().getInt("width",1920)+")");
         }
         env.put("ORDER1886_GAME_PROFILE","order1886");
         Order1886LauncherConfig.environment(this,new File(base,"user"),env);
@@ -626,10 +874,8 @@ public final class Order1886Activity extends Activity {
         if(working.get()||gameOpen){show("Termine a tarefa anterior.");return;}
         if(gameDir==null||!isGame(gameDir)){show("Selecione ou instale o jogo.");return;}
         File image=currentImage();
-        if(image==null){show("Prepare o jogo no Android antes de iniciar.");return;}
-        String signature=prefs().getString("preparedSignature","");
-        if(preparer.prepared()&&!prepSignature().equals(signature)){
-            show("Configurações mudaram. Prepare novamente o jogo antes de iniciar.");
+        if(image==null){
+            runTask("Preparando automaticamente antes de iniciar...",this::doPrepare,this::startGame);
             return;
         }
         if(!filePermission()&&gameDir.getAbsolutePath().startsWith("/storage/emulated")){
@@ -638,9 +884,22 @@ public final class Order1886Activity extends Activity {
         mainUI.setVisibility(View.GONE);
         gameFrame.setVisibility(View.VISIBLE);
         gameOpen=true;stopped=false;
+        if(Build.VERSION.SDK_INT>=29)gameFrame.post(()->{
+            if(!gameOpen || gameFrame.getWidth()==0)return;
+            int w=gameFrame.getWidth(), h=gameFrame.getHeight();
+            // Keep a 180dp mid-right band free of the system Back interceptor.
+            gameFrame.setSystemGestureExclusionRects(
+                Collections.singletonList(new android.graphics.Rect(
+                    w-dp(38),Math.max(0,h/2-dp(90)),w,
+                    Math.min(h,h/2+dp(90)))));
+        });
         setGameImmersive(true);
         setupTouchControls();
-        previousFrameCount=0;main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,1000);
+        applyHudStyle();
+        previousFrameCount=0;previousFpsMs=0;
+        fpsSmoothed=-1f;
+        if(gameHud!=null)gameHud.setText("— FPS");
+        main.removeCallbacks(fpsPoll);main.postDelayed(fpsPoll,500);
         main.postDelayed(()->{
             if(!gameOpen)return;
             if(!surface.getHolder().getSurface().isValid()){
@@ -655,6 +914,7 @@ public final class Order1886Activity extends Activity {
                 if(!msg.startsWith("bridge running:"))throw new IOException(msg);
                 presentStarted=true;
                 pad.reset();
+                pad.setRightStickZRZ(prefs().getBoolean("rightStickZRZ",false));
                 launchNative(image);
             }catch(Throwable ex){show("Erro ao iniciar display: "+ex);stopGame();}
         },160);
@@ -674,6 +934,8 @@ public final class Order1886Activity extends Activity {
                 try(BufferedReader input=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
                     BufferedWriter log=new BufferedWriter(new OutputStreamWriter(new FileOutputStream(logFile),StandardCharsets.UTF_8))){
                     String line;int n=0;
+                    try {log.write("ORDER1886_PREPARED_MANIFEST "+preparer.manifestSummary());log.newLine();}
+                    catch(Exception ex){log.write("ORDER1886_PREPARED_MANIFEST unavailable: "+ex.getMessage());log.newLine();}
                     while((line=input.readLine())!=null){
                         log.write(line);log.newLine();if(++n%30==0){log.flush();show("Log "+n+": "+line);}
                     }
@@ -687,115 +949,14 @@ public final class Order1886Activity extends Activity {
             }
         },"order1886-runtime").start();
     }
-    private int controlSize(int dpSize) {
-        int selected=prefs().getInt("controlSize",0);
-        float scale=selected==1?1.15f:selected==2?1.30f:1.0f;
-        return dp(dpSize*scale);
-    }
-    // Compact PS4 layout with unobstructed central gameplay and menu buttons.
+    // A single canvas-based PlayStation overlay replaces 18 independent Android buttons.
     private void setupTouchControls(){
-        touchLayer.removeAllViews();
-        virtualKeys.clear();
-        leftX=leftY=rightX=rightY=128;
-        virtualLeftActive=virtualRightActive=false;
-        sendVirtual();
-        if(!prefs().getBoolean("onscreen",true))return;
-        addStick(true,Gravity.BOTTOM|Gravity.LEFT,dp(17),dp(16));
-        addStick(false,Gravity.BOTTOM|Gravity.RIGHT,dp(17),dp(16));
-        addTouchButton("L2","l2",Gravity.LEFT|Gravity.TOP,dp(16),dp(60));
-        addTouchButton("L1","l1",Gravity.LEFT|Gravity.TOP,dp(62),dp(60));
-        addTouchButton("R1","r1",Gravity.RIGHT|Gravity.TOP,dp(62),dp(60));
-        addTouchButton("R2","r2",Gravity.RIGHT|Gravity.TOP,dp(16),dp(60));
-        addTouchButton("△","triangle",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(127));
-        addTouchButton("○","circle",Gravity.RIGHT|Gravity.BOTTOM,dp(115),dp(86));
-        addTouchButton("×","cross",Gravity.RIGHT|Gravity.BOTTOM,dp(160),dp(45));
-        addTouchButton("□","square",Gravity.RIGHT|Gravity.BOTTOM,dp(205),dp(86));
-        addTouchButton("↑","up",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(123));
-        addTouchButton("↓","down",Gravity.LEFT|Gravity.BOTTOM,dp(164),dp(41));
-        addTouchButton("←","left",Gravity.LEFT|Gravity.BOTTOM,dp(123),dp(82));
-        addTouchButton("→","right",Gravity.LEFT|Gravity.BOTTOM,dp(205),dp(82));
-        addTouchButton("L3","l3",Gravity.LEFT|Gravity.BOTTOM,dp(107),dp(14));
-        addTouchButton("R3","r3",Gravity.RIGHT|Gravity.BOTTOM,dp(107),dp(14));
-        addTouchButton("OPTIONS","options",Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,0,dp(13));
-        addTouchButton("TOUCH","touchpad",Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,dp(12));
-    }
-    private void addStick(boolean left,int gravity,int marginX,int marginY){
-        TextView stick=label(left?"L":"R",16,0xffe0c58b,true);
-        stick.setGravity(Gravity.CENTER);
-        stick.setBackground(shape(0x66374049,0x999fa5ad,99));
-        stick.setAlpha(0.57f);
-        int diameter=controlSize(76);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(diameter,diameter,gravity);
-        if(left)p.leftMargin=marginX;else p.rightMargin=marginX;
-        p.bottomMargin=marginY;
-        touchLayer.addView(stick,p);
-        stick.setOnTouchListener((view,event)->{
-            switch(event.getActionMasked()){
-                case MotionEvent.ACTION_DOWN:
-                    view.setAlpha(0.90f);
-                case MotionEvent.ACTION_MOVE: {
-                    float x=Math.max(-1f,Math.min(1f,(event.getX()-view.getWidth()/2f)/(view.getWidth()*.37f)));
-                    float y=Math.max(-1f,Math.min(1f,(event.getY()-view.getHeight()/2f)/(view.getHeight()*.37f)));
-                    int ax=Math.round((x+1f)*127.5f),ay=Math.round((y+1f)*127.5f);
-                    if(left){leftX=ax;leftY=ay;virtualLeftActive=true;}
-                    else{rightX=ax;rightY=ay;virtualRightActive=true;}
-                    sendVirtual();
-                    return true;
-                }
-                case MotionEvent.ACTION_CANCEL:
-                case MotionEvent.ACTION_UP:
-                    view.setAlpha(0.57f);
-                    if(left){leftX=leftY=128;virtualLeftActive=false;}
-                    else{rightX=rightY=128;virtualRightActive=false;}
-                    sendVirtual();
-                    return true;
-            }
-            return true;
-        });
-    }
-    private void addTouchButton(String text,String token,int gravity,int marginX,int marginY){
-        boolean wide=text.length()>3;
-        int width=controlSize(wide?56:38);
-        if(text.equals("L3")||text.equals("R3"))width=controlSize(32);
-        TextView view=label(text,wide?10:15,WHITE,true);
-        view.setGravity(Gravity.CENTER);
-        view.setBackground(shape(0x77404956,0x999fa5ad,40));
-        view.setAlpha(0.65f);
-        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,controlSize(38),gravity);
-        if((gravity&Gravity.RIGHT)==Gravity.RIGHT)p.rightMargin=marginX;
-        else if((gravity&Gravity.LEFT)==Gravity.LEFT)p.leftMargin=marginX;
-        if((gravity&Gravity.BOTTOM)==Gravity.BOTTOM)p.bottomMargin=marginY;
-        else p.topMargin=marginY;
-        touchLayer.addView(view,p);
-        final long[] pressedAt={0};
-        final int[] generation={0};
-        view.setOnTouchListener((v,event)->{
-            int action=event.getActionMasked();
-            if(action==MotionEvent.ACTION_DOWN){
-                generation[0]++;
-                pressedAt[0]=android.os.SystemClock.uptimeMillis();
-                v.setAlpha(0.95f);
-                virtualKeys.add(token);
-                sendVirtual();
-            }else if(action==MotionEvent.ACTION_UP){
-                v.setAlpha(0.65f);
-                final int sequence=generation[0];
-                long held=android.os.SystemClock.uptimeMillis()-pressedAt[0];
-                main.postDelayed(()->{
-                    if(generation[0]==sequence){virtualKeys.remove(token);sendVirtual();}
-                },Math.max(0,90-held));
-            }else if(action==MotionEvent.ACTION_CANCEL){
-                generation[0]++;
-                v.setAlpha(0.65f);
-                virtualKeys.remove(token);
-                sendVirtual();
-            }
-            return true;
-        });
-    }
-    private void sendVirtual(){
-        if(pad!=null)pad.virtual(new LinkedHashSet<>(virtualKeys),leftX,leftY,rightX,rightY,
-                virtualLeftActive,virtualRightActive,0,0);
+        if(touchLayer==null)return;
+        touchLayer.release();
+        touchLayer.setAlpha(Math.max(.35f,Math.min(1f,
+            prefs().getInt("controlOpacity",78)/100f)));
+        touchLayer.setVisibility(prefs().getBoolean("onscreen",true)?View.VISIBLE:View.GONE);
+        touchLayer.invalidate();
     }
     private void stopGame(){
         stopped=true;
@@ -807,10 +968,52 @@ public final class Order1886Activity extends Activity {
             try{Order1886Present.stop();}catch(Throwable ignored){}
             presentStarted=false;
         }
-        virtualKeys.clear();main.removeCallbacks(fpsPoll);
+        if(gameMenuDialog!=null){gameMenuDialog.dismiss();gameMenuDialog=null;}
+        if(touchLayer!=null)touchLayer.release();
+        editingControls=false;swipeCandidate=false;swipeConsumed=false;
+        main.removeCallbacks(fpsPoll);
         gameOpen=false;gameFrame.setVisibility(View.GONE);mainUI.setVisibility(View.VISIBLE);
         setGameImmersive(false);
         render();
+    }
+    @Override public boolean dispatchTouchEvent(MotionEvent event){
+        // Reversed from TLOU's left-edge swipe: drag from right to left.
+        // Observe before the overlay receives input; cancel its active touch
+        // sequence if the gesture becomes a menu swipe.
+        if(!gameOpen || editingControls)return super.dispatchTouchEvent(event);
+        final int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN){
+            swipeX=event.getX();swipeY=event.getY();
+            swipeCandidate=event.getPointerCount()==1 &&
+                swipeX>=gameFrame.getWidth()-dp(36);
+            swipeConsumed=false;
+        }else if(action==MotionEvent.ACTION_POINTER_DOWN){
+            swipeCandidate=false;
+        }else if(action==MotionEvent.ACTION_MOVE && swipeCandidate &&
+                event.getPointerCount()==1 && !swipeConsumed){
+            float dx=swipeX-event.getX();
+            float dy=Math.abs(event.getY()-swipeY);
+            if(dy>dp(52) || dx < -dp(20)){
+                swipeCandidate=false;
+            }else if(dx>=dp(62) && dx>dy*1.5f){
+                swipeCandidate=false;
+                swipeConsumed=true;
+                MotionEvent cancel=MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                showGameMenu();
+                return true;
+            }
+        }
+        if(swipeConsumed){
+            if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL)
+                swipeConsumed=false;
+            return true;
+        }
+        if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL)
+            swipeCandidate=false;
+        return super.dispatchTouchEvent(event);
     }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
         if(pad!=null&&pad.key(e))return true;
@@ -821,11 +1024,13 @@ public final class Order1886Activity extends Activity {
         return super.onGenericMotionEvent(e);
     }
     @Override public void onBackPressed(){
-        if(gameOpen)new AlertDialog.Builder(this).setTitle("Sair do jogo?")
-            .setMessage("Progresso não salvo será perdido.")
-            .setPositiveButton("Parar", (dialog,which)->stopGame())
-            .setNegativeButton("Retomar",null).show();
-        else if(page!=0){page=0;render();}
+        // Android reserves the right edge for Back on some system configurations.
+        // That gesture must open the SAME in-game menu, never a direct exit prompt.
+        if(gameOpen){
+            if(editingControls && touchLayer!=null){
+                touchLayer.finishEdit();
+            }else showGameMenu();
+        }else if(page!=0){page=0;render();}
         else super.onBackPressed();
     }
     @Override protected void onPause(){super.onPause();if(audio!=null)audio.pause();}

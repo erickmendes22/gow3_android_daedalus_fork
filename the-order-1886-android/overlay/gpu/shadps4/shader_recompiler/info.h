@@ -8,6 +8,7 @@
 #include <boost/container/static_vector.hpp>
 #include "common/assert.h"
 #include "common/types.h"
+#include "core/memory.h"
 #include "shader_recompiler/backend/bindings.h"
 #include "shader_recompiler/frontend/copy_shader.h"
 #include "shader_recompiler/frontend/tessellation.h"
@@ -158,6 +159,10 @@ struct Info : InfoPersistent {
     bool translation_failed{};
 
     std::array<Interpolation, IR::NumParams> fs_interpolation{};
+    // Filled by scanning the decoded GCN instructions before translation.
+    // Only a raw vertex-selector V_INTERP_MOV requires expansion into P0/P1/P2.
+    // Ordinary P1/P2 pairs interpolate natively and should not spawn a GS.
+    std::array<bool, IR::NumParams> fs_requires_per_vertex{};
 
     Info() = default;
     Info(HwStage stage_, SwStage l_stage_, ShaderParams params)
@@ -198,6 +203,12 @@ struct Info : InfoPersistent {
             return {snapshot->flat, snapshot->flat_size};
         }
         return flattened_ud_buf;
+    }
+
+    // Preserve The Order's guest-image address validation; required by resource specialization.
+    bool IsImageBaseMapped(VAddr address) const {
+        auto* memory = Core::Memory::Instance();
+        return memory->IsValidGpuMapping(address, 0) && memory->ClampRangeSize(address, 1) == 1;
     }
 
     VAddr ProgramBase() const noexcept {

@@ -26,6 +26,93 @@ checks={
 }
 gpu=tree/"gpu"
 gpu_checks={
+  "GPU timestamp profiler sampled and nonblocking":
+      "sample_every=90_frames" in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text() and
+      "vk::QueryResultFlagBits::eWait" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_gpu_profiler.cpp").read_text(),
+  "GPU stage labels at natural render pass boundaries":
+      "shadow-depth-only" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
+      "MarkPass(pipeline, state);" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Inline Vulkan tile clears preserve exact attachment state":
+      "ORDER1886_GPU_INLINE_CLEAR reused=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
+      "compared == new_state" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
+  "Sun shadow metadata is only initialized at valid shadow depth clears":
+      "ORDER1886_HTILE_DEPTH_CLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "ORDER1886_EVSM_HTILE_FILL" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "mutable_cs.flattened_ud_buf" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Shadow depth image source writes participate in Vulkan barrier scopes":
+      "depth_source_scope" in (gpu/"shadps4/video_core/texture_cache/image.cpp").read_text() and
+      "eLateFragmentTests" in (gpu/"shadps4/video_core/texture_cache/image.cpp").read_text(),
+  "Task Kernel adaptive idle backoff remains isolated to Android":
+      "ORDER1886_TASK_IDLE_BACKOFF" in (tree/"src/runtime_thread.c").read_text() and
+      "strcmp(name,\"Task Kernel\")" in (tree/"src/runtime_thread.c").read_text(),
+  "Compile-warning throttle preserves graphics and SRT fallbacks":
+      "order1886_noncanonical_shaders" in (gpu/"shadps4/shader_recompiler/recompiler.cpp").read_text() and
+      "unresolved_reports" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
+  "Sun cascade GPU AABB sync records and delivers completed snapshots":
+      "KeepPageSynchronized" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "RecordSunCopies" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "DeliverSunCopies" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "0x7b1b18c9ULL" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "EVSM mutation reverted, HTILE moved to shadow depth clear":
+      "mutable_cs.flattened_ud_buf" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "ORDER1886_HTILE_DEPTH_CLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS 2x2 capability header is present":
+      (gpu/"shadps4/video_core/renderer_vulkan/order1886_vrs.h").is_file(),
+  "VRS never requests 4x4":
+      "fragment_size{vrs2x2 ? 2u : 1u" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "4u : 1u" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS never applies to alpha-discard or coverage-export fragment shaders":
+      "fs->has_discard" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "exports.coverage_to_mask_enable" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "VRS only coarsens depth-writing opaque half-resolution geometry":
+      "halfres_scene" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "regs.depth_control.depth_write_enable" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "fs->has_discard" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Adreno native driver cache replay stays disabled to avoid second-launch black screen":
+      "ORDER1886_CACHE_REPLAY driver=disabled reason=single-msaa" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text(),
+  "Adreno module warmup never replays serialized graphics pipeline state":
+      "if (warm.shaders_only)" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "warm.done.fetch_add(1, std::memory_order_relaxed);\n            continue;" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text(),
+  "Adreno single sample background cache restores shader modules only":
+      "warm.shaders_only" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "Storage::BlobType::ShaderMeta" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text() and
+      "ORDER1886_CACHE_REPLAY graphics=live shader_modules=" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text(),
+  "VRS pipeline dynamic state enabled only after feature negotiation":
+      "vk::DynamicState::eFragmentShadingRateKHR" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.cpp").read_text() and
+      "vrs_2x2_supported" in
+      (gpu/"shadps4/video_core/renderer_vulkan/vk_instance.cpp").read_text(),
+  "Actual attachment mask GPU timing":
+      "MRT-2active" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
+  "Tile-friendly post-clear render pass reuse included":
+      "ORDER1886_GPU_PASS_COALESCE merged=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
+  "Crash regression fixed: speculative shadow-draw skip removed":
+      "Order1886SkipShadowDepthWork" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "ORDER1886_GPU_SHADOW_DEPTH_SKIP applied=" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Mobile present barrier scope no longer ALL_COMMANDS":
+      "No ALL_COMMANDS wait after the copy" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
+  "GPU profiler frame records when the temporal upscaler is off":
+      "if (is_display_pass)" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Patch 1 included in generated GPU shader resource code":
+      "Order1886UnusedLightImage" in (gpu/"shadps4/shader_recompiler/resource.h").read_text() and
+      "ORDER1886_LIGHT_GUARD" in (gpu/"shadps4/shader_recompiler/resource.h").read_text(),
+  "Patch 2 included in generated GPU post-process code":
+      "ORDER1886_PP_NOCLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp").read_text() and
+      "vk::AttachmentLoadOp::eDontCare" in (gpu/"shadps4/video_core/renderer_vulkan/host_passes/pp_pass.cpp").read_text(),
+  "Patch 3 installed in generated Vulkan presenter":
+      "ORDER1886_FAST_BGRA_BLIT" in (gpu/"shadps4/video_core/renderer_vulkan/vk_presenter.cpp").read_text(),
   "Android SaveDataDialog controls wired": "PollAndroidChoiceControls" in (gpu/"shim/ps4_overlay.cpp").read_text(),
   "Android ImGui headless WSI optional": "Order1886OptionalHeadlessWsi" in (gpu/"third_party/imgui/backends/imgui_impl_vulkan.cpp").read_text(),
   "ARM64 real SRT implementation": 'order1886_arm64_srt.inc' in (gpu/"shadps4/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text(),

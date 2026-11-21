@@ -1,8 +1,9 @@
 name: The Order 1886 - Bionic Vulkan renderer build
+run-name: The Order 1886 0.1.28 / ${{ github.ref_name }} / ${{ github.event_name }}
 
 on:
   push:
-    branches: [port/the-order-1886-bionic]
+    branches: [port/the-order-1886-bionic, fix/order1886-adreno830-pervertex-interpolation]
     paths:
       - ".github/workflows/order1886-bionic-gpu.yml"
       - "the-order-1886-android/overlay/gpu/**"
@@ -11,6 +12,7 @@ on:
       - "the-order-1886-android/overlay/cpu/**"
       - "the-order-1886-android/scripts/**"
       - "android-launcher/order1886/**"
+      - "the-order-1886-android/overlay/android-launcher/**"
       - "android-launcher/settings.gradle.kts"
   workflow_dispatch:
 
@@ -119,6 +121,20 @@ jobs:
             exit 1
           fi
           echo "PASS: libps4gpu exports exact host-requested TranslateProgram ABI"
+          # This previously passed even though Android immediately refused to start.
+          # Validate all eight Vulkan::g_ps4_* counters absent in RC1. The -z defs
+          # linker option also prevents ANY new unresolved non-system native symbols.
+          for counter in compile_ns compiles capture_ns async_ns compile_wait_ns snapshot_ns guest_wait_ns pending_draws; do
+            if ! grep -Fq "g_ps4_${counter}E" <<< "$defined"; then
+              echo "::error::Missing native Vulkan::g_ps4_${counter} in libps4gpu.so"
+              exit 1
+            fi
+          done
+          if "$nm" -D --undefined-only "$lib" | grep -E 'g_ps4_|g_gow3_'; then
+            echo "::error::Unresolved Vulkan performance-counter symbols at APK startup"
+            exit 1
+          fi
+          echo "PASS: all eight Vulkan::g_ps4_* symbols exported with no unresolved counter imports"
       - name: Save native C++ compiler cache even after source errors
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -212,22 +228,73 @@ jobs:
           (cd "$stage" && zip -q -r ../apk-assets/order1886-toolchain.zip python order1886)
           unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^order1886/order1886.py$'
           unzip -Z1 out/order1886/apk-assets/order1886-toolchain.zip | grep -q '^python/lib/python3.13/os.py$'
+      - name: Bundle SHA-pinned GameHub Turnip 26.3 for Adreno
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/order1886/apk-assets out/order1886/downloads
+          driver=out/order1886/downloads/Turnip_GameHub_26.3_DD_GMEM_PWRMAX_EXPERIMENTAL.zip
+          curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 30 \
+            "https://github.com/erickmendes22/WinlatorComponents/releases/download/turnip-gamehub-26.3-dd-gmem-pwrmax/Turnip_GameHub_26.3_DD_GMEM_PWRMAX_EXPERIMENTAL.zip" \
+            -o "$driver"
+          echo "8255659cc205110e0fa89f2d364292b86fe563a2cedafbc41915bead5a611ecb  $driver" | sha256sum -c -
+          python3 -m py_compile the-order-1886-android/scripts/stage_default_turnip.py
+          python3 the-order-1886-android/scripts/stage_default_turnip.py \
+            "$driver" out/order1886/apk-assets/order1886-turnip-default.zip
+          unzip -Z1 out/order1886/apk-assets/order1886-turnip-default.zip | grep -q 'meta.json'
       - name: Set up Java for dedicated The Order APK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - name: Build dedicated The Order 1886 Android debug APK
+      - name: Restore stable The Order signing key
+        id: signing
+        shell: bash
+        env:
+          ORDER1886_SIGNING_KEY_B64: ${{ secrets.ORDER1886_KEYSTORE_BASE64 }}
+          ORDER1886_SIGNING_PASS: ${{ secrets.ORDER1886_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$ORDER1886_SIGNING_KEY_B64" && -n "$ORDER1886_SIGNING_PASS" ]]; then
+            umask 077
+            mkdir -p "$RUNNER_TEMP/order1886-signing"
+            export ORDER1886_KEYSTORE_FILE="$RUNNER_TEMP/order1886-signing/order1886.p12"
+            printf '%s' "$ORDER1886_SIGNING_KEY_B64" | base64 --decode > "$ORDER1886_KEYSTORE_FILE"
+            keytool -list -keystore "$ORDER1886_KEYSTORE_FILE" -storetype PKCS12 \
+              -storepass "$ORDER1886_SIGNING_PASS" -alias order1886 >/dev/null
+            echo "ORDER1886_KEYSTORE_FILE=$ORDER1886_KEYSTORE_FILE" >> "$GITHUB_ENV"
+            echo "ORDER1886_KEYSTORE_PASSWORD=$ORDER1886_SIGNING_PASS" >> "$GITHUB_ENV"
+            echo "target=assembleRelease" >> "$GITHUB_OUTPUT"
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+            echo "Using persistent The Order 1886 signing certificate."
+          else
+            echo "::warning::Configure ORDER1886_KEYSTORE_BASE64 and ORDER1886_KEYSTORE_PASSWORD repository secrets for upgradable signed APKs."
+            echo "target=assembleDebug" >> "$GITHUB_OUTPUT"
+            echo "variant=debug-ephemeral" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build dedicated The Order 1886 Android APK (retry Maven failures)
         working-directory: android-launcher
         shell: bash
+        env:
+          APK_TARGET: ${{ steps.signing.outputs.target }}
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew :order1886:assembleDebug --no-daemon --stacktrace
+          for attempt in 1 2 3; do
+            echo "Gradle attempt $attempt/3: $APK_TARGET"
+            extra=()
+            if [[ "$attempt" -gt 1 ]]; then extra+=(--refresh-dependencies); fi
+            if ./gradlew ":order1886:$APK_TARGET" --no-daemon --stacktrace "${extra[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then exit 1; fi
+            sleep 20
+          done
       - name: Verify The Order APK contents and package
         shell: bash
         run: |
           set -euo pipefail
-          apk=$(find android-launcher/order1886/build/outputs/apk/debug -name '*.apk' -print -quit)
+          apk=$(find android-launcher/order1886/build/outputs/apk -name '*.apk' -print -quit)
           test -f "$apk"
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_probe.so'
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/libps4gpu.so'
@@ -236,13 +303,20 @@ jobs:
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_pkg_util.so'
           unzip -Z1 "$apk" | grep -q 'lib/arm64-v8a/liborder1886_python.so'
           unzip -Z1 "$apk" | grep -q 'assets/order1886-toolchain.zip'
+          unzip -Z1 "$apk" | grep -q 'assets/order1886-turnip-default.zip'
+          apk_sign_info=$("$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/apksigner" verify --print-certs "$apk")
+          echo "$apk_sign_info"
+          if [[ "${{ steps.signing.outputs.variant }}" == "release" ]]; then
+            # Certificate matching the persistent PKCS12 key saved offline.
+            grep -Eiq 'd8210ae8d373970842640c611eee3280cf49929b257bb0ba3cc90240e7923663' <<< "$apk_sign_info"
+          fi
           echo "Built The Order ARM64 APK: $apk"
           sha256sum "$apk"
       - name: Publish The Order Android Bionic boot-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: The-Order-1886-Daedalus-Bionic-Android-0.1.8-srt-texture
-          path: android-launcher/order1886/build/outputs/apk/debug/*.apk
+          name: The-Order-1886-Daedalus-Bionic-Android-0.1.28-${{ steps.signing.outputs.variant }}
+          path: android-launcher/order1886/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Publish native game runtime test executables
         uses: actions/upload-artifact@v4

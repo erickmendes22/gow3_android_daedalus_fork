@@ -87,7 +87,12 @@ inline std::vector<std::uint32_t> Compile(std::span<const std::uint32_t> program
             if (count < 3) return {};
             load(5, --count); load(4, --count); load(3, count - 1);
             emit(0x1ac42463u); imm(4, 1); emit(0x1ac52084u);
-            emit(0x51000484u); emit(0x0a040063u); store(3, count - 1);
+            emit(0x51000484u);
+            // width>=32 selects an all-ones mask; ARM LSLV alone wraps the
+            // shift count modulo 32 and otherwise produces zero at width=32.
+            emit(0x710080bfu); // cmp w5, #32
+            emit(0x5a9f3084u); // csinv w4, w4, wzr, lo
+            emit(0x0a040063u); store(3, count - 1);
         } else {
             if (count < 2) return {};
             load(4, --count); load(3, count - 1);

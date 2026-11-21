@@ -1,0 +1,32 @@
+name: The Order 1886 - export Android SDK signer
+on:
+  push:
+    branches: [fix/order1886-adreno830-pervertex-interpolation]
+    paths:
+      - ".github/workflows/order1886-export-sign-tools.yml"
+permissions:
+  contents: read
+jobs:
+  export-signer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'build-tools;36.0.0'
+      - name: Stage official Android SDK signing utilities
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          test -s "$tools/lib/apksigner.jar"
+          test -x "$tools/zipalign"
+          mkdir -p "$RUNNER_TEMP/sdk-signer"
+          cp "$tools/lib/apksigner.jar" "$RUNNER_TEMP/sdk-signer/apksigner.jar"
+          cp "$tools/zipalign" "$RUNNER_TEMP/sdk-signer/zipalign"
+          sha256sum "$RUNNER_TEMP/sdk-signer/"*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: the-order-android-sdk-apk-signing-utilities
+          path: ${{ runner.temp }}/sdk-signer/*
+          if-no-files-found: error
+          retention-days: 1

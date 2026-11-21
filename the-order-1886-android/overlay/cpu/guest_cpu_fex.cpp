@@ -307,14 +307,35 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     // applied. DynamicL1Cache saves memory but, per FEX's option metadata,
     // can cause JIT cache resizing stutters. This device-oriented profile
     // keeps a fixed L1 unless ORDER1886_FEX_DYNAMIC_L1=1 is explicitly selected.
-    // Preserve FEX's default TSO barriers for guest threading correctness.
+    // PS4 x86-64 code has x86 TSO ordering; the ARM JIT needs FEX's
+    // ordering emulation for correctness, especially across guest threads.
+    // Allow an explicit, session-local performance experiment. Never apply the
+    // unsafe mode implicitly or persist it in the guest executable/cache.
     const bool dynamic_l1 = [] {
         const char* value = std::getenv("ORDER1886_FEX_DYNAMIC_L1");
         return value && value[0] == '1';
     }();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_DYNAMICL1CACHE,
                          dynamic_l1 ? "1" : "0");
-    std::printf("ORDER1886_FEX_CACHE dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
+    const char* tso_override = std::getenv("ORDER1886_FEX_TSO");
+    if (tso_override && (tso_override[0] == '0' || tso_override[0] == '1') &&
+        tso_override[1] == '\0') {
+        const bool tso = tso_override[0] == '1';
+        FEXCore::Config::Set(FEXCore::Config::CONFIG_TSOENABLED, tso ? "1" : "0");
+        if (!tso) {
+            FEXCore::Config::Set(FEXCore::Config::CONFIG_HALFBARRIERTSOENABLED, "0");
+            FEXCore::Config::Set(FEXCore::Config::CONFIG_VECTORTSOENABLED, "0");
+            FEXCore::Config::Set(FEXCore::Config::CONFIG_MEMCPYSETTSOENABLED, "0");
+        }
+    }
+    const bool effective_tso = FEXCore::Config::Get_TSOENABLED()();
+    const bool half_barrier = FEXCore::Config::Get_HALFBARRIERTSOENABLED()();
+    const bool vector_tso = FEXCore::Config::Get_VECTORTSOENABLED()();
+    const bool memcpy_tso = FEXCore::Config::Get_MEMCPYSETTSOENABLED()();
+    std::printf("ORDER1886_FEX_MEMORY tso=%d half_barrier=%d vector=%d memcpy=%d experimental_no_tso=%d dynamic_l1=%d\n",
+                int(effective_tso), int(half_barrier), int(vector_tso),
+                int(memcpy_tso), int(!effective_tso), int(dynamic_l1));
+    std::printf("ORDER1886_FEX_CACHE dynamic_l1=%d disk_cache=unchanged\n",
                 int(dynamic_l1));
     const auto features = FEX::FetchHostFeatures();
     wide_xmm = features.SupportsAVX && features.SupportsSVE256;
