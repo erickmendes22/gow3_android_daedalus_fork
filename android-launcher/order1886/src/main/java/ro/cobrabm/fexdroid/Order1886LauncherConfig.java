@@ -24,7 +24,9 @@ final class Order1886LauncherConfig {
         int sharpening=p.getInt("sharpness",0);
         int anisotropy=p.getInt("anisotropy",1);
         int framesQueued=p.getInt("framesQueued",1);
-        boolean asyncShaders=p.getBoolean("asyncShaders",true);
+        // Deprecated: the first-use async mode waited synchronously for each
+        // draw and regressed frametimes. Preload cached compute in background.
+        boolean asyncShaders=false;
         if(!"fsr1".equals(filter)&&!"linear".equals(filter))throw new IOException("Filtro inválido");
         if(sharpening<0||sharpening>100)throw new IOException("Sharpening inválido");
         if(Integer.bitCount(anisotropy)!=1||anisotropy>16)throw new IOException("Anisotropia inválida");
