@@ -67,7 +67,7 @@ class TestSotcArm64Aot(unittest.TestCase):
         self.assertEqual(data[i:i+12],self.payload[:12])
         self.assertEqual(self.boot.read_bytes()[i:i+128],self.payload)
         self.assertEqual(aot.boot_info(out)["image_bytes"],aot.PATCH_BASE+128)
-        self.assertEqual(info["patched_image_sha256"],hashlib.sha256(data[i:]).hexdigest())
+        self.assertEqual(info["patched_image_sha256"],hashlib.sha256(data[info["table_bytes"]:]).hexdigest())
 
     def test_reject_overlap_and_overflow(self):
         patch_fixture(self.patches,[(12,b"hello"),(14,b"\x33")])
