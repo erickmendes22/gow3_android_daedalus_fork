@@ -27,6 +27,11 @@
 
 namespace Vulkan {
 
+// These counters already track synchronous shader and pipeline creation in
+// vk_pipeline_cache.cpp. Read snapshots only; the original owners retain them.
+extern std::atomic<u64> g_ps4_compile_ns;
+extern std::atomic<u32> g_ps4_compiles;
+
 std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
@@ -746,6 +751,24 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                 (tick - last_tick_wait) / 1e6, (record - last_record_wait) / 1e6,
                 (host - last_host_wait) / 1e6, (copies - last_copy_wait) / 1e6,
                 double(now_ns - previous) / 1e9);
+            // Separate first-use shader/pipeline stalls from actual Vulkan queue waits.
+            // Purely observational: do not change pipeline creation or clear its counters.
+            static u64 last_compile_ns = 0;
+            static u32 last_compile_count = 0;
+            const u64 total_compile_ns = g_ps4_compile_ns.load(std::memory_order_relaxed);
+            const u32 total_compiles = g_ps4_compiles.load(std::memory_order_relaxed);
+            const u64 compile_delta_ns = total_compile_ns >= last_compile_ns
+                                             ? total_compile_ns - last_compile_ns
+                                             : total_compile_ns;
+            const u32 compile_delta = total_compiles >= last_compile_count
+                                          ? total_compiles - last_compile_count
+                                          : total_compiles;
+            std::printf("ORDER1886_COMPILER_FEED new_pipelines_and_shaders=%u "
+                        "compile_wall_ms=%.2f window_s=%.2f\\n",
+                        compile_delta, compile_delta_ns / 1e6,
+                        double(now_ns - previous) / 1e9);
+            last_compile_ns = total_compile_ns;
+            last_compile_count = total_compiles;
             // The aggregate tick wait alone cannot distinguish frame pacing from GPU
             // readbacks and cache downloads. Attribute each wait to its call site,
             // without adding any profiling overhead when GOW3_PERF_DIAG=0.
