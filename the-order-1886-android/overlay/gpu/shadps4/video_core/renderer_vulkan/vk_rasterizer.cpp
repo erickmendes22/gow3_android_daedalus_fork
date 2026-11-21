@@ -10,6 +10,7 @@
 #include <vector>
 #include <xxhash.h>
 #include <unordered_set>
+#include <boost/container/small_vector.hpp>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "ps4_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -133,20 +134,27 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
     constexpr VAddr PageMask = ~VAddr{4095};
     constexpr u64 PageSize = 4096;
     constexpr unsigned MaxPasses = 4;
-    std::unordered_set<VAddr> visited;
+    // One sync lookup runs for every shader stage on every geometry draw.
+    // The hot path has NO dirty SRT sources, yet previously copied the source
+    // vector and allocated a fresh heap vector on each lookup. The Order uses
+    // 13+ SRT offsets for many shaders, so these costs repeat thousands of
+    // times every second in the heavy scene, while the GPU sits idle.
+    // Keep the full correctness check; only eliminate the allocations/copies.
+    boost::container::small_vector<VAddr, 32> visited;
     for (unsigned pass = 0; pass < MaxPasses; ++pass) {
-        // Official Bachata 0.2.7: publish GPU-written guest SRT pages before
-        // re-reading the pointer graph, but do not stall once for EVERY page.
-        const auto sources = info.srt_source_addresses;
-        std::vector<VAddr> pages;
-        pages.reserve(sources.size());
+        // RefreshFlatBuf() at the end of a pass can update this list. Access
+        // by reference per pass rather than copying its potentially large
+        // vector for all shader lookups.
+        const auto& sources = info.srt_source_addresses;
+        boost::container::small_vector<VAddr, 32> pages;
         for (const VAddr address : sources) {
             if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
             const VAddr page = address & PageMask;
-            if (visited.contains(page) || !IsMapped(page, PageSize) ||
+            if (std::find(visited.begin(), visited.end(), page) != visited.end() ||
+                !IsMapped(page, PageSize) ||
                 !buffer_cache.IsRegionGpuModified(page, PageSize) ||
                 !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
-            visited.insert(page);
+            visited.push_back(page);
             pages.push_back(page);
         }
         if (pages.empty()) break;
@@ -163,7 +171,8 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
                                            VideoCore::ReadbackSource::CpuRead);
             i = end;
         }
-        if (!buffer_cache.DownloadSrtSourcePages(pages)) break;
+        if (!buffer_cache.DownloadSrtSourcePages(
+                std::span<const VAddr>{pages.data(), pages.size()})) break;
         info.RefreshFlatBuf();
     }
 #else
