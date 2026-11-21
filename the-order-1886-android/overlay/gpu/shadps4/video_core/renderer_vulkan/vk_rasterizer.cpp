@@ -1060,10 +1060,11 @@ void Rasterizer::DiagPassBoundary(bool force) {
 // Those shaders are NOT opaque: 2x2 execution can discard the same four-pixel
 // block and make the character's alpha-tested geometry look transparent.
 //
-// Restrict VRS to full-resolution opaque G-buffer/MRT geometry. Single-target
-// scene-depth draws gave no measurable speedup in log 12 (median 2.645 ms,
-// versus 2.325 ms in log 11), so preserve their exact fragment coverage.
-// Keep full-resolution depth/stencil tests and all shadow/UI/post draws exact.
+// Full-resolution VRS stays on opaque MRT only. The 640x360 scene-color-depth
+// pass rises from ~0.6 ms to ~5 ms in the final gameplay; allow 2x2 there
+// *only* for identified direct opaque draws with actual depth writes.
+// Alpha-cutout, coverage export, blending, stencil, feedback, post and all
+// unknown indirect half-resolution draws stay at exact 1x1.
 static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
                               const RenderState& state, bool feedback_loop,
                               bool geometry_draw) {
@@ -1417,7 +1418,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     // known here. Restrict coarse shading to full-res opaque MRT geometry.
     const bool vrs2x2 =
         g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
-        Order1886UseVrs2x2(pipeline, Regs(), state, attachment_feedback_loop, true);
+        // Indirect arguments do not prove per-draw geometry or depth-write
+        // coverage, so the 640x360 single-target path remains 1x1 here.
+        Order1886UseVrs2x2(pipeline, Regs(), state, attachment_feedback_loop, false);
     if (vrs2x2) {
         g_order1886_vrs_2x2_draws.fetch_add(1, std::memory_order_relaxed);
     }
