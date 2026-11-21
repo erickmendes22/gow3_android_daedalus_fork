@@ -485,9 +485,7 @@ public final class Order1886Activity extends Activity {
             n->{prefs().edit().putInt("language",n).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
         toggle(c,"Shaders assíncronos (não descartar draws)", "asyncShaders",true);
-        toggle(c,"FEX: desativar TSO (experimental)", "fexDisableTso",false);
-        line(c,"TSO do FEX", "Padrão: ativado para preservar a sincronização x86 entre threads. "+
-            "Desativar pode melhorar desempenho ou causar travamentos e falhas; reinicie o jogo após mudar.");
+        line(c,"FEX TSO", "Ordenação x86 ativa. O modo sem TSO foi retirado após provocar SIGSEGV no boot.");
         toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
                "enginePerf",true);
         line(c,"Redução de GPU compatível",
