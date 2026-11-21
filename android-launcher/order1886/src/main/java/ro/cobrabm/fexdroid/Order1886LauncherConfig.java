@@ -77,6 +77,9 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_GPU_PROFILE",p.getBoolean("gpuMeters",true)?"1":"0");
         // When the user enables GPU meters, report which Vulkan wait sites block the CPU.
         env.put("GOW3_PERF_DIAG",p.getBoolean("gpuMeters",true)?"1":"0");
+        // Reuse existing per-stage draw-pipeline counters to locate CPU feed stalls
+        // even in GPU-idle windows with zero shader compilations.
+        if(p.getBoolean("gpuMeters",true))env.put("ORDER1886_FRAME_STATS","1");
         env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");
         env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
