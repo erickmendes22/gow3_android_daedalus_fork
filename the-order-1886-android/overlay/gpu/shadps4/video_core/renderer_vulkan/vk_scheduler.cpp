@@ -746,6 +746,10 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                 (tick - last_tick_wait) / 1e6, (record - last_record_wait) / 1e6,
                 (host - last_host_wait) / 1e6, (copies - last_copy_wait) / 1e6,
                 double(now_ns - previous) / 1e9);
+            // The aggregate tick wait alone cannot distinguish frame pacing from GPU
+            // readbacks and cache downloads. Attribute each wait to its call site,
+            // without adding any profiling overhead when GOW3_PERF_DIAG=0.
+            WaitDiagnostics::Report();
             last_tick_wait = tick;
             last_record_wait = record;
             last_host_wait = host;
