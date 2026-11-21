@@ -23,7 +23,9 @@ final class Order1886LauncherConfig {
         String filter=p.getString("filter","fsr1");
         int sharpening=p.getInt("sharpness",0);
         int anisotropy=p.getInt("anisotropy",1);
-        int framesQueued=p.getInt("framesQueued",1);
+        // Two queued frames let the guest CPU prepare frame N+1 while Vulkan completes N.
+        // Preserve explicit user selections (including 0 and 1) across updates.
+        int framesQueued=p.getInt("framesQueued",2);
         boolean asyncShaders=p.getBoolean("asyncShaders",true);
         if(!"fsr1".equals(filter)&&!"linear".equals(filter))throw new IOException("Filtro inválido");
         if(sharpening<0||sharpening>100)throw new IOException("Sharpening inválido");
