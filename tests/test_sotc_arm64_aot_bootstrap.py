@@ -112,7 +112,7 @@ class TestSotcArm64Aot(unittest.TestCase):
         stats.write_text("units with bbr_trap (unsupported ops): 0 (0.0%)\n")
         self.assertEqual(aot.verify_native(so,stats,meta)["unit_count"],1000)
         stats.write_text("LoadMemTSO\nunits with bbr_trap (unsupported ops): 0 (0.0%)\n")
-        with self.assertRaisesRegex(ValueError,"Unresolved"):
+        with self.assertRaisesRegex(ValueError,"Guest TSO operations"):
             aot.verify_native(so,stats,meta)
         stats.write_text("units with bbr_trap (unsupported ops): 80 (8.0%)\n")
         with self.assertRaisesRegex(ValueError,"unsupported"):
