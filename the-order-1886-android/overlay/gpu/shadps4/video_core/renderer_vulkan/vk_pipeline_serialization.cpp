@@ -1222,12 +1222,52 @@ bool PipelineCache::StartBackgroundWarmUp() {
                     }
                     warm.shader_io_ns += ElapsedNs(io_started);
                     if (!stage->module) stage->merged = true;
+                    // Make all previously compiled compute-stage permutations
+                    // available to the pipeline-key reader below. Unlike archived
+                    // graphics, compute doesn't need live framebuffer registers.
+                    if (stage->module) {
+                        warm.stages[HashCombine(stage->program->info.pgm_hash,
+                                                stage->perm_idx)] = stage;
+                    }
                     entry.stages[0] = std::move(stage);
                     entry.queued = std::chrono::steady_clock::now();
                     warm.read.Push(std::move(entry));
                     ++warm.entries;
                 },
                 [&] { return warm.stopping.load(std::memory_order_relaxed); });
+            // Restore COMPUTE pipelines from prior sessions in the background.
+            // The previous single-MSAA shortcut restored SPIR-V modules only,
+            // then recreated every compute pipeline synchronously in gameplay,
+            // including the 70–84 ms spikes captured in The Order. Compute
+            // pipelines have no color/depth framebuffer state or auxiliary GS,
+            // so they can safely be reconstructed using their cached keys.
+            std::unordered_set<u64> compute_seen;
+            db.ForEachBlob(
+                Storage::BlobType::PipelineKey,
+                [&](std::vector<u8>&& data) {
+                    try {
+                        Serialization::Archive ar{std::move(data)};
+                        Serialization::Reader header{ar};
+                        u32 version{}, is_compute{};
+                        header.Read(version);
+                        if (version != Serialization::PipelineKeyVersion) return;
+                        header.Read(is_compute);
+                        if (!is_compute) return; // no archived graphics replay on Turnip
+                        BackgroundWarmup::Entry entry{};
+                        entry.compute = true;
+                        entry.compute_key.Deserialize(ar);
+                        if (!compute_seen.insert(entry.compute_key.value).second) return;
+                        const auto stage = warm.stages.find(entry.compute_key.value);
+                        if (stage == warm.stages.end() || !stage->second->module) return;
+                        entry.stages[0] = stage->second;
+                        entry.queued = std::chrono::steady_clock::now();
+                        warm.total.fetch_add(1, std::memory_order_relaxed);
+                        warm.read.Push(std::move(entry));
+                    } catch (...) {
+                        // Bad historical archive entry: skip; never break boot.
+                    }
+                }, [&] { return warm.stopping.load(std::memory_order_relaxed); });
+            warm.stages.clear();
             warm.reader_ns = ElapsedNs(reader_started);
             warm.reading = false;
             return true;
@@ -1404,9 +1444,10 @@ void PipelineCache::PumpWarmUp() {
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
     for (auto& entry : warm.read.Take(32)) {
         warm.read_queue_ns += ElapsedNs(entry.queued);
-        if (warm.shaders_only) {
-            // Publish already-compiled SPIR-V modules only. Never construct
-            // a GraphicsPipeline from archived attachments/guest registers.
+        if (warm.shaders_only && !entry.compute) {
+            // Merge each archived SPIR-V shader once. In the single-MSAA
+            // profile only compute pipelines are allowed to rebuild offline;
+            // archived graphics can depend on live auxiliary-GS metadata.
             auto& stage = entry.stages[0];
             if (stage && stage->module) {
                 std::unique_lock lock{programs_mutex};
@@ -1465,8 +1506,13 @@ void PipelineCache::PumpWarmUp() {
             for (u32 i = 0; i < MaxShaderStages; ++i) infos[i] = snapshots[i].get();
             if (compute) {
                 ComputePipeline::SerializationSupport compute_data{};
+                // No shared VkPipelineCache on the background thread: Vulkan
+                // requires external synchronization for simultaneous cache use.
+                // A null VkPipelineCache still builds a fully usable VkPipeline.
+                const vk::PipelineCache background_cache = warm.shaders_only
+                    ? vk::PipelineCache{} : *pipeline_cache;
                 built.compute = std::make_unique<ComputePipeline>(
-                    instance, scheduler, desc_heap, profile, *pipeline_cache, compute_key,
+                    instance, scheduler, desc_heap, profile, background_cache, compute_key,
                     *infos[0], modules[0], compute_data, true);
                 built.compute->PublishInfo(live_infos[0]);
             } else {
@@ -1493,7 +1539,7 @@ void PipelineCache::PumpWarmUp() {
         return;
     }
     if (warm.shaders_only) {
-        std::printf("ORDER1886_SHADER_WARMUP done modules=%u merged=%u metadata=%u wall_s=%.2f\n",
+        std::printf("ORDER1886_SHADER_WARMUP done modules=%u merged=%u cached_shader_compute_entries=%u wall_s=%.2f\n",
                     warm.modules.load(), warm.loaded, warm.total.load(),
                     std::chrono::duration<double>(now - warm.started).count());
     } else {
