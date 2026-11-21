@@ -55,7 +55,6 @@ class SotcAotFiberTests(unittest.TestCase):
         self.assertIn("if (!was_replaced)", aot)
         self.assertIn("out->gpr[RSP] += 8", aot)
         self.assertIn("out->rip = sotc_host_return", aot)
-        self.assertIn("s.gs_cached", aot) if False else None
         self.assertIn("sotc_host_state = saved_host_state", aot)
         self.assertIn("SotcGuestContext;", header)
         self.assertIn("guest_context_get", header)
