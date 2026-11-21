@@ -28,21 +28,22 @@ class SotcPresentFastpathTest(unittest.TestCase):
         self.assertIn("refusing ambiguous clear/barrier patch", STAGE)
         self.assertIn("s.count(old_rect) != 1", STAGE)
 
-    def test_compute_and_present_opt_outs_are_independent(self):
-        self.assertIn("export SOTC_ASYNC_SHADERS=$"+"{SOTC_ASYNC_SHADERS:-0}", RUN)
-        self.assertIn("export SOTC_ASYNC_COMPUTE=$"+"{SOTC_ASYNC_COMPUTE:-0}", RUN)
-        self.assertIn("export SOTC_PRESENT_FULL_BLIT=$"+"{SOTC_PRESENT_FULL_BLIT:-1}", RUN)
+    def test_compute_and_present_enablement_is_permanent(self):
+        self.assertIn("export SOTC_ASYNC_SHADERS=1", RUN)
+        self.assertIn("export SOTC_ASYNC_COMPUTE=1", RUN)
+        self.assertIn("export SOTC_PRESENT_FULL_BLIT=1", RUN)
         for env,key,default in (
-                ("SOTC_ASYNC_COMPUTE","sotc_async_compute","0"),
+                ("SOTC_ASYNC_COMPUTE","sotc_async_compute","1"),
                 ("SOTC_PRESENT_FULL_BLIT","sotc_present_full_blit","1")):
             self.assertIn('env.put("'+env+'",', GAME)
-            self.assertIn('save("'+key+'",if(it)"1" else "0")', UI)
+            self.assertNotIn('save("'+key+'",', UI)
+            self.assertIn('env.put("'+env+'","1");', GAME)
             self.assertIn(key+"="+default, PACKAGE)
         self.assertIn("export BB_READBACKS=${BB_READBACKS:-2}", RUN)
         self.assertIn("export SOTC_ASYNC_TRANSLATE=0", RUN)
         self.assertIn("export SOTC_ASYNC_PRELOAD=0", RUN)
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", RUN)
-        self.assertIn("experimental async graphics pipeline build", RUN)
+        self.assertIn("SotC pipeline workers: async graphics pipeline build", RUN)
         self.assertIn("synchronous graphics shaders and pipelines", RUN)
 
 if __name__ == "__main__":
