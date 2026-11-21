@@ -184,10 +184,13 @@ void Load() {
     // workers, but wait at the dependency boundary so no guest draw or compute
     // dispatch is dropped while a pipeline is pending. The old skip-draws path
     // requires a separate explicit environment override for regression tests.
-    std::printf("ORDER1886_ASYNC_POLICY requested=%d mode=%s draws_preserved=%d\n",
-                int(v.async_shaders.load()),
-                v.async_shaders.load() ? "ordered-async" : "synchronous",
-                std::getenv("ORDER1886_ALLOW_ASYNC_DRAW_DROPS") == nullptr);
+    // The experimental on-demand path sent every first-use pipeline to a
+    // worker, immediately waited for it, and added 60-91 ms stalls. That is
+    // not useful asynchronous compilation. Disable that path on this Android
+    // title; cached shaders and compute pipelines are instead precompiled
+    // in the dedicated background warm-up without blocking the draw thread.
+    v.async_shaders = false;
+    std::printf("ORDER1886_ASYNC_POLICY on_demand=0 background_cached_compute=1 draws_preserved=1\n");
     v.requested_upscaler = v.upscaler.load();
     // No inherited engine reconstruction, cheats, HUD, or speculative readbacks. Sharpening
     // (rcas) and asynchronous shaders are launcher settings and keep the values read above.
