@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 29
-        versionName = "0.1.27-evsm-depth-idle"
+        versionCode = 30
+        versionName = "0.1.28-sun-readback-safe"
     }
     // Stable signing for upgrade-in-place. Keystore and password are injected by CI
     // secrets; never put private signing material in the public source tree.

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <bit>
+#include <limits>
 #include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
 #include "ps4_copy.h"
@@ -227,8 +228,14 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
             std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
         const VAddr window_end = std::min<VAddr>(
             std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
+        // TOport v0.1.7 sun cascade synchronization. CPU-written pages that
+        // overlap GPU AABB reductions need the latest completed result. Normal
+        // deferred readback is safe only when the sun snapshot was delivered.
+        const bool sun_page = is_write && SynchronizedPage(device_addr, size);
+        const bool sun_ready = sun_page && DeliverSunCopies();
         if (is_write && deferred_readbacks_enabled &&
-            !Ps4Toggle::Disabled(Ps4Toggle::DeferredReadbacks)) {
+            !Ps4Toggle::Disabled(Ps4Toggle::DeferredReadbacks) &&
+            (!sun_page || sun_ready)) {
             bool on_gpu;
             {
                 std::scoped_lock lock{gpu_ranges_mutex};
@@ -252,6 +259,101 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
     } else {
         liverpool->SendCommand<true>(std::move(flush_request));
     }
+}
+
+// Adapted from TOport v0.1.7, which fixed sun-flickering by publishing
+// GPU-written cascade AABB buffers before the guest CPU reuses their pages.
+// No shader user-data mutations and no per-compute HTILE fills.
+void BufferCache::KeepPageSynchronized(VAddr addr, u64 size, u64 shader) {
+    static const bool enabled = [] {
+        const char* env = std::getenv("ORDER1886_SUN_SYNC");
+        return !env || env[0] != '0';
+    }();
+    if (!enabled || !addr || !size || size > 512_KB ||
+        size > std::numeric_limits<VAddr>::max() - addr)
+        return;
+    std::scoped_lock lock{sun_mutex};
+    if (sun_ranges.Intersects(addr, size)) return;
+    sun_ranges.Add(addr, size);
+    static std::atomic<u32> reports{0};
+    if (reports.fetch_add(1, std::memory_order_relaxed) < 24)
+        std::printf("ORDER1886_SUN_SYNC_REGISTER shader=%#llx addr=%#llx size=%llu\n",
+                    static_cast<unsigned long long>(shader),
+                    static_cast<unsigned long long>(addr),
+                    static_cast<unsigned long long>(size));
+}
+
+bool BufferCache::SynchronizedPage(VAddr addr, u64 size) {
+    if (!addr || !size || size > std::numeric_limits<VAddr>::max() - addr - 4096)
+        return false;
+    const VAddr start = Common::AlignDown(addr, 4_KB);
+    const VAddr end = Common::AlignUp(addr + size, 4_KB);
+    std::scoped_lock lock{sun_mutex};
+    return sun_ranges.Intersects(start, end - start);
+}
+
+void BufferCache::RecordSunCopies() {
+    std::scoped_lock lock{sun_mutex};
+    std::vector<std::pair<VAddr, VAddr>> ranges;
+    sun_ranges.ForEach([&](VAddr start, VAddr end) {
+        if (end > start) ranges.emplace_back(start, end);
+    });
+    if (ranges.empty()) return;
+    // Keep only completed snapshots that cannot be superseded, while never
+    // freeing a staging buffer whose GPU copy is still in flight.
+    while (sun_batches.size() > 1 && scheduler.IsFree(sun_batches[1].tick)) {
+        staging_pool.FreeDeferred(sun_batches.front().staging);
+        sun_batches.pop_front();
+    }
+    if (sun_batches.size() >= 16) return; // CPU fault falls back to exact sync
+    u64 total = 0;
+    for (const auto [start, end] : ranges) {
+        total += Common::AlignUp(end - start, 16);
+        if (total > 2_MB) return; // do not make huge per-frame copies
+    }
+    if (!total) return;
+    SunBatch batch{};
+    batch.staging = staging_pool.Request(total, MemoryType::HostCached, 0, true);
+    u64 offset = 0;
+    for (const auto [start, end] : ranges) {
+        const u64 size = end - start;
+        const auto* arena = GetArena(start >> block_shift, (end - 1) >> block_shift);
+        runtime.CopyBuffer(arena, batch.staging.buffer,
+                           std::array{vk::BufferCopy{start - arena->cpu_addr,
+                                                     batch.staging.offset + offset, size}});
+        batch.items.push_back({start, size, offset});
+        offset += Common::AlignUp(size, 16);
+    }
+    batch.tick = scheduler.CurrentTick();
+    sun_batches.push_back(std::move(batch));
+    static std::atomic<u64> copies{0};
+    const u64 n = copies.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n == 1 || (n % 512) == 0)
+        std::printf("ORDER1886_SUN_SYNC_COPY batches=%llu ranges=%zu bytes=%llu\n",
+                    static_cast<unsigned long long>(n), ranges.size(),
+                    static_cast<unsigned long long>(total));
+}
+
+bool BufferCache::DeliverSunCopies() {
+    std::scoped_lock lock{sun_mutex};
+    const SunBatch* newest = nullptr;
+    for (const auto& batch : sun_batches) {
+        if (scheduler.IsFree(batch.tick)) newest = &batch;
+    }
+    if (!newest) return false;
+    if (newest->tick == last_delivered_sun_tick) return true;
+    newest->staging.buffer->Invalidate(newest->staging.offset, newest->staging.size);
+    for (const auto& item : newest->items) {
+        memory->TryWriteBacking(reinterpret_cast<void*>(item.addr),
+                                newest->staging.mapped + item.staging_offset, item.size);
+    }
+    last_delivered_sun_tick = newest->tick;
+    static std::atomic<u64> deliveries{0};
+    const u64 n = deliveries.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n == 1 || (n % 512) == 0)
+        std::printf("ORDER1886_SUN_SYNC_DELIVER batches=%llu ranges=%zu\n",
+                    static_cast<unsigned long long>(n), newest->items.size());
+    return true;
 }
 
 void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size) {

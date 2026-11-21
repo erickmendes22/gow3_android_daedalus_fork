@@ -529,7 +529,10 @@ void runtime_thread_yield(void) {
         char name[16]={0};
         (void)pthread_getname_np(pthread_self(),name,sizeof(name));
         const char *opt=getenv("ORDER1886_TASK_IDLE_FAST");
-        task_kernel_idle=(strcmp(name,"Task Kernel")==0 && !(opt && *opt=='0'))?1:0;
+        // 0.1.27's 8-yield/200us backoff introduced scheduling latency on
+        // active task workers. Revert to the original 64-yield policy by
+        // default; keep the aggressive behavior opt-in for profiling.
+        task_kernel_idle=(strcmp(name,"Task Kernel")==0 && opt && *opt=='1')?1:0;
         if (task_kernel_idle) {
             static int announced=0;
             if (!__atomic_exchange_n(&announced,1,__ATOMIC_RELAXED))

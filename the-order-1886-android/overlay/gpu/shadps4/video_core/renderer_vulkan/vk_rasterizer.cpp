@@ -55,16 +55,11 @@ namespace Vulkan {
 static bool IsBachataOrder1886Edition() {
     return Common::ElfInfo::Instance().GameSerial() == "CUSA00785";
 }
-static bool IsOrderEvsmShadowShader(u64 hash) {
-    return IsBachataOrder1886Edition() &&
-           (hash == 0x9846aaffULL || hash == 0x8ea0ef5bULL);
-}
 static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushData& data) {
-    if (!IsOrderEvsmShadowShader(info.pgm_hash)) return;
-    // The PS4's EVSM/HTILE decode expects an uncompressed tile mask. The
-    // second shader was missing from the Android compatibility path.
-    data.ud_regs[1] = 0x7F80000FU;
-    data.ud_regs[4] = 0x7F80000FU;
+    // Restore the pre-0.1.27 form: the extra UD4 write corrupted the
+    // 0x9846aaff buffer descriptor, producing zero-length bindings.
+    if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
+        data.ud_regs[1] = 0x7F80000FU;
 }
 // Shadow-map draws must not be dropped by dimensions alone. The experimental
 // 512/1024/2048 depth-skip path suppressed a 512x512 draw just before a
@@ -1662,42 +1657,10 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         return;
     }
 
-    const bool order_evsm_shadow = IsOrderEvsmShadowShader(cs.pgm_hash);
-    if (order_evsm_shadow) {
-        // Upstream TOport EVSM/HTILE correction, adapted for Android Bionic.
-        // A depth-reduction kernel does not write real tiled HTILE metadata.
-        // If the following conversion sees zero zmask, it treats occupied
-        // tiles as empty and the sun's shadows blink or disappear.
-        auto& mutable_cs = const_cast<Shader::Info&>(cs);
-        if (mutable_cs.flattened_ud_buf.size() > 1)
-            mutable_cs.flattened_ud_buf[1] = 0x7F80000FU;
-        if (mutable_cs.flattened_ud_buf.size() > 4)
-            mutable_cs.flattened_ud_buf[4] = 0x7F80000FU;
-        for (const auto& desc : cs.buffers) {
-            if (desc.IsSpecial() || desc.is_written) continue;
-            const auto sharp = desc.GetSharp(cs);
-            const VAddr address = sharp.base_address;
-            // Do not overwrite arbitrary uniform buffers: only registered
-            // HTILE surfaces that the conversion shader actually reads.
-            if (!address ||
-                texture_cache.IsMeta(address) != VideoCore::SurfaceMetadata::Type::HTile)
-                continue;
-            const u64 bytes = memory->ClampRangeSize(address, sharp.GetSize()) & ~u64(3);
-            if (bytes < 4 || bytes > std::numeric_limits<u32>::max()) break;
-            const auto [buffer, offset] =
-                buffer_cache.ObtainBuffer(address, static_cast<u32>(bytes), true);
-            runtime.FillBuffer(buffer, offset, bytes, 0x0000000FU);
-            runtime.FlushBarriers();
-            static std::atomic<u64> htile_fills{0};
-            const u64 n = htile_fills.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (n == 1 || n % 4096 == 0)
-                std::printf("ORDER1886_EVSM_HTILE_FILL count=%llu shader=%#llx bytes=%llu\n",
-                            static_cast<unsigned long long>(n),
-                            static_cast<unsigned long long>(cs.pgm_hash),
-                            static_cast<unsigned long long>(bytes));
-            break;
-        }
-    }
+    // 0.1.27 mutated flattened_ud_buf at runtime, introducing unmapped
+    // 0x9846aaff descriptors, and filled HTILE every EVSM dispatch (~45k
+    // operations in one session). Do not alter the persistent shader metadata.
+    // Sun AABB readbacks are handled at their producer and CPU-fault boundary.
 
     buffer_cache.WatchWrittenBuffers(ReadbackWatchedShader(cs.pgm_hash));
     buffer_cache.SetCurrentDispatch(cs.pgm_hash);
@@ -1713,25 +1676,6 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     }
 
     scheduler.EndRendering();
-    if (order_evsm_shadow) {
-        // The depth-store -> EVSM shader-read dependency must be complete.
-        // A memory barrier is legal here only after ending dynamic rendering.
-        scheduler.Record([](vk::CommandBuffer cmdbuf) {
-            const vk::MemoryBarrier2 barrier{
-                .srcStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                                vk::PipelineStageFlagBits2::eLateFragmentTests |
-                                vk::PipelineStageFlagBits2::eTransfer,
-                .srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
-                                 vk::AccessFlagBits2::eTransferWrite,
-                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-            };
-            cmdbuf.pipelineBarrier2(vk::DependencyInfo{
-                .memoryBarrierCount = 1,
-                .pMemoryBarriers = &barrier,
-            });
-        });
-    }
     mark();
     pipeline->BindResources(set_writes, push_data);
 
@@ -1777,6 +1721,8 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     }
 
     ResetBindings(true);
+    if (IsBachataOrder1886Edition() && cs.pgm_hash == 0x7b1b18c9ULL)
+        buffer_cache.RecordSunCopies();
     scheduler.KickRecording();
 }
 
@@ -2693,6 +2639,23 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 if (size != vsharp.GetSize()) {
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
+                    if (stage.pgm_hash == 0x9846aaffULL) {
+                        static std::atomic<u32> diagnosed{0};
+                        if (diagnosed.fetch_add(1, std::memory_order_relaxed) < 16)
+                            LOG_ERROR(Render,
+                                      "ORDER1886_SHADOW_BUFFER_DIAG index={} addr={:#x} "
+                                      "mapped={} expected={} writable={} type={}",
+                                      buffer_index, vsharp.base_address, size,
+                                      vsharp.GetSize(), desc.is_written, u32(desc.buffer_type));
+                    }
+                }
+                // The sun AABB reduction is GPU-written and CPU-consumed.
+                // Track only its known producers, never arbitrary guest buffers.
+                if (IsBachataOrder1886Edition() && desc.is_written && size &&
+                    (stage.uses_buffer_atomic_float_min_max ||
+                     stage.pgm_hash == 0x7550d841ULL ||
+                     stage.pgm_hash == 0x7b1b18c9ULL)) {
+                    buffer_cache.KeepPageSynchronized(vsharp.base_address, size, stage.pgm_hash);
                 }
                 // Port of The Order PC v0.2.7: some large vertex-record buffers
                 // alternate between a dword-aligned base and one shifted by 2 bytes.
@@ -3520,6 +3483,32 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
              regs.depth_control.depth_write_enable) ||
             texture_cache.IsMetaCleared(htile_address, slice);
         const bool is_stencil_clear = regs.depth_render_control.stencil_clear_enable;
+        if (IsBachataOrder1886Edition() && htile_address && is_depth_clear &&
+            regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
+            image.info.size.width == image.info.size.height &&
+            (image.info.size.width == 512 || image.info.size.width == 1024 ||
+             image.info.size.width == 2048) &&
+            texture_cache.IsMeta(htile_address) == VideoCore::SurfaceMetadata::Type::HTile) {
+            // Only a genuine shadow-depth clear gets an uncompressed zmask.
+            // No modification of shader pointers, and no per-dispatch HTILE
+            // writes. This precedes the next depth rendering pass in GPU order.
+            const u64 tiles_x = Common::AlignUp((image.info.size.width + 7) / 8, 64u);
+            const u64 tiles_y = Common::AlignUp((image.info.size.height + 7) / 8, 64u);
+            const u64 wanted = tiles_x * tiles_y * 4 *
+                               std::max(image.info.resources.layers, 1u);
+            const u64 bytes = memory->ClampRangeSize(htile_address, wanted) & ~u64(3);
+            if (bytes >= 4 && bytes <= 256_KB) {
+                const auto [buffer, offset] =
+                    buffer_cache.ObtainBuffer(htile_address, static_cast<u32>(bytes), true);
+                runtime.FillBuffer(buffer, offset, bytes, 0x0000000FU);
+                static std::atomic<u64> fills{0};
+                const u64 n = fills.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (n == 1 || (n % 1024) == 0)
+                    std::printf("ORDER1886_HTILE_DEPTH_CLEAR count=%llu size=%llu\n",
+                                static_cast<unsigned long long>(n),
+                                static_cast<unsigned long long>(bytes));
+            }
+        }
         if (regs.depth_control.depth_enable && regs.depth_control.depth_write_enable) {
             bool changed = false;
             for (u32 layer = 0; layer < image_view.info.range.extent.layers; ++layer)

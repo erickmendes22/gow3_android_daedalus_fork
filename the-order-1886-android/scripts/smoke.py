@@ -49,6 +49,14 @@ gpu_checks={
   "Compile-warning throttle preserves graphics and SRT fallbacks":
       "order1886_noncanonical_shaders" in (gpu/"shadps4/shader_recompiler/recompiler.cpp").read_text() and
       "unresolved_reports" in (gpu/"shadps4/shader_recompiler/ir/passes/order1886_arm64_srt.inc").read_text(),
+  "Sun cascade GPU AABB sync records and delivers completed snapshots":
+      "KeepPageSynchronized" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "RecordSunCopies" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "DeliverSunCopies" in (gpu/"shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text() and
+      "0x7b1b18c9ULL" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "EVSM mutation reverted, HTILE moved to shadow depth clear":
+      "mutable_cs.flattened_ud_buf" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "ORDER1886_HTILE_DEPTH_CLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "VRS 2x2 capability header is present":
       (gpu/"shadps4/video_core/renderer_vulkan/order1886_vrs.h").is_file(),
   "VRS never requests 4x4":

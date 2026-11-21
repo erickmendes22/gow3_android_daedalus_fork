@@ -106,6 +106,11 @@ public:
     void SetCurrentDispatch(u64 hash) {
         current_dispatch = hash;
     }
+    // The Order sun-cascade AABB reductions are GPU-written and read by CPU
+    // workers before the next cascade setup. Keep the newest completed GPU
+    // result available without forcing a pipeline-wide wait on every fault.
+    void KeepPageSynchronized(VAddr addr, u64 size, u64 shader);
+    void RecordSunCopies();
     /// The compute shader that last wrote a small buffer at `address`, or 0.
     u64 WriterOf(VAddr address);
 
@@ -198,6 +203,23 @@ private:
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
     std::mutex gpu_ranges_mutex;
+
+    struct SunCopy {
+        VAddr addr{};
+        u64 size{};
+        u64 staging_offset{};
+    };
+    struct SunBatch {
+        u64 tick{};
+        Vulkan::StagingBufferRef staging{};
+        std::vector<SunCopy> items;
+    };
+    bool SynchronizedPage(VAddr addr, u64 size);
+    bool DeliverSunCopies();
+    std::mutex sun_mutex;
+    RangeSet sun_ranges;
+    std::deque<SunBatch> sun_batches;
+    u64 last_delivered_sun_tick{};
 
     /// Deferred readbacks (from TOport 32efe96, GPL-2.0). A guest write beside (not on)
     /// GPU-written bytes of a page goes on at once; those bytes are copied to host memory in the
