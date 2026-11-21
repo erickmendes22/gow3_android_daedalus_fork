@@ -84,11 +84,11 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_PIPELINE_BINARIES","0");
         env.put("ORDER1886_PARALLEL_WARMUP","0");
         env.put("ORDER1886_DEFERRED_READBACK","0");
-        // The old launcher forced 0 workers even when native code supported
-        // prepared draws, leaving shader/pipeline specialization fully serial.
-        // Let the renderer select its safety-limited 1 worker on 8-core devices.
-        // The worker never reads speculative texture/vertex descriptors.
-        // ORDER1886_PREP_WORKERS can still be overridden by a developer shell.
+        // 0.1.29's speculative preparation made heavy-scene GPU idle time
+        // worse and introduced possible light/shadow key races. Never
+        // enable worker shader-table reads in a release until memory
+        // provenance and render-state invalidation have been verified.
+        env.put("ORDER1886_PREP_WORKERS","0");
         env.put("ORDER1886_STREAM_MEMORY","cached");
         env.put("ORDER1886_SETTINGS_MENU","0");
     }
