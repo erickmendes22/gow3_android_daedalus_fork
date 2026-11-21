@@ -107,10 +107,13 @@ public:
         if (consumed.load(std::memory_order_acquire) == head) {
             return;
         }
-        ++drains;
+        const bool measuring = StatsEnabled();
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
-        ++drains_by_reason[slot];
-        const u64 start = Common::FencedRDTSC();
+        if (measuring) {
+            ++drains;
+            ++drains_by_reason[slot];
+        }
+        const u64 start = measuring ? Common::FencedRDTSC() : 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         unsigned backoff = 0;
         for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
@@ -132,9 +135,11 @@ public:
                 std::abort();
             }
         }
-        const u64 waited = Common::FencedRDTSC() - start;
-        drain_cycles += waited;
-        cycles_by_reason[slot] += waited;
+        if (measuring) {
+            const u64 waited = Common::FencedRDTSC() - start;
+            drain_cycles += waited;
+            cycles_by_reason[slot] += waited;
+        }
     }
 
     /// Stage A: position after the last committed packet; Reached(position) once B ran it.
@@ -163,6 +168,14 @@ private:
 
     static constexpr u32 Align(u32 size) {
         return (size + 63) & ~63u;
+    }
+
+    [[nodiscard]] static bool StatsEnabled() {
+        // Timers are observational only. The Order sends 50k+ draw packets/s
+        // in heavy gameplay; two ARM64 ISB+counter reads per packet and an
+        // atomic fetch_add are unnecessary unless explicitly profiling.
+        static const bool enabled = std::getenv("ORDER1886_FRAME_STATS") != nullptr;
+        return enabled;
     }
 
     void WaitForSpace(u64 at, u64 size) {
@@ -231,9 +244,14 @@ private:
                 consumed.store(at, std::memory_order_release);
                 continue;
             }
-            const u64 start = Common::FencedRDTSC();
-            handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
-            busy_cycles.fetch_add(Common::FencedRDTSC() - start, std::memory_order_relaxed);
+            if (StatsEnabled()) {
+                const u64 start = Common::FencedRDTSC();
+                handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
+                busy_cycles.fetch_add(Common::FencedRDTSC() - start,
+                                      std::memory_order_relaxed);
+            } else {
+                handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
+            }
             at += header->size;
             consumed.store(at, std::memory_order_release);
         }
