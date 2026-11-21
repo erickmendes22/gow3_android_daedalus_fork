@@ -1144,7 +1144,7 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
 // Vulkan dynamic VRS state survives pipeline binds and render-pass boundaries
 // within one command buffer. Do not emit identical state on every draw:
 // The Order records tens of thousands of 2x2/1x1 decisions per 5 seconds.
-static void Order1886RecordFragmentRate(vk::CommandBuffer cmdbuf, u64 submit_tick, bool coarse) {
+static void Order1886RecordFragmentRate(vk::CommandBuffer cmdbuf, u64 submit_tick, bool vrs2x2) {
     struct LastRate {
         vk::CommandBuffer buffer{};
         u64 tick = 0;
@@ -1153,15 +1153,15 @@ static void Order1886RecordFragmentRate(vk::CommandBuffer cmdbuf, u64 submit_tic
     };
     static thread_local LastRate last;
     if (last.valid && last.tick == submit_tick &&
-        last.buffer == cmdbuf && last.coarse == coarse) {
+        last.buffer == cmdbuf && last.coarse == vrs2x2) {
         return;
     }
-    const vk::Extent2D rate{coarse ? 2u : 1u, coarse ? 2u : 1u};
+    const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
     const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> ops{
         vk::FragmentShadingRateCombinerOpKHR::eKeep,
         vk::FragmentShadingRateCombinerOpKHR::eKeep};
-    cmdbuf.setFragmentShadingRateKHR(rate, ops);
-    last = {cmdbuf, submit_tick, true, coarse};
+    cmdbuf.setFragmentShadingRateKHR(fragment_size, ops);
+    last = {cmdbuf, submit_tick, true, vrs2x2};
 }
 
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
