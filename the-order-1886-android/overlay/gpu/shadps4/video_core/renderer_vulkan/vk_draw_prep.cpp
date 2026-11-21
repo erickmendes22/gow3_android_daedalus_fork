@@ -51,14 +51,12 @@ u32 DefaultWorkerCount() {
     if (const char* env = std::getenv("ORDER1886_PREP_WORKERS")) {
         return static_cast<u32>(std::clamp(std::atoi(env), 0, 16));
     }
-    // A single low-priority worker prepares ONLY pipeline keys/stage
-    // specialization. Resource sharps and vertex streams remain on the
-    // ordered GPU thread to avoid malformed speculative descriptors.
-#ifdef __ANDROID__
-    return Ps4Threads::Available() >= 8 ? 1u : 0u;
-#else
+    // GPU idle grew in 0.1.29 even with >99% prepared-key matches, while
+    // ahead-of-time shader selection cannot validate all guest-memory
+    // dependencies of shadow/light resources. Do not spend a scanner core
+    // plus a speculative worker on the critical CPU/GPU feed by default.
+    // Only explicit ORDER1886_PREP_WORKERS > 0 permits experimental A/B.
     return 0;
-#endif
 }
 
 /// Flattened user data of one submission: chunks never move, so the GPU thread can read a
