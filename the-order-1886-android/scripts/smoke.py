@@ -35,11 +35,10 @@ gpu_checks={
   "Inline Vulkan tile clears preserve exact attachment state":
       "ORDER1886_GPU_INLINE_CLEAR reused=" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text() and
       "compared == new_state" in (gpu/"shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text(),
-  "EVSM compute shadow restores HTILE before dispatch":
-      "IsOrderEvsmShadowShader" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
-      "0x8ea0ef5bULL" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
-      "ORDER1886_EVSM_HTILE_FILL" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
-      "eDepthStencilAttachmentWrite" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
+  "Sun shadow metadata is only initialized at valid shadow depth clears":
+      "ORDER1886_HTILE_DEPTH_CLEAR" in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "ORDER1886_EVSM_HTILE_FILL" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text() and
+      "mutable_cs.flattened_ud_buf" not in (gpu/"shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text(),
   "Shadow depth image source writes participate in Vulkan barrier scopes":
       "depth_source_scope" in (gpu/"shadps4/video_core/texture_cache/image.cpp").read_text() and
       "eLateFragmentTests" in (gpu/"shadps4/video_core/texture_cache/image.cpp").read_text(),
