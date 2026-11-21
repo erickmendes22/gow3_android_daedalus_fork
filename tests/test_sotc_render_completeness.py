@@ -9,11 +9,10 @@ LAUNCHER = ROOT / "ports/sotc/android/run-sotc-bionic.sh"
 SRT = ROOT / "ports/sotc/android/stage_srt_arm64.py"
 
 class SotcRenderCompletenessTest(unittest.TestCase):
-    def test_android_async_graphics_is_off_by_default_and_opt_in(self):
+    def test_async_graphics_follows_the_user_enabled_fixed_profile(self):
         text = LAUNCHER.read_text()
-        # Controlled graphics compilation is reversible, while the two
-        # other async mechanisms remain OFF for an isolated comparison.
-        self.assertIn("export SOTC_ASYNC_SHADERS=${SOTC_ASYNC_SHADERS:-0}", text)
+        # Asynchronous graphics was enabled in the verified 0.1.50 user log.
+        self.assertIn("export SOTC_ASYNC_SHADERS=1", text)
         self.assertIn("export SOTC_ASYNC_TRANSLATE=0", text)
         self.assertIn("export SOTC_ASYNC_PRELOAD=0", text)
         self.assertIn("temporary missing geometry", text)
@@ -24,7 +23,7 @@ class SotcRenderCompletenessTest(unittest.TestCase):
         self.assertIn("export SOTC_UPLOAD_BUDGET_MB=0", text)
         self.assertLess(text.index("export SOTC_UPLOAD_BUDGET_MB=0"), text.index('exec "$@"'))
         self.assertIn("zero-fill upload deferral disabled", text)
-        self.assertIn("export SOTC_RB_ASYNC=${SOTC_RB_ASYNC:-0}", text)
+        self.assertIn("export SOTC_RB_ASYNC=1", text)
 
     def test_real_texture_lod_streaming_starts_high_stable(self):
         text = LAUNCHER.read_text()
