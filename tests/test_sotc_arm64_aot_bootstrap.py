@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host regression of SotC BBPROBE5->ARM64 AOT staging and memory-model policy."""
+"""Host regression of SotC BBPROBE5 to ARM64 AOT staging with TSO disabled."""
 import contextlib
 import hashlib
 import importlib.util
@@ -44,16 +44,16 @@ class TestSotcArm64Aot(unittest.TestCase):
         image_fixture(self.boot,self.original)
         patch_fixture(self.patches,[(12,b"\xaa\xbb"),(63,b"\xcc")])
 
-    def test_strict_tso_and_no_fex_runtime_removal_claim(self):
+    def test_aot_no_tso_codegen_and_no_false_runtime_claim(self):
         cmd=aot.compiler_command(Path("/compiler"),Path("/game"),self.boot,
               Path("/out/libSotcAot.so"),Path("/out/stats"),None,3,64)
-        self.assertIn("--tso",cmd)
+        self.assertNotIn("--tso",cmd)
         self.assertIn("--resume-entries",cmd)
         self.assertIn("--no-callee-saved",cmd)
         self.assertIn("armv8.2",cmd)
         self.assertNotIn("--no-dirty-check",cmd)
         self.assertNotIn("--no-tso",cmd)
-        self.assertTrue(aot.AOT_FLAGS[0]=="--tso")
+        self.assertEqual(aot.AOT_FLAGS,("--resume-entries","--no-callee-saved"))
 
     def test_prepared_image_precise_patches(self):
         out=self.root/"native-boot-linked.bin"
@@ -103,7 +103,7 @@ class TestSotcArm64Aot(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Unsupported"):
             aot.validate_game(prepared,game)
 
-    def test_native_result_rejects_dirty_tso(self):
+    def test_native_result_rejects_unsupported_ops(self):
         so=self.root/"libSotcAot.so";stats=self.root/"compile.txt";meta=self.root/"libSotcAot.json"
         so.write_bytes(b"\x7fELF"+b"\0"*14+struct.pack("<H",183))
         md={"abi_version":2,"compiler_version":"3-tlou-string",
