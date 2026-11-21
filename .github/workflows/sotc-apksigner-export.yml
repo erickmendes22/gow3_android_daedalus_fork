@@ -27,7 +27,7 @@ jobs:
           cp "$bt/apksigner" "$bt/zipalign" build-tools-offline/
           cp "$bt/lib/apksigner.jar" build-tools-offline/lib/
           sudo apt-get update -qq
-          sudo apt-get install -y libc++1 libc++abi1 libunwind-14
+          sudo apt-get install -y libc++1 libc++abi1
           cxx=$(ldconfig -p | awk '/libc\+\+\.so\.1 / {print $NF; exit}')
           test -s "$cxx"
           cp -L "$cxx" build-tools-offline/libc++.so
