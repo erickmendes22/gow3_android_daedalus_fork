@@ -112,6 +112,9 @@ class TestSotcArm64Aot(unittest.TestCase):
         meta.write_text(json.dumps(md))
         stats.write_text("units with bbr_trap (unsupported ops): 0 (0.0%)\n")
         self.assertEqual(aot.verify_native(so,stats,meta)["unit_count"],1000)
+        md["compiler_version"]="1"  # official bb-recomp 1.3.0 with --tso omitted
+        meta.write_text(json.dumps(md))
+        self.assertEqual(aot.verify_native(so,stats,meta)["compiler_version"],"1")
         stats.write_text("LoadMemTSO\nunits with bbr_trap (unsupported ops): 0 (0.0%)\n")
         with self.assertRaisesRegex(ValueError,"Guest TSO operations"):
             aot.verify_native(so,stats,meta)
