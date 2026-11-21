@@ -1141,6 +1141,29 @@ static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::R
     return true;
 }
 
+// Vulkan dynamic VRS state survives pipeline binds and render-pass boundaries
+// within one command buffer. Do not emit identical state on every draw:
+// The Order records tens of thousands of 2x2/1x1 decisions per 5 seconds.
+static void Order1886RecordFragmentRate(vk::CommandBuffer cmdbuf, u64 submit_tick, bool coarse) {
+    struct LastRate {
+        vk::CommandBuffer buffer{};
+        u64 tick = 0;
+        bool valid = false;
+        bool coarse = false;
+    };
+    static thread_local LastRate last;
+    if (last.valid && last.tick == submit_tick &&
+        last.buffer == cmdbuf && last.coarse == coarse) {
+        return;
+    }
+    const vk::Extent2D rate{coarse ? 2u : 1u, coarse ? 2u : 1u};
+    const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> ops{
+        vk::FragmentShadingRateCombinerOpKHR::eKeep,
+        vk::FragmentShadingRateCombinerOpKHR::eKeep};
+    cmdbuf.setFragmentShadingRateKHR(rate, ops);
+    last = {cmdbuf, submit_tick, true, coarse};
+}
+
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     if (DrawPipe::OnStageB()) {
@@ -1276,6 +1299,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
+    const u64 vrs_submit_tick = scheduler.CurrentTick();
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         const auto draw = [&] {
             if (is_indexed) {
@@ -1287,11 +1311,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         };
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
         if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
-            const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
-            const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
-                vk::FragmentShadingRateCombinerOpKHR::eKeep,
-                vk::FragmentShadingRateCombinerOpKHR::eKeep};
-            cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+            Order1886RecordFragmentRate(cmdbuf, vrs_submit_tick, vrs2x2);
         }
         draw();
         if (square) [[unlikely]] {
@@ -1299,11 +1319,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             // The second blend-rewrite draw must never inherit 2x2 from
             // the primary geometry draw; it restores per-pixel composition.
             if (vrs2x2) {
-                const vk::Extent2D full_rate{1u, 1u};
-                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> ops{
-                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
-                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
-                cmdbuf.setFragmentShadingRateKHR(full_rate, ops);
+                Order1886RecordFragmentRate(cmdbuf, vrs_submit_tick, false);
             }
             draw();
         }
@@ -1442,6 +1458,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const vk::Pipeline square = SquarePass(*pipeline);
     const vk::Buffer counts = count_address != 0 ? count_buffer->Handle() : vk::Buffer{};
     const u64 counts_offset = count_address != 0 ? count_offset : 0;
+    const u64 vrs_submit_tick = scheduler.CurrentTick();
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         for (const vk::Pipeline bound : {handle, square}) {
             if (!bound) {
@@ -1449,13 +1466,8 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
             if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
-                const bool primary_vrs = vrs2x2 && bound == handle;
-                const vk::Extent2D fragment_size{primary_vrs ? 2u : 1u,
-                                                 primary_vrs ? 2u : 1u};
-                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
-                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
-                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
-                cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+                Order1886RecordFragmentRate(cmdbuf, vrs_submit_tick,
+                                            vrs2x2 && bound == handle);
             }
             if (is_indexed) {
                 if (counts) {
