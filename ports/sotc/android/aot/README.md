@@ -1,63 +1,41 @@
-# Shadow of the Colossus: ARM64 AOT bootstrap (experimental)
+# Shadow of the Colossus — ARM64 AOT sem FEX e sem TSO
 
-**Not an AOT gameplay APK.** This initial change does not remove FEX from the
-installed SotC 0.1.53 application and does not claim an FPS improvement.
+**Objetivo:** exclusivamente ARM64 AOT nativo, sem TSO e sem fallback FEX. A versão 0.1.53 permanece como referência jogável. O APK AOT ainda NÃO foi compilado/validado.
 
-## Confirmed from Android log
+## Arquivos reais verificados (21/11/2026)
 
-In the 2026-11-21 19:40 SotC diagnostic, FEXCore JIT is active, with its TSO
-configuration unchanged. The second and third complete minutes report 28.6
-and 28.8 FPS. The third minute has 55 frames over 50 ms. PhysX clothing
-reported 20.58 ms simulation but is not proven to be the sole bottleneck.
+- CUSA08809 EU 1.01, entrada 0xf120.
+- Eboot SHA-256: 21982727c6f97fd415b3af5e99c5e071619c4dcc2248787a701a31a45ab0a4e0.
+- libc.prx e libSceFios2.prx foram vinculados sem erro.
+- Imagem BBPROBE5: 85.769.980 bytes, 2 módulos, 197 bindings, 687 imports, 714.353 relocations.
+- Imagem AOT preparada com 68 patches e 396 bytes alterados, SHA-256 61b0ecf9abde6609152e3282e09e2006392b53a6479a0c19e3f97d1a21af0ad8.
+- Três funções red-zone: 0xedfb30, 0xf67d2b e 0xf52530. Ainda requerem equivalência funcional no ARM64.
 
-The TLOU experimental ARM64 native code is the technical reference. Its
-v3 vs v4 TSO comparison measured 56.8 vs 56.8 flips/s in unsynchronized
-runs, so changing TSO did not demonstrate an FPS gain. Its TSO-OFF profile
-is expressly unsafe/experimental; never deploy that as SotC default.
+Todos os arquivos do jogo permaneceram no ambiente de trabalho privado. Não enviar executáveis, PRX ou dados do jogo ao GitHub Actions. A imagem preparada ainda contém código x86 para o compilador, NÃO código ARM64 executável.
 
-## Implemented now
+## Implementações nesta branch
 
-- Local compiler frontend validates the actual eboot digest against the
-  prepared SotC image analysis and checks EU/US title IDs.
-- Validates BBPROBE5 tables and duplicates all SotC BBPATCH2 edits on an
-  isolated private image BEFORE AOT codegen, avoiding stale patched code.
-- Refuses patch overlap, out-of-bounds changes, corrupted tables and
-  unintended modifications to original files.
-- Calls TSO-correct ARM64 bb-recomp (TLOU-patched v3/v4/v5), with
-  --tso, --resume-entries, --no-callee-saved, and explicit ARMv8.2.
-- Verifies compiled AArch64 ELF, compiler ABI, checksum, unit coverage,
-  and absence of unsupported LoadMemTSO/StoreMemTSO IR operations.
-- AOT code remains in a separate work directory. FEX is unchanged.
-- Lightweight host CI checks code and safety invariants without building
-  yet another unchanged APK.
+1. **compile_local.py**: valida assinatura, módulos, patches e cobertura; monta clone de boot, usa --target aarch64 --resume-entries --no-callee-saved, **sem --tso**.
+2. **port_guest_context.py**: adapta o engine CPU AOT do Bloodborne (pino b6d4cfb6972c84d4029f54765406ec143df3c30e) ao ABI guest_context_get/set do SotC. Salva RIP/RSP após o retorno HLE; preserva FS/GS da thread; evita duplicar o retorno quando troca de fiber.
+3. **build_native_cpu.sh**: gera libgow3cpu.so ARM64 e alias libbbcpu.so sem dependências FEX, com verificação de símbolos ABI.
+4. **Tests e GitHub Actions**: código sintético e verificação de política sem TSO. Testes NÃO comprovam execução real do jogo.
 
-Example with an independently obtained TSO-compatible Android compiler,
-user's own game and private app storage:
+### Preparar AOT em ambiente privado com os arquivos do jogo
 
-    python3 sotc_aot_compile.py \
-        --game /private/ShadowOfTheColossus \
-        --prepared /private/sotcport/sotc-out \
-        --out /private/sotc-aot-work \
-        --compiler /private/tools/libbbrecomp.so \
-        --bundle-dir /private/tools/bundle \
-        --jobs 3 --shards 64 --dry-run
+    python3 ports/sotc/android/aot/compile_local.py --game /private/CUSA08809 --prepared /private/sotc-out --out /private/sotc-aot --compiler /private/libbbrecomp.so --bundle-dir /private/bb-recomp-bundle --jobs 3 --shards 64
 
-Remove --dry-run only after provisioning the patched AOT compiler. Sony game
-data MUST remain local and must never be uploaded to build CI.
+Com --dry-run apenas valida e prepara a imagem, sem gerar libSotcAot.so.
 
-## Required before game can run without FEX
+### Compilar o backend AOT com Android NDK
 
-1. Adapt Bloodborne/TLOU AOT guest CPU dispatcher for SotC's distinct
-   GuestContext (guest_context_get/guest_context_set) continuation ABI,
-   PS4 fibers, callbacks, GS/FS per thread and host signal handling.
-2. Verify indirect entry coverage, pretranslated libc.prx/libSceFios2.prx
-   and any native patch sites; reject uncovered or dirty units.
-3. Preserve runtime code patch semantics, traps, TLS, exception recovery,
-   write protection and GPU readback behavior. No unsafe TSO removal.
-4. Run an opt-in AOT Android build and compare identical forest paths on
-   device with FEX baseline, including saves, visuals, physics and stalls.
+    SOTC_NDK=/opt/android/ndk/r29 bash ports/sotc/android/aot/build_native_cpu.sh
 
-At 28.8 FPS, mean frame cost is about 34.72 ms. Reaching 30 FPS needs
-33.33 ms/frame, or ~1.39 ms (4.0%) of critical-path savings. AOT may
-reduce JIT/dispatch overhead but CANNOT remove GPU or PhysX costs; expected
-FPS gains are unknown until SotC native gameplay is actually profiled.
+## Pendências reais
+
+- Compilar libSotcAot.so com tradução completa; checar SSE4a, código indireto, exceções e concorrência.
+- Compilar backend em NDK e validar chamadas guest_cpu_*/guest_context_* e fibers na gameplay.
+- Integrar AOT no launcher Android e no APK, sem incluir FEX na build AOT.
+- Assinar com a chave original do 0.1.53 para instalar por cima, sem apagar dados.
+- Medir FPS, física, vídeos e estabilidade com os mesmos trechos (especialmente a floresta).
+
+Não alegar correção completa, gameplay nem ganho de FPS antes dos testes reais. A remoção de TSO não elimina a necessidade de sincronização explícita correta.
