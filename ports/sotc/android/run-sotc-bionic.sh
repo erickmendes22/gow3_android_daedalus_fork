@@ -134,10 +134,14 @@ export SOTC_BUF_ASYNC_KB=256
 # PC GPU hotpaths on mobile, while keeping precise guest readbacks.
 export SOTC_FILL_HLE_GPU=1
 export SOTC_TEX_ASYNC_KB=512
+# Compute translation ahead of dispatch, and verified negative VMA caching.
+export SOTC_COMPUTE_PREFETCH=1
+export SOTC_VM_GAP_CACHE=1
 export SOTC_COPY_BATCH=1
 export SOTC_RB_NARROW=64
 echo "SotC PC streaming: staging pow2=$SOTC_STAGING_LARGE_POW2 cap=$SOTC_STAGING_LARGE_KEEP_MB MiB async upload >=$SOTC_BUF_ASYNC_KB KiB"
 echo "SotC GPU work: fill_hle_gpu=$SOTC_FILL_HLE_GPU async_texture_kib=$SOTC_TEX_ASYNC_KB"
+echo "SotC forest CPU: compute_prefetch=$SOTC_COMPUTE_PREFETCH vma_gap_cache=$SOTC_VM_GAP_CACHE"
 # Upstream's 32 MiB/frame texture upload budget defers large first-use textures
 # and explicitly fills those images with zero texels (black) until a later flip.
 # SotC Android prioritizes complete materials over area-transition frame time:

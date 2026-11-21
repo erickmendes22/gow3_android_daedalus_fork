@@ -541,6 +541,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     patch_pc_streaming(out)
     from stage_sotc_gpu_work_052 import patch_gpu_work
     patch_gpu_work(out)
+    # Forest-area-change compute shaders go to translation workers ahead of dispatch.
+    from stage_sotc_compute_prefetch_053 import patch_prefetch
+    patch_prefetch(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)

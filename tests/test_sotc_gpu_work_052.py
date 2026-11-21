@@ -19,7 +19,7 @@ class GpuWorkBackportTest(unittest.TestCase):
             self.assertIn(f"export {name}={value}",sh)
             self.assertIn(f'env.put("{name}","{value}");',java)
         self.assertIn("export SOTC_RB_HOT=${SOTC_RB_HOT:-0}",sh)
-        self.assertIn("version='0.1.52-boot-test'",(ROOT/"ports/sotc/android/package_sotc_runtime.py").read_text())
+        self.assertIn("version='0.1.53-boot-test'",(ROOT/"ports/sotc/android/package_sotc_runtime.py").read_text())
     @unittest.skipUnless((SRC/"shadps4").is_dir(),"Pinned PC source needed")
     def test_real_cpp(self):
         with tempfile.TemporaryDirectory() as td:

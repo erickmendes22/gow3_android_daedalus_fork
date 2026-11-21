@@ -95,6 +95,22 @@ int main(void) {
         assert(runtime_memory_backing_pointer(first+11)==backing_base+11);
     }
     assert(pthread_join(worker,NULL)==0);
+    /* Forest streaming: a gap probed by an unmapped shader descriptor must
+     * stay a fast miss until its actual VMA is mapped. Only unrelated
+     * generations keep the negative entry; a write to the gap invalidates. */
+    const uintptr_t gap=first+4*PAGE;
+    assert(runtime_memory_clamp(gap,PAGE)==0);
+    assert(sotc_vm_gap.start<=gap && gap<sotc_vm_gap.end);
+    assert(sotc_vm_unmapped_fast(gap));
+    assert(!runtime_memory_is_mapped(gap,PAGE));
+    write_lock();
+    sotc_vm_mark_dirty(gap,gap+PAGE);
+    vmas[2]=(Vma){gap,gap+PAGE,KIND_DIRECT,0x33,0,0};
+    vma_count=3;
+    write_unlock();
+    assert(!sotc_vm_unmapped_fast(gap));
+    assert(runtime_memory_is_mapped(gap,PAGE));
+    assert(runtime_memory_clamp(gap,PAGE)==PAGE);
     /* A validated direct cache entry at a distinct 8MiB / 64MiB arena
      * must not evict the other one. This check concerns only placement:
      * correctness still goes through the generation and dirty journal.

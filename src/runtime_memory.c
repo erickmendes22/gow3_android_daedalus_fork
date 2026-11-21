@@ -946,6 +946,13 @@ static __thread CachedRegion region_cache[8];
 static __thread unsigned region_cache_next;
 #define SOTC_VM_DIRECT_SLOTS 512u
 static __thread CachedRegion sotc_vm_direct[SOTC_VM_DIRECT_SLOTS];
+/* A missing guest mapping or reserved gap is negative information too.  Many
+ * transient texture/geometry descriptors ask for the same unmapped area once
+ * per draw; remember the exact gap under the VMA reader lock, then validate
+ * it against the existing dirty-interval journal (never inspect the mutable
+ * VMA table without holding the lock). */
+static __thread CachedRegion sotc_vm_gap;
+
 static int sotc_vm_cache_on(void) {
     static int on=-1;
     int value=__atomic_load_n(&on,__ATOMIC_ACQUIRE);
@@ -993,6 +1000,34 @@ static const CachedRegion *cached_region(uintptr_t address) {
     }
     return NULL;
 }
+static int sotc_vm_unmapped_fast(uintptr_t address) {
+    if (!sotc_vm_cache_on() || (runtime_disabled_optimizations & 1)) return 0;
+    static int gap_on=-1;
+    int enabled=__atomic_load_n(&gap_on,__ATOMIC_ACQUIRE);
+    if (enabled<0) {
+        const char *v=getenv("SOTC_VM_GAP_CACHE");
+        enabled=!(v && v[0]=='0');
+        __atomic_store_n(&gap_on,enabled,__ATOMIC_RELEASE);
+    }
+    if (!enabled) return 0;
+    const CachedRegion *mapped=cached_region(address);
+    if (mapped && mapped->kind==KIND_RESERVED) return 1;
+    CachedRegion *g=&sotc_vm_gap;
+    const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
+    return g->start<=address && address<g->end &&
+           sotc_vm_cached_valid(g,generation);
+}
+static void sotc_vm_note_gap_locked(uintptr_t address) {
+    if (!sotc_vm_cache_on() || (runtime_disabled_optimizations & 1)) return;
+    const size_t at=vma_index(address);
+    const uintptr_t start=at ? vmas[at-1].end : USER_MIN;
+    const uintptr_t end=at<vma_count ? vmas[at].start : USER_MAX;
+    const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
+    if (!(generation & 1) && start && start<=address && address<end &&
+        end<=USER_MAX) {
+        sotc_vm_gap=(CachedRegion){generation,start,end,0,KIND_RESERVED};
+    }
+}
 /* Under a read lock, remember the complete validated mapping. */
 static void cache_region(size_t i, uintptr_t accessed_address) {
     const uint64_t generation=__atomic_load_n(&table_generation,__ATOMIC_ACQUIRE);
@@ -1023,12 +1058,20 @@ static uint64_t sotc_vm_cached_length(uintptr_t address, uint64_t size) {
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
     if (size && sotc_vm_cached_length(address,size)==size) return size;
+    if (size && sotc_vm_unmapped_fast(address)) return 0;
     read_lock();
     uint64_t length=0;
     for (size_t i=vma_index(address); i<vma_count && length<size; ++i) {
         if (vmas[i].start>address+length || vmas[i].kind==KIND_RESERVED) break;
         cache_region(i,address+length);
         length=vmas[i].end-address;
+    }
+    if (size && !length) {
+        const size_t i=vma_index(address);
+        if (i<vma_count && vmas[i].start<=address && vmas[i].kind==KIND_RESERVED)
+            cache_region(i,address);
+        else
+            sotc_vm_note_gap_locked(address);
     }
     read_unlock();
     return length<size ? length : size;
@@ -1065,6 +1108,7 @@ void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int 
 /* Host view of a guest range, for the GPU backend: the range must be mapped. */
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {
     if (size && sotc_vm_cached_length(address,size)==size) return 1;
+    if (size && sotc_vm_unmapped_fast(address)) return 0;
     read_lock();
     const int result=covered(address,address+size,0);
     if (result && size && size<=UINTPTR_MAX-address) {

@@ -1,7 +1,7 @@
-name: SotC 0.1.52 GPU work Android APK
+name: SotC 0.1.53 GPU work Android APK
 on:
   push:
-    branches: [fix/sotc-performance-root-052]
+    branches: [perf/sotc-forest-053]
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,10 +30,11 @@ jobs:
       - name: Validate SotC-specific packaging scripts before native compilation
         run: |
           python3 -m compileall -q tests
-          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_sotc_lowres.py ports/sotc/android/stage_sotc_perf_profile.py ports/sotc/android/stage_sotc_stage_spec_cpu.py ports/sotc/android/stage_sotc_reg_snapshot.py ports/sotc/android/stage_sotc_rt_memo.py ports/sotc/android/analyze_frame_profile.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/stage_wave64_absent_lanes.py ports/sotc/android/stage_sotc_pc_streaming_051.py ports/sotc/android/stage_sotc_gpu_work_052.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
+          python3 -m py_compile ports/sotc/android/stage_renderer.py ports/sotc/android/stage_srt_arm64.py ports/sotc/android/stage_adreno_wave32.py ports/sotc/android/stage_fragment_tsharp.py ports/sotc/android/stage_adreno_barycentric_gs.py ports/sotc/android/stage_adreno_gs_position.py ports/sotc/android/stage_adreno_tess_barycentric.py ports/sotc/android/stage_gpu_pass_capture.py ports/sotc/android/stage_meta_clear_integrity.py ports/sotc/android/stage_perf_fastpaths.py ports/sotc/android/stage_present_full_blit.py ports/sotc/android/stage_sotc_lowres.py ports/sotc/android/stage_sotc_perf_profile.py ports/sotc/android/stage_sotc_stage_spec_cpu.py ports/sotc/android/stage_sotc_reg_snapshot.py ports/sotc/android/stage_sotc_rt_memo.py ports/sotc/android/analyze_frame_profile.py ports/sotc/android/stage_adreno_lds_integrity.py ports/sotc/android/stage_wave64_absent_lanes.py ports/sotc/android/stage_sotc_pc_streaming_051.py ports/sotc/android/stage_sotc_gpu_work_052.py ports/sotc/android/stage_sotc_compute_prefetch_053.py ports/sotc/android/bachata_perf.py ports/sotc/android/prepare_game.py ports/sotc/android/vendor_turnip.py ports/sotc/android/wire_ahb.py ports/sotc/android/package_sotc_runtime.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
           python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_async_051.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_gpu_work_052.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_compute_prefetch_053.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_readback_stream.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_wave64_absent_lanes.py' -v
           grep -Fq 'export SOTC_UPLOAD_BUDGET_MB=0' ports/sotc/android/run-sotc-bionic.sh
@@ -290,7 +291,7 @@ jobs:
           import tarfile,json
           with tarfile.open('out/release/sotc-runtime.tar.gz','r:gz') as t:
               manifest=json.load(t.extractfile('runtime-manifest.json'))
-              assert manifest['version']=='0.1.52-boot-test',manifest
+              assert manifest['version']=='0.1.53-boot-test',manifest
           print('PASS: PC 0.71 runtime guard compiled, PC 0.72 fast reads opt-in and version verified')
           PY
           if grep -Fq 'God_of_War_III_Remastered.xml' "$RUNNER_TEMP/sotc-payload-files.txt"; then
@@ -306,10 +307,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.52-gpu-work-CI-UNSIGNED
+          name: Shadow-of-the-Colossus-Daedalus-Android-Bionic-0.1.53-forest-performance-CI-UNSIGNED
           path: |
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.52-gpu-work-arm64-unsigned.apk
-            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.52-gpu-work-arm64-unsigned.apk.sha256
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.53-forest-performance-arm64-unsigned.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-Android-0.1.53-forest-performance-arm64-unsigned.apk.sha256
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
