@@ -484,7 +484,10 @@ public final class Order1886Activity extends Activity {
             Math.max(0,Math.min(29,prefs().getInt("language",1))),
             n->{prefs().edit().putInt("language",n).apply();selectionChange();});
         toggle(c,"VSync", "vsync",false);
-        toggle(c,"Shaders assíncronos", "asyncShaders",true);
+        toggle(c,"Shaders assíncronos (não descartar draws)", "asyncShaders",true);
+        toggle(c,"FEX: desativar TSO (experimental)", "fexDisableTso",false);
+        line(c,"TSO do FEX", "Padrão: ativado para preservar a sincronização x86 entre threads. "+
+            "Desativar pode melhorar desempenho ou causar travamentos e falhas; reinicie o jogo após mudar.");
         toggle(c,"Perfil de desempenho do motor (-msaa 1 / -disablecloth)",
                "enginePerf",true);
         line(c,"Redução de GPU compatível",
