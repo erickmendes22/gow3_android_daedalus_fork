@@ -22,12 +22,14 @@
 #include "core/memory.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/ps4_msaa.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_image_binding_contract.h"
 #include "video_core/renderer_vulkan/order1886_image_mode.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
@@ -54,9 +56,15 @@ static bool IsBachataOrder1886Edition() {
     return Common::ElfInfo::Instance().GameSerial() == "CUSA00785";
 }
 static void ApplyBachataOrderShadowUdV6(const Shader::Info& info, Shader::PushData& data) {
+    // Restore the pre-0.1.27 form: the extra UD4 write corrupted the
+    // 0x9846aaff buffer descriptor, producing zero-length bindings.
     if (IsBachataOrder1886Edition() && info.pgm_hash == 0x9846aaffULL)
         data.ud_regs[1] = 0x7F80000FU;
 }
+// Shadow-map draws must not be dropped by dimensions alone. The experimental
+// 512/1024/2048 depth-skip path suppressed a 512x512 draw just before a
+// boot-to-menu boost::container::bad_alloc in the 0.1.21 Android log. All
+// depth draws and their bindings must execute until proven safe by GPU markers.
 static std::atomic<u64> next_mapped_ranges_identity{1};
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
@@ -83,6 +91,8 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     pipeline_cache.SetSrtSync([this](Shader::Info& info) {
         ReadBackGpuWrittenSrtSources(info);
     });
+    std::printf("ORDER1886_OPT_PATCH1_LIGHT_GUARD enabled=%d shader=0x804aeead\n",
+                int(Shader::g_order1886_light_guard_enabled));
     // Before the rasterizer is bound: Liverpool enqueues buffers only once it sees it.
     draw_prep = std::make_unique<DrawPreparation>(pipeline_cache);
     scene_targets = std::make_unique<SceneTargets>(instance, scheduler, runtime, texture_cache);
@@ -125,27 +135,35 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
     constexpr unsigned MaxPasses = 4;
     std::unordered_set<VAddr> visited;
     for (unsigned pass = 0; pass < MaxPasses; ++pass) {
-        bool downloaded = false;
-        // Official Bachata 0.2.7: page-level GPU-written SRT source
-        // publication, then recompute the guest pointer graph up to 4 times.
+        // Official Bachata 0.2.7: publish GPU-written guest SRT pages before
+        // re-reading the pointer graph, but do not stall once for EVERY page.
         const auto sources = info.srt_source_addresses;
-        VAddr previous_page = 0;
+        std::vector<VAddr> pages;
+        pages.reserve(sources.size());
         for (const VAddr address : sources) {
             if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
             const VAddr page = address & PageMask;
-            if (page == previous_page) continue;
-            previous_page = page;
             if (visited.contains(page) || !IsMapped(page, PageSize) ||
                 !buffer_cache.IsRegionGpuModified(page, PageSize) ||
                 !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
             visited.insert(page);
-            // GPU command thread only; never block in background shader workers.
-            DrainDrawPipe();
-            texture_cache.ResolveReadbacks(page, PageSize, true,
-                                           VideoCore::ReadbackSource::CpuRead);
-            downloaded |= buffer_cache.DownloadSrtSourcePage(page);
+            pages.push_back(page);
         }
-        if (!downloaded) break;
+        if (pages.empty()) break;
+        // Keep the exact same command ordering as the old per-page path.
+        // Group image readback resolutions for adjacent SRT pages too.
+        DrainDrawPipe();
+        std::sort(pages.begin(), pages.end());
+        for (size_t i = 0; i < pages.size();) {
+            size_t end = i + 1;
+            while (end < pages.size() && pages[end] - pages[end - 1] == PageSize) {
+                ++end;
+            }
+            texture_cache.ResolveReadbacks(pages[i], (end - i) * PageSize, true,
+                                           VideoCore::ReadbackSource::CpuRead);
+            i = end;
+        }
+        if (!buffer_cache.DownloadSrtSourcePages(pages)) break;
         info.RefreshFlatBuf();
     }
 #else
@@ -979,6 +997,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
             return;
         }
     }
+    // Zero-vertex/instance commands do not generate fragments or GPU writes.
+    // Drop them before pipeline specialization, binding and command recording.
+    if (Regs().num_indices == 0 || Regs().num_instances.NumInstances() == 0) {
+        return;
+    }
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline({}, prepared);
     const PreparedDraw* used_prepared = pipeline_cache.UsedPrepared();
     if (prepared) {
@@ -987,6 +1010,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
                          prepared->reg_checksum == liverpool->gfx_reg_checksum);
     }
     if (!pipeline) {
+        // An empty scene is very different when draws are rejected here than
+        // when successful draw commands produce no color/depth output.
+        static std::atomic<u32> order_missing_pipeline{0};
+        if (order_missing_pipeline.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_DRAW_NO_PIPELINE indices={} indexed={} draw_pipe={}",
+                        liverpool->regs.num_indices, is_indexed, pipelined);
+        }
         return;
     }
     if (pipelined && FilterDrawPasses()) {
@@ -1026,6 +1057,90 @@ void Rasterizer::DiagPassBoundary(bool force) {
     diag_addresses = force ? std::array<VAddr, 8>{} : addresses;
 }
 
+// The 0.1.24 broad-VRS path coarsened fragment shaders that still use
+// discard/coverage/depth exports, even with fixed-function blending disabled.
+// Those shaders are NOT opaque: 2x2 execution can discard the same four-pixel
+// block and make the character's alpha-tested geometry look transparent.
+//
+// Full-resolution VRS stays on opaque MRT only. The 640x360 scene-color-depth
+// pass rises from ~0.6 ms to ~5 ms in the final gameplay; allow 2x2 there
+// *only* for identified direct opaque draws with actual depth writes.
+// Alpha-cutout, coverage export, blending, stencil, feedback, post and all
+// unknown indirect half-resolution draws stay at exact 1x1.
+static bool Order1886UseVrs2x2(const GraphicsPipeline* pipeline, const AmdGpu::Regs& regs,
+                              const RenderState& state, bool feedback_loop,
+                              bool geometry_draw) {
+    if (feedback_loop ||
+        !state.depth_stencil_attachment.has_depth || !regs.depth_control.depth_enable ||
+        regs.depth_control.stencil_enable) {
+        return false;
+    }
+    const bool fullres_mrt = state.width >= 960 && state.height >= 540;
+    const bool halfres_scene = state.width == 640 && state.height == 360 &&
+        geometry_draw && regs.depth_control.depth_write_enable &&
+        !regs.IsClipDisabled();
+    if (!fullres_mrt && !halfres_scene) {
+        return false;
+    }
+    const auto& key = pipeline->GetGraphicsKey();
+    const u32 active_targets = std::popcount(key.mrt_mask);
+    if (!(key.num_samples == 1 || AmdGpu::NoMsaa()) ||
+        (fullres_mrt && active_targets < 2) ||
+        (halfres_scene && active_targets != 1)) {
+        return false;
+    }
+
+    // A fragment program may be alpha-tested without any Vulkan blend state.
+    // Reject discard, explicit Z/stencil/sample-mask export and storage side
+    // effects; otherwise 2x2 changes object visibility rather than only cost.
+    const auto* fs = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    if (!fs) {
+        return false;
+    }
+    if (fs->has_discard) {
+        g_order1886_vrs_rejected_discard.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    // Shader::Info contains translated shader metadata, but PS hardware
+    // export flags live in the guest GPU registers (the same source used by
+    // PipelineCache::BuildCommon). Alpha-to-coverage, Z, stencil or sample
+    // mask writes must retain precise per-pixel fragment shading.
+    const auto& exports = regs.depth_shader_control;
+    if (exports.z_export_enable || exports.stencil_op_val_export_enable ||
+        exports.stencil_test_val_export_enable || exports.mask_export_enable ||
+        exports.coverage_to_mask_enable) {
+        g_order1886_vrs_rejected_coverage.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    if (fs->has_storage_images || fs->translation_failed) {
+        g_order1886_vrs_rejected_side_effects.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    // Shadow-map samplers must keep pixel-precise gradients/coverage. VRS on
+    // depth-sampling material shaders can make shadow edges flicker even when
+    // the shader has no alpha discard or fixed-function blending.
+    for (const auto& image : fs->images) {
+        if (image.is_depth) {
+            g_order1886_vrs_rejected_side_effects.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+    }
+
+    // Full-res MRT may fetch vertices directly from guest shader buffers.
+    // The new half-res path instead requires identified depth-writing geometry;
+    // opaque fullscreen effects with depth disabled retain precise 1x1.
+    for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        if ((key.mrt_mask & (1u << i)) &&
+            (key.blend_controls[i].enable || !state.color_attachments[i].image_view)) {
+            return false;
+        }
+    }
+    if (halfres_scene) {
+        g_order1886_vrs_halfres_2x2_draws.fetch_add(1, std::memory_order_relaxed);
+    }
+    return true;
+}
+
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     if (DrawPipe::OnStageB()) {
@@ -1036,8 +1151,17 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto& regs = Regs();
     // the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
-    if (camera_motion->Enabled() && regs.color_buffers[0] &&
-        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+    // No per-draw framebuffer lookup in the normal non-profiled path.
+    // The earlier diagnostic fix must not add CPU work to every draw.
+    const bool motion_enabled = camera_motion->Enabled();
+    const bool profiling_enabled = GpuProfiler::Get() != nullptr;
+    const bool is_display_pass = (motion_enabled || profiling_enabled) &&
+        regs.color_buffers[0] &&
+        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
+    if (is_display_pass) {
+        NoteFrameStart();
+    }
+    if (motion_enabled && is_display_pass) {
         scene_started = false;
         camera_motion->OnDisplayPass(cb_descs[0].first);
         if (upscaler->OnFrameStart()) {
@@ -1046,7 +1170,6 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
         camera_motion->SetJitter(upscaler->Jitter());
         object_motion->OnFrameStart();
-        NoteFrameStart();
         static const char* scene_debug = std::getenv("ORDER1886_SCENE_DEBUG");
         scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
         scene_targets->debug = scene_debug_frame;
@@ -1056,6 +1179,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
+    // No speculative shadow-depth draw suppression: preserve complete GPU state.
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
@@ -1086,6 +1210,31 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         EmitIndexBuffer();
     }
 
+    // Unlike the old MRT>=2 test, a fullscreen triangle (3 unindexed vertices,
+    // no vertex streams) must not exhaust the diagnostic quota. Sample only draws
+    // with *actual* bound vertex buffers and a nontrivial primitive count.
+    const bool object_candidate = vertex_binds.num_buffers > 0 &&
+        (is_indexed || regs.num_indices > 6 || regs.num_instances.NumInstances() > 1);
+    if (object_candidate) {
+        static std::atomic<u32> object_samples{0};
+        const u32 index = object_samples.fetch_add(1, std::memory_order_relaxed);
+        if (index < 32) {
+            const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
+            const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            LOG_WARNING(Render_Vulkan,
+                        "ORDER1886_OBJECT_DRAW sample={} vs={:#x} ps={:#x} "
+                        "mrt={:#x} prim={} indices={} instances={} indexed={} vb={} "
+                        "cb0={:#x} db={:#x}",
+                        index, vs.pgm_hash, ps ? ps->pgm_hash : 0,
+                        pipeline->GetGraphicsKey().mrt_mask,
+                        static_cast<u32>(regs.primitive_type), regs.num_indices,
+                        regs.num_instances.NumInstances(), is_indexed,
+                        vertex_binds.num_buffers,
+                        regs.color_buffers[0] ? regs.color_buffers[0].Address() : 0,
+                        regs.depth_buffer.DepthAddress());
+        }
+    }
+
     if (needs_barrier) {
         runtime.FlushBarriers();
     }
@@ -1106,8 +1255,16 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
-    MarkPass(pipeline, state);
+    // Timestamp only for real pass changes; no forced split for each pipeline.
     scheduler.BeginRendering(state);
+
+    const bool vrs2x2 =
+        g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
+        Order1886UseVrs2x2(pipeline, regs, state, attachment_feedback_loop,
+                            object_candidate);
+    if (vrs2x2) {
+        g_order1886_vrs_2x2_draws.fetch_add(1, std::memory_order_relaxed);
+    }
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
     const auto& fetch_shader = pipeline->GetFetchShader();
@@ -1129,9 +1286,25 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             }
         };
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+        if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
+            const vk::Extent2D fragment_size{vrs2x2 ? 2u : 1u, vrs2x2 ? 2u : 1u};
+            const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
+                vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                vk::FragmentShadingRateCombinerOpKHR::eKeep};
+            cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+        }
         draw();
         if (square) [[unlikely]] {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, square);
+            // The second blend-rewrite draw must never inherit 2x2 from
+            // the primary geometry draw; it restores per-pixel composition.
+            if (vrs2x2) {
+                const vk::Extent2D full_rate{1u, 1u};
+                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> ops{
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
+                cmdbuf.setFragmentShadingRateKHR(full_rate, ops);
+            }
             draw();
         }
     });
@@ -1250,8 +1423,18 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
-    MarkPass(pipeline, state);
+    // Timestamp only for real pass changes; no forced split for each pipeline.
     scheduler.BeginRendering(state);
+    // Indirect draws can contain many objects, and their index counts are not
+    // known here. Restrict coarse shading to full-res opaque MRT geometry.
+    const bool vrs2x2 =
+        g_order1886_vrs_2x2_enabled.load(std::memory_order_acquire) &&
+        // Indirect arguments do not prove per-draw geometry or depth-write
+        // coverage, so the 640x360 single-target path remains 1x1 here.
+        Order1886UseVrs2x2(pipeline, Regs(), state, attachment_feedback_loop, false);
+    if (vrs2x2) {
+        g_order1886_vrs_2x2_draws.fetch_add(1, std::memory_order_relaxed);
+    }
 
     ASSERT(stride == (is_indexed ? sizeof(VkDrawIndexedIndirectCommand)
                                  : sizeof(VkDrawIndirectCommand)));
@@ -1265,6 +1448,15 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
                 break;
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
+            if (g_order1886_vrs_2x2_enabled.load(std::memory_order_relaxed)) {
+                const bool primary_vrs = vrs2x2 && bound == handle;
+                const vk::Extent2D fragment_size{primary_vrs ? 2u : 1u,
+                                                 primary_vrs ? 2u : 1u};
+                const std::array<vk::FragmentShadingRateCombinerOpKHR, 2> combiners{
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                    vk::FragmentShadingRateCombinerOpKHR::eKeep};
+                cmdbuf.setFragmentShadingRateKHR(fragment_size, combiners);
+            }
             if (is_indexed) {
                 if (counts) {
                     cmdbuf.drawIndexedIndirectCount(args, args_offset, counts, counts_offset, max_count,
@@ -1465,6 +1657,11 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         return;
     }
 
+    // 0.1.27 mutated flattened_ud_buf at runtime, introducing unmapped
+    // 0x9846aaff descriptors, and filled HTILE every EVSM dispatch (~45k
+    // operations in one session). Do not alter the persistent shader metadata.
+    // Sun AABB readbacks are handled at their producer and CPU-fault boundary.
+
     buffer_cache.WatchWrittenBuffers(ReadbackWatchedShader(cs.pgm_hash));
     buffer_cache.SetCurrentDispatch(cs.pgm_hash);
     const bool bound = BindResources(pipeline);
@@ -1524,6 +1721,8 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     }
 
     ResetBindings(true);
+    if (IsBachataOrder1886Edition() && cs.pgm_hash == 0x7b1b18c9ULL)
+        buffer_cache.RecordSunCopies();
     scheduler.KickRecording();
 }
 
@@ -2440,30 +2639,79 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 if (size != vsharp.GetSize()) {
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
-                }
-                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
-                    vsharp.base_address, size, desc.is_written, desc.is_formatted);
-                const u64 offset_aligned = Common::AlignDown(offset, alignment);
-                const u64 adjust = offset - offset_aligned;
-                if (desc.buffer_type == Shader::BufferType::ReadConst) {
-                    ASSERT_MSG(Shader::FitsReadConstStorageRange(size, adjust, instance.StorageMaxRange()),
-                               "ReadConst VMA range exceeds Vulkan storage-buffer range");
-                }
-                if (adjust % 4 != 0) {
-                    if (const auto count = CountUnalignedWarning(stage.pgm_hash, adjust % 4)) {
-                        LOG_WARNING(Render_Vulkan,
-                                    "Buffer binding in shader {:#x} isn't dword aligned: remainder={} "
-                                    "occurrences={} (repeats counted)", stage.pgm_hash, adjust % 4, count);
+                    if (stage.pgm_hash == 0x9846aaffULL) {
+                        static std::atomic<u32> diagnosed{0};
+                        if (diagnosed.fetch_add(1, std::memory_order_relaxed) < 16)
+                            LOG_ERROR(Render,
+                                      "ORDER1886_SHADOW_BUFFER_DIAG index={} addr={:#x} "
+                                      "mapped={} expected={} writable={} type={}",
+                                      buffer_index, vsharp.base_address, size,
+                                      vsharp.GetSize(), desc.is_written, u32(desc.buffer_type));
                     }
                 }
-                push_data.AddOffset(binding.buffer, adjust);
-                buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
-                bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
-                if (desc.is_written) {
-                    // Raw storage-buffer writes can also make an aliased cached image stale.
-                    texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+                // The sun AABB reduction is GPU-written and CPU-consumed.
+                // Track only its known producers, never arbitrary guest buffers.
+                if (IsBachataOrder1886Edition() && desc.is_written && size &&
+                    (stage.uses_buffer_atomic_float_min_max ||
+                     stage.pgm_hash == 0x7550d841ULL ||
+                     stage.pgm_hash == 0x7b1b18c9ULL)) {
+                    buffer_cache.KeepPageSynchronized(vsharp.base_address, size, stage.pgm_hash);
                 }
-                needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
+                // Port of The Order PC v0.2.7: some large vertex-record buffers
+                // alternate between a dword-aligned base and one shifted by 2 bytes.
+                // The shader indexes dwords: subtracting a non-dword alignment
+                // offset makes the GPU read wrong positions and removes objects.
+                // Copy only CPU-owned, read-only buffers into an aligned stream slot.
+                if (!desc.is_written && desc.buffer_type != Shader::BufferType::ReadConst &&
+                    (vsharp.base_address & 3) != 0 && size >= 4096 &&
+                    !buffer_cache.IsRegionGpuModified(vsharp.base_address, size)) {
+                    if (unaligned_copies_tick != scheduler.CurrentTick()) {
+                        unaligned_copies.clear();
+                        unaligned_copies_tick = scheduler.CurrentTick();
+                    }
+                    auto& stream = buffer_cache.GetStreamBuffer();
+                    const auto [it, inserted] =
+                        unaligned_copies.try_emplace(vsharp.base_address ^ (size << 44), 0);
+                    if (inserted) {
+                        it->second = stream.Copy(reinterpret_cast<const void*>(vsharp.base_address),
+                                                 size, alignment);
+                        static std::atomic<u32> shown{0};
+                        if (shown.fetch_add(1, std::memory_order_relaxed) < 12) {
+                            LOG_WARNING(Render_Vulkan,
+                                        "ORDER1886_ALIGNED_VERTEX_COPY shader={:#x} address={:#x} "
+                                        "size={} saved_remainder={}",
+                                        stage.pgm_hash, vsharp.base_address, size,
+                                        vsharp.base_address & 3);
+                        }
+                    }
+                    push_data.AddOffset(binding.buffer, 0);
+                    buffer_infos.emplace_back(stream.Handle(), it->second, size);
+                } else {
+                    const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                        vsharp.base_address, size, desc.is_written, desc.is_formatted);
+                    const u64 offset_aligned = Common::AlignDown(offset, alignment);
+                    const u64 adjust = offset - offset_aligned;
+                    if (desc.buffer_type == Shader::BufferType::ReadConst) {
+                        ASSERT_MSG(Shader::FitsReadConstStorageRange(size, adjust,
+                                                                     instance.StorageMaxRange()),
+                                   "ReadConst VMA range exceeds Vulkan storage-buffer range");
+                    }
+                    if (adjust % 4 != 0) {
+                        if (const auto count = CountUnalignedWarning(stage.pgm_hash, adjust % 4)) {
+                            LOG_WARNING(Render_Vulkan,
+                                        "Buffer binding in shader {:#x} isn't dword aligned: "
+                                        "remainder={} occurrences={} (repeats counted)",
+                                        stage.pgm_hash, adjust % 4, count);
+                        }
+                    }
+                    push_data.AddOffset(binding.buffer, adjust);
+                    buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
+                    bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
+                    if (desc.is_written) {
+                        texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+                    }
+                    needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
+                }
             }
         }
 
@@ -3235,6 +3483,32 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
              regs.depth_control.depth_write_enable) ||
             texture_cache.IsMetaCleared(htile_address, slice);
         const bool is_stencil_clear = regs.depth_render_control.stencil_clear_enable;
+        if (IsBachataOrder1886Edition() && htile_address && is_depth_clear &&
+            regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
+            image.info.size.width == image.info.size.height &&
+            (image.info.size.width == 512 || image.info.size.width == 1024 ||
+             image.info.size.width == 2048) &&
+            texture_cache.IsMeta(htile_address) == VideoCore::SurfaceMetadata::Type::HTile) {
+            // Only a genuine shadow-depth clear gets an uncompressed zmask.
+            // No modification of shader pointers, and no per-dispatch HTILE
+            // writes. This precedes the next depth rendering pass in GPU order.
+            const u64 tiles_x = Common::AlignUp((image.info.size.width + 7) / 8, 64u);
+            const u64 tiles_y = Common::AlignUp((image.info.size.height + 7) / 8, 64u);
+            const u64 wanted = tiles_x * tiles_y * 4 *
+                               std::max(image.info.resources.layers, 1u);
+            const u64 bytes = memory->ClampRangeSize(htile_address, wanted) & ~u64(3);
+            if (bytes >= 4 && bytes <= 256_KB) {
+                const auto [buffer, offset] =
+                    buffer_cache.ObtainBuffer(htile_address, static_cast<u32>(bytes), true);
+                runtime.FillBuffer(buffer, offset, bytes, 0x0000000FU);
+                static std::atomic<u64> fills{0};
+                const u64 n = fills.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (n == 1 || (n % 1024) == 0)
+                    std::printf("ORDER1886_HTILE_DEPTH_CLEAR count=%llu size=%llu\n",
+                                static_cast<unsigned long long>(n),
+                                static_cast<unsigned long long>(bytes));
+            }
+        }
         if (regs.depth_control.depth_enable && regs.depth_control.depth_write_enable) {
             bool changed = false;
             for (u32 layer = 0; layer < image_view.info.range.extent.layers; ++layer)

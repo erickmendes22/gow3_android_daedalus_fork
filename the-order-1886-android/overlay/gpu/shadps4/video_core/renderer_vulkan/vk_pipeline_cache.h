@@ -46,8 +46,11 @@ struct AsyncGraphicsCompilation;
 
 struct Program {
     struct Module {
-        vk::ShaderModule module;
-        Shader::StageSpecialization spec;
+        vk::ShaderModule module{};
+        Shader::StageSpecialization spec{};
+        // Effective resource/interpolation metadata per SPIR-V permutation.
+        std::unique_ptr<Shader::Info> info;
+        std::unique_ptr<Shader::Info> info_template;
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
@@ -66,14 +69,27 @@ struct Program {
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
         : info{stage, l_stage, params} {}
 
-    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec) {
-        modules.emplace_back(module, std::move(spec));
+    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
+                   std::unique_ptr<Shader::Info> effective_info = {}) {
+        if (!effective_info) {
+            effective_info = std::make_unique<Shader::Info>(info);
+        }
+        auto snapshot = std::make_unique<Shader::Info>(*effective_info);
+        snapshot->user_data = {};
+        modules.emplace_back(module, std::move(spec), std::move(effective_info),
+                             std::move(snapshot));
     }
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
-                      size_t perm_idx) {
-        modules.resize(std::max(modules.size(), perm_idx + 1)); // <-- beware of realloc
-        modules[perm_idx] = {module, std::move(spec)};
+                      size_t perm_idx, std::unique_ptr<Shader::Info> effective_info = {}) {
+        if (!effective_info) {
+            effective_info = std::make_unique<Shader::Info>(info);
+        }
+        auto snapshot = std::make_unique<Shader::Info>(*effective_info);
+        snapshot->user_data = {};
+        modules.resize(std::max(modules.size(), perm_idx + 1));
+        modules[perm_idx] = {module, std::move(spec), std::move(effective_info),
+                             std::move(snapshot)};
     }
 };
 
@@ -109,6 +125,7 @@ struct PipelineSelection {
 struct PrepWorker {
     struct Stage {
         const Program* program;
+        const Shader::Info* info;
         u64 hash;
         Shader::HwStage hw_stage;
         VAddr pgm_base;

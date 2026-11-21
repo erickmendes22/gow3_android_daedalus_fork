@@ -11,12 +11,30 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 9
-        versionName = "0.1.8-srt-texture-fix"
+        versionCode = 30
+        versionName = "0.1.28-sun-readback-safe"
+    }
+    // Stable signing for upgrade-in-place. Keystore and password are injected by CI
+    // secrets; never put private signing material in the public source tree.
+    val persistentKey = System.getenv("ORDER1886_KEYSTORE_FILE")
+    val persistentPassword = System.getenv("ORDER1886_KEYSTORE_PASSWORD")
+    if (!persistentKey.isNullOrBlank() && !persistentPassword.isNullOrBlank()) {
+        signingConfigs {
+            create("persistent") {
+                storeFile = file(persistentKey)
+                storePassword = persistentPassword
+                keyAlias = "order1886"
+                keyPassword = persistentPassword
+                storeType = "pkcs12"
+            }
+        }
     }
     buildTypes {
         release {
             optimization { enable = false }
+            if (!persistentKey.isNullOrBlank() && !persistentPassword.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("persistent")
+            }
         }
     }
     splits {

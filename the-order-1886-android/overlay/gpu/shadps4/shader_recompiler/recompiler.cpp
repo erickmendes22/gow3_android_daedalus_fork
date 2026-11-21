@@ -1,3 +1,4 @@
+#include <atomic>
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -72,7 +73,12 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     // Ensure first instruction is expected.
     constexpr u32 token_mov_vcchi = 0xBEEB03FF;
     if (code[0] != token_mov_vcchi) {
-        LOG_WARNING(Render_Recompiler, "First instruction is not s_mov_b32 vcc_hi, #imm");
+        static std::atomic<u32> order1886_noncanonical_shaders{0};
+        const u32 seen = order1886_noncanonical_shaders.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (seen <= 12 || (seen % 128) == 0) {
+            LOG_WARNING(Render_Recompiler,
+                        "First instruction is not s_mov_b32 vcc_hi, #imm (occurrences={})", seen);
+        }
     }
 
     Gcn::GcnCodeSlice slice(code.data(), code.data() + code.size());
@@ -83,6 +89,25 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     program.ins_list.reserve(code.size());
     while (!slice.atEnd()) {
         program.ins_list.emplace_back(decoder.decodeInstruction(slice));
+    }
+
+    // The no-barycentric Adreno path previously expanded EVERY V_INTERP_P1/P2
+    // attribute to three flat GS outputs, even when the shader never accessed
+    // a specific vertex. Discover the exceptional MOV selectors up front so
+    // both P1 and P2 make the same decision regardless of instruction order.
+    if (info.sw_stage == SwStage::Fragment) {
+        info.fs_requires_per_vertex.fill(false);
+        for (const auto& inst : program.ins_list) {
+            if (inst.opcode == Gcn::Opcode::V_INTERP_MOV_F32) {
+                const u32 slot = inst.control.vintrp.attr;
+                if (slot < info.fs_requires_per_vertex.size()) {
+                    info.fs_requires_per_vertex[slot] = true;
+                }
+            }
+        }
+        // Match the translator's actual MOV attribute list when enforcing
+        // physical GS/FS output limits, not a pessimistic all-expanded count.
+        runtime_info.hw.fs.needs_per_vertex_slot = info.fs_requires_per_vertex;
     }
 
     // Clear any previous pooled data.

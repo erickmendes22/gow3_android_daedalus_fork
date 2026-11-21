@@ -17,6 +17,7 @@
 #include "ps4_graphics.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_upscale_providers.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -32,6 +33,7 @@
 #include <cmath>
 #include <csetjmp>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -41,6 +43,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
@@ -583,6 +586,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
 
     Frame* frame = GetRenderFrame();
+    // The guest GPU must not wait for a present fence owned by another thread.
+    // A busy frame is deferred by VideoOutDriver, never dereferenced here.
+    if (!frame) return nullptr;
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -679,7 +685,130 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // the post process pass still sRGB encoded and has to be decoded there instead.
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
-    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+
+    // The mobile compositor already treats the submitted AHardwareBuffer as OPAQUE.
+    // When the guest display buffer has an 8-bit sRGB view, the normal postprocess
+    // pass decodes sRGB on sampling and re-encodes it with unit gamma. This is an
+    // identity operation for the RGB bytes. A direct copy avoids an entire
+    // full-screen fragment-shader pass, its texture sampling, and its render pass.
+    // Do NOT bypass for 10-bit/HDR, gamma changes, FSR/RCAS, scaling, or swizzles.
+    bool copy_srgb_direct = false;
+    bool blit_bgra_direct = false;
+    vk::Image copy_source{};
+#ifdef __ANDROID__
+    if (!upscaled && !frame_dump && !frame->is_hdr && pp_settings.gamma == 1.0f &&
+        !pp_settings.hdr && !pp_settings.srgb_input &&
+        image_size.width == frame->width && image_size.height == frame->height &&
+        !Ps4Graphics::FsrPassRuns(fsr_settings.enable, fsr_settings.use_rcas,
+                                  int(image_size.width), int(image_size.height),
+                                  int(frame->width), int(frame->height))) {
+        const auto& image = texture_cache.GetImage(image_id);
+        const auto src_format = image.info.pixel_format;
+        const auto view_format = view_info.format;
+        const auto dst_format = frame->format;
+        const bool rgba =
+            view_format == vk::Format::eR8G8B8A8Srgb &&
+            (src_format == vk::Format::eR8G8B8A8Srgb ||
+             src_format == vk::Format::eR8G8B8A8Unorm) &&
+            dst_format == vk::Format::eR8G8B8A8Unorm;
+        const bool bgra =
+            view_format == vk::Format::eB8G8R8A8Srgb &&
+            (src_format == vk::Format::eB8G8R8A8Srgb ||
+             src_format == vk::Format::eB8G8R8A8Unorm) &&
+            dst_format == vk::Format::eB8G8R8A8Unorm;
+        copy_srgb_direct = rgba || bgra;
+        // Android AHB commonly uses RGBA UNORM while the PS4 display is BGRA sRGB.
+        // If the actual image is BGRA UNORM (not BGRA SRGB), a nearest blit
+        // converts channel order without a fullscreen shader. It preserves the
+        // stored sRGB-encoded byte values because neither image uses sRGB format.
+        // If the native image is SRGB, fall back: a blit would decode RGB and darken it.
+        const char* blit_env = std::getenv("ORDER1886_FAST_BGRA_BLIT");
+        const bool want_blit = !blit_env || blit_env[0] != '0';
+        if (!copy_srgb_direct && want_blit &&
+            src_format == vk::Format::eB8G8R8A8Unorm &&
+            view_format == vk::Format::eB8G8R8A8Srgb &&
+            dst_format == vk::Format::eR8G8B8A8Unorm) {
+            static const bool src_can_blit = [] (vk::PhysicalDevice physical) {
+                return bool(physical.getFormatProperties(vk::Format::eB8G8R8A8Unorm)
+                    .optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc);
+            }(instance.GetPhysicalDevice());
+            blit_bgra_direct = src_can_blit;
+        }
+        if (copy_srgb_direct || blit_bgra_direct) {
+            copy_source = image.GetImage();
+        }
+    }
+    // One-time size/path report, not per-frame profiling or instrumentation.
+    static bool reported_present_path = false;
+    if (!reported_present_path) {
+        reported_present_path = true;
+        std::fprintf(stderr,
+                     "ORDER1886_DISPLAY_PATH source=%ux%u view_format=%d output=%ux%u "
+                     "surface_format=%d direct_srgb=%d direct_bgra_blit=%d backing_format=%d\n",
+                     image_size.width, image_size.height, int(view_info.format),
+                     frame->width, frame->height, int(frame->format),
+                     int(copy_srgb_direct), int(blit_bgra_direct),
+                     upscaled ? -1 : int(texture_cache.GetImage(image_id).info.pixel_format));
+    }
+#endif
+    if (copy_srgb_direct || blit_bgra_direct) {
+        auto& image = texture_cache.GetImage(image_id);
+        runtime.Transit(&image, vk::ImageLayout::eTransferSrcOptimal,
+                        vk::PipelineStageFlagBits2::eCopy,
+                        vk::AccessFlagBits2::eTransferRead);
+        runtime.FlushBarriers();
+        const vk::ImageMemoryBarrier2 to_dst{
+            .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .srcAccessMask = vk::AccessFlagBits2::eNone,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .image = frame->image,
+            .subresourceRange{frame_subresources},
+        };
+        cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_dst});
+        const vk::ImageCopy copy_region{
+            .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .extent = {image_size.width, image_size.height, 1},
+        };
+        if (blit_bgra_direct) {
+            const vk::ImageBlit blit_region{
+                .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                .srcOffsets = std::array{
+                    vk::Offset3D{.x = 0, .y = 0, .z = 0},
+                    vk::Offset3D{.x = s32(image_size.width),
+                                 .y = s32(image_size.height), .z = 1},
+                },
+                .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                .dstOffsets = std::array{
+                    vk::Offset3D{.x = 0, .y = 0, .z = 0},
+                    vk::Offset3D{.x = s32(image_size.width),
+                                 .y = s32(image_size.height), .z = 1},
+                },
+            };
+            cmdbuf.blitImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
+                             vk::ImageLayout::eTransferDstOptimal, blit_region, vk::Filter::eNearest);
+        } else {
+            cmdbuf.copyImage(copy_source, vk::ImageLayout::eTransferSrcOptimal, frame->image,
+                             vk::ImageLayout::eTransferDstOptimal, copy_region);
+        }
+        const vk::ImageMemoryBarrier2 to_present{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = frame->image,
+            .subresourceRange{frame_subresources},
+        };
+        cmdbuf.pipelineBarrier2(
+            {.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_present});
+    } else {
+        pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    }
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).
         const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -723,6 +852,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
+    if (!frame) return nullptr;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
     scheduler.EndRendering();
@@ -931,7 +1061,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+                .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite |
+                                 vk::AccessFlagBits::eTransferWrite,
                 .dstAccessMask = vk::AccessFlagBits::eTransferRead,
                 .oldLayout = vk::ImageLayout::eGeneral,
                 .newLayout = vk::ImageLayout::eTransferSrcOptimal,
@@ -941,21 +1072,57 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                               vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                               {}, {}, pre_barriers);
-        const vk::ClearColorValue black{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-        cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal, black, color_range);
-        const vk::MemoryBarrier clear_done{
-            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-        };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
-                               vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
-                         vk::ImageLayout::eTransferDstOptimal,
-                         MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),
-                         vk::Filter::eLinear);
+        // Narrow synchronization on the tiler. Frame contents were produced by
+        // a postprocess color attachment or the direct transfer copy; neither
+        // requires waiting for unrelated compute or all shader stages.
+        cmdbuf.pipelineBarrier(
+            vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
+            {}, {}, pre_barriers);
+        const auto fit = MakeImageBlitFit(frame->width, frame->height,
+                                          extent.width, extent.height);
+        // The Android output is usually exactly the game's selected resolution.
+        // A full-coverage transfer overwrites every pixel: do not clear the AHB
+        // and then force a transfer-to-transfer dependency just to discard it.
+        const bool full_coverage =
+            fit.dstOffsets[0].x == 0 && fit.dstOffsets[0].y == 0 &&
+            fit.dstOffsets[1].x == static_cast<s32>(extent.width) &&
+            fit.dstOffsets[1].y == static_cast<s32>(extent.height);
+        if (!full_coverage) {
+            const vk::ClearColorValue black{
+                std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+            cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+                                   black, color_range);
+            const vk::MemoryBarrier clear_done{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eTransfer,
+                                   vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
+        }
+        // When both images have the same dimensions/format, copy instead of
+        // running the driver's general-purpose linear-filtered blit path.
+        // Unequal dimensions retain the original filtered blit and letterbox.
+        const bool direct_copy = frame->width == extent.width &&
+                                 frame->height == extent.height &&
+                                 frame->format == swapchain.GetSurfaceFormat().format;
+        if (direct_copy) {
+            const vk::ImageCopy region{
+                .srcSubresource = MakeImageSubresourceLayers(),
+                .srcOffset = {0, 0, 0},
+                .dstSubresource = MakeImageSubresourceLayers(),
+                .dstOffset = {0, 0, 0},
+                .extent = {extent.width, extent.height, 1},
+            };
+            cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                             swapchain_image, vk::ImageLayout::eTransferDstOptimal, region);
+        } else {
+            cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                             swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+                             fit, vk::Filter::eLinear);
+        }
         if (VideoCore::ConsumeGameOnlyScreenshotRequests() != 0) {
             CaptureScreenshot(instance, scheduler, cmdbuf, *frame);
         }
@@ -986,9 +1153,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 .subresourceRange = color_range,
             },
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eAllCommands,
-                               vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
+        // No ALL_COMMANDS wait after the copy: output only transitions to
+        // compositor presentation, overlay color output or another transfer.
+        cmdbuf.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                vk::PipelineStageFlagBits::eTransfer |
+                vk::PipelineStageFlagBits::eBottomOfPipe,
+            vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
             Ps4Overlay::Render(cmdbuf, swapchain.ImageView(), extent);
             const vk::ImageMemoryBarrier to_present{
@@ -1037,41 +1209,47 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 }
 
 Frame* Presenter::GetRenderFrame() {
-    // Wait for free presentation frames
+    // Bachata S4 release behavior: never block Liverpool's GPU command
+    // processor on a presentation fence. That processor must continue
+    // submitting the work whose completion the present thread is waiting for.
+    const bool on_gpu_thread =
+        liverpool && std::this_thread::get_id() == liverpool->GetGpuCommandProcessorThread();
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
-        free_cv.wait(lock, [this] { return !free_queue.empty(); });
-        LOG_DEBUG(Render_Vulkan, "Got render frame, remaining {}", free_queue.size() - 1);
-
-        // Take the frame from the queue
+        if (on_gpu_thread) {
+            if (free_queue.empty()) return nullptr;
+        } else {
+            free_cv.wait(lock, [this] { return !free_queue.empty(); });
+        }
         frame = free_queue.front();
         free_queue.pop();
     }
 
     const vk::Device device = instance.GetDevice();
-    vk::Result result{};
-
-    const auto wait = [&]() {
-        result = device.waitForFences(frame->present_done, false, std::numeric_limits<u64>::max());
-        return result;
-    };
-
-    // Wait for the presentation to be finished so all frame resources are free
-    while (wait() != vk::Result::eSuccess) {
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
-        // Retry if the waiting times out
-        if (result == vk::Result::eTimeout) {
-            continue;
+    for (;;) {
+        const auto result = device.waitForFences(
+            frame->present_done, false,
+            on_gpu_thread ? 0ULL : std::numeric_limits<u64>::max());
+        if (result == vk::Result::eSuccess) break;
+        if (result == vk::Result::eTimeout && on_gpu_thread) {
+            // The frame is still owned by GPU presentation. Requeue it without
+            // resetting its fence or touching any of its Vulkan resources.
+            std::scoped_lock lock{free_mutex};
+            free_queue.push(frame);
+            free_cv.notify_one();
+            return nullptr;
         }
+        if (result == vk::Result::eTimeout) continue;
+        LOG_CRITICAL(Render_Vulkan, "GetRenderFrame fence wait failed: {}",
+                     vk::to_string(result));
+        std::abort(); // No legal use of frame resources after device loss.
     }
 
     if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
         frame->is_hdr != swapchain.GetHDR()) {
         RecreateFrame(frame, expected_frame_width, expected_frame_height);
     }
-
     return frame;
 }
 

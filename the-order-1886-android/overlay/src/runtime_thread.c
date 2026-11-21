@@ -502,6 +502,11 @@ void runtime_thread_count_zero_sleep(void) { __atomic_fetch_add(&guest_zero_slee
 enum { YIELD_STREAK = 64 };
 #define YIELD_GAP_NS 200000u
 #define YIELD_SLEEP_NS 100000u
+// Other native The Order ports confirmed four idle Task Kernel threads
+// continuously poll empty queues. Android Bionic needs to give FEX/GPU more
+// CPU time without lowering the priority of workers that execute real jobs.
+#define ORDER1886_ANDROID_IDLE_STREAK 8u
+#define ORDER1886_ANDROID_IDLE_SLEEP_NS 200000u
 static uint64_t monotonic_ns(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
     return (uint64_t)t.tv_sec*1000000000u+(uint64_t)t.tv_nsec;
@@ -512,16 +517,44 @@ void runtime_thread_yield(void) {
     static _Thread_local unsigned streak;
     __atomic_fetch_add(&guest_yields,1,__ATOMIC_RELAXED);
     uint64_t now=monotonic_ns();
-    streak=now-last_yield<YIELD_GAP_NS ? streak+1 : 0;
-    if (streak<YIELD_STREAK) {
+    unsigned threshold=YIELD_STREAK;
+    uint64_t sleep_ns=YIELD_SLEEP_NS;
+    uint64_t gap_ns=YIELD_GAP_NS;
+#ifdef __ANDROID__
+    // The game gives the four job workers the name "Task Kernel".
+    // Only back off earlier for this exact thread, not the main/audio GPU
+    // threads whose yields can be latency-sensitive.
+    static _Thread_local int task_kernel_idle=-1;
+    if (task_kernel_idle<0) {
+        char name[16]={0};
+        (void)pthread_getname_np(pthread_self(),name,sizeof(name));
+        const char *opt=getenv("ORDER1886_TASK_IDLE_FAST");
+        // 0.1.27's 8-yield/200us backoff introduced scheduling latency on
+        // active task workers. Revert to the original 64-yield policy by
+        // default; keep the aggressive behavior opt-in for profiling.
+        task_kernel_idle=(strcmp(name,"Task Kernel")==0 && opt && *opt=='1')?1:0;
+        if (task_kernel_idle) {
+            static int announced=0;
+            if (!__atomic_exchange_n(&announced,1,__ATOMIC_RELAXED))
+                printf("ORDER1886_TASK_IDLE_BACKOFF worker=Task Kernel yields=8 sleep_us=200\n");
+        }
+    }
+    if (task_kernel_idle) {
+        threshold=ORDER1886_ANDROID_IDLE_STREAK;
+        sleep_ns=ORDER1886_ANDROID_IDLE_SLEEP_NS;
+        gap_ns=1000000u;
+    }
+#endif
+    streak=now-last_yield<gap_ns ? streak+1 : 0;
+    if (streak<threshold) {
         sched_yield();
         last_yield=monotonic_ns();
         return;
     }
 #ifdef _WIN32
-    compat_sleep_ns(YIELD_SLEEP_NS);
+    compat_sleep_ns(sleep_ns);
 #else
-    struct timespec t={0,YIELD_SLEEP_NS};
+    struct timespec t={(time_t)(sleep_ns/1000000000u),(long)(sleep_ns%1000000000u)};
     nanosleep(&t,NULL);
 #endif
     last_yield=monotonic_ns();

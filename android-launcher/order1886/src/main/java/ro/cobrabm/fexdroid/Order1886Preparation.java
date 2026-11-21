@@ -14,7 +14,7 @@ final class Order1886Preparation {
     private final Context context;
     private final File tools, state;
     Order1886Preparation(Context c, File state) {
-        context=c; this.state=state; tools=new File(c.getFilesDir(),"order1886-toolchain-v2");
+        context=c; this.state=state; tools=new File(c.getFilesDir(),"order1886-toolchain-v3");
     }
     File image(){return new File(state,"prepared/boot-linked.bin");}
     private File interpreter(){
@@ -27,6 +27,30 @@ final class Order1886Preparation {
         }catch(IOException e){return false;}
     }
     boolean prepared(){return valid(image());}
+    String manifestSummary() throws Exception {
+        File file=new File(state,"prepared/prepared.json");
+        if(!file.isFile()||!valid(image()))throw new IOException("Prepared manifest or image missing");
+        org.json.JSONObject data=new org.json.JSONObject(
+            new String(java.nio.file.Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
+        return "title="+data.optString("title_id")+" frame_rate="+data.optJSONObject("frame_rate_profile")+
+               " aspect="+data.optJSONObject("display_profile")+" resolution="+data.optJSONObject("resolution_profile")+
+               " effects="+data.optJSONObject("post_effects_profile")+" sha256="+data.optString("image_sha256");
+    }
+    private void validateManifest(int fps,String aspect,int width,String effects)throws Exception {
+        File file=new File(state,"prepared/prepared.json");
+        if(!file.isFile())throw new IOException("No prepared.json; patches not confirmed");
+        org.json.JSONObject data=new org.json.JSONObject(
+            new String(java.nio.file.Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
+        String[] names={"frame_rate_profile","display_profile","resolution_profile","post_effects_profile"};
+        boolean[] requested={fps==60,"16:9".equals(aspect),width!=1920,!effects.isEmpty()};
+        for(int i=0;i<names.length;i++){
+            org.json.JSONObject profile=data.optJSONObject(names[i]);
+            if(profile==null||requested[i]&&!profile.optBoolean("applied",false))
+                throw new IOException("Patch validation failed: "+names[i]+" (requested="+requested[i]+")");
+        }
+        if(!valid(image()))throw new IOException("Prepared boot image has wrong signature");
+    }
+
     private File script(){return new File(tools,"order1886/order1886.py");}
     private void installToolchain(Progress progress) throws Exception {
         if(script().isFile()&&new File(tools,"python/lib/python3.13/os.py").isFile())return;
@@ -71,7 +95,7 @@ final class Order1886Preparation {
     }
 
     void prepare(File game, int fps, String aspect, int renderWidth,
-                 String readback, int language, Progress progress) throws Exception {
+                 String readback, int language, String disabledEffects, Progress progress) throws Exception {
         if(!new File(game,"eboot.bin").isFile() ||
            !new File(game,"sce_sys/param.sfo").isFile() ||
            !new File(game,"sce_module/libc.prx").isFile() ||
@@ -91,6 +115,9 @@ final class Order1886Preparation {
         argv.add("--render-width");argv.add(Integer.toString(renderWidth));
         argv.add("--readbacks");argv.add(readback);
         argv.add("--system-language");argv.add(Integer.toString(language));
+        // The pinned PC preparation script validates every affected opcode against the
+        // selected SELF and patches only its derived PS4BOOT image, never eboot.bin.
+        argv.add("--disable-effects");argv.add(disabledEffects);
         ProcessBuilder builder=new ProcessBuilder(argv).directory(tools).redirectErrorStream(true);
         Map<String,String> env=builder.environment();
         env.put("PYTHONHOME",new File(tools,"python").getAbsolutePath());
@@ -118,6 +145,7 @@ final class Order1886Preparation {
         int result=process.waitFor();
         if(result!=0||!valid(image()))
             throw new IOException("Preparação falhou (código "+result+"). "+last.substring(Math.max(0,last.length()-2700)));
-        progress.update("PS4BOOT5 preparado no celular: "+(image().length()/1024/1024)+" MB");
+        validateManifest(fps,aspect,renderWidth,disabledEffects);
+        progress.update("Patches verificados no prepared.json; PS4BOOT5 preparado: "+(image().length()/1024/1024)+" MB");
     }
 }

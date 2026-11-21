@@ -67,7 +67,14 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_FPS_LIMIT",Integer.toString(p.getInt("fps",30)));
         env.put("ORDER1886_VBLANK_HZ","60");
         int language=p.getInt("language",1);
-        env.put("ORDER1886_LANGUAGE",Integer.toString(language==17||language==7?language:1));
+        env.put("ORDER1886_LANGUAGE",Integer.toString(language>=0&&language<=29?language:1));
+        env.put("ORDER1886_ENGINE_PERF",p.getBoolean("enginePerf",true)?"1":"0");
+        env.put("ORDER1886_LIGHT_GUARD",p.getBoolean("gpuLightGuard",true)?"1":"0");
+        env.put("ORDER1886_COALESCE_CLEAR_PASS",p.getBoolean("gpuTileMerge",true)?"1":"0");
+        env.put("ORDER1886_INLINE_ATTACHMENT_CLEAR",p.getBoolean("gpuInlineClear",true)?"1":"0");
+        env.put("ORDER1886_GPU_PROFILE",p.getBoolean("gpuMeters",true)?"1":"0");
+        env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");
+        env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
         env.put("ORDER1886_PIPELINE_BINARIES","0");
         env.put("ORDER1886_PARALLEL_WARMUP","0");

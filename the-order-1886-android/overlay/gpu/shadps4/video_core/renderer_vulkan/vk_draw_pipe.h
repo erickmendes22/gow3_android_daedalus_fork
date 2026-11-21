@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -111,16 +112,39 @@ public:
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];
         const u64 start = Common::FencedRDTSC();
-        for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
-            if (spins < 4096) {
+        const auto started = std::chrono::steady_clock::now();
+        const auto deadline = started + std::chrono::seconds(10);
+        // On Android the old unbounded yield loop competed with FEX and the draw
+        // worker during heavy scenes. The shared bounded backoff retains short
+        // spin latency and parks after prolonged waits without losing the watchdog.
+        unsigned backoff = 0;
+        for (u32 polls = 0; consumed.load(std::memory_order_acquire) != head; ++polls) {
+            if (polls < 1024) {
                 COMMON_CPU_RELAX();
             } else {
-                std::this_thread::yield();
+                Ps4Threads::Backoff(backoff);
+            }
+            // Poll count is independent from Backoff's capped counter.
+            if ((polls & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_DRAW_PIPE_HANG drain head={} consumed={} worker_tid={}",
+                             head, consumed.load(std::memory_order_acquire),
+                             stage_b_tid.load(std::memory_order_acquire));
+                std::abort();
             }
         }
         const u64 waited = Common::FencedRDTSC() - start;
         drain_cycles += waited;
         cycles_by_reason[slot] += waited;
+        const auto wall_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (wall_ms >= 16.0) {
+            static std::atomic<u32> reported{0};
+            if (reported.fetch_add(1, std::memory_order_relaxed) < 24) {
+                std::printf("ORDER1886_DRAWPIPE_STALL site=drain reason=%u ms=%.2f\n",
+                            slot, wall_ms);
+            }
+        }
     }
 
     /// Stage A: position after the last committed packet; Reached(position) once B ran it.
@@ -152,8 +176,21 @@ private:
     }
 
     void WaitForSpace(u64 at, u64 size) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        u32 polls = 0;
+        unsigned backoff = 0;
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
-            COMMON_CPU_RELAX();
+            if (polls < 1024) {
+                COMMON_CPU_RELAX();
+            } else {
+                Ps4Threads::Backoff(backoff);
+            }
+            if ((polls++ & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_DRAW_PIPE_HANG ring full: head={} consumed={} bytes={}",
+                             at, consumed.load(std::memory_order_acquire), size);
+                std::abort();
+            }
         }
     }
 
@@ -173,7 +210,14 @@ private:
                     if (const char* env = std::getenv("ORDER1886_PIPE_SPIN_US")) {
                         return std::max(0, std::atoi(env));
                     }
+#ifdef __ANDROID__
+                    // Keep a short spin for intra-frame packet bursts, but reduce
+                    // competition with the FEX guest workers on heterogeneous Android
+                    // CPUs. A published packet also wakes a parked worker immediately.
+                    return 15;
+#else
                     return Ps4Threads::Available() >= 12 ? 200 : 50;
+#endif
                 }());
                 const auto spin_until = std::chrono::steady_clock::now() + spin_time;
                 for (u32 spins = 1; available == at; ++spins) {

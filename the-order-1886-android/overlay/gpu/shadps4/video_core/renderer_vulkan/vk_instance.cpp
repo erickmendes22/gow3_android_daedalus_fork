@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -16,6 +18,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/order1886_vrs.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_upscale_providers.h"
 #include "video_core/renderer_vulkan/vk_vertex_input_policy.h"
@@ -287,7 +290,8 @@ bool Instance::CreateDevice() {
 #endif
         vk::PhysicalDevicePipelineBinaryFeaturesKHR,
         vk::PhysicalDeviceMaintenance5FeaturesKHR,
-        vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR>();
+        vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR,
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
@@ -348,6 +352,34 @@ bool Instance::CreateDevice() {
     ASSERT_MSG(robustness2_features.nullDescriptor,
                "Required Vulkan feature unavailable: nullDescriptor");
 
+    // Only enable 2x2 pipeline shading when the *active* ICD advertises it for
+    // single-sample rendering. Never assume a Turnip version or Adreno SKU supports it.
+    const char* vrs_env = std::getenv("ORDER1886_VRS_2X2");
+    const bool vrs_requested = !vrs_env || vrs_env[0] != '0';
+    const auto vrs_features =
+        feature_chain.get<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
+    bool vrs_2x2_supported = false;
+    if (vrs_requested && vrs_features.pipelineFragmentShadingRate) {
+        const auto has_vrs_extension =
+            std::ranges::find(available_extensions,
+                              std::string(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME)) !=
+            available_extensions.end();
+        if (has_vrs_extension) {
+            const auto [rates_result, rates] = physical_device.getFragmentShadingRatesKHR();
+            if (rates_result == vk::Result::eSuccess) {
+                vrs_2x2_supported = std::ranges::any_of(rates, [](const auto& rate) {
+                    return rate.fragmentSize.width == 2 && rate.fragmentSize.height == 2 &&
+                           (rate.sampleCounts & vk::SampleCountFlagBits::e1) !=
+                               vk::SampleCountFlags{};
+                });
+            }
+            if (vrs_2x2_supported) {
+                vrs_2x2_supported =
+                    add_extension(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+            }
+        }
+    }
+
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
     pipeline_binaries = PipelineBinaryCacheRequested() && maintenance_5 &&
@@ -375,8 +407,24 @@ bool Instance::CreateDevice() {
     custom_border_color = add_extension(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
     depth_clip_control = add_extension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
     depth_clip_enable = add_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-    const bool dynamic_vertex_input = UseVertexInputDynamicState(
-        properties.vendorID, std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE"));
+    // The PC port already uses the static vertex-input fallback for Intel missing
+    // meshes. Adreno 830 can advertise dynamic vertex input while failing to
+    // render PS4 geometry through that route. Keep this change limited to the
+    // affected hardware and allow an explicit override for an A/B comparison.
+    const char* vertex_override = std::getenv("ORDER1886_VERTEX_INPUT_DYNAMIC_STATE");
+    const bool adreno830 = properties.vendorID == 0x5143 &&
+        std::string_view{properties.deviceName}.find("830") != std::string_view::npos;
+    // The static-input experiment did not resolve the Adreno 830 scene and was
+    // followed by the same stalled GPU timeline. Preserve the original Vulkan
+    // feature policy unless the user explicitly requests an A/B override.
+    const bool dynamic_vertex_input =
+        UseVertexInputDynamicState(properties.vendorID, vertex_override);
+    if (adreno830) {
+        std::printf("ORDER1886_VERTEX_INPUT Adreno830 mode=%s override=%s\n",
+                    dynamic_vertex_input ? "dynamic" : "static",
+                    vertex_override && *vertex_override ? vertex_override : "none");
+        std::fflush(stdout);
+    }
     vertex_input_dynamic_state = dynamic_vertex_input &&
         add_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     if (!dynamic_vertex_input) {
@@ -704,9 +752,15 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR{
             .pipelineExecutableInfo = pipeline_executable_features.pipelineExecutableInfo,
         },
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR{
+            .pipelineFragmentShadingRate = vrs_2x2_supported,
+        },
     };
     if (!pipeline_executable_properties) {
         device_chain.unlink<vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR>();
+    }
+    if (!vrs_2x2_supported) {
+        device_chain.unlink<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
     }
 
     if (!custom_border_color) {
@@ -776,6 +830,12 @@ bool Instance::CreateDevice() {
         return false;
     }
     device = std::move(dev);
+
+    g_order1886_vrs_2x2_enabled.store(vrs_2x2_supported, std::memory_order_release);
+    std::printf("ORDER1886_VRS requested=%d supported_2x2=%d mode=%s (4x4 not implemented)\n",
+                int(vrs_requested), int(vrs_2x2_supported),
+                vrs_2x2_supported ? "selective-2x2" : "1x1");
+    std::fflush(stdout);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
     pipeline_binaries =
@@ -854,11 +914,30 @@ void Instance::CollectDeviceParameters() {
     driver_id = driver.driverID;
     vendor_name = driver.driverName.data();
 
-    // see video_core/amdgpu/ps4_msaa.h; the default per driver is ps4_msaa_default.h.
-    constexpr bool no_msaa = false; // Preserve the guest sample counts.
-    AmdGpu::no_msaa.store(no_msaa, std::memory_order_relaxed);
-    std::printf("GPU: guest multisampling %s\n",
-                no_msaa ? "off (single-sampled images; ORDER1886_NO_MSAA=0 keeps it)" : "on");
+    // Keep native PS4 sample counts by default. Adreno 830 and 840 lack both
+    // mixed-sample Vulkan extensions in the affected Turnip configurations:
+    // forcing guest sample counts there can mismatch depth/color attachments.
+    // Use the centralized NumSamples()/Image::GetType() single-sample path,
+    // which also keeps their disk pipeline replay disabled on the next launch.
+    // ORDER1886_NO_MSAA=0 remains available for a controlled A/B comparison.
+    const char* msaa_override = std::getenv("ORDER1886_NO_MSAA");
+    const auto adreno_name = std::string_view{properties.deviceName.data()};
+    const bool adreno830_or_840 = properties.vendorID == 0x5143 &&
+        (adreno_name.find("830") != std::string_view::npos ||
+         adreno_name.find("840") != std::string_view::npos);
+    const bool lacks_mixed_samples =
+        !nv_framebuffer_mixed_samples && !amd_mixed_attachment_samples;
+    const bool no_msaa = msaa_override && *msaa_override
+        ? msaa_override[0] == '1'
+        : (adreno830_or_840 && lacks_mixed_samples);
+    AmdGpu::no_msaa.store(no_msaa, std::memory_order_release);
+    std::printf("ORDER1886_GRAPHICS_MSAA mode=%s reason=%s mixed_ext=%d,%d\n",
+                no_msaa ? "single" : "guest",
+                msaa_override && *msaa_override ? "user-override"
+                : adreno830_or_840 && lacks_mixed_samples ? "adreno83x-84x-no-mixed-samples"
+                                                          : "native-default",
+                int(nv_framebuffer_mixed_samples), int(amd_mixed_attachment_samples));
+    std::fflush(stdout);
 
     const std::string model_name{GetModelName()};
     const std::string driver_version = GetDriverVersionName();

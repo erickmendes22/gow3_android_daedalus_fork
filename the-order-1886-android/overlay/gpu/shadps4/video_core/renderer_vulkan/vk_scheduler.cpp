@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <thread>
+#include <bit>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -62,8 +63,8 @@ bool Scheduler::FullBarriers() {
         const char* env = std::getenv("ORDER1886_FULL_BARRIERS");
         const bool on = env && env[0] == '1';
         if (on) {
-            // In last_run.log whatever the GPU log level, so a tester's log shows the mode.
-            std::printf("GPU: full barriers on (ORDER1886_FULL_BARRIERS=1)\n");
+            std::printf("ORDER1886_RENDER_BARRIERS mode=full source=explicit\n");
+            std::fflush(stdout);
         }
         return on;
     }();
@@ -83,11 +84,160 @@ void Scheduler::RecordFullBarrier(vk::CommandBuffer cmdbuf) {
     });
 }
 
+// Preserve an existing Vulkan rendering pass across the PS4's first-clear
+// state transition. A cleared attachment is still resident in tile memory;
+// ending it merely because the next draw requests LOAD (not CLEAR) forces
+// an unnecessary tile store followed by a reload on Adreno/Mali.
+static bool Order1886MergePostClearPass() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("ORDER1886_COALESCE_CLEAR_PASS");
+        const bool on = !env || env[0] != '0';
+        std::printf("ORDER1886_GPU_PASS_COALESCE enabled=%d\n", int(on));
+        return on;
+    }();
+    return enabled;
+}
+
 void Scheduler::BeginRendering(const RenderState& new_state) {
-    if (is_rendering && render_state == new_state) {
-        return;
+    if (is_rendering) {
+        if (render_state == new_state) {
+            return;
+        }
+        if (Order1886MergePostClearPass()) {
+            // On tile GPUs an immediate CLEAR of the same attachments need not
+            // end the render pass, store its tiles, then reload them.
+            // Only substitute vkCmdClearAttachments when every image view,
+            // layout, layer count and render size is IDENTICAL. Preserve all
+            // writes and depth/stencil semantics; this never drops a draw.
+            static const bool inline_clears = [] {
+                const char* env = std::getenv("ORDER1886_INLINE_ATTACHMENT_CLEAR");
+                return !env || env[0] != '0';
+            }();
+            if (inline_clears) {
+                RenderState compared = render_state;
+                for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                    compared.color_attachments[i].is_clear =
+                        new_state.color_attachments[i].is_clear;
+                    compared.color_attachments[i].clear_value =
+                        new_state.color_attachments[i].clear_value;
+                }
+                compared.depth_stencil_attachment.depth_clear =
+                    new_state.depth_stencil_attachment.depth_clear;
+                compared.depth_stencil_attachment.stencil_clear =
+                    new_state.depth_stencil_attachment.stencil_clear;
+                compared.depth_stencil_attachment.clear_value =
+                    new_state.depth_stencil_attachment.clear_value;
+                if (compared == new_state && new_state.num_layers > 0 &&
+                    new_state.num_layers <= 16) {
+                    std::array<vk::ClearAttachment, 9> clears{};
+                    u32 count = 0;
+                    for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                        const auto& color = new_state.color_attachments[i];
+                        if (!color.is_clear || !color.image_view) continue;
+                        clears[count++] = vk::ClearAttachment{
+                            .aspectMask = vk::ImageAspectFlagBits::eColor,
+                            .colorAttachment = i,
+                            .clearValue = vk::ClearValue{
+                                .color = vk::ClearColorValue{.uint32 = color.clear_value}},
+                        };
+                    }
+                    const auto& ds = new_state.depth_stencil_attachment;
+                    vk::ImageAspectFlags aspects{};
+                    if (ds.has_depth && ds.depth_clear)
+                        aspects |= vk::ImageAspectFlagBits::eDepth;
+                    if (ds.has_stencil && ds.stencil_clear)
+                        aspects |= vk::ImageAspectFlagBits::eStencil;
+                    if (aspects && ds.image_view) {
+                        clears[count++] = vk::ClearAttachment{
+                            .aspectMask = aspects,
+                            .colorAttachment = 0,
+                            .clearValue = vk::ClearValue{.depthStencil =
+                                vk::ClearDepthStencilValue{
+                                    .depth = std::bit_cast<float>(ds.clear_value[0]),
+                                    .stencil = ds.clear_value[1]}},
+                        };
+                    }
+                    if (count) {
+                        const vk::ClearRect rect{
+                            .rect = {.offset = {0, 0},
+                                     .extent = {new_state.width, new_state.height}},
+                            .baseArrayLayer = 0,
+                            .layerCount = new_state.num_layers,
+                        };
+                        Record([clears, count, rect](vk::CommandBuffer cmdbuf) {
+                            cmdbuf.clearAttachments(count, clears.data(), 1, &rect);
+                        });
+                        render_state = new_state;
+                        static std::atomic<u64> reused{0};
+                        const u64 n = reused.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if (n == 1 || n % 4096 == 0)
+                            std::printf("ORDER1886_GPU_INLINE_CLEAR reused=%llu\n",
+                                        static_cast<unsigned long long>(n));
+                        return;
+                    }
+                }
+            }
+            bool requests_clear = new_state.depth_stencil_attachment.depth_clear ||
+                                  new_state.depth_stencil_attachment.stencil_clear;
+            for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                requests_clear |= new_state.color_attachments[i].is_clear != 0;
+            }
+            if (!requests_clear) {
+                RenderState prior = render_state;
+                for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+                    prior.color_attachments[i].is_clear = 0;
+                    prior.color_attachments[i].clear_value =
+                        new_state.color_attachments[i].clear_value;
+                }
+                prior.depth_stencil_attachment.depth_clear = false;
+                prior.depth_stencil_attachment.stencil_clear = false;
+                prior.depth_stencil_attachment.clear_value =
+                    new_state.depth_stencil_attachment.clear_value;
+                if (prior == new_state) {
+                    // The clear has already happened; retain the tile contents.
+                    render_state = new_state;
+                    static std::atomic<u32> merged{0};
+                    const u32 count = merged.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (count == 1 || count % 4096 == 0) {
+                        std::printf("ORDER1886_GPU_PASS_COALESCE merged=%u\n", count);
+                    }
+                    return;
+                }
+            }
+        }
     }
     EndRendering();
+    // Timestamp only at an existing render-pass boundary. Unlike profiling
+    // each draw, this preserves the 94k post-clear pass merges seen in 0.1.20.
+    if (auto* p = GpuProfiler::Get(); p && p->Records(this) && p->Sampling()) {
+        const auto& dep = new_state.depth_stencil_attachment;
+        const u32 slots = new_state.num_color_attachments;
+        u32 active_mask = 0;
+        for (u32 i = 0; i < slots; ++i) {
+            if (new_state.color_attachments[i].image_view) active_mask |= (1u << i);
+        }
+        const u32 active_colors = std::popcount(active_mask);
+        const bool depth = dep.has_depth;
+        const u32 w = new_state.width, h = new_state.height;
+        // This uniquely groups active attachment masks and dimensions without
+        // making per-draw markers or embedding image handles in the profiler.
+        const u64 key = 0xC1A0000000000000ULL |
+                        (u64(w) << 36) | (u64(h) << 20) |
+                        (u64(active_mask) << 11) | (u64(slots) << 3) |
+                        (depth ? 1ULL : 0ULL);
+        p->Mark(key, [active_colors, active_mask, slots, depth, w, h] {
+            const char* kind = active_colors >= 3 ? "MRT-3plus" :
+                               active_colors == 2 ? "MRT-2active" :
+                               active_colors == 1 && depth ? "scene-color-depth" :
+                               active_colors == 1 ? "lighting-post" :
+                               depth && w == h && (w == 512 || w == 1024 || w == 2048)
+                                   ? "shadow-depth-only" :
+                               depth ? "depth-only" : "other";
+            return std::string{kind} + " " + std::to_string(w) + "x" +
+                   std::to_string(h) + " slots=" + std::to_string(slots) +
+                   " mask=" + std::to_string(active_mask);
+        });
+    }
     is_rendering = true;
     render_state = new_state;
 
@@ -248,9 +398,22 @@ void Scheduler::WaitDeferredSignals() {
     }
     Ps4Stats::WaitTimer timer{Ps4Stats::host_copies_wait_ns};
     KickRecording(true);
+    u64 last_done = deferred_signals_done->load(std::memory_order_acquire);
+    auto last_progress = std::chrono::steady_clock::now();
     for (unsigned spins = 0; deferred_signals_done->load(std::memory_order_acquire) < issued;) {
         // Helps the copy threads the signals wait for.
         Ps4Copy::WaitAsync();
+        const u64 done = deferred_signals_done->load(std::memory_order_acquire);
+        if (done > last_done) {
+            last_done = done;
+            last_progress = std::chrono::steady_clock::now();
+        } else if (std::chrono::steady_clock::now() - last_progress >
+                   std::chrono::seconds(20)) {
+            LOG_CRITICAL(Render_Vulkan,
+                         "ORDER1886_DEFERRED_SIGNAL_HANG: completed={} issued={}",
+                         done, issued);
+            std::abort();
+        }
         Ps4Threads::Backoff(spins);
     }
 }
@@ -260,8 +423,22 @@ void Scheduler::WaitHostCopies() {
         Ps4Stats::WaitTimer timer{Ps4Stats::host_copies_wait_ns};
         Ps4Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
+        const u64 issued = host_copies_issued;
+        u64 last_done = host_copies_done.load(std::memory_order_acquire);
+        auto last_progress = std::chrono::steady_clock::now();
         for (unsigned spins = 0;
-             host_copies_done.load(std::memory_order_acquire) < host_copies_issued;) {
+             host_copies_done.load(std::memory_order_acquire) < issued;) {
+            const u64 done = host_copies_done.load(std::memory_order_acquire);
+            if (done > last_done) {
+                last_done = done;
+                last_progress = std::chrono::steady_clock::now();
+            } else if (std::chrono::steady_clock::now() - last_progress >
+                       std::chrono::seconds(20)) {
+                LOG_CRITICAL(Render_Vulkan,
+                             "ORDER1886_HOST_COPY_HANG: completed={} issued={}",
+                             done, issued);
+                std::abort();
+            }
             Ps4Threads::Backoff(spins);
         }
     }
@@ -311,7 +488,14 @@ void Scheduler::SyncRecording() {
     KickRecording(true);
     Ps4Stats::WaitTimer timer{Ps4Stats::sync_recording_ns};
     std::unique_lock lk{recorder_mutex};
-    recorder_idle_cv.wait(lk, [this] { return recorder_queue.empty() && !recorder_busy; });
+    if (!recorder_idle_cv.wait_for(lk, std::chrono::seconds(30), [this] {
+            return recorder_queue.empty() && !recorder_busy;
+        })) {
+        LOG_CRITICAL(Render_Vulkan,
+                     "ORDER1886_RECORDER_HANG: queued={} busy={}",
+                     recorder_queue.size(), recorder_busy);
+        std::abort();
+    }
 }
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
@@ -510,9 +694,65 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .pSignalSemaphores = info.signal_semas.data(),
     };
 
+    // Native queue submission time is CPU/driver work, not GPU execution
+    // time. Keep it separate from the sampled GPU timestamps.
+    static const bool meters = [] {
+        const char* env = std::getenv("ORDER1886_GPU_PROFILE");
+        return env && env[0] == '1';
+    }();
+    const auto t_submit = meters ? std::chrono::steady_clock::now()
+                                 : std::chrono::steady_clock::time_point{};
     ImGui::Core::TextureManager::Submit();
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    if (meters) {
+        const auto t_done = std::chrono::steady_clock::now();
+        const u64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           t_done - t_submit).count();
+        static std::atomic<u64> draw_submit_ns{0}, present_submit_ns{0};
+        static std::atomic<u64> draw_submits{0}, present_submits{0};
+        const bool draw_queue = GpuProfiler::Get() && GpuProfiler::Get()->Records(this);
+        (draw_queue ? draw_submit_ns : present_submit_ns).fetch_add(
+            ns, std::memory_order_relaxed);
+        (draw_queue ? draw_submits : present_submits).fetch_add(
+            1, std::memory_order_relaxed);
+        const u64 now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               t_done.time_since_epoch()).count();
+        static std::atomic<u64> previous_report_ns{0};
+        u64 previous = previous_report_ns.load(std::memory_order_relaxed);
+        if (!previous) {
+            previous_report_ns.compare_exchange_strong(previous, now_ns);
+        } else if (now_ns - previous >= 5'000'000'000ULL &&
+                   previous_report_ns.compare_exchange_strong(previous, now_ns)) {
+            static u64 last_tick_wait = 0, last_record_wait = 0;
+            static u64 last_host_wait = 0, last_copy_wait = 0;
+            static u64 last_frames = 0;
+            const u64 tick = Ps4Stats::tick_wait_ns.load(std::memory_order_relaxed);
+            const u64 record = Ps4Stats::sync_recording_ns.load(std::memory_order_relaxed);
+            const u64 host = Ps4Stats::host_copies_wait_ns.load(std::memory_order_relaxed);
+            const u64 copies = Ps4Stats::copy_threads_wait_ns.load(std::memory_order_relaxed);
+            const u64 frames = Ps4Stats::gpu_frames.load(std::memory_order_relaxed);
+            std::printf(
+                "ORDER1886_CPU_GPU_FEED frames=%llu graphics_submits=%llu "
+                "graphics_submit_wall_ms=%.2f present_submits=%llu "
+                "present_submit_wall_ms=%.2f tick_wait_ms=%.2f "
+                "vk_recorder_wait_ms=%.2f host_copy_wait_ms=%.2f "
+                "copy_threads_wait_ms=%.2f window_s=%.2f\n",
+                static_cast<unsigned long long>(frames - last_frames),
+                static_cast<unsigned long long>(draw_submits.exchange(0)),
+                draw_submit_ns.exchange(0) / 1e6,
+                static_cast<unsigned long long>(present_submits.exchange(0)),
+                present_submit_ns.exchange(0) / 1e6,
+                (tick - last_tick_wait) / 1e6, (record - last_record_wait) / 1e6,
+                (host - last_host_wait) / 1e6, (copies - last_copy_wait) / 1e6,
+                double(now_ns - previous) / 1e9);
+            last_tick_wait = tick;
+            last_record_wait = record;
+            last_host_wait = host;
+            last_copy_wait = copies;
+            last_frames = frames;
+        }
+    }
 
     work_semaphore.Refresh();
     AllocateWorkerCommandBuffers();
