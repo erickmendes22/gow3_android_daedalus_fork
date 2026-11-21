@@ -1,7 +1,7 @@
-name: SotC ARM64 AOT preflight (no FEX APK changes)
+name: SotC ARM64 AOT NO-TSO preflight (no FEX APK changes)
 on:
   push:
-    branches: [experiment/sotc-arm64-aot-bootstrap-054]
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
     paths:
       - "ports/sotc/android/aot/**"
       - "tests/test_sotc_arm64_aot_bootstrap.py"
@@ -19,10 +19,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/aot/compile_local.py tests/test_sotc_arm64_aot_bootstrap.py
-      - name: Guard BBPROBE5 codegen, original game files, patches and x86 TSO
+      - name: Guard BBPROBE5 codegen, original game files, patches and NO x86 TSO
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_sotc_arm64_aot_bootstrap.py' -v
-          grep -Fq '"--tso", "--resume-entries", "--no-callee-saved"' ports/sotc/android/aot/compile_local.py
+          grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
+          ! grep -Fq '"--tso"' ports/sotc/android/aot/compile_local.py
           grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
           ! grep -Fq 'TLOU_TSO_NO_TSO=1' ports/sotc/android/aot/compile_local.py
