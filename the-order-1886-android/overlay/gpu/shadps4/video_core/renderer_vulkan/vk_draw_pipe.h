@@ -114,17 +114,20 @@ public:
         const u64 start = Common::FencedRDTSC();
         const auto started = std::chrono::steady_clock::now();
         const auto deadline = started + std::chrono::seconds(10);
-        // On Android the old unbounded yield loop competed with FEX and the draw
-        // worker during heavy scenes. The shared bounded backoff retains short
-        // spin latency and parks after prolonged waits without losing the watchdog.
-        unsigned backoff = 0;
+        // The previous backoff slept 100 us at each synchronous GPU boundary
+        // (including PM4 compute barriers). Use the atomic progress futex so
+        // Stage A wakes immediately when Stage B commits the next packet.
         for (u32 polls = 0; consumed.load(std::memory_order_acquire) != head; ++polls) {
             if (polls < 1024) {
                 COMMON_CPU_RELAX();
             } else {
-                Ps4Threads::Backoff(backoff);
+                waiting_for_progress.store(true, std::memory_order_release);
+                const u64 last = consumed.load(std::memory_order_acquire);
+                if (last != head) {
+                    consumed.wait(last, std::memory_order_relaxed);
+                }
+                waiting_for_progress.store(false, std::memory_order_release);
             }
-            // Poll count is independent from Backoff's capped counter.
             if ((polls & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
                 LOG_CRITICAL(Render_Vulkan,
                              "ORDER1886_DRAW_PIPE_HANG drain head={} consumed={} worker_tid={}",
@@ -178,12 +181,16 @@ private:
     void WaitForSpace(u64 at, u64 size) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         u32 polls = 0;
-        unsigned backoff = 0;
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
             if (polls < 1024) {
                 COMMON_CPU_RELAX();
             } else {
-                Ps4Threads::Backoff(backoff);
+                waiting_for_progress.store(true, std::memory_order_release);
+                const u64 last = consumed.load(std::memory_order_acquire);
+                if (at + size - last > Capacity) {
+                    consumed.wait(last, std::memory_order_relaxed);
+                }
+                waiting_for_progress.store(false, std::memory_order_release);
             }
             if ((polls++ & 255u) == 0 && std::chrono::steady_clock::now() > deadline) {
                 LOG_CRITICAL(Render_Vulkan,
@@ -241,6 +248,9 @@ private:
             if (header->size == 0) {
                 at += Capacity - at % Capacity;
                 consumed.store(at, std::memory_order_release);
+                if (waiting_for_progress.exchange(false, std::memory_order_acq_rel)) {
+                    consumed.notify_one();
+                }
                 continue;
             }
             const u64 start = Common::FencedRDTSC();
@@ -248,6 +258,9 @@ private:
             busy_cycles.fetch_add(Common::FencedRDTSC() - start, std::memory_order_relaxed);
             at += header->size;
             consumed.store(at, std::memory_order_release);
+            if (waiting_for_progress.exchange(false, std::memory_order_acq_rel)) {
+                consumed.notify_one();
+            }
         }
     }
 
@@ -259,6 +272,7 @@ private:
     u32 pending_size = 0;
     alignas(64) std::atomic<u64> published{0};
     alignas(64) std::atomic<u64> consumed{0};
+    std::atomic<bool> waiting_for_progress{false};
     alignas(64) std::atomic<u32> wake{0};
     std::atomic<bool> sleeping{false};
     std::atomic<u32> stage_b_tid{0};
