@@ -266,12 +266,61 @@ public:
         api.features =
             UFFD_FEATURE_THREAD_ID | UFFD_FEATURE_WP_HUGETLBFS_SHMEM | UFFD_FEATURE_WP_UNPOPULATED;
         if (ioctl(uffd, UFFDIO_API, &api) != 0) {
-            LOG_ERROR(Common_Memory,
-                      "uffdio_api call failed: {}, falling back to signal implementation",
-                      Common::GetLastErrorMsg());
+            LOG_WARNING(Common_Memory,
+                        "ORDER1886_UFFD preflight=unsupported reason=UFFDIO_API: {}",
+                        Common::GetLastErrorMsg());
             close(uffd);
             throw std::runtime_error("uffdio_api");
         }
+        constexpr u64 required = UFFD_FEATURE_THREAD_ID |
+                                 UFFD_FEATURE_WP_HUGETLBFS_SHMEM |
+                                 UFFD_FEATURE_WP_UNPOPULATED;
+        if ((api.features & required) != required) {
+            std::printf("ORDER1886_UFFD preflight=unsupported features=%#llx required=%#llx\\n",
+                        static_cast<unsigned long long>(api.features),
+                        static_cast<unsigned long long>(required));
+            close(uffd);
+            throw std::runtime_error("uffd features missing");
+        }
+        // Probe actual WP registration on a scratch shared memfd, matching
+        // the PS4 guest address-space backing. Some Android devices expose
+        // UFFDIO_API but reject WP on shmem mappings. Only activate if the
+        // exact registration+writeprotect+unregister path succeeds.
+        const int probe_fd = static_cast<int>(syscall(SYS_memfd_create,
+                                                     "order1886-uffd-probe", 0));
+        bool probe_ok = false;
+        if (probe_fd >= 0) {
+            if (ftruncate(probe_fd, PM_PAGE_SIZE) == 0) {
+                void* page = mmap(nullptr, PM_PAGE_SIZE, PROT_READ | PROT_WRITE,
+                                  MAP_SHARED, probe_fd, 0);
+                if (page != MAP_FAILED) {
+                    uffdio_register reg{};
+                    reg.range.start = reinterpret_cast<u64>(page);
+                    reg.range.len = PM_PAGE_SIZE;
+                    reg.mode = UFFDIO_REGISTER_MODE_WP;
+                    if (ioctl(uffd, UFFDIO_REGISTER, &reg) == 0) {
+                        uffdio_writeprotect wp{};
+                        wp.range.start = reg.range.start;
+                        wp.range.len = PM_PAGE_SIZE;
+                        wp.mode = UFFDIO_WRITEPROTECT_MODE_WP;
+                        if (ioctl(uffd, UFFDIO_WRITEPROTECT, &wp) == 0) {
+                            wp.mode = 0;
+                            probe_ok = ioctl(uffd, UFFDIO_WRITEPROTECT, &wp) == 0;
+                        }
+                        uffdio_range range{reg.range.start, reg.range.len};
+                        ioctl(uffd, UFFDIO_UNREGISTER, &range);
+                    }
+                    munmap(page, PM_PAGE_SIZE);
+                }
+            }
+            close(probe_fd);
+        }
+        if (!probe_ok) {
+            std::printf("ORDER1886_UFFD preflight=unsupported reason=shmem-wp-registration\\n");
+            close(uffd);
+            throw std::runtime_error("userfaultfd shared mapping registration");
+        }
+        std::printf("ORDER1886_UFFD preflight=supported mode=shared-memfd-wp\\n");
 
         // Read faults (readbacks) still arrive as signals.
         Core::Signals::Instance()->RegisterAccessViolationHandler(
@@ -281,7 +330,11 @@ public:
         std::printf("GPU: memory tracking with userfaultfd write-protection\n");
     }
 
-    ~UffdImpl() = default;
+    ~UffdImpl() override {
+        ufd_thread.request_stop();
+        ufd_thread.join();
+        close(uffd);
+    }
 
     void OnMap(VAddr address, size_t size) override {
         uffdio_register reg{};
@@ -395,13 +448,24 @@ struct SignalImpl : public PageManager::Impl {
 
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
-    if (std::getenv("ORDER1886_UFFD") && std::getenv("ORDER1886_UFFD")[0] == '1') {
+    // On Android 16 / recent kernels, write-protect userfaultfd can avoid
+    // expensive mprotect TLB shootdowns on heavily rewritten guest buffers.
+    // On older/locked-down devices, a scratch shared-memfd feature probe
+    // rejects it and keeps the unchanged signal page tracker.
+    const char* uffd_override = std::getenv("ORDER1886_UFFD");
+#ifdef __ANDROID__
+    const bool try_uffd = !uffd_override || uffd_override[0] != '0';
+#else
+    const bool try_uffd = uffd_override && uffd_override[0] == '1';
+#endif
+    if (try_uffd) {
         try {
             impl = std::make_unique<UffdImpl>(rasterizer_);
+            std::printf("ORDER1886_UFFD backend=active\\n");
             LOG_INFO(Config, "Memory tracking method: userfaultfd");
             return;
         } catch (const std::runtime_error& e) {
-            // if uffd is unsupported, falls back to SignalImpl
+            std::printf("ORDER1886_UFFD backend=signal-fallback reason=%s\\n", e.what());
         }
     }
     LOG_INFO(Config, "Memory tracking method: signals");
