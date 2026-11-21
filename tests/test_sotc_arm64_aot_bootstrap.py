@@ -40,8 +40,7 @@ class TestSotcArm64Aot(unittest.TestCase):
         self.root=Path(self.tmp.name)
         self.boot=self.root/"boot-linked.bin"
         self.patches=self.root/"patches.bin"
-        self.payload=bytes(range(128))
-        self.original=b"\0"*aot.PATCH_BASE+self.payload
+        self.original=bytes(range(128))
         image_fixture(self.boot,self.original)
         patch_fixture(self.patches,[(12,b"\xaa\xbb"),(63,b"\xcc")])
 
@@ -61,13 +60,28 @@ class TestSotcArm64Aot(unittest.TestCase):
         info=aot.stage_native_boot(self.boot,self.patches,out)
         self.assertEqual(info["patch_count"],2)
         data=out.read_bytes()
-        i=info["table_bytes"]+aot.PATCH_BASE
+        i=info["table_bytes"]
         self.assertEqual(data[i+12:i+14],b"\xaa\xbb")
         self.assertEqual(data[i+63],0xcc)
-        self.assertEqual(data[i:i+12],self.payload[:12])
-        self.assertEqual(self.boot.read_bytes()[i:i+128],self.payload)
-        self.assertEqual(aot.boot_info(out)["image_bytes"],aot.PATCH_BASE+128)
+        self.assertEqual(data[i:i+12],self.original[:12])
+        self.assertEqual(self.boot.read_bytes()[i:i+128],self.original)
+        self.assertEqual(aot.boot_info(out)["image_bytes"],128)
         self.assertEqual(info["patched_image_sha256"],hashlib.sha256(data[info["table_bytes"]:]).hexdigest())
+
+    def test_patch_offsets_are_image_relative_not_plus_0x400000(self):
+        """BBPATCH2 header base is for relocatable POINTER VALUES, not patch offsets.
+        Adding 0x400000 can overwrite FDE metadata instead of x86 code.
+        """
+        sample = bytearray(b"\0" * (aot.PATCH_BASE + 64))
+        sample[0x30:0x38] = b"\x11" * 8
+        sample[aot.PATCH_BASE + 0x30:aot.PATCH_BASE + 0x38] = b"\x22" * 8
+        image_fixture(self.boot, bytes(sample))
+        patch_fixture(self.patches, [(0x30, b"\x99" * 8)])
+        out = self.root / "relative.BBPROBE5"
+        info = aot.stage_native_boot(self.boot, self.patches, out)
+        img = out.read_bytes()[info["table_bytes"]:]
+        self.assertEqual(img[0x30:0x38], b"\x99" * 8)
+        self.assertEqual(img[aot.PATCH_BASE+0x30:aot.PATCH_BASE+0x38], b"\x22"*8)
 
     def test_reject_overlap_and_overflow(self):
         patch_fixture(self.patches,[(12,b"hello"),(14,b"\x33")])
