@@ -536,6 +536,9 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
     patch_sotc_rt_memo(out)
+    # Upstream PC streaming wins, ported to Android without skipping GPU work.
+    from stage_sotc_pc_streaming_051 import patch_pc_streaming
+    patch_pc_streaming(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
