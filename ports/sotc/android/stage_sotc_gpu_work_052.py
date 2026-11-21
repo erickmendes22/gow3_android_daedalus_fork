@@ -14,6 +14,17 @@ from pathlib import Path
 
 
 def swap(value: str, before: str, after: str, what: str) -> str:
+    # This copy sequence also occurs in the standalone image-upload helper.
+    # Restrict the texture optimization to ObtainBufferForImage, not that helper.
+    if what == "async coherent texture staging":
+        signature = "std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage("
+        if value.count(signature) != 1:
+            raise ValueError("SotC GPU work 052 texture function source drift")
+        prefix, body = value.split(signature, 1)
+        count = body.count(before)
+        if count != 1:
+            raise ValueError(f"SotC GPU work 052 {what}: source drift ({count})")
+        return prefix + signature + body.replace(before, after, 1)
     count = value.count(before)
     if count != 1:
         raise ValueError(f"SotC GPU work 052 {what}: source drift ({count})")
