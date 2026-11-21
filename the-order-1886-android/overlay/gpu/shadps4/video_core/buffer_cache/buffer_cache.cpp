@@ -364,8 +364,14 @@ bool BufferCache::DeliverSunCopies() {
     if (newest.serial == last_delivered_sun_serial) return true;
     newest.staging.buffer->Invalidate(newest.staging.offset, newest.staging.size);
     for (const auto& item : newest.items) {
-        memory->TryWriteBacking(reinterpret_cast<void*>(item.addr),
-                                newest.staging.mapped + item.staging_offset, item.size);
+        if (!memory->TryWriteBacking(reinterpret_cast<void*>(item.addr),
+                                     newest.staging.mapped + item.staging_offset, item.size)) {
+            // The game may have unmapped/recycled a cascade AABB backing
+            // since this GPU copy was queued. A failed publication is not
+            // evidence that the latest sun data is visible to the CPU.
+            sun_snapshot_gap = true;
+            return false;
+        }
     }
     last_delivered_sun_serial = newest.serial;
     static std::atomic<u64> deliveries{0};
