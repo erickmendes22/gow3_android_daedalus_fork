@@ -477,8 +477,8 @@ public final class Order1886Activity extends Activity {
         selectSpinner(c,"Anisotropia",new String[]{"1x","2x","4x","8x","16x"},
             Integer.numberOfTrailingZeros(prefs().getInt("anisotropy",1)),
             n->{prefs().edit().putInt("anisotropy",1<<n).apply();selectionChange();});
-        selectSpinner(c,"Frames adiantados",new String[]{"0 (sem limite)","1 (padrão)","2"},
-            prefs().getInt("framesQueued",1),
+        selectSpinner(c,"Frames adiantados",new String[]{"0 (sem limite)","1 (menor latência)","2 (padrão: CPU/GPU paralelo)"},
+            prefs().getInt("framesQueued",2),
             n->{prefs().edit().putInt("framesQueued",n).apply();selectionChange();});
         selectSpinner(c,"Idioma do jogo",new String[]{"日本語","English (United States)","Français (France)","Español (España)","Deutsch","Italiano","Nederlands","Português (Portugal)","Русский","한국어","繁體中文","简体中文","Suomi","Svenska","Dansk","Norsk","Polski","Português (Brasil)","English (United Kingdom)","Türkçe","Español (Latinoamérica)","العربية","Français (Canada)","Čeština","Magyar","Ελληνικά","Română","ไทย","Tiếng Việt","Bahasa Indonesia"},
             Math.max(0,Math.min(29,prefs().getInt("language",1))),
