@@ -150,14 +150,13 @@ void Rasterizer::ReadBackGpuWrittenSrtSources(Shader::Info& info) {
         for (const VAddr address : sources) {
             if (!address || address > ~VAddr{0} - sizeof(u32)) continue;
             const VAddr page = address & PageMask;
-            // The overwhelming majority of SRT pages are clean. Query the
-            // GPU-modified bitmap BEFORE the Android guest-VMA validity check:
-            // the original order walked the VMA map for every descriptor on
-            // every draw even though no GPU readback was necessary.
+            // Keep the VMA guard FIRST: the GPU tracker is indexed by guest
+            // address and must not be queried for untrusted SRT pointers.
+            // Only the allocation-free SRT snapshot path is changed here.
             if (std::find(visited.begin(), visited.end(), page) != visited.end() ||
+                !IsMapped(page, PageSize) ||
                 !buffer_cache.IsRegionGpuModified(page, PageSize) ||
-                !buffer_cache.IsRangeGpuWritten(address, sizeof(u32)) ||
-                !IsMapped(page, PageSize)) continue;
+                !buffer_cache.IsRangeGpuWritten(address, sizeof(u32))) continue;
             visited.push_back(page);
             pages.push_back(page);
         }
