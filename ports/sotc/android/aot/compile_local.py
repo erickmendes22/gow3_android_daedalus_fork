@@ -4,8 +4,8 @@
 
 Phase 1 ONLY: produce and verify libSotcAot.so. Production FEX, game files,
 the verified patch catalogue, and readback preferences stay untouched.
-The required bb-recomp compiler must have TLOU's proven TSO lowering
-(shard 3-tlou-string, conservative x86 memory semantics).
+The supplied bb-recomp compiler must generate ARM64 without --tso.
+No FEX or TSO codegen is permitted in the native guest execution target.
 """
 from __future__ import annotations
 import argparse
@@ -21,13 +21,14 @@ import sys
 
 HEADER = struct.Struct("<8s12Q")
 SUPPORTED = {"CUSA08809", "CUSA08034"}
-TSO_COMPILER_VERSIONS = ("3-tlou-string", "4-tlou-tso-aligned-ar-v1",
+AOT_COMPILER_VERSIONS = ("3-tlou-string", "4-tlou-tso-aligned-ar-v1",
                          "5-tlou-tso-outlined-unaligned-v1")
-AOT_FLAGS = ("--tso", "--resume-entries", "--no-callee-saved")
+AOT_FLAGS = ("--resume-entries", "--no-callee-saved")
 MAX_IMAGE = 512 * 1024 * 1024
 MAX_PATCHES = 10000
 PATCH_BASE = 0x400000
-# No experimental no-TSO mode in the production compiler path.
+# Explicit synchronization remains necessary for guest runtime correctness.
+# The compiler command NEVER enables x86 TSO instrumentation.
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -154,14 +155,14 @@ def verify_native(so: Path, stats: Path, meta_file: Path) -> dict:
         raise ValueError("AOT output is not an AArch64 shared library")
     meta=json.loads(meta_file.read_text())
     version=meta.get("compiler_version","")
-    if meta.get("abi_version")!=2 or version not in TSO_COMPILER_VERSIONS:
-        raise ValueError("AOT ABI/TSO compiler version not validated")
+    if meta.get("abi_version")!=2 or version not in AOT_COMPILER_VERSIONS:
+        raise ValueError("AOT ABI/compiler version not validated")
     if meta.get("so_sha256")!=sha256(so):
         raise ValueError("AOT shared library SHA256 mismatch")
     raw=stats.read_text(errors="replace")
     m=re.search(r"units with bbr_trap \(unsupported ops\):\s*(\d+)\s*\(([\d.]+)%\)",raw)
     if not m or "LoadMemTSO" in raw or "StoreMemTSO" in raw:
-        raise ValueError("Unresolved guest TSO operations or missing coverage stats")
+        raise ValueError("Guest TSO operations appeared despite no-TSO codegen or coverage report missing")
     dirty,percent=int(m.group(1)),float(m.group(2))
     total=int(meta.get("unit_count",0))
     if total<=0 or dirty>total or percent>0.25:
@@ -176,7 +177,7 @@ def main(argv:list[str]|None=None)->int:
     a.add_argument("--prepared",type=Path,required=True,
                    help="Current SotC preparation folder with BBPROBE5, BBPATCH2 and analysis.json")
     a.add_argument("--out",type=Path,required=True,help="Private AOT working directory")
-    a.add_argument("--compiler",type=Path,help="Patched Android ARM64 bb-recomp TSO v3/v4/v5")
+    a.add_argument("--compiler",type=Path,help="Android ARM64 bb-recomp; do not enable --tso")
     a.add_argument("--bundle-dir",type=Path,help="LLVM native helper bundle")
     a.add_argument("--jobs",type=int,default=3)
     a.add_argument("--shards",type=int,default=64)
@@ -184,7 +185,7 @@ def main(argv:list[str]|None=None)->int:
     args=a.parse_args(argv)
     if not 1<=args.jobs<=16 or not 1<=args.shards<=4096:
         a.error("Invalid jobs/shards")
-    report={"backend":"sotc-arm64-aot-experimental","tso":"strict",
+    report={"backend":"sotc-arm64-aot-experimental","tso":"disabled",
             "fex_runtime_required_for_current_release":True,
             "aot_execution_integrated":False,
             "status":"preflight"}
@@ -205,7 +206,7 @@ def main(argv:list[str]|None=None)->int:
         stats=dest/"aot/compile.txt"
         cmd=compiler_command(args.compiler or Path("/unconfigured/compiler"),
                              args.game,native,so,stats,args.bundle_dir,args.jobs,args.shards)
-        report.update(game=game,image=info,
+        report.update(game=game,image=info, guest_cpu_model="ARM64 AOT without FEX/TSO",
                       original_boot_sha256=sha256(boot),
                       aot_boot_sha256=sha256(native),
                       command=cmd,status="preflight_ok")
