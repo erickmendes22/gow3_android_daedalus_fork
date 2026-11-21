@@ -737,19 +737,24 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
             const u64 host = Ps4Stats::host_copies_wait_ns.load(std::memory_order_relaxed);
             const u64 copies = Ps4Stats::copy_threads_wait_ns.load(std::memory_order_relaxed);
             const u64 frames = Ps4Stats::gpu_frames.load(std::memory_order_relaxed);
+            // Ps4Stats may reset at a reporting boundary. Unsigned subtraction
+            // previously reported ~1.844674e13 ms when a counter decreased.
+            const auto delta = [](u64 current, u64 previous) -> u64 {
+                return current >= previous ? current - previous : current;
+            };
             std::printf(
                 "ORDER1886_CPU_GPU_FEED frames=%llu graphics_submits=%llu "
                 "graphics_submit_wall_ms=%.2f present_submits=%llu "
                 "present_submit_wall_ms=%.2f tick_wait_ms=%.2f "
                 "vk_recorder_wait_ms=%.2f host_copy_wait_ms=%.2f "
                 "copy_threads_wait_ms=%.2f window_s=%.2f\n",
-                static_cast<unsigned long long>(frames - last_frames),
+                static_cast<unsigned long long>(delta(frames, last_frames)),
                 static_cast<unsigned long long>(draw_submits.exchange(0)),
                 draw_submit_ns.exchange(0) / 1e6,
                 static_cast<unsigned long long>(present_submits.exchange(0)),
                 present_submit_ns.exchange(0) / 1e6,
-                (tick - last_tick_wait) / 1e6, (record - last_record_wait) / 1e6,
-                (host - last_host_wait) / 1e6, (copies - last_copy_wait) / 1e6,
+                delta(tick, last_tick_wait) / 1e6, delta(record, last_record_wait) / 1e6,
+                delta(host, last_host_wait) / 1e6, delta(copies, last_copy_wait) / 1e6,
                 double(now_ns - previous) / 1e9);
             // Separate first-use shader/pipeline stalls from actual Vulkan queue waits.
             // Purely observational: do not change pipeline creation or clear its counters.
