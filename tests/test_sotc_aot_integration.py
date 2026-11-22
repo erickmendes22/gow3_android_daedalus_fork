@@ -43,7 +43,7 @@ class SotcAotIntegrationGuards(unittest.TestCase):
         self.assertIn('fatal unsupported instructions',script)
         self.assertIn('AOT_FLAGS = ("--resume-entries", "--no-callee-saved")',script)
         self.assertNotIn('AOT_FLAGS = ("--tso"',script)
-        self.assertIn('AOT_COMPILER_VERSIONS = ("1",)',script)
+        self.assertIn('AOT_COMPILER_VERSIONS = ("2",)',script)
         self.assertIn("embed_cmdline(patch_only,cmdline,native)",script)
 
     def test_sotc_installer_rejects_incomplete_AOT(self):
