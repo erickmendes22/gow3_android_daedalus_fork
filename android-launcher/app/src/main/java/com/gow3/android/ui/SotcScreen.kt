@@ -159,7 +159,8 @@ private fun SotcToggle(label:String,checked:Boolean,onChange:(Boolean)->Unit) {
 internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()->Unit,
     onChooseUpdateFolder:()->Unit,onInstallBasePkg:()->Unit,onInstallUpdatePkg:()->Unit,
     pkgInstallBusy:Boolean,pkgInstallMessage:String?,pkgGeneration:Int,
-    saves:SaveManager,logs:LogManager,onChangeLanguage:(String)->Unit
+    saves:SaveManager,logs:LogManager,onChangeLanguage:(String)->Unit,
+    onBuildAot:()->Unit,aotBusy:Boolean,aotMessage:String?
 ) {
     val ctx=LocalContext.current
     val config=remember { File(ctx.filesDir,"sotcport/sotc.ini") }
@@ -182,7 +183,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                 Spacer(Modifier.height(12.dp))
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontSize=26.sp,fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold)
-                Text("DAEDALUS  •  ANDROID BIONIC / FEX",color=SotcPalette.accent,
+                Text("DAEDALUS  •  ARM64 AOT / NO FEX / NO TSO",color=SotcPalette.accent,
                     fontSize=12.sp,letterSpacing=1.sp)
                 Text(if(pt) "Port experimental baseado no projeto de PC de AjncSystem."
                      else "Experimental port based on AjncSystem's PC project.",
@@ -209,6 +210,21 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     }
                     if(pkgInstallBusy) Text(if(pt) "Instalando…" else "Installing…",color=SotcPalette.secondary)
                     if(pkgInstallMessage!=null) Text(pkgInstallMessage,color=SotcPalette.secondary,fontSize=12.sp)
+                }
+                SotcPanel {
+                    Text(if(pt) "RECOMPILAÇÃO NATIVA ARM64 (AOT)" else "NATIVE ARM64 RECOMPILATION (AOT)",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    Text(if(pt) "Compila o eboot.bin e os módulos da pasta selecionada no próprio telefone usando os patches atuais. Sem FEX e sem TSO. Não modifica o jogo nem os saves."
+                        else "Compile the selected eboot.bin and modules on the phone using current patches. No FEX and no TSO. Does not change game files or saves.",
+                        color=SotcPalette.secondary,fontSize=12.sp)
+                    SotcAction(
+                        if(aotBusy) (if(pt) "COMPILANDO ARM64…" else "BUILDING ARM64…")
+                        else (if(pt) "COMPILAR AOT NO CELULAR" else "BUILD AOT ON THIS PHONE"),
+                        { if(!aotBusy) onBuildAot() }, Modifier.fillMaxWidth())
+                    if(aotMessage!=null) Text(aotMessage,color=SotcPalette.text,fontSize=12.sp)
+                    if(aotBusy) Text(if(pt) "Não inicie o jogo nem feche o aplicativo durante a recompilação."
+                        else "Do not start the game or close the application while compiling.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                 }
                 SotcPanel {
                     Text(if(pt) "VÍDEO E DESEMPENHO" else "VIDEO & PERFORMANCE",
@@ -325,11 +341,11 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • 0.1.51 — PC uploads + staging",color=SotcPalette.accent,fontSize=13.sp)
+                Text("DAEDALUS • ARM64 AOT — recompilação local",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    Text(if(pt) "Port experimental Android de Shadow of the Colossus. Renderer Vulkan específico do SotC, FEX e infraestrutura Android/Bionic."
-                         else "Experimental Shadow of the Colossus Android port using the SotC-specific Vulkan renderer, FEX and Android/Bionic infrastructure.",
+                    Text(if(pt) "Port Android com renderer Vulkan do SotC, backend ARM64 AOT sem FEX e recompilação local."
+                         else "Android SotC port with Vulkan renderer and on-device ARM64 AOT recompilation without FEX.",
                          color=SotcPalette.secondary,fontSize=13.sp)
                     Text("Original PC port: AjncSystem/ShadowOfTheColossus-PC",color=SotcPalette.text,fontSize=13.sp)
                     SotcAction(if(pt) "Projeto original" else "Original project") {
