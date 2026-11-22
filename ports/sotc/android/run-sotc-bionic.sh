@@ -221,6 +221,15 @@ case "$SOTC_VM_RANGE_CACHE" in
 esac
 echo "SotC CPU hot path: shader_spec_exact=$SOTC_STAGE_SPEC_MEMO stage_snapshot_swap=$SOTC_STAGE_SNAPSHOT_SWAP reg_snapshot_memo=$SOTC_REG_SNAPSHOT_MEMO"
 echo "SotC Bionic VM: interval cache=$SOTC_VM_RANGE_CACHE; reserve logging capped to 16 (BB_MEMORY_LOG=1 overrides)"
+# Controlled cascade-count experiment; default 5 retains the exact original
+# renderer path. Never use an invalid setting to suppress unrelated draws.
+export SOTC_SUN_CASCADES="${SOTC_SUN_CASCADES:-5}"
+case "$SOTC_SUN_CASCADES" in
+  0|1|2|3|5) ;;
+  *) echo "SotC sun cascade setting invalid; using original 5" >&2
+     export SOTC_SUN_CASCADES=5 ;;
+esac
+echo "SotC sun shadow cascade test: $SOTC_SUN_CASCADES (5=original, 0=disabled)"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"
 # would STILL activate it. Unset both unless explicitly selected in UI.
