@@ -19,9 +19,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
-      - name: Install UI-only SDK
-        run: sdkmanager 'platforms;android-37' 'build-tools;35.0.0'
+      - name: Use preinstalled Android SDK and add required platform
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?Missing Android SDK on GitHub runner}"
+          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" 'platforms;android-37' 'build-tools;35.0.0'
       - name: Compile APK user interface
         run: |
           set -euo pipefail
