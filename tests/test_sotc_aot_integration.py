@@ -49,7 +49,7 @@ class SotcAotIntegrationGuards(unittest.TestCase):
     def test_sotc_installer_rejects_incomplete_AOT(self):
         java=source("android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java")
         self.assertIn('"aot_mode',java)
-        for required in ("libbbcpu.so","libbbrecomp.so","cmdline_image.py",
+        for required in ("libbbcpu.so","sotc-patched-compiler.sha256","cmdline_image.py",
                          "sotc_aot_select.py","helpers-aarch64.o"):
             self.assertIn(required,java)
         self.assertIn('preserveUserData(files, stage)',java)
