@@ -1,9 +1,10 @@
-name: SotC AOT on-device launcher and compiler export
+name: SotC AOT 0.1.56 launcher and helper bundle
 on:
   push:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
     paths:
       - 'android-launcher/app/src/main/java/com/gow3/android/**'
+      - 'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java'
       - 'android-launcher/app/build.gradle.kts'
       - 'android-launcher/gradle/libs.versions.toml'
       - '.github/workflows/sotc-aot-on-device-ui.yml'
@@ -33,23 +34,16 @@ jobs:
           fi
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Stage executable native bb-recomp (Android W^X safe)
-        run: |
-          set -euo pipefail
-          curl -fL --retry 3 --connect-timeout 20 --max-time 180 -o /tmp/bb-recomp-android-aarch64.tar.xz https://github.com/ducvd89/Bloodborne-android-rebuild-tool/releases/download/v1.3.0/bb-recomp-android-aarch64.tar.xz
-          echo 'e0598aebe5b148419d06484e2f02aa19a2a2743915cfdd87a45da814f34d0681  /tmp/bb-recomp-android-aarch64.tar.xz' | sha256sum -c
-          mkdir -p out/bionic/apk-jni/arm64-v8a
-          tar -xOJf /tmp/bb-recomp-android-aarch64.tar.xz android/libbbrecomp.so > out/bionic/apk-jni/arm64-v8a/libbbrecomp.so
-          file out/bionic/apk-jni/arm64-v8a/libbbrecomp.so
       - name: Compile APK user interface
         run: |
           set -euo pipefail
           chmod +x android-launcher/gradlew
           android-launcher/gradlew -p android-launcher :app:assembleRelease -PsotcAndroid=true --no-daemon --max-workers=2
           find android-launcher/app/build/outputs/apk/release -name '*.apk' -ls
+          echo "AOT compiler will be injected only from the verified PATCHED ARM64 workflow artifact before signing."
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-ondevice-ui-0.1.55-unsigned
+          name: sotc-aot-ondevice-ui-0.1.56-unsigned
           path: android-launcher/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
