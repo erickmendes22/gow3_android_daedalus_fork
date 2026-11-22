@@ -27,13 +27,13 @@ void guest_cpu_call() {
 }
 void LoadAotLibrary() {
     if (abi_flags && (*abi_flags & 1))
-        std::fprintf(stderr, "AOT: %s has resume entries (bbr_abi_flags bit 0); this runtime does not use them\\n", path);
+        std::fprintf(stderr, "AOT: %s has resume entries (bbr_abi_flags bit 0); this runtime does not use them\n", path);
     if (abi_flags && (*abi_flags & 16)) {   // granular entries: bbr_func_granular[] says which functions of bbr_funcs[] have them
         G.funcs = static_cast<const GranRec*>(dlsym(so, "bbr_funcs"));
         const auto* nf = static_cast<const uint64_t*>(dlsym(so, "bbr_func_count"));
         G.flags = static_cast<const uint8_t*>(dlsym(so, "bbr_func_granular"));
         G.nfuncs = nf ? *nf : 0;
-        if (!G.funcs || !G.flags || !G.nfuncs) { G.flags = nullptr; std::fprintf(stderr, "AOT: %s: granular entries declared but their tables are missing\\n", path); }
+        if (!G.funcs || !G.flags || !G.nfuncs) { G.flags = nullptr; std::fprintf(stderr, "AOT: %s: granular entries declared but their tables are missing\n", path); }
     }
 }
 thread_local Thread* self;
