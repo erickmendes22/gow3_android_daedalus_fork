@@ -137,7 +137,10 @@ export SOTC_RB_ASYNC=1
 # Measured PC v0.76 streaming paths, guarded by coherent staging / join on submit.
 # 128 MiB idle large staging per memory type on Android, not PC's 256 MiB.
 export SOTC_STAGING_LARGE_POW2=1
-export SOTC_STAGING_LARGE_KEEP_MB=128
+# PC v0.76 kept more large staging buffers after measuring allocation stalls.
+# Let the Android renderer select 128 MiB on low-memory devices or 256 MiB
+# with >=10 GiB physical RAM. A user-provided number (including 0) overrides.
+export SOTC_STAGING_LARGE_KEEP_MB=${SOTC_STAGING_LARGE_KEEP_MB:-auto}
 export SOTC_BUF_ASYNC_KB=256
 # PC GPU hotpaths on mobile, while keeping precise guest readbacks.
 export SOTC_FILL_HLE_GPU=1
