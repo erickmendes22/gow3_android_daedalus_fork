@@ -635,6 +635,11 @@ public final class GameActivity extends Activity {
                 if (!"0".equals(sunCascades) && !"1".equals(sunCascades) &&
                     !"2".equals(sunCascades) && !"3".equals(sunCascades)) sunCascades="5";
                 env.put("SOTC_SUN_CASCADES",sunCascades);
+                // Optional, default OFF: skip descriptor/vertex binding for
+                // CPU-backed single indirect draws with zero vertex/instance
+                // counts, while still beginning the guest render pass for clears.
+                env.put("SOTC_INDIRECT_EMPTY_BIND",
+                        "1".equals(setting("sotc_indirect_empty_bind_063")) ? "1" : "0");
 
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
