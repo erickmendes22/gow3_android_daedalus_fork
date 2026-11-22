@@ -43,7 +43,7 @@ class SunCascadeTests(unittest.TestCase):
             self.assertIn("AmdGpu::ColorControl::OperationMode::Disable", gpu)
             self.assertIn("candidates[addr] |= (1u << first);", gpu)
             self.assertIn("first < keep", gpu)
-            self.assertIn("image.info.resources.layers < 5", gpu)
+            self.assertIn("image.info.resources.layers <= first", gpu)
             self.assertIn("first != last", gpu)
             self.assertIn("vk::ImageLayout::eTransferDstOptimal", gpu)
             self.assertIn("clearDepthStencilImage(", gpu)
