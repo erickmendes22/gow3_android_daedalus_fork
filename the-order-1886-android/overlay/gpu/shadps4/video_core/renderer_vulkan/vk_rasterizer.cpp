@@ -620,22 +620,12 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
         dirty.Clear();
         pipe_synced = true;
     }
-    std::array<u16, AmdGpu::RegDirty::NumBlocks> blocks;
-    u32 num_blocks = 0;
-#ifdef __GLIBCXX__
-    for (size_t block = dirty.blocks._Find_first(); block < dirty.blocks.size();
-         block = dirty.blocks._Find_next(block)) {
-        blocks[num_blocks++] = static_cast<u16>(block);
-    }
-#else
-    if (dirty.blocks.any()) {
-        for (size_t block = 0; block < dirty.blocks.size(); ++block) {
-            if (dirty.blocks.test(block)) {
-                blocks[num_blocks++] = static_cast<u16>(block);
-            }
-        }
-    }
-#endif
+    // The graphics PM4 decoder records unique dirty block indices in RegDirty::Mark.
+    // On NDK libc++, the old bitset fallback scanned all 1,664 register blocks
+    // for EACH direct draw. Read the O(changed blocks) list instead, in exactly
+    // the same format as the packet previously consumed by stage B.
+    const auto& blocks = dirty.dirty_indices;
+    const u32 num_blocks = dirty.dirty_count;
     const auto stages =
         pipeline ? pipeline->GetStages() : std::span<const Shader::Info* const>{};
     // Constants: copied here into the ring, the recording thread only binds them.
