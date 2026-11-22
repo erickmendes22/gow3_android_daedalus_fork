@@ -9,6 +9,7 @@ on:
       - "tests/test_sotc_aot_cmdline.py"
       - "tests/test_sotc_aot_integration.py"
       - "tests/test_sotc_bbrecomp_lowering_patch.py"
+      - "tests/test_sotc_pcmpistr_x86_oracle.py"
       - "ports/sotc/android/package_sotc_runtime.py"
       - "src/probe.c"
       - "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java"
@@ -40,6 +41,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_aot_cmdline.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_bbrecomp_lowering_patch.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pcmpistr_x86_oracle.py' -v
           grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
           ! grep -Fq '"--tso"' ports/sotc/android/aot/compile_local.py
           grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
