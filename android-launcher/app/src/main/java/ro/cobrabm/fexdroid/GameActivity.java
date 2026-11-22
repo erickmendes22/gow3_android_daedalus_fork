@@ -350,7 +350,37 @@ public final class GameActivity extends Activity {
             pad.setSwapFaceButtons(enabled);
             setDetail(swapFaceItem,enabled ? "On" : "Off");
         });
-        menuItem("ic_edit","Edit controller layout","Drag and resize the buttons",() -> {
+        if (sotcRuntime()) {
+            menuItem("ic_tune","Button size","Adjust all touch buttons immediately",() -> {
+                final String[] labels={"Compact (90%)","Normal (110%)","Large (125%)","Extra large (140%)"};
+                final float[] sizes={0.90f,1.10f,1.25f,1.40f};
+                float saved=getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE)
+                    .getFloat("controller_size",1.18f);
+                int selected=0;
+                for(int i=0;i<sizes.length;i++)
+                    if(Math.abs(saved-sizes[i])<Math.abs(saved-sizes[selected])) selected=i;
+                new AlertDialog.Builder(this).setTitle("On-screen controller size")
+                    .setSingleChoiceItems(labels,selected,(dialog,which) -> {
+                        controllerOverlay.setControlSize(sizes[which]);
+                        dialog.dismiss(); closeDrawer();
+                    }).setNegativeButton("Cancel",null).show();
+            });
+            menuItem("ic_tune","Camera sensitivity","Right analogue stick",() -> {
+                final String[] labels={"Slow (0.85×)","Normal (1.15×)","Fast (1.45×)"};
+                final float[] options={0.85f,1.15f,1.45f};
+                float saved=getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE)
+                    .getFloat("controller_camera_sensitivity",1.18f);
+                int selected=0;
+                for(int i=0;i<options.length;i++)
+                    if(Math.abs(saved-options[i])<Math.abs(saved-options[selected])) selected=i;
+                new AlertDialog.Builder(this).setTitle("Right-stick camera sensitivity")
+                    .setSingleChoiceItems(labels,selected,(dialog,which) -> {
+                        controllerOverlay.setCameraSensitivity(options[which]);
+                        dialog.dismiss(); closeDrawer();
+                    }).setNegativeButton("Cancel",null).show();
+            });
+        }
+        menuItem("ic_edit","Edit controller layout","Drag to move buttons; tap DONE to save",() -> {
             getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).edit().putBoolean("controller_overlay",true).apply();
             closeDrawer();
             controllerOverlay.edit(null);
