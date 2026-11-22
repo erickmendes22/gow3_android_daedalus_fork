@@ -110,7 +110,9 @@ bool Rasterizer::SkipSunShadowBenchmark() {
     auto& image = texture_cache.GetImage(image_id);
     if (!image.info.props.is_depth || !image.backing ||
         !(image.aspect_mask & vk::ImageAspectFlagBits::eDepth) ||
-        image.info.resources.layers < 5 ||
+        // Per-slice DepthView exposes 1..5 backing layers, not always five.
+        // Require only enough layers to cover the requested depth slice.
+        image.info.resources.layers <= first ||
         desc.view_info.range.extent.layers != 1 ||
         desc.view_info.range.base.layer != first) {
         ++refused;
