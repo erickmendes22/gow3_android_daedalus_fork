@@ -6,6 +6,8 @@ on:
       - 'ports/sotc/android/stage_sotc_flatbuf_reuse_057.py'
       - 'ports/sotc/android/stage_renderer.py'
       - 'tests/test_sotc_flatbuf_reuse_057.py'
+      - 'ports/sotc/android/stage_sotc_cp_relax_arm64.py'
+      - 'tests/test_sotc_cp_relax_arm64.py'
       - '.github/workflows/sotc-aot-057-flatbuf-native.yml'
   workflow_dispatch:
 permissions:
@@ -31,6 +33,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           # Mandatory Android presentation wiring. Without this, Vulkan attempts
           # desktop CreateSurface(WindowSDL::Headless) and aborts during boot.
@@ -43,6 +46,8 @@ jobs:
           grep -Fq 'std::memcmp(line.contents.data(), flat, ubo_size) == 0' "$r"
           grep -Fq 'slot.generation = vk_buffer.WrapGeneration()' "$r"
           grep -Fq 'SOTC FLATBUF REUSE' "$r"
+          grep -Fq '__asm__ __volatile__("yield" ::: "memory")' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'for (u32 spin = 0; spin < 4096; ++spin)' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           grep -Fq 'SotcPerf::BindGraphicsPipeline' "$r"
           grep -Fq 'SOTC_RT_MEMO' "$r"
       - uses: actions/setup-python@v5
