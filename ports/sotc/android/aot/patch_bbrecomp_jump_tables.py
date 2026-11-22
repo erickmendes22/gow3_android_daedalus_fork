@@ -34,6 +34,16 @@ def patch(compiler_source: Path) -> Path:
     assert "if (target < env.lo || target >= env.hi) break;" in source
     assert "if (!env.readS32(j.table + 4ull * e, v)) break;" in source
     path.write_text(source.replace(SOURCE,PATCH,1),encoding="utf-8")
+    # Upstream caches --resume shards by BBR_COMPILER_VERSION, not by
+    # executable SHA256. The former value "1" would silently REUSE object
+    # files generated with the BROKEN switch decoder. Invalidate every shard
+    # by bumping its compiler key; ABI stays 2.
+    version=compiler_source/"src/version.h"
+    old='#define BBR_COMPILER_VERSION "1"'
+    ver=version.read_text(encoding="utf-8")
+    if ver.count(old)!=1:
+        raise ValueError("Pinned compiler version differs; refusing unsafe cache reuse")
+    version.write_text(ver.replace(old,'#define BBR_COMPILER_VERSION "2"',1),encoding="utf-8")
     return path
 
 def main()->None:
