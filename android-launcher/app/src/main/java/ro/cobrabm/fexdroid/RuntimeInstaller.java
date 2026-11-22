@@ -88,6 +88,19 @@ public final class RuntimeInstaller {
                     !identity.contains("\"runtime_backend\": \"bionic\"") ||
                     !identity.contains("\"application_id\": \"com.sotc.android.daedalus\""))
                 throw new IllegalStateException("Incompatible Shadow of the Colossus runtime identity");
+            if (identity.contains("\"aot_mode\": \"strict\"")) {
+                // Game code is intentionally NOT bundled. Native engine and
+                // LLVM toolchain must be present before offering compilation.
+                for (String required : new String[] {
+                        "sotcport/arm64/lib/libbbcpu.so",
+                        "sotcport/arm64/aot/bin/libbbrecomp.so",
+                        "sotcport/arm64/aot/bundle/helpers-aarch64.o",
+                        "sotcport/scripts/sotc_aot_compile.py",
+                        "sotcport/scripts/cmdline_image.py",
+                        "sotcport/scripts/sotc_aot_select.py"
+                }) if (!path(root,required).isFile())
+                    throw new IllegalStateException("Strict SotC AOT runtime lacks " + required);
+            }
             return;
         }
         if (path(root,"gow3port/run-bionic.sh").isFile()) {
