@@ -290,11 +290,26 @@ if [ "$sotc_mode" = compile ]; then
         --out "$base/user/aot-work" --compiler "$compiler" \
         --bundle-dir "$bundle" --jobs 2 --shards 128
     [ -s "$base/user/aot-work/aot/libSotcAot.so" ] || exit 5
-    mkdir -p "$base/user/aot"
-    cp "$base/user/aot-work/aot/libSotcAot.so" "$base/user/aot/libSotcAot.so.new"
-    mv "$base/user/aot/libSotcAot.so.new" "$base/user/aot/libSotcAot.so"
-    cp "$base/user/aot-work/aot-report.json" "$base/user/aot/aot-report.json.new"
-    mv "$base/user/aot/aot-report.json.new" "$base/user/aot/aot-report.json"
+    [ -s "$base/user/aot-work/native-boot-linked.bin" ] || exit 5
+    next="$base/user/.aot-next-$"
+    backup="$base/user/.aot-backup-$"
+    mkdir -p "$next"
+    cp "$base/user/aot-work/aot/libSotcAot.so" "$next/libSotcAot.so"
+    cp "$base/user/aot-work/native-boot-linked.bin" "$next/boot-native.bin"
+    cp "$base/user/aot-work/aot-report.json" "$next/aot-report.json"
+    # Verify all three items as a consistent set before publishing them.
+    if ! "$python" "$base/scripts/sotc_aot_select.py" \
+        --prepared "$out" --report "$next/aot-report.json"; then
+        echo "SotC AOT: refused invalid compiled code/image/parameter combination" >&2
+        rm -rf "$next"
+        exit 5
+    fi
+    [ ! -d "$base/user/aot" ] || mv "$base/user/aot" "$backup"
+    if ! mv "$next" "$base/user/aot"; then
+        [ ! -d "$backup" ] || mv "$backup" "$base/user/aot"
+        exit 5
+    fi
+    rm -rf "$backup"
     echo "SOTC_AOT_READY: $(wc -c < "$base/user/aot/libSotcAot.so") bytes"
     exit 0
 fi
@@ -315,8 +330,10 @@ if ! "$python" "$base/scripts/sotc_aot_select.py" \
 fi
 export BB_AOT="$base/user/aot/libSotcAot.so"
 echo "SOTC AOT: verified local library (matches current game and patches)"
-set -- "$probe" "$out/boot-linked.bin" \
-    --content-profile "$out/content.bin" --patches "$out/patches.bin" \
+# Execute the exact image compiled into libSotcAot.so: patches and engine
+# command line are already included. No post-AOT guest code mutation.
+set -- "$probe" "$base/user/aot/boot-native.bin" \
+    --content-profile "$out/content.bin" \
     --app0 "$game" --user "$base/user" --timeout "${SOTC_TIMEOUT:-0}"
 # --sotc-cmdline edits executable bytes at runtime and would invalidate AOT.
 # Keep it disabled until that string is injected before compilation.
