@@ -27,7 +27,7 @@ class AndroidMkshAotCompilerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
             elf=bytearray(4096)
-            elf[:4]=b"\\x7fELF"
+            elf[:4]=b"\x7fELF"
             elf[4]=2
             elf[16:18]=(3).to_bytes(2,'little')
             elf[18:20]=(183).to_bytes(2,'little')
@@ -35,12 +35,12 @@ class AndroidMkshAotCompilerTests(unittest.TestCase):
             binary=root/"libbbrecomp.so"
             binary.write_bytes(elf)
             manifest=root/"sotc-patched-compiler.sha256"
-            manifest.write_text(hashlib.sha256(elf).hexdigest()+"  libbbrecomp.so\\n")
+            manifest.write_text(hashlib.sha256(elf).hexdigest()+"  libbbrecomp.so\n")
             self.assertEqual(module.verify_compiler(binary,manifest)["status"],"verified")
-            manifest.write_text("0"*64+"  libbbrecomp.so\\n")
+            manifest.write_text("0"*64+"  libbbrecomp.so\n")
             with self.assertRaisesRegex(ValueError,"SHA256 differs"):
                 module.verify_compiler(binary,manifest)
-            manifest.write_text(hashlib.sha256(elf).hexdigest()+"\\n")
+            manifest.write_text(hashlib.sha256(elf).hexdigest()+"\n")
             binary.write_bytes(b"not an ELF")
             with self.assertRaisesRegex(ValueError,"AArch64 ELF"):
                 module.verify_compiler(binary,manifest)
