@@ -7,6 +7,10 @@ on:
       - "tests/test_sotc_arm64_aot_bootstrap.py"
       - "tests/test_sotc_aot_guest_context.py"
       - "tests/test_sotc_aot_cmdline.py"
+      - "tests/test_sotc_aot_integration.py"
+      - "ports/sotc/android/package_sotc_runtime.py"
+      - "src/probe.c"
+      - "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java"
       - "ports/sotc/android/run-sotc-bionic.sh"
       - ".github/workflows/sotc-arm64-aot-preflight.yml"
   workflow_dispatch:
@@ -30,6 +34,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_arm64_aot_bootstrap.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_guest_context.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_cmdline.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
           grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
           ! grep -Fq '"--tso"' ports/sotc/android/aot/compile_local.py
           grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
