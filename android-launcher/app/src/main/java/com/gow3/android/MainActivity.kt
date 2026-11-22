@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private val pkgBusy = mutableStateOf(false)
     private val pkgMessage = mutableStateOf<String?>(null)
     private val pkgGeneration = mutableIntStateOf(0)
+    private var autoStartAttempted = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(applyLanguage(newBase))
@@ -106,6 +107,21 @@ class MainActivity : ComponentActivity() {
                         recreate()
                     },
                 )
+            }
+        }
+        // Opt-in direct launch is attempted ONCE per launcher creation.
+        // Returning from the game to the still-alive launcher never re-enters.
+        if (packageName == "com.sotc.android.daedalus" && savedInstanceState == null) {
+            window.decorView.post {
+                if (!isFinishing && !isDestroyed && !autoStartAttempted &&
+                    hasStoragePermission() && gameFolderManager.hasGameFolder() &&
+                    getSharedPreferences(SotcPaths.prefsName(this), Context.MODE_PRIVATE)
+                        .getBoolean("sotc_auto_start",false)) {
+                    autoStartAttempted=true
+                    sotcAotBuilder.ensureReadyThen {
+                        startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
+                    }
+                }
             }
         }
         // The original targetSdk 28 storage permission must come FIRST, before
