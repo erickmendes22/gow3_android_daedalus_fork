@@ -11,8 +11,8 @@ android {
         applicationId = "com.daedalus.order1886"
         minSdk = 30
         targetSdk = 30
-        versionCode = 36
-        versionName = "0.1.34-draw-pipe-uffd-fallback"
+        versionCode = 37
+        versionName = "0.1.35-signal-tracker-recovery"
     }
     // Stable signing for upgrade-in-place. Keystore and password are injected by CI
     // secrets; never put private signing material in the public source tree.
