@@ -81,6 +81,97 @@ int guest_context_set(const SotcGuestContext* in) {
 }
 """
 
+RESUME_ENTRY = r"""
+// AOT libraries built with --resume-entries already contain return-address
+// switch cases. Bloodborne's older CPU loader reported those cases but ignored
+// them, so an ordinary host-call return landed mid-unit and stopped the game.
+// The first SotC miss (+0x3bbe1) is a valid switch case of unit +0x3bbb0.
+// Reuse the ABI's _pad1=1 probe contract; never run an unrecognised address.
+bool ResumeEntry(GuestState* s, uint64_t target, Thread* t) {
+    if (!G.resumes || !G.funcs) return false;
+    const uint64_t offset = target - E.base;
+    if (offset >= E.size) return false;
+    const GranRec* end = G.funcs + G.nfuncs;
+    const GranRec* f = std::upper_bound(G.funcs, end, offset,
+        [](uint64_t v, const GranRec& r) { return v < r.start; });
+    if (f == G.funcs) return false;
+    --f;
+    if (offset >= f->end) return false;
+    // Probe only this function's units, never all ~68k units globally.
+    for (uint32_t u = f->first; u < f->first + f->count; ++u) {
+        UnitFn fn = __atomic_load_n(&E.fns[u], __ATOMIC_ACQUIRE);
+        s->rip = target;
+        s->_pad1 = 1;
+        fn(s);
+        if (s->_pad1 == 0) {
+            if (E.stats) { ++t->unit_dispatch; G.resume_hits.fetch_add(1, std::memory_order_relaxed); }
+            return true;
+        }
+    }
+    // None of the compiled switches accepted it: leave state unchanged and
+    // preserve strict AOT (no FEX/JIT and no mistaken arbitrary jump).
+    s->_pad1 = 0;
+    return false;
+}
+
+"""
+
+def enable_resume_dispatch(source: str) -> str:
+    source=once(source,
+        "    const uint8_t* flags = nullptr;    // bbr_func_granular[]\n",
+        "    const uint8_t* flags = nullptr;    // bbr_func_granular[]\n"
+        "    bool resumes = false;            // bbr_abi_flags bit 0: unit return switches\n"
+        "    std::atomic<uint64_t> resume_hits {0};\n",
+        "native AOT ABI v2 resume capability")
+    source=once(source,
+        "enum class MissKind { Call, Jump, Unwind, Patched, Outside };",
+        RESUME_ENTRY+"enum class MissKind { Call, Jump, Unwind, Patched, Outside };",
+        "resume entry strict implementation")
+    source=once(source,
+        "    if (GranularEntry(s, target, t)) return;\n",
+        "    if (ResumeEntry(s, target, t)) return;\n"
+        "    if (GranularEntry(s, target, t)) return;\n",
+        "resume on slow call/jump dispatch")
+    source=once(source,
+        "        const bool ran = GranularEntry(s, s->rip, t);\n",
+        "        const bool ran = ResumeEntry(s, s->rip, t) || GranularEntry(s, s->rip, t);\n",
+        "resume after nested guest call unwound")
+    source=once(source,
+        "        else if (GranularEntry(&s, rip, t)) {}\n",
+        "        else if (ResumeEntry(&s, rip, t) || GranularEntry(&s, rip, t)) {}\n",
+        "resume from guest_cpu_call top-level unwind")
+    old = (
+        '    if (abi_flags && (*abi_flags & 1))\n'
+        '        std::fprintf(stderr, "AOT: %s has resume entries (bbr_abi_flags bit 0); this runtime does not use them\\n", path);\n'
+        '    if (abi_flags && (*abi_flags & 16)) {   // granular entries: bbr_func_granular[] says which functions of bbr_funcs[] have them\n'
+        '        G.funcs = static_cast<const GranRec*>(dlsym(so, "bbr_funcs"));\n'
+        '        const auto* nf = static_cast<const uint64_t*>(dlsym(so, "bbr_func_count"));\n'
+        '        G.flags = static_cast<const uint8_t*>(dlsym(so, "bbr_func_granular"));\n'
+        '        G.nfuncs = nf ? *nf : 0;\n'
+        '        if (!G.funcs || !G.flags || !G.nfuncs) { G.flags = nullptr; std::fprintf(stderr, "AOT: %s: granular entries declared but their tables are missing\\n", path); }\n'
+        '    }\n')
+    new = (
+        '    G.resumes = abi_flags && ((*abi_flags & 1) != 0);\n'
+        '    if (abi_flags && (*abi_flags & (1 | 16))) {\n'
+        '        G.funcs = static_cast<const GranRec*>(dlsym(so, "bbr_funcs"));\n'
+        '        const auto* nf = static_cast<const uint64_t*>(dlsym(so, "bbr_func_count"));\n'
+        '        G.nfuncs = nf ? *nf : 0;\n'
+        '        if (*abi_flags & 16) G.flags = static_cast<const uint8_t*>(dlsym(so, "bbr_func_granular"));\n'
+        '        if (!G.funcs || !G.nfuncs) {\n'
+        '            G.resumes = false;\n'
+        '            G.flags = nullptr;\n'
+        '            std::fprintf(stderr, "AOT: %s: resume/granular function table is incomplete\\n", path);\n'
+        '        }\n'
+        '        if ((*abi_flags & 16) && !G.flags)\n'
+        '            std::fprintf(stderr, "AOT: %s: granular flags absent (resume still available)\\n", path);\n'
+        '    }\n'
+        '    if (G.resumes)\n'
+        '        std::fprintf(stderr, "AOT: native ABI v2 resume-entry dispatcher enabled; compiled return switches active\\n");\n')
+    source=once(source,old,new,"load bbr_func tables for both resume and granular AOT")
+    if "this runtime does not use them" in source:
+        raise ValueError("Old broken AOT resume warning remains")
+    return source
+
 def once(s: str, before: str, after: str, what: str) -> str:
     count = s.count(before)
     if count != 1:
@@ -114,6 +205,7 @@ def generate(upstream: Path, out: Path) -> dict:
                 "        s->rip = ret;\n"
                 "    }\n",
                 "prevent double return on fiber change")
+    main = enable_resume_dispatch(main)
     main = once(main, "extern \"C\" {\n",
                 "extern \"C\" {\n" + FIBER_ABI,
                 "SotC fiber C ABI")
@@ -130,7 +222,7 @@ def generate(upstream: Path, out: Path) -> dict:
                        "SotC guest context ABI exports")
     (out / "guest_cpu.h").write_text(header_text)
     return dict(upstream=str(upstream), output=str(out), upstream_pin=UPSTREAM_PIN,
-                fex=False, tso=False, fiber_context_abi=True,
+                fex=False, tso=False, fiber_context_abi=True, aot_resume_entries=True,
                 required_files=list(REQUIRED))
 
 def main() -> None:
