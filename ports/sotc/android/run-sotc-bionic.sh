@@ -300,16 +300,21 @@ if [ "$sotc_mode" = compile ]; then
 fi
 # Select only a locally compiled library whose source and patch fingerprints
 # match the prepared image. Never reuse stale code when graphics toggles change.
-if [ -s "$base/user/aot/libSotcAot.so" ]; then
-    if "$python" "$base/scripts/sotc_aot_select.py" \
-        --prepared "$out" --report "$base/user/aot/aot-report.json"; then
-        export BB_AOT="$base/user/aot/libSotcAot.so"
-        echo "SOTC AOT: using verified local user recompilation"
-    else
-        echo "SOTC AOT: local build is stale; rebuild from the launcher" >&2
-        exit 6
-    fi
+# Fail closed: the APK's bundled library may use a DIFFERENT resolution,
+# FPS, effects, title revision or guest image hash. Never use it implicitly.
+# The on-phone compiler ensures that this particular profile matches exactly.
+if [ ! -s "$base/user/aot/libSotcAot.so" ] || \
+   [ ! -s "$base/user/aot/aot-report.json" ]; then
+    echo "SOTC AOT: no verified local code. Use COMPILAR AOT NO CELULAR first." >&2
+    exit 6
 fi
+if ! "$python" "$base/scripts/sotc_aot_select.py" \
+    --prepared "$out" --report "$base/user/aot/aot-report.json"; then
+    echo "SOTC AOT: game or settings changed. Recompile AOT from the launcher." >&2
+    exit 6
+fi
+export BB_AOT="$base/user/aot/libSotcAot.so"
+echo "SOTC AOT: verified local library (matches current game and patches)"
 set -- "$probe" "$out/boot-linked.bin" \
     --content-profile "$out/content.bin" --patches "$out/patches.bin" \
     --app0 "$game" --user "$base/user" --timeout "${SOTC_TIMEOUT:-0}"
