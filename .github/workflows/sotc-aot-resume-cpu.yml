@@ -1,0 +1,50 @@
+name: SotC ARM64 AOT native resume-entry CPU fix
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths:
+      - 'ports/sotc/android/aot/port_guest_context.py'
+      - 'ports/sotc/android/aot/build_native_cpu.sh'
+      - '.github/workflows/sotc-aot-resume-cpu.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-aot-resume-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SotC ARM64 ABI v2 resume-enabled CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/30.0.16248370"
+          test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang++"
+          SOTC_NDK="$ndk" bash ports/sotc/android/aot/build_native_cpu.sh
+          src=out/sotc-arm64-aot/src/guest_cpu_aot.cpp
+          test -s "$src"
+          grep -Fq 'AOT: native ABI v2 resume-entry dispatcher enabled' "$src"
+          grep -Fq 'const bool ran = ResumeEntry(s, s->rip, t) || GranularEntry(s, s->rip, t);' "$src"
+          grep -Fq 'else if (ResumeEntry(&s, rip, t) || GranularEntry(&s, rip, t))' "$src"
+          ! grep -Fq 'this runtime does not use them' "$src"
+      - name: Verify ELF dependencies and runtime symbol linkage
+        run: |
+          set -euo pipefail
+          output=out/sotc-arm64-aot
+          readelf -h "$output/libgow3cpu.so" | grep -F AArch64
+          readelf -h "$output/libbbcpu.so" | grep -F AArch64
+          readelf --dyn-syms --wide "$output/libgow3cpu.so" | grep -E ' bbr_unwound$'
+          readelf -d "$output/libgow3cpu.so" | grep -F '[libc++_shared.so]'
+          ! readelf -d "$output/libgow3cpu.so" | grep -Ei 'FEX|libFEXCore'
+          strings "$output/libgow3cpu.so" | grep -Fq 'resume-entry dispatcher enabled'
+          sha256sum "$output/libgow3cpu.so" "$output/libbbcpu.so" > "$output/native-resume-cpu.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-aot-native-cpu-resume-unwind-arm64
+          path: |
+            out/sotc-arm64-aot/libgow3cpu.so
+            out/sotc-arm64-aot/libbbcpu.so
+            out/sotc-arm64-aot/native-resume-cpu.sha256
+          if-no-files-found: error
+          retention-days: 7
