@@ -81,9 +81,30 @@ final class UiText {
         PT.put("Your HP refills to full every frame", "A vida é restaurada a cada quadro");
         PT.put("These are patches to the game: Apply restarts it (unsaved progress is lost).", "Aplicar os patches reinicia o jogo; o progresso não salvo será perdido.");
         PT.put("Open game menu", "Abrir menu do jogo");
+        PT.put("Return to launcher", "Voltar ao launcher");
+        PT.put("Exit application", "Sair do aplicativo");
+        PT.put("Back to launcher?", "Voltar ao launcher?");
+        PT.put("Exit Shadow of the Colossus app?", "Sair do aplicativo Shadow of the Colossus?");
+        PT.put("Button size", "Tamanho dos botões");
+        PT.put("Camera sensitivity", "Sensibilidade da câmera");
+        PT.put("Shadow of the Colossus patches", "Patches de Shadow of the Colossus");
+        PT.put("Edit patches in launcher", "Alterar patches no launcher");
+        PT.put("On-screen controller size", "Tamanho do controle na tela");
+        PT.put("Right-stick camera sensitivity", "Sensibilidade da câmera do analógico direito");
+        PT.put("Compact (90%)", "Compacto (90%)");
+        PT.put("Normal (110%)", "Normal (110%)");
+        PT.put("Large (125%)", "Grande (125%)");
+        PT.put("Extra large (140%)", "Muito grande (140%)");
+        PT.put("Slow (0.85×)", "Lenta (0,85×)");
+        PT.put("Normal (1.15×)", "Normal (1,15×)");
+        PT.put("Fast (1.45×)", "Rápida (1,45×)");
+
     }
     static boolean portuguese(Context context) {
-        return "pt".equals(context.getSharedPreferences("gow3", Context.MODE_PRIVATE).getString("language", "en"));
+        String selected=context.getSharedPreferences(SotcPaths.prefsName(context), Context.MODE_PRIVATE)
+            .getString("language","system");
+        if ("system".equals(selected)) return java.util.Locale.getDefault().getLanguage().equals("pt");
+        return "pt".equals(selected);
     }
     static String gameLanguage(Context context) {
         if (!portuguese(context)) return "1";
