@@ -94,6 +94,7 @@ def main():
         shutil.copy2(aot/'compile_local.py',scripts/'sotc_aot_compile.py')
         shutil.copy2(aot/'cmdline_image.py',scripts/'cmdline_image.py')
         shutil.copy2(aot/'select_local_aot.py',scripts/'sotc_aot_select.py')
+        shutil.copy2(aot/'verify_compiler.py',scripts/'sotc_aot_verify_compiler.py')
         compiler_archive=os.environ.get('SOTC_AOT_COMPILER_TAR','')
         if compiler_archive:
             from aot.stage_on_device_compiler import stage
@@ -153,7 +154,7 @@ def main():
         for entry in scripts.iterdir():
             if entry.name not in ('sotc_prepare_game.py','bachata_perf.py','sotc-upstream',
                                    'sotc_aot_compile.py','sotc_aot_select.py',
-                                   'cmdline_image.py'):
+                                   'cmdline_image.py','sotc_aot_verify_compiler.py'):
                 if entry.is_dir(): shutil.rmtree(entry)
                 else: entry.unlink()
         (base/'arm64/bin/gow3-probe').rename(base/'arm64/bin/sotc-probe')
