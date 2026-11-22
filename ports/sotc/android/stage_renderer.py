@@ -556,16 +556,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # CP->draw ring; retain 4096 spins, 512 slots and all queue ordering.
     from stage_sotc_cp_relax_arm64 import patch as patch_cp_relax
     patch_cp_relax(out)
-    # Experimental CPU/GPU A/B: original / 3 / 2 / 1 / zero sun cascades.
-    # Excluded layers are cleared to the game's depth clear value per frame,
-    # never sampled as stale last-frame shadows. Disabled in default mode.
+    # Experimental CPU/GPU A/B: 5 original, 0 engine-only (no Vulkan clear);
+    # 3/2/1 experimental depth layers. Disabled in default mode.
     from stage_sotc_sun_shadow_cascades_059 import patch as patch_sun_cascades
     patch_sun_cascades(out)
-    # Draw-thread only, optionally skips shader/resource binds for CPU-backed
-    # zero-count indirect draws. Still begins guest render pass so framebuffer
-    # clear, barriers, ordering and nonzero Vulkan draws remain unchanged.
-    from stage_sotc_indirect_empty_bind_063 import patch as patch_indirect_empty
-    patch_indirect_empty(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
