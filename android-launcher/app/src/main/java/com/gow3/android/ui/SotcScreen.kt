@@ -295,19 +295,12 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "JOGO" else "GAME",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(gameDir ?: (if(pt) "Pasta não selecionada" else "Game folder not selected"),
                         color=SotcPalette.text,fontSize=12.sp,maxLines=2)
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        SotcAction(if(pt) "Escolher pasta" else "Choose folder",onChooseGameFolder)
-                        SotcAction(if(pt) "Atualização" else "Update folder",onChooseUpdateFolder)
-                    }
+                    SotcAction(if(pt) "Escolher pasta" else "Choose folder",onChooseGameFolder)
                     Text(if(pt) "Suporta CUSA08809 (EU 1.01) e CUSA08034 (US 1.00)."
                         else "Supports CUSA08809 (EU 1.01) and CUSA08034 (US 1.00).",
                         color=SotcPalette.secondary,fontSize=11.sp)
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        SotcAction(if(pt) "Instalar PKG" else "Install PKG",onInstallBasePkg,
-                            Modifier.weight(1f))
-                        SotcAction(if(pt) "PKG update" else "Update PKG",onInstallUpdatePkg,
-                            Modifier.weight(1f))
-                    }
+                    SotcAction(if(pt) "Instalar PKG" else "Install PKG",onInstallBasePkg,
+                        Modifier.fillMaxWidth())
                     if(pkgInstallBusy) Text(if(pt) "Instalando…" else "Installing…",color=SotcPalette.secondary)
                     if(pkgInstallMessage!=null) Text(pkgInstallMessage,color=SotcPalette.secondary,fontSize=12.sp)
                 }
