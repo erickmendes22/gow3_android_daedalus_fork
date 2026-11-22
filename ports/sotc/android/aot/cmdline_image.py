@@ -19,7 +19,7 @@ CMD=struct.Struct("<8sQ")
 CMD_CAP=16384
 
 def round_page(n:int)->int:
-    return (n+4095)&~4095
+    return (n+16383)&~16383  # 16-KiB Android kernels require segment start alignment
 
 def header_info(raw:bytes):
     if len(raw)<HDR.size:
