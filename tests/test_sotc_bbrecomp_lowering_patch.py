@@ -29,7 +29,7 @@ class LoweringPatchTests(unittest.TestCase):
             self.assertIn("store->setVolatile(true)",patched)
             self.assertIn("B.CreateICmpSLT(mask, ConstantInt::get(elemTy, 0))",patched)
             self.assertIn("case OP_VLOADTWOGPRS: {",patched)
-            self.assertIn("SOTC_AOT_MASKED_SSE42_NO_TSO_1",patched)
+            self.assertIn("SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2",patched)
             self.assertNotIn("bbr_trap(",patched)
             self.assertNotIn("FEXCore::CPU::",patched)
             self.assertNotIn("--tso",patched.lower())
