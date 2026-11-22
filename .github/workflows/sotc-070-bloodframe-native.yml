@@ -39,6 +39,7 @@ jobs:
           # Render generated Bloodframe images through the SAME AHB presenter;
           # wait on imported sync-fds and transfer ownership to/from EXTERNAL.
           python3 ports/sotc/android/stage_sotc_bloodframe_070.py --root . --gpu out/sotc-android/gpu
+          python3 -m py_compile ports/sotc/android/stage_sotc_bloodframe_070.py
           grep -Fq 'PresentBloodframe(' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq 'VK_QUEUE_FAMILY_EXTERNAL' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           grep -Fq 'bb_lsfg_present' out/sotc-android/gpu/shim/bb_lsfg.h
