@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""SotC CUSA08809 v01.00: verified Bachata S4+ 0.2.7 performance patches.
+"""SotC verified executable (CUSA08034 / CUSA08809): Bachata S4+ 0.2.7 performance patches.
 
 These are guest virtual addresses from the ORIGINAL decrypted PS4 SELF, NOT
 byte offsets in eboot.bin. The native AjncSystem loader consumes BBPATCH2
@@ -101,8 +101,11 @@ def append_bachata_patches(upstream: Path, eboot: Path, patch_file: Path,
     requested = parse_effects(effects)
     if not requested:
         return []
-    if title_id != "CUSA08809":
-        raise ValueError("Bachata 0.2.7 native patches require CUSA08809 v01.00")
+    # Both identified retail title IDs can contain this same exact decrypted
+    # executable. The SHA256 and every original call/cave byte below remain
+    # mandatory; accepting a title ID alone never grants patch compatibility.
+    if title_id not in {"CUSA08809", "CUSA08034"}:
+        raise ValueError("Bachata 0.2.7 native patches require a supported SotC title ID")
     source = eboot.read_bytes()
     digest = hashlib.sha256(source).hexdigest()
     if digest != EBOOT_SHA256:
