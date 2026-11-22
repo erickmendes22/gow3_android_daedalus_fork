@@ -296,6 +296,20 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
+                    Text(if(pt) "CASCATAS DAS SOMBRAS DO SOL — TESTE DE FPS"
+                                 else "SUN SHADOW CASCADES — FPS TEST",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    SotcChoice(if(pt) "Cascatas das sombras do sol" else "Sun shadow cascades",
+                        values["sotc_sun_cascades"]?:"5",
+                        listOf("5" to (if(pt) "5 — Original" else "5 — Original"),
+                               "3" to (if(pt) "3 — Reduzidas" else "3 — Reduced"),
+                               "2" to (if(pt) "2 — Próximas" else "2 — Near only"),
+                               "1" to (if(pt) "1 — Mínimo" else "1 — Minimum"),
+                               "0" to (if(pt) "0 — Sem sombras do sol" else "0 — No sun shadows")),
+                        {save("sotc_sun_cascades",it)})
+                    Text(if(pt) "Teste A/B experimental. Exclui desenhos das cascatas distantes e limpa as camadas desativadas com a profundidade original do jogo. Sombras locais continuam. A imagem pode ficar diferente; reinicie o jogo para aplicar e compare 5 vs 2 vs 0 no mesmo local."
+                         else "Experimental A/B test. Excludes far cascade draws and clears disabled layers using the game's depth clear value. Local shadows remain. Visuals may change; restart to apply and compare 5 vs 2 vs 0 at the same spot.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
                                       else "CPU/GPU frame bottleneck profiling (log)",
                         (values["sotc_perf_profile"]?:"0")=="1",
