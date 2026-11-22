@@ -1,0 +1,198 @@
+name: SotC 0.1.70 native ARM64 renderer with Bloodframe AHB frame generation
+on:
+  push:
+    branches: [feature/sotc-070-gamehub-ux-bloodframe]
+    paths:
+      - '.github/workflows/sotc-pc074-depth-gbuffer-066.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 732cb37d3470d2dad2cc99da19283253c96b53fc
+          path: upstream-sotc
+          submodules: recursive
+      - name: Test source and stage verified renderer
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py ports/sotc/android/stage_sotc_pc_streaming_051.py
+          python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_regression_064.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pm4_redundant_regs_064.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          # Mandatory Android presentation wiring. Without this, Vulkan attempts
+          # desktop CreateSurface(WindowSDL::Headless) and aborts during boot.
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          # Render generated Bloodframe images through the SAME AHB presenter;
+          # wait on imported sync-fds and transfer ownership to/from EXTERNAL.
+          python3 ports/sotc/android/stage_sotc_bloodframe_070.py --root . --gpu out/sotc-android/gpu
+          grep -Fq 'PresentBloodframe(' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'VK_QUEUE_FAMILY_EXTERNAL' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'bb_lsfg_present' out/sotc-android/gpu/shim/bb_lsfg.h
+
+          grep -Fq 'vk_swapchain_ahb.h' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.h
+          grep -Fq 'SOTC_PRESENT_SOCKET' out/sotc-android/gpu/shim/gow3_present_client.cpp
+          grep -Fq 'sotc_acquire_queues' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'skip_full_blit_clear' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          r=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'std::memcmp(line.contents.data(), flat, ubo_size) == 0' "$r"
+          grep -Fq 'slot.generation = vk_buffer.WrapGeneration()' "$r"
+          grep -Fq 'SOTC FLATBUF REUSE' "$r"
+          grep -Fq '__asm__ __volatile__("yield" ::: "memory")' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'SotcPerf::BindGraphicsPipeline' "$r"
+          grep -Fq 'gpu_modified_ranges.Intersects(hot.addr, hot.size)' out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+          grep -Fq 'SOTC RB HOT PRUNE:' out/sotc-android/gpu/shadps4/core/libraries/videoout/driver.cpp
+          ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$r"
+          # Actual port of #308 requires all four fastpath control points.
+          # Preserve the PC #308 performance architecture, not older Android shortcuts.
+          grep -Fq 'DepthFastBeginCheck' "$r"
+          grep -Fq 'GBufferFastCheck' "$r"
+          grep -Fq 'BeginRenderingFast' "$r"
+          grep -Fq 'DrawRelSerial' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'inline uint64_t Ticks();' out/sotc-android/gpu/shadps4/video_core/sotc_stats.h
+          grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h
+          grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/sotc_dispphase.h
+          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
+          grep -Fq 'pc_safe_mask' src/runtime_memory.c
+          grep -Fq 'SOTC_DEPTH_FAST' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq '#endif // !__ANDROID__: PC guest view fault guard' out/sotc-android/gpu/shim/bbgpu.cpp
+          grep -Fq 'static_cast<u64>(std::strtoull(t, nullptr, 10))' out/sotc-android/gpu/shadps4/video_core/texture_cache/image.cpp
+          grep -Fq 'src[i] != shadow[i]' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'return u32(vk13_props.requiredSubgroupSizeStages & stage)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
+          grep -Fq 'MetaEpoch' "$r"
+          grep -Fq 'TransitIsNoop' "$r"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sdkmanager 'ndk;29.0.14206865'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build cmake clang lld pkg-config patchelf glslang-tools make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: sotc-apk-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # Preserve compiled AArch64 objects across source corrections; failed
+      # native jobs must not force every unchanged 400+ source to recompile.
+      - uses: actions/cache/restore@v4
+        id: sotc-arm64-ccache
+        with:
+          path: ~/.cache/ccache
+          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
+          restore-keys: |
+            sotc-pc074-arm64-ccache-
+      - name: Prepare Vulkan renderer dependencies
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          test -d .local-deps/android/bionic-prefix
+      - name: Compile only SotC libbbgpu.so for ARM64
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          prefix="$PWD/.local-deps/android/bionic-prefix"
+          ndk="$GOW3_NDK"
+          llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+          atomic="$("$llvm/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)"
+          unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
+          export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
+          export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          ccache -M 2G
+          cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
+            "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
+          cmake --build out/sotc-android/cmake --target bbgpu --parallel "$GOW3_JOBS"
+          so=out/sotc-android/cmake/libbbgpu.so
+          test -s "$so"
+          "$llvm/bin/llvm-readelf" -h "$so" | grep -F AArch64
+          "$llvm/bin/llvm-nm" -D --defined-only "$so" > /tmp/sotc-057-exports.txt
+          grep -Fwq bbgpu_init /tmp/sotc-057-exports.txt
+          # Android loads libbbgpu.so via dlopen(). A successful link of a
+          # shared object alone does NOT guarantee boot: 0.1.66 shipped six
+          # unresolved Vulkan::Dlssg references and failed before gameplay.
+          "$llvm/bin/llvm-nm" -D --undefined-only "$so" > /tmp/sotc-067-undefined.txt
+          if grep -E '(_ZN6Vulkan|_ZN6AmdGpu|_ZN9VideoCore)' /tmp/sotc-067-undefined.txt; then
+            echo "::error::Unresolved emulator-internal C++ API; libbbgpu.so would fail Android dlopen"
+            exit 1
+          fi
+          for abi in \
+            _ZN6Vulkan5Dlssg10NoteCameraERKN6AmdGpu4RegsEj \
+            _ZN6Vulkan5Dlssg12NoteHdrCurveEf \
+            _ZN6Vulkan5Dlssg13CameraLogOnlyEv \
+            _ZN6Vulkan5Dlssg24SuperResolutionUpscalingEv \
+            _ZN6Vulkan5Dlssg6SetHdrEb \
+            _ZN6Vulkan5Dlssg8HdrCurveEv; do
+            grep -Fq "$abi" /tmp/sotc-057-exports.txt || {
+              echo "::error::Missing PC 0.74 Android DLSS adapter ABI export $abi"
+              exit 1
+            }
+          done
+          # Never export a renderer without the Android AHardwareBuffer bridge.
+          grep -Fq '_ZN11Gow3Present6Client10SendBuffer' /tmp/sotc-057-exports.txt
+          "$llvm/bin/llvm-readelf" -Ws "$so" > /tmp/sotc-057-symtab.txt
+          grep -Fq 'AHardwareBuffer_sendHandleToUnixSocket' /tmp/sotc-057-symtab.txt
+          strings "$so" > /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC_PRESENT_SOCKET' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC RB HOT PRUNE:' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC_DEPTHFAST_VERIFY' /tmp/sotc-057-strings.txt
+          grep -Fq 'FSR4 unavailable on Android' /tmp/sotc-057-strings.txt
+          ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' /tmp/sotc-057-strings.txt
+          mkdir -p out/sotc-057
+          cp "$so" out/sotc-057/libbbgpu.so
+          sha256sum "$so" > out/sotc-057/sha256.txt
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/ccache
+          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-aot-067-pc074-depth-gbuffer-bootfix-ahb-arm64
+          path: out/sotc-057/
+          if-no-files-found: error
+          retention-days: 7
