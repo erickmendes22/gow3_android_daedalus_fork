@@ -2,7 +2,7 @@ name: The Order 1886 - Bachata SRT GPU compile-only validation
 
 on:
   push:
-    branches: [analysis/bachata-order-compare-20261101, fix/order1886-adreno830-pervertex-interpolation, work/order1886-frame-pacing-root-cause-20261121]
+    branches: [analysis/bachata-order-compare-20261101, fix/order1886-adreno830-pervertex-interpolation, work/order1886-frame-pacing-root-cause-20261121, investigation/order1886-cpu-hotpath-no-auto-build-20261121]
     paths:
       - ".github/workflows/order1886-bachata-gpu-check.yml"
       - "the-order-1886-android/overlay/gpu/**"
@@ -139,4 +139,6 @@ jobs:
           grep -Fq 'ReadBackGpuWrittenSrtSources' order-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'DownloadSrtSourcePage' order-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
           grep -Fq 'SetSrtSourceTrace' order-android/gpu/shadps4/shader_recompiler/ir/passes/srt.h
-          echo 'PASS: rebuilt GPU includes Bachata SRT address tracing + selective page download'
+          grep -Fq 'dirty_indices' order-android/gpu/shadps4/video_core/amdgpu/regs.h
+          grep -Fq 'dirty.dirty_indices' order-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          echo 'PASS: rebuilt GPU includes Bachata SRT synchronization and the sparse graphics register path'
