@@ -39,6 +39,7 @@ class SotcPrecompiledCmdlineTests(unittest.TestCase):
         fields,seg_at,segs,table_end=mod.header_info(actual)
         self.assertEqual(fields[3],3)
         self.assertEqual(segs[-1][2],6)
+        self.assertEqual(segs[-1][0] % 16384,0, "16-KiB Android page alignment")
         self.assertEqual(result["segment_count"],3)
         self.assertEqual(result["cmdline_bytes"],len(self.cmd.read_bytes())-16)
         image=actual[table_end:]
