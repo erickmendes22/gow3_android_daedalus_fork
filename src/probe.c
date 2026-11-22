@@ -705,7 +705,9 @@ int main(int argc, char **argv) {
      * smoke check must not load BB_AOT before the player compiles the game.
      * This is GPU-only and does not change the default GoW3 startup path. */
 #ifdef __ANDROID__
-    if (getenv("SOTC_PORT") && argc == 2 && !strcmp(argv[1], "--vulkan-only"))
+    // SOTC_PORT is set only AFTER parsing BBPROBE5, so cannot gate this
+    // pre-CPU-init diagnostic. GPU-only mode needs no guest AOT library.
+    if (argc == 2 && !strcmp(argv[1], "--vulkan-only"))
         return vulkan_smoke();
 #endif
     /* The guest CPU allocates the memory the guest may hold pointers to through this (below
