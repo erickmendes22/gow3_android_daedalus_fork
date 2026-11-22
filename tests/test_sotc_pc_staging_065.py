@@ -30,7 +30,14 @@ class Pc076MobileStaging(unittest.TestCase):
         self.assertIn("v[0] != 'a'", s)
         self.assertIn('std::strtoull(v, nullptr, 10)', s)
         run = LAUNCH.read_text()
-        self.assertIn('export SOTC_STAGING_LARGE_KEEP_MB=${SOTC_STAGING_LARGE_KEEP_MB:-auto}', run)
+        # PC 0.74 has its own numeric parser, unlike the newer 0.76
+        # mobile auto-policy staged only for the old GPU revision.
+        staged = (ROOT / "ports/sotc/android/stage_renderer.py").read_text()
+        if "pc074_exact_fastpaths" in staged:
+            self.assertIn('export SOTC_STAGING_LARGE_KEEP_MB=${SOTC_STAGING_LARGE_KEEP_MB:-128}', run)
+            self.assertNotIn('SOTC_STAGING_LARGE_KEEP_MB:-auto', run)
+        else:
+            self.assertIn('export SOTC_STAGING_LARGE_KEEP_MB=${SOTC_STAGING_LARGE_KEEP_MB:-auto}', run)
         self.assertNotIn('export SOTC_STAGING_LARGE_KEEP_MB=128', run)
 
     def test_no_dangerous_optimizations_return(self):
