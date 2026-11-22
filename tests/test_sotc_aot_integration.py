@@ -83,8 +83,8 @@ class SotcAotIntegrationGuards(unittest.TestCase):
     def test_application_identity_for_install_over(self):
         app=source("android-launcher/app/build.gradle.kts")
         self.assertIn('applicationId = "com.sotc.android.daedalus"',app)
-        self.assertIn('versionCode = 10066',app)
-        self.assertIn('versionName = "0.1.66-pc074-depthgb"',app)
+        self.assertIn('versionCode = 10067',app)
+        self.assertIn('versionName = "0.1.67-pc074-bootfix"',app)
 
 if __name__=="__main__":
     unittest.main()
