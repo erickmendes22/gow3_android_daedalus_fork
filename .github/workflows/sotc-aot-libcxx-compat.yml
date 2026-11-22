@@ -1,0 +1,39 @@
+name: SotC AOT Android libc++ ABI alignment
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths: ['.github/workflows/sotc-aot-libcxx-compat.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-ndk30-cxx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export exact NDK 30 libc++ shared runtime
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/30.0.16248370"
+          test -d "$ndk"
+          libcxx="$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+          if [ ! -s "$libcxx" ]; then
+            libcxx="$ndk/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+          fi
+          test -s "$libcxx"
+          mkdir -p ndk30-lib
+          cp "$libcxx" ndk30-lib/libc++_shared.so
+          llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          "$llvm" --dyn-syms --wide "$libcxx" > ndk30-lib/dynsyms.txt
+          grep -Fq '_ZNSt6__ndk113__hash_memoryEPKvm' ndk30-lib/dynsyms.txt
+          echo 'NDK 30 libc++ provides missing __hash_memory symbol'
+          sha256sum "$libcxx" > ndk30-lib/libcxx-source.sha256.txt
+          printf 'NDK=30.0.16248370\nARCH=aarch64\n' > ndk30-lib/manifest.txt
+          "$llvm" -h "$libcxx" | grep -F AArch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-aot-ndk30-libcxx-fix
+          path: ndk30-lib/
+          if-no-files-found: error
+          retention-days: 7
