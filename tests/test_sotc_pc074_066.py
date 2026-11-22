@@ -67,6 +67,25 @@ class SotcPc074Tests(unittest.TestCase):
         self.assertIn('export SOTC_GBUFFER_FAST=',shell)
         self.assertNotIn('SOTC_STAGING_LARGE_KEEP_MB:-auto',shell)
 
+    def test_pc_dlss_adapter_exports_every_used_symbol(self):
+        # 0.1.66 compiled, but Android dlopen rejected its undefined
+        # Vulkan::Dlssg::SetHdr(bool) before any gameplay was attempted.
+        adapter=source("ports/sotc/android/vk_dlssg_android.cpp")
+        signatures=(
+            "void SetHdr(bool)",
+            "void NoteHdrCurve(float k)",
+            "float HdrCurve()",
+            "bool CameraLogOnly()",
+            "void NoteCamera(const AmdGpu::Regs&, u32)",
+            "bool SuperResolutionUpscaling()",
+        )
+        for signature in signatures:
+            self.assertIn(signature,adapter,signature)
+        self.assertIn("std::atomic<float> s_hdr_curve{1.0f}",adapter)
+        self.assertIn("return s_hdr_curve.load",adapter)
+        self.assertNotIn("windows.h",adapter)
+        self.assertNotIn("LoadLibrary",adapter)
+
     def test_aot_identity_without_fex_or_tso(self):
         gradle=source("android-launcher/app/build.gradle.kts")
         self.assertIn("versionCode = 10067",gradle)
