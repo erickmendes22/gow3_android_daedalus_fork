@@ -121,7 +121,7 @@ def stage(root:Path,gpu:Path):
     cloned=exact(cloned,prep,cloneprep,'FSR generate block replacement')
     cloned=exact(cloned,'    FsrFg::NotePresent();\n','', 'FSR statistics removal')
     acquire='''    cmdbuf.blitImage(generated, vk::ImageLayout::eGeneral, swapchain_image,
-                      vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);'''
+                     vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);'''
     external='''    const vk::ImageSubresourceRange src_range{
         .aspectMask=vk::ImageAspectFlagBits::eColor,.baseMipLevel=0,.levelCount=1,
         .baseArrayLayer=0,.layerCount=1,
