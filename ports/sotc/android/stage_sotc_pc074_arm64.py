@@ -72,6 +72,45 @@ def patch(gpu: Path) -> None:
                    'rel_color |= (rel_mask[RelColor][chunk] & mask)'):
         if marker not in code:
             raise ValueError('PC #308 register mask invariant lost: '+marker)
+    # PC #308 introduced new x86 TSC diagnostics in EOP, depth and
+    # dispatch profiling. Their opt-in nature does not make the C++ builtin
+    # valid on AArch64, even when disabled at runtime. Use the already
+    # ported SotcStats::Ticks() (cntvct_el0) for consistent hardware ticks.
+    stats_path=root/'sotc_stats.h'
+    stats=stats_path.read_text()
+    tick_def='inline uint64_t Ticks() {'
+    if stats.count(tick_def) != 1:
+        raise ValueError('PC #308 ARM64 tick helper absent')
+    prefix,suffix=stats.split(tick_def,1)
+    old='__builtin_ia32_rdtsc()'
+    if prefix.count(old) != 4:
+        raise ValueError(f'PC #308 TSC diagnostic call-site drift ({prefix.count(old)})')
+    prefix=once(prefix,'inline double TicksPerMs() {',
+                'inline uint64_t Ticks();\\ninline double TicksPerMs() {',
+                'forward declaration for portable profiling clock')
+    prefix=prefix.replace(old,'Ticks()')
+    stats_path.write_text(prefix+tick_def+suffix)
+
+    arm_now='''#if defined(__aarch64__)
+    u64 ticks;
+    __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(ticks));
+    return ticks;
+#else
+    return __builtin_ia32_rdtsc();
+#endif'''
+    draw_path=root/'renderer_vulkan/vk_rasterizer.h'
+    draw=draw_path.read_text()
+    draw=once(draw,'inline u64 Now() {\\n    return __builtin_ia32_rdtsc();\\n}',
+              'inline u64 Now() {\\n'+arm_now+'\\n}',
+              'ARM64 depth/G-buffer draw profiling clock')
+    draw_path.write_text(draw)
+    dispatch_path=root/'renderer_vulkan/sotc_dispphase.h'
+    dispatch=dispatch_path.read_text()
+    dispatch=once(dispatch,'inline uint64_t Now() {\\n    return __builtin_ia32_rdtsc();\\n}',
+                  'inline uint64_t Now() {\\n'+arm_now.replace('    u64 ticks;', '    uint64_t ticks;')+'\\n}',
+                  'ARM64 dispatch phase profiling clock')
+    dispatch_path.write_text(dispatch)
+
     liverpool.write_text(code)
     print('SotC PC #308 depth/G-buffer fastpaths: ARM64 exact 32-bit register deltas + YIELD preserved')
 
