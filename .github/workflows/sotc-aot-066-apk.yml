@@ -76,7 +76,7 @@ jobs:
           grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC_STAGING_LARGE_KEEP_MB' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC_DEPTHFAST_VERIFY' "$RUNNER_TEMP/sotc-gpu-strings.txt"
-          grep -Fq 'SOTC GBFAST:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC GBFAST cand' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'pc_safe_mask' src/runtime_memory.c
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           python3 - <<'PY'
@@ -224,7 +224,7 @@ jobs:
           grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC_STAGING_LARGE_KEEP_MB' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC_DEPTHFAST_VERIFY' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
-          grep -Fq 'SOTC GBFAST:' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC GBFAST cand' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libgow3cpu.so > "$RUNNER_TEMP/sotc-final-cpu.so"
           ! readelf -d "$RUNNER_TEMP/sotc-final-cpu.so" | grep -Ei 'FEX|libFEXCore'
       - name: Assemble and validate the complete 0.1.66 APK
