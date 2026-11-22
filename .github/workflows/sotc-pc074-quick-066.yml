@@ -40,6 +40,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_pm4_redundant_regs_064.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          grep -Fq 'FSR4 unavailable on Android' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp
+          ! grep -Fq 'windows.h' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp
           renderer=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           liverpool=out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           for expected in DepthFastBeginCheck GBufferFastCheck BeginRenderingFast DepthFastBeginApply GBufferFastApply; do
