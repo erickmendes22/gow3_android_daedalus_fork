@@ -9,7 +9,7 @@ renderer draw call per slice. No guessed 500-draw threshold from the PC port.
 Only a unique address that exhibited all five slices in one completed frame
 becomes eligible in the following frame. All other passes stay untouched.
 
-Modes 1/2/3 are experimental: excluded cascade Draws into excluded cascades are not prepared/bound/submitted; each excluded
+Modes 1/2/3 are experimental: draws into excluded cascades are not\nprepared/bound/submitted; each excluded
 depth slice is cleared ONCE per frame to the exact guest depth-clear value to
 avoid sampling stale sun shadows. No other shadows or shader outputs modified.
 The first frame is always unmodified, while the sun map classifier warms up.
@@ -21,8 +21,7 @@ from pathlib import Path
 
 CPP = r"""
 // Experimental SotC performance control; never run unless explicitly selected
-// through the launcher. A zero setting means the *detected sun* cascades are
-// depth-cleared, not left with shadows from an old frame. Other depth targets
+// through the launcher. Mode 0 is an engine-CVar-only test with no Vulkan\n// shadow-map interception. Modes 1/2/3 still clear disabled sun layers. Other depth targets
 // and every incoming PM4 packet retain their original behavior.
 bool Rasterizer::SkipSunShadowBenchmark() {
 #if !defined(__aarch64__)
