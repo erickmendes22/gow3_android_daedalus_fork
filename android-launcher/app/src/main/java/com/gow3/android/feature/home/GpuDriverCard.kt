@@ -50,13 +50,18 @@ internal fun GpuDriverCard() {
     var expanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val choices = listOf(
+    val isSotc = context.packageName == "com.sotc.android.daedalus"
+    // SotC only: the original tested GameHub DD. Do not offer system,
+    // generic Turnip or arbitrary imported drivers; those regress geometry.
+    val choices = if (isSotc) listOf(
+        "gamehub-dd" to "Turnip GameHub DD 26.3 — GMEM / PWR_MAX"
+    ) else listOf(
         "auto" to stringResource(R.string.gpu_driver_auto),
         "system" to stringResource(R.string.gpu_driver_system),
         "gen8" to stringResource(R.string.gpu_driver_bundled),
         "adreno7xx" to stringResource(R.string.gpu_driver_adreno7xx),
     ) + (if (hasGameHub) listOf(
-        "gamehub-dd" to "Turnip GameHub 26.3 DD GMEM + PWR_MAX (experimental)"
+        "gamehub-dd" to "Turnip GameHub 26.3 DD GMEM + PWR_MAX"
     ) else emptyList()) + installed.filterNot { GpuDriverManager.isGameHubDDImportedId(it.id) }
         .map { "custom:${it.id}" to "${it.name} (${it.id.take(8)})" }
     val label = choices.firstOrNull { it.first == selected }?.second
@@ -87,8 +92,8 @@ internal fun GpuDriverCard() {
             fontFamily = FontFamily.Serif, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Column {
             Text(label, color = LauncherColors.textPrimary, fontSize = 14.sp,
-                modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { expanded = true }.padding(vertical = 8.dp))
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !busy && !isSotc) { expanded = true }.padding(vertical = 8.dp))
+            if (!isSotc) DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 choices.forEach { (value, name) ->
                     DropdownMenuItem(text = { Text(if (value == selected) "✓ $name" else name) }, onClick = {
                         expanded = false
@@ -98,7 +103,7 @@ internal fun GpuDriverCard() {
                 }
             }
         }
-        Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
+        if (!isSotc) Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
         if (context.packageName == "com.sotc.android.daedalus" && !hasGameHub) {
             Text(
                 if (java.util.Locale.getDefault().language == "pt")
@@ -107,7 +112,7 @@ internal fun GpuDriverCard() {
                 color = LauncherColors.textMuted, fontSize = 12.sp
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!isSotc || !hasGameHub) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy, onClick = {
                 try { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
                 catch (ex: Exception) { error = GpuDriverManager.error(context, ex) }
