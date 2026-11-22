@@ -3,9 +3,11 @@
 """SotC ARM64 native renderer: reversible *benchmark* of sun shadow cascade work.
 
 SOTC_SUN_CASCADES=5 (default original), 3, 2, 1, 0 (all sun cascades disabled).
-The target is detected from the previous frame's highest draw-count square depth
-map with >=500 draws, exactly as in upstream SkipStaggeredShadow. Other shadow
-maps, depth passes, color passes and every guest PM4 command are preserved.
+The target is identified by the ACTUAL Android pass trace (20261122-124822): a
+1024x1024 depth-only map with five independently rendered slices (0..4), ONE
+renderer draw call per slice. No guessed 500-draw threshold from the PC port.
+Only a unique address that exhibited all five slices in one completed frame
+becomes eligible in the following frame. All other passes stay untouched.
 
 Draws into excluded cascades are not prepared/bound/submitted; each excluded
 depth slice is cleared ONCE per frame to the exact guest depth-clear value to
@@ -41,22 +43,27 @@ bool Rasterizer::SkipSunShadowBenchmark() {
     const u64 frame = SotcStats::flip_count.load(std::memory_order_relaxed);
     static u64 frame_seen = ~u64{0};
     static u64 sun_map = 0;
+    // This Android build renders one depth-only call per sun-map slice.
+    // Store a five-bit mask, not PC draw counts (upstream required >=500).
     static std::unordered_map<u64, u32> candidates;
+    static u32 confirmed_frames = 0;
     static std::array<u64, 8> cleared_frame{};
     static std::array<u64, 8> cleared_uid{};
     static u64 skipped = 0, clears = 0, refused = 0;
     if (frame != frame_seen) {
-        // The selector uses the PREVIOUS frame's draw counts; those are
-        // incremented even when their operations were intentionally skipped.
+        // The previous frame must have drawn all five unique slices of the
+        // SAME depth-only square image. A second matching image is ambiguous,
+        // so neither is skipped. Even skipped draws register their slice bit.
         u64 winner = 0;
-        u32 most = 0;
-        for (const auto& [addr, count] : candidates) {
-            if (count > most) {
-                most = count;
+        u32 complete_maps = 0;
+        for (const auto& [addr, mask] : candidates) {
+            if ((mask & 0x1fu) == 0x1fu) {
                 winner = addr;
+                ++complete_maps;
             }
         }
-        const u64 next = most >= 500 ? winner : 0;
+        const u64 next = complete_maps == 1 ? winner : 0;
+        if (next) ++confirmed_frames;
         if (next != sun_map) {
             cleared_frame.fill(~u64{0});
             cleared_uid.fill(0);
@@ -65,8 +72,8 @@ bool Rasterizer::SkipSunShadowBenchmark() {
         candidates.clear();
         if (frame_seen != ~u64{0} && frame % 300 == 0) {
             std::fprintf(stderr,
-                "SOTC SUN CASCADES: keep=%u sun_map=%#llx skipped=%llu cleared=%llu fallback=%llu\n",
-                keep, static_cast<unsigned long long>(sun_map),
+                "SOTC SUN CASCADES: keep=%u sun_map=%#llx confirmed=%u skipped=%llu cleared=%llu fallback=%llu\n",
+                keep, static_cast<unsigned long long>(sun_map), confirmed_frames,
                 static_cast<unsigned long long>(skipped),
                 static_cast<unsigned long long>(clears),
                 static_cast<unsigned long long>(refused));
@@ -74,18 +81,20 @@ bool Rasterizer::SkipSunShadowBenchmark() {
         }
         frame_seen = frame;
     }
+    // In the Android capture, ALL five 1024x1024 sun layers have color mode
+    // Disable (0). The old Normal-only predicate excluded every sun draw.
     if (!regs.depth_buffer.DepthValid() ||
-        regs.color_control.mode != AmdGpu::ColorControl::OperationMode::Normal ||
+        regs.color_control.mode != AmdGpu::ColorControl::OperationMode::Disable ||
         regs.depth_buffer.Pitch() != regs.depth_buffer.Height() ||
         regs.depth_buffer.Pitch() < 512) {
         return false;
     }
     const u64 addr = regs.depth_buffer.DepthWriteAddress();
-    if (!addr) return false;
-    ++candidates[addr];
     const u32 first = regs.depth_view.slice_start;
     const u32 last = regs.depth_view.slice_max;
-    if (addr != sun_map || first < keep || first >= 8 || first != last) return false;
+    if (!addr || first >= 5 || first != last) return false;
+    candidates[addr] |= (1u << first);
+    if (addr != sun_map || first < keep) return false;
 
     // Clear one excluded layer per frame. Without the clear, later lighting
     // reads the last frame's sun-shadow map and falsely shows stale shadows.
@@ -101,6 +110,7 @@ bool Rasterizer::SkipSunShadowBenchmark() {
     auto& image = texture_cache.GetImage(image_id);
     if (!image.info.props.is_depth || !image.backing ||
         !(image.aspect_mask & vk::ImageAspectFlagBits::eDepth) ||
+        image.info.resources.layers < 5 ||
         desc.view_info.range.extent.layers != 1 ||
         desc.view_info.range.base.layer != first) {
         ++refused;
