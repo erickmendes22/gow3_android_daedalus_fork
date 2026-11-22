@@ -1,6 +1,6 @@
 # Shadow of the Colossus — ARM64 AOT sem FEX e sem TSO
 
-**Objetivo:** exclusivamente ARM64 AOT nativo, sem TSO e sem fallback FEX. A versão 0.1.53 permanece como referência jogável. O APK AOT ainda NÃO foi compilado/validado.
+**Objetivo:** exclusivamente ARM64 AOT nativo, sem TSO e sem fallback FEX. A versão 0.1.53 permanece como referência jogável. O APK 0.1.55 compilou AOT no próprio telefone; a gameplay ainda não foi validada.
 
 ## Arquivos reais verificados (21/11/2026)
 
@@ -43,3 +43,12 @@ Não alegar correção completa, gameplay nem ganho de FPS antes dos testes reai
 ## 21/11/2026 — correção real do BBPATCH2
 
 O primeiro compilador abortou com `bad FDE #12150`: o preparador antigo somava incorretamente `0x400000` ao deslocamento de cada patch, destruindo `.eh_frame` no endereço `0x139a4e8`. O `src/probe.c` de 0.1.53 comprova que `memcpy(image+offset)` usa offset DIRETO; `0x400000` é somente base de valores de ponteiro para relocação. A imagem corrigida passou `--scan`: 58.984 FDEs nos três módulos, 1.288 landing pads, 11 funções descobertas. O compilador real foi iniciado em 64 shards sem `--tso`, em ambiente privado; não enviar esses bytes a CI público.
+
+## Resultado real do teste em Android (CUSA08809, 0.1.55)
+
+- Recompilação no celular: **BBR-DONE 0**, **SOTC_AOT_READY**, 67.951 unidades ARM64, 10 com instruções não suportadas, 305,7 s, RSS máximo de 1,32 GiB e libSotcAot.so com 70.017.744 bytes. Modo **sem TSO e sem FEX**.
+- A compilação foi validada, mas o lançamento falhou *antes do primeiro frame*, no carregador dinâmico: `CANNOT LINK EXECUTABLE sotc-probe: cannot locate symbol _ZNSt6__ndk113__hash_memoryEPKvm, referenced by libgow3cpu.so`.
+- Causa: a biblioteca libgow3cpu.so foi compilada com NDK 30.0.16248370, mas o payload ainda incorporava libc++_shared.so de uma base antiga. Essa versão não exporta a função `std::__ndk1::__hash_memory(void const*, size_t)`.
+- Correção: substituir **apenas** libc++_shared.so pela biblioteca que acompanha o NDK utilizado e validar por `verify_libcxx_abi.py` que nenhuma das 2.335 exportações anteriores foi removida e que o símbolo em falta passou a existir. A nova versão possui 2.337 símbolos exportados.
+- Lógica para preservar o trabalho de recompilação: `sotcport/user/aot/libSotcAot.so` é parte de `sotcport/user`, que o instalador Android preserva durante atualizações. O jogo deve iniciar sem exigir nova compilação se os patches e a imagem forem os mesmos.
+- A correção de link é necessária, mas não comprova gameplay. Testar próxima build no aparelho e investigar quaisquer traps nativos/indiretos restantes sem ativar TSO ou FEX.
