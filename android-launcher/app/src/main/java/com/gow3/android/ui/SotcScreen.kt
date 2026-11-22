@@ -324,6 +324,22 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     }
                     if(aotMessage!=null) Text(aotMessage,color=SotcPalette.text,fontSize=12.sp)
                 }
+                SotcPanel {
+                    Text("BLOODFRAME FG",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    SotcChoice(if(pt) "Geração de quadros" else "Frame generation",
+                        values["sotc_bloodframe_fg"]?:"off",
+                        listOf("off" to (if(pt) "Desativado" else "Off"),
+                            "mako2" to (if(pt) "Bloodframe ×2 — MAKO experimental" else "Bloodframe ×2 — MAKO experimental")),
+                        {save("sotc_bloodframe_fg",it)})
+                    Text(if(pt)
+                        "Gera um quadro intermediário por quadro real usando Bloodframe 2.0 no Vulkan. Não aumenta o FPS do motor e pode reduzir os FPS reais. Exige Turnip GameHub DD; reinicie o jogo para aplicar."
+                        else "Generates one intermediate frame for each real frame through Bloodframe 2.0 on Vulkan. Does not increase game-engine FPS and may reduce real FPS. Requires GameHub DD Turnip; restart to apply.",
+                        color=SotcPalette.secondary,fontSize=12.sp)
+                    Text(if(pt)
+                        "MAKO-FG V1.24 por Eugenio Segala — CC BY-NC 4.0; somente uso não comercial. Modelo experimental, podem ocorrer artefatos em movimento/HUD."
+                        else "MAKO-FG V1.24 by Eugenio Segala — CC BY-NC 4.0; non-commercial use only. Experimental model; moving objects and HUD may show artifacts.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                }
                 GpuDriverCard()
             }
             1 -> {
