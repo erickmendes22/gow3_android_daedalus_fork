@@ -42,11 +42,15 @@ public final class GpuDriverManager {
     }
     public static boolean isGameHubDDImportedId(String id) { return GAMEHUB_DD_ARCHIVE_SHA256.equals(id); }
     public static boolean hasGameHubDD(Context context) {
-        return hasBundledGameHubDD(context) || verifiedImportedGameHubDD(context)!=null;
+        return SotcPaths.isSotc(context) ? hasBundledGameHubDD(context) :
+            verifiedImportedGameHubDD(context)!=null;
     }
     public static boolean hasBundledGameHubDD(Context context) {
-        return SotcPaths.isSotc(context) && Build.VERSION.SDK_INT >= 34 &&
-            new File(context.getFilesDir(),"sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so").isFile();
+        if (!SotcPaths.isSotc(context) || Build.VERSION.SDK_INT < 34) return false;
+        File bundled = new File(context.getFilesDir(), "sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so");
+        if (!bundled.isFile()) return false;
+        try { return GAMEHUB_DD_ELF_SHA256.equals(sha256(bundled)); }
+        catch (Exception error) { return false; }
     }
     public static String selected(Context context) {
         return SotcPaths.isSotc(context) ? "gamehub-dd" : context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).getString("gpu_driver","auto");
@@ -72,6 +76,8 @@ public final class GpuDriverManager {
     }
     public static DriverArchive.Installed importDriver(Context context,Uri uri) throws Exception {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
+        if (SotcPaths.isSotc(context))
+            throw new IOException("Shadow of the Colossus uses only the bundled GameHub DD driver");
         DriverArchive.Installed result;
         try (InputStream in=context.getContentResolver().openInputStream(uri)) {
             if (in==null) throw new IOException("Cannot open driver ZIP");
