@@ -212,145 +212,53 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     if(pkgInstallMessage!=null) Text(pkgInstallMessage,color=SotcPalette.secondary,fontSize=12.sp)
                 }
                 SotcPanel {
-                    Text(if(pt) "RECOMPILAÇÃO NATIVA ARM64 (AOT)" else "NATIVE ARM64 RECOMPILATION (AOT)",
+                    Text(if(pt) "CÓDIGO NATIVO ARM64" else "NATIVE ARM64 CODE",
                         color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    Text(if(pt) "Compila o eboot.bin e os módulos da pasta selecionada no próprio telefone usando os patches atuais. Sem FEX e sem TSO. Não modifica o jogo nem os saves."
-                        else "Compile the selected eboot.bin and modules on the phone using current patches. No FEX and no TSO. Does not change game files or saves.",
+                    Text(if(pt)
+                        "No primeiro início o jogo é compilado obrigatoriamente no aparelho. Ao mudar os patches, o AOT é verificado e recompilado automaticamente somente quando necessário. Perfis já compilados são reutilizados."
+                        else "On first play the game is compiled on the device. Patch changes trigger automatic verification and compilation only if necessary; previously compiled profiles are reused.",
                         color=SotcPalette.secondary,fontSize=12.sp)
-                    SotcAction(
-                        if(aotBusy) (if(pt) "COMPILANDO ARM64…" else "BUILDING ARM64…")
-                        else (if(pt) "COMPILAR AOT NO CELULAR" else "BUILD AOT ON THIS PHONE"),
-                        { if(!aotBusy) onBuildAot() }, Modifier.fillMaxWidth())
+                    if(aotBusy) {
+                        Text(if(pt) "Preparando jogo (AOT obrigatório)…" else "Preparing game (required AOT)…",
+                            color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    }
                     if(aotMessage!=null) Text(aotMessage,color=SotcPalette.text,fontSize=12.sp)
-                    if(aotBusy) Text(if(pt) "Não inicie o jogo nem feche o aplicativo durante a recompilação."
-                        else "Do not start the game or close the application while compiling.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                }
-                SotcPanel {
-                    Text(if(pt) "VÍDEO E DESEMPENHO" else "VIDEO & PERFORMANCE",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    SotcChoice(if(pt) "Resolução interna" else "Internal resolution",
-                        values["sotc_resolution"]?:"720p",
-                        listOf("360p" to "640×360","540p" to "960×540",
-                            "720p" to "1280×720","900p" to "1600×900",
-                            "1080p" to "1920×1080"),{save("sotc_resolution",it)})
-                    Text(if(pt) "A resolução escolhida é aplicada aos render targets do jogo na próxima inicialização; a saída Android continua em 720p para ampliar a imagem. Para 360p/540p, confira a resolução efetiva no log."
-                         else "This changes the game's render targets on next launch; Android output stays at 720p and upscales the image. Check the effective 360p/540p render size in logs.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcChoice(if(pt) "Modo de FPS" else "FPS mode",
-                        values["sotc_fps_mode"]?:"fps60game",
-                        listOf("30" to (if(pt) "30 FPS (original)" else "30 FPS (original)"),
-                            "fps60game" to "60 FPS (game mode)",
-                            "fps60" to "60 FPS (patch)"),{save("sotc_fps_mode",it)})
-                    SotcChoice(if(pt) "Readback da GPU" else "GPU readback mode",
-                        values["sotc_readbacks"]?:"2",
-                        listOf("0" to (if(pt) "0 — Desativado" else "0 — Disabled"),
-                            "1" to (if(pt) "1 — Relaxado" else "1 — Relaxed"),
-                            "2" to (if(pt) "2 — Preciso" else "2 — Precise")),
-                        {save("sotc_readbacks",it)})
-                    Text(if(pt) "2 (padrão) é preciso. 1 pode causar dados e imagens desatualizados; 0 desativa os readbacks e pode quebrar a renderização. Reinicie o jogo após alterar."
-                         else "2 (default) is precise. 1 may cause stale GPU data/images; 0 disables readbacks and may break rendering. Restart the game after changing.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "PC 0.72: readbacks rápidos (+FPS, experimental)"
-                                      else "PC 0.72: fast GPU readbacks (experimental)",
-                        (values["sotc_pc072_fast_readbacks_050"]?:"0")=="1",
-                        {save("sotc_pc072_fast_readbacks_050",if(it)"1" else "0")})
-                    Text(if(pt) "Cópias antecipadas de dados GPU: potencial de ganho no Santuário. Exige Readback 2 e correção do pool de páginas do PC 0.71. Ativado na 0.1.50 somente após verificação da versão do jogo; desative aqui se houver defeitos. O ganho de até 25% foi medido somente no PC."
-                         else "Speculative GPU copies: possible Shrine FPS gain. Requires Readback 2 and the PC 0.71 page-pool fix. Enabled in 0.1.50 only after checking the game executable; disable here if defects occur. Up-to-25% measured on PC only.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "Adreno: compatibilidade Wave32" else "Adreno: Wave32 compatibility",
-                        (values["sotc_adreno_wave32"]?:"0")=="1",
-                        {save("sotc_adreno_wave32",if(it)"1" else "0")})
-                    Text(if(pt) "Experimental. Usa cache de shaders separado; reinicie o jogo para comparar Wave32 e Wave64."
-                         else "Experimental. Uses a separate shader cache; restart to compare Wave32 and Wave64.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
                 }
                 GpuDriverCard()
             }
             1 -> {
-                Text(if(pt) "PATCHES DO SOTC" else "SOTC PATCHES",color=SotcPalette.text,
+                Text(if(pt) "PATCHES DO JOGO" else "GAME PATCHES",color=SotcPalette.text,
                     fontSize=23.sp,fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold)
-                Text(if(pt) "Opções específicas do Shadow of the Colossus. Aplicadas no próximo início."
-                    else "Shadow of the Colossus-specific options. Applied at the next launch.",
+                Text(if(pt)
+                    "As mudanças são salvas automaticamente. Ao iniciar, o AOT verifica os novos patches e recompila apenas se não houver um perfil compatível já pronto."
+                    else "Changes are saved automatically. On Play, AOT verifies the new patches and compiles only if no matching profile is available.",
                     color=SotcPalette.secondary,fontSize=12.sp)
                 SotcPanel {
-                    SotcToggle(if(pt) "Filtragem anisotrópica 16×" else "16× anisotropic filtering",
-                        (values["sotc_af16"]?:"0")=="1",{save("sotc_af16",if(it)"1" else "0")})
-                    Text(if(pt) "BACHATA S4+ 0.2.7 — PERFORMANCE" else "BACHATA S4+ 0.2.7 — PERFORMANCE",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
                     SotcToggle(if(pt) "Desativar Bloom" else "Disable Bloom",
                         (values["sotc_bachata_bloom"]?:"1")=="1",
                         {save("sotc_bachata_bloom",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Desativar reflexos SSR" else "Disable screen-space reflections",
-                        (values["sotc_bachata_ssr"]?:"0")=="1",
-                        {save("sotc_bachata_ssr",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Desativar névoa volumétrica" else "Disable fog",
-                        (values["sotc_bachata_fog"]?:"0")=="1",
-                        {save("sotc_bachata_fog",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Desativar sombras dinâmicas (experimental)" else "Disable dynamic shadows (experimental)",
-                        (values["sotc_bachata_shadows"]?:"0")=="1",
-                        {save("sotc_bachata_shadows",if(it)"1" else "0")})
-                    Text(if(pt) "Patches no eboot CUSA08809 original com bytes e hash validados. Bloom e Motion Blur desligados por padrão; outros opcionais. Reinicie o jogo."
-                         else "Original CUSA08809 eboot patches with validated bytes and SHA256. Bloom and Motion Blur off by default; other effects optional. Restart the game.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Desativar Motion Blur" else "Disable Motion Blur",
                         (values["sotc_blur_suppression"]?:"1")=="1",
                         {save("sotc_blur_suppression",if(it)"1" else "0")})
-                    Text(if(pt) "CASCATAS DAS SOMBRAS DO SOL — TESTE DE FPS"
-                                 else "SUN SHADOW CASCADES — FPS TEST",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                    SotcChoice(if(pt) "Cascatas das sombras do sol" else "Sun shadow cascades",
-                        values["sotc_sun_cascades"]?:"5",
-                        listOf("5" to (if(pt) "5 — Original" else "5 — Original"),
-                               "3" to (if(pt) "3 — Reduzidas" else "3 — Reduced"),
-                               "2" to (if(pt) "2 — Próximas" else "2 — Near only"),
-                               "1" to (if(pt) "1 — Mínimo" else "1 — Minimum"),
-                               "0" to (if(pt) "0 — Motor do jogo (sem limpezas Vulkan)" else "0 — Game engine only (no Vulkan clears)")),
-                        {save("sotc_sun_cascades",it)})
-                    Text(if(pt) "5 = renderização original. 0 = solicita r_enableCascadeShadows=0 ao motor, sem descartar draws nem limpar a profundidade no Vulkan (o PC mostrou ganho, mas no Android ainda não comprovado). 1/2/3 são testes visuais de redução de cascatas. Alterações do modo 0 exigem recompilar AOT no celular."
-                         else "5 = original rendering. 0 = requests r_enableCascadeShadows=0 from the game engine, without skipping draws or clearing Vulkan depth (unverified performance on Android). 1/2/3 remain experimental reduced-cascade render modes. Changing to or from 0 requires recompiling the on-device AOT.",
+                    SotcToggle(if(pt) "Desativar reflexos SSR" else "Disable SSR reflections",
+                        (values["sotc_bachata_ssr"]?:"0")=="1",
+                        {save("sotc_bachata_ssr",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Desativar névoa" else "Disable fog",
+                        (values["sotc_bachata_fog"]?:"0")=="1",
+                        {save("sotc_bachata_fog",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Desativar sombras dinâmicas" else "Disable dynamic shadows",
+                        (values["sotc_bachata_shadows"]?:"0")=="1",
+                        {save("sotc_bachata_shadows",if(it)"1" else "0")})
+                    SotcToggle(if(pt) "Filtragem anisotrópica 16×" else "16× anisotropic filtering",
+                        (values["sotc_af16"]?:"0")=="1",
+                        {save("sotc_af16",if(it)"1" else "0")})
+                    Text(if(pt)
+                        "Patches de eboot verificados por hash para CUSA08809. A cópia original e os saves permanecem intactos. O teste de sombras solares foi removido."
+                        else "Hash-verified eboot patches for CUSA08809. Original game and saves remain untouched. The ineffective sun-shadow experiment was removed.",
                         color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
-                                      else "CPU/GPU frame bottleneck profiling (log)",
-                        (values["sotc_perf_profile"]?:"0")=="1",
-                        {save("sotc_perf_profile",if(it)"1" else "0")})
-                    Text(if(pt) "Desligado por padrão. A cada 5 s registra CPU real das threads de desenho/processamento, tempo em binds, readback, esperas GPU, texturas e comandos. A medição tem custo: desligue ao comparar FPS e reinicie para aplicar."
-                         else "OFF by default. Logs real draw/command CPU time, binds, readbacks, GPU waits, textures and command costs every 5 s. Profiling has overhead: disable for FPS comparisons and restart to apply.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    Text(if(pt) "Otimizações do motor, uploads paralelos e caches de CPU/GPU ativos automaticamente. Os patches continuam configuráveis." 
-                         else "Engine optimizations, parallel uploads and CPU/GPU caches run automatically. Game patches remain selectable.",
-                         color=SotcPalette.secondary,fontSize=11.sp)
-                    Text(if(pt) "AJUSTES OPCIONAIS (DESATIVADOS)"
-                         else "OPTIONAL TUNINGS (DEFAULT OFF)",
-                        color=SotcPalette.accent,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                    Text(if(pt) "Os três ajustes abaixo continuam opcionais; otimizações já ativadas foram incorporadas ao motor."
-                         else "The three tunings below remain optional; previously enabled engine optimizations are built in.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "Lote DMA máximo de 32 MiB (teste)"
-                                      else "32 MiB maximum DMA batch (test)",
-                        (values["sotc_trial039_dma_32m"]?:"0")=="1",
-                        {save("sotc_trial039_dma_32m",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Antecipar 31 páginas de memória (teste)"
-                                      else "Write-ahead 31 guest-memory pages (test)",
-                        (values["sotc_trial039_cpu_31p"]?:"0")=="1",
-                        {save("sotc_trial039_cpu_31p",if(it)"1" else "0")})
-                    SotcToggle(if(pt) "Agrupar 8 páginas de arena Vulkan (teste)"
-                                      else "Group 8 Vulkan arena pages (test)",
-                        (values["sotc_trial039_arena_8p"]?:"0")=="1",
-                        {save("sotc_trial039_arena_8p",if(it)"1" else "0")})
-                    Text(if(pt) "Estes três ajustes são experimentais e continuam desligados por padrão; reinicie para aplicar."
-                         else "Three experimental options remain off by default. Restart after changing.",
-                        color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "Histórico temporal TAA (ghosts)" else "TAA temporal history (ghosts)",
-                        (values["sotc_taa_history"]?:"0")=="1",
-                        {save("sotc_taa_history",if(it)"1" else "0")})
-                    Text(if(pt) "Desligado por padrão para evitar imagens anteriores arrastadas. A iluminação e a exposição permanecem. Reinicie o jogo após mudar."
-                         else "Off by default to avoid trailing previous frames. Lighting and exposure remain. Restart after changing.",
-                         color=SotcPalette.secondary,fontSize=11.sp)
-                    Text(if(pt) "O modo 60 FPS e as resoluções ficam na tela Inicial. Patches de God of War III não são utilizados."
-                        else "60 FPS modes and resolutions are on Home. God of War III patches are not used.",
-                        color=SotcPalette.secondary,fontSize=12.sp)
                 }
+                if(aotBusy) Text(aotMessage ?: "AOT ARM64…",
+                    color=SotcPalette.accent,fontSize=12.sp)
             }
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
