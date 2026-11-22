@@ -1075,10 +1075,22 @@ static uint64_t sotc_vm_cached_length(uintptr_t address, uint64_t size) {
     }
     return done==size ? size : 0;
 }
+/* PC v0.74's Vulkan frame counters call this from the video-out driver.
+ * The SotC Android VM already implements a validated negative/gap cache, so
+ * count the actual early-return hits, rather than returning a dummy zero.
+ * Exchange drains the interval sample exactly as the upstream PC API does.
+ * Must be exported from sotc-probe: libbbgpu.so resolves it at dlopen time. */
+static uint64_t clamp_gap_hits;
+uint64_t runtime_memory_clamp_gap_hits(void) {
+    return __atomic_exchange_n(&clamp_gap_hits, 0, __ATOMIC_RELAXED);
+}
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
     if (size && sotc_vm_cached_length(address,size)==size) return size;
-    if (size && sotc_vm_unmapped_fast(address)) return 0;
+    if (size && sotc_vm_unmapped_fast(address)) {
+        __atomic_fetch_add(&clamp_gap_hits, 1, __ATOMIC_RELAXED);
+        return 0;
+    }
     read_lock();
     uint64_t length=0;
     for (size_t i=vma_index(address); i<vma_count && length<size; ++i) {
