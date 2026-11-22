@@ -15,6 +15,7 @@ import com.gow3.android.data.LanguageManager
 import com.gow3.android.data.LogManager
 import com.gow3.android.data.SaveManager
 import com.gow3.android.data.PkgInstallManager
+import com.gow3.android.data.SotcAotBuildManager
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import ro.cobrabm.fexdroid.SotcPaths
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveManager: SaveManager
     private lateinit var logManager: LogManager
     private lateinit var pkgInstallManager: PkgInstallManager
+    private lateinit var sotcAotBuilder: SotcAotBuildManager
+    private val aotBusy = mutableStateOf(false)
+    private val aotMessage = mutableStateOf<String?>(null)
     private val pkgBusy = mutableStateOf(false)
     private val pkgMessage = mutableStateOf<String?>(null)
     private val pkgGeneration = mutableIntStateOf(0)
@@ -61,12 +65,18 @@ class MainActivity : ComponentActivity() {
             pkgMessage.value = message
             if (!busy) pkgGeneration.intValue += 1
         }
+        sotcAotBuilder = SotcAotBuildManager(this) { busy, message ->
+            aotBusy.value = busy
+            aotMessage.value = message
+        }
         setContent {
             Gow3LauncherTheme(dynamicColor = false) {
                 LauncherScreen(
                     onStartGame = {
                         if (!hasStoragePermission()) {
                             ensureInitialStorage()
+                        } else if (aotBusy.value) {
+                            android.widget.Toast.makeText(this,"Recompilação AOT em andamento",android.widget.Toast.LENGTH_LONG).show()
                         } else if (gameFolderManager.hasGameFolder()) {
                             startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
                         }
@@ -78,6 +88,9 @@ class MainActivity : ComponentActivity() {
                     pkgInstallBusy = pkgBusy.value,
                     pkgInstallMessage = pkgMessage.value,
                     pkgGeneration = pkgGeneration.intValue,
+                    onBuildSotcAot = { sotcAotBuilder.start() },
+                    aotBusy = aotBusy.value,
+                    aotMessage = aotMessage.value,
                     saves = saveManager,
                     logs = logManager,
                     onChangeLanguage = { value ->
