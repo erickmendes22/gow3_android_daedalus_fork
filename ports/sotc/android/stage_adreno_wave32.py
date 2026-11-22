@@ -38,22 +38,17 @@ def patch_adreno_wave32(gpu: Path) -> None:
     bool IsSubgroupSize64Supported() const {
         if (UseAdrenoWave32()) return false;''',
     "force 32 across all available stages instead of mixing profile/pipeline")
-    text=swap(text,'''    u32 RequiredSubgroupSize(vk::ShaderStageFlagBits stage) const {
-        if (IsSubgroupSize64Supported()) {''',
+    text=swap(text,'''    u32 RequiredSubgroupSize(vk::ShaderStageFlagBits stage) const {''',
     '''    u32 RequiredSubgroupSize(vk::ShaderStageFlagBits stage) const {
-        // The Wave32 mode verifies vertex/fragment/compute support. An
-        // auxiliary barycentric geometry shader may be present as well:
-        // never request a subgroup size in a stage the driver did not list.
+        // Preserve PC 0.74 AMD/Intel logic; Adreno's opt-in must win before
+        // those desktop-only cases and only for listed Vulkan shader stages.
         if (UseAdrenoWave32()) {
             return u32(vk13_props.requiredSubgroupSizeStages & stage) != 0 ? 32u : 0u;
-        }
-        if (IsSubgroupSize64Supported()) {''',
+        }''',
     "required graphics/compute subgroup size")
-    text=swap(text,'''    u32 SubgroupSize() const {
-        if (IsSubgroupSize64Supported()) {''',
+    text=swap(text,'''    u32 SubgroupSize() const {''',
     '''    u32 SubgroupSize() const {
-        if (UseAdrenoWave32()) return 32u;
-        if (IsSubgroupSize64Supported()) {''',
+        if (UseAdrenoWave32()) return 32u;''',
     "shader compiler profile subgroup size")
     path.write_text(text)
 
