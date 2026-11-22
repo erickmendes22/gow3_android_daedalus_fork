@@ -385,9 +385,24 @@ public final class GameActivity extends Activity {
             closeDrawer();
         });
 
-        menuItem("ic_exit","Quit game",null,() -> new AlertDialog.Builder(this)
-            .setTitle(sotcRuntime() ? "Quit Shadow of the Colossus?" : UiText.get(this, "Quit God of War III?")).setMessage(UiText.get(this, "Any unsaved progress will be lost."))
-            .setNegativeButton(UiText.get(this, "Cancel"),null).setPositiveButton(UiText.get(this, "Quit"),(dialog,which) -> finish()).show());
+        if (sotcRuntime()) {
+            menuItem("ic_exit","Return to launcher",null,() -> new AlertDialog.Builder(this)
+                .setTitle(UiText.get(this,"Back to launcher?"))
+                .setMessage(UiText.get(this,"Any unsaved progress will be lost."))
+                .setNegativeButton(UiText.get(this,"Cancel"),null)
+                .setPositiveButton(UiText.get(this,"Return to launcher"),(dialog,which) -> finish()).show());
+            menuItem("ic_exit","Exit application",null,() -> new AlertDialog.Builder(this)
+                .setTitle(UiText.get(this,"Exit Shadow of the Colossus app?"))
+                .setMessage(UiText.get(this,"Any unsaved progress will be lost."))
+                .setNegativeButton(UiText.get(this,"Cancel"),null)
+                .setPositiveButton(UiText.get(this,"Quit"),(dialog,which) -> finishAffinity()).show());
+        } else {
+            menuItem("ic_exit","Quit game",null,() -> new AlertDialog.Builder(this)
+                .setTitle(UiText.get(this,"Quit God of War III?"))
+                .setMessage(UiText.get(this,"Any unsaved progress will be lost."))
+                .setNegativeButton(UiText.get(this,"Cancel"),null)
+                .setPositiveButton(UiText.get(this,"Quit"),(dialog,which) -> finish()).show());
+        }
 
         // The version, pinned under the scrolling menu.
         String version="";
@@ -614,7 +629,11 @@ public final class GameActivity extends Activity {
         env.put("HOME",FILES+"/home/"+SotcPaths.baseName(this)); env.put("LANG","C.UTF-8");
         env.put("TMPDIR",ROOT+"/tmp"); env.put("XDG_RUNTIME_DIR",ROOT+"/tmp");
         env.put("FXD_FILES",FILES); env.put("FXD_ROOT",ROOT); env.put("GOW3_ANDROID_INPUT","1");
-        env.put("GOW3_LANGUAGE", UiText.gameLanguage(this));
+        env.put("GOW3_LANGUAGE", sotcRuntime()
+            ? com.gow3.android.data.GameSfo.sotcLanguage(gameDir,updateDir,
+                getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE)
+                    .getString("sotc_game_language","system"))
+            : UiText.gameLanguage(this));
         if (gameDir!=null) env.put("GOW3_GAME_DIR",gameDir);
         if (updateDir!=null) env.put("GOW3_PATCH_DIR",updateDir);
         if (bionicRuntime()) {
@@ -879,7 +898,7 @@ public final class GameActivity extends Activity {
         main.postDelayed(() -> {
             framesPollScheduled=false;
             pollFrames();
-        },1000);
+        },sotcRuntime()?500:1000);
     }
 
     /** The game's text dialog (the character name, GOW3_IME_FILE in run-gow3.sh): shown here with the
