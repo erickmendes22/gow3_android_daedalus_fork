@@ -24,8 +24,8 @@ def patch_pc_streaming(gpu: Path) -> None:
     root = gpu / "shadps4/video_core"
     staging = root / "renderer_vulkan/vk_staging_buffer_pool.cpp"
     s = staging.read_text()
-    s = swap(s, "#include <cstdlib>\\n",
-        "#include <cstdlib>\\n#if defined(__ANDROID__)\\n#include <unistd.h>\\n#endif\\n",
+    s = swap(s, "#include <cstdlib>\n",
+        "#include <cstdlib>\n#if defined(__ANDROID__)\n#include <unistd.h>\n#endif\n",
         "Android physical RAM probe for upstream staging cap")
     s = swap(s, """} // Anonymous namespace
 
