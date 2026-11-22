@@ -194,7 +194,7 @@ def main(argv:list[str]|None=None)->int:
     if not 1<=args.jobs<=16 or not 1<=args.shards<=4096:
         a.error("Invalid jobs/shards")
     report={"backend":"sotc-arm64-aot-experimental","tso":"disabled",
-            "fex_runtime_required_for_current_release":True,
+            "fex_runtime_required_for_current_release":False,
             "aot_execution_integrated":False,
             "status":"preflight"}
     dest=args.out.resolve()
