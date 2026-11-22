@@ -1,0 +1,287 @@
+name: SotC strict ARM64 AOT 0.1.67 APK (PC depth/G-buffer fastpaths)
+on:
+  push:
+    branches: [feature/sotc-pc074-depth-gbuffer-aot-066]
+    paths:
+      - '.github/workflows/sotc-aot-067-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-aot-067-apk
+  cancel-in-progress: true
+jobs:
+  apk:
+    name: Assemble AOT (no FEX/TSO), verify and export APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 732cb37d3470d2dad2cc99da19283253c96b53fc
+          path: upstream-sotc
+          submodules: recursive
+      - name: Require successfully compiled PC depth/G-buffer ARM64 renderer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 150); do
+            result=$(gh api repos/${{ github.repository }}/actions/runs/45069117755 --jq '.status+" "+(.conclusion // "")')
+            if [ "$result" = 'completed success' ]; then exit 0; fi
+            if [[ "$result" == completed* ]]; then echo "::error::Renderer failed: $result"; exit 1; fi
+            sleep 20
+          done
+          echo '::error::Renderer was not ready before the APK build deadline'; exit 1
+      - name: Get verified PC depth/G-buffer fastpath renderer for Android
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-aot-067-pc074-depth-gbuffer-bootfix-ahb-arm64
+          run-id: 45069117755
+          github-token: ${{ github.token }}
+          path: out/sotc-057
+      - name: Get native ARM64 resume-enabled AOT CPU
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-aot-native-cpu-resume-unwind-arm64
+          run-id: 44977159118
+          github-token: ${{ github.token }}
+          path: out/sotc-arm64-aot
+      - name: Get SIMD + SSE4.2 patched Android AOT compiler
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-bbrecomp-android-aarch64-native-simd-sse42
+          run-id: 44978299295
+          github-token: ${{ github.token }}
+          path: out/sotc-patched-compiler
+      - name: Validate exact ARM64 artifacts before expensive native work
+        run: |
+          set -euo pipefail
+          for f in out/sotc-057/libbbgpu.so out/sotc-arm64-aot/libgow3cpu.so out/sotc-arm64-aot/libbbcpu.so out/sotc-patched-compiler/libbbrecomp.so; do
+            test -s "$f"
+            readelf -h "$f" | grep -Eq 'Machine:.*AArch64'
+          done
+          sha_expected=$(awk 'NR==1 {print $1}' out/sotc-057/sha256.txt)
+          printf '%s  %s\n' "$sha_expected" out/sotc-057/libbbgpu.so | sha256sum -c
+          strings out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC_STAGING_LARGE_KEEP_MB' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC_DEPTHFAST_VERIFY' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC GBFAST cand' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          # Guard the Android boot linker ABI, not only the presence of
+          # rendering fastpaths. v0.1.66 had six unresolved PC Dlssg symbols.
+          nm -D --undefined-only out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-067-undefined.txt"
+          if grep -E '(_ZN6Vulkan|_ZN6AmdGpu|_ZN9VideoCore)' "$RUNNER_TEMP/sotc-067-undefined.txt"; then
+            echo "::error::Renderer has unresolved internal symbols; Android dlopen would fail"
+            exit 1
+          fi
+          for abi in \
+            _ZN6Vulkan5Dlssg10NoteCameraERKN6AmdGpu4RegsEj \
+            _ZN6Vulkan5Dlssg12NoteHdrCurveEf \
+            _ZN6Vulkan5Dlssg13CameraLogOnlyEv \
+            _ZN6Vulkan5Dlssg24SuperResolutionUpscalingEv \
+            _ZN6Vulkan5Dlssg6SetHdrEb \
+            _ZN6Vulkan5Dlssg8HdrCurveEv; do
+            nm -D --defined-only out/sotc-057/libbbgpu.so | grep -Fq "$abi" || {
+              echo "::error::Missing Android PC Dlssg export $abi"
+              exit 1
+            }
+          done
+          grep -Fq 'pc_safe_mask' src/runtime_memory.c
+          ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          gpu = Path('out/sotc-057/libbbgpu.so').read_bytes()
+          assert b'\x3f\x20\x03\xd5' in gpu, 'Missing ARM64 YIELD wait hint'
+          PY
+          # Absolute Android boot gate: never export a desktop-only Vulkan
+          # surface renderer with WindowSDL::Headless in the Android launcher.
+          grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'AHardwareBuffer_sendHandleToUnixSocket' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          readelf -Ws out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-gpu-symbols.txt"
+          grep -Fq '_ZN11Gow3Present6Client10SendBuffer' "$RUNNER_TEMP/sotc-gpu-symbols.txt"
+          strings out/sotc-patched-compiler/libbbrecomp.so > "$RUNNER_TEMP/sotc-compiler-strings.txt"
+          grep -Fq 'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2' "$RUNNER_TEMP/sotc-compiler-strings.txt"
+          ! readelf -d out/sotc-arm64-aot/libgow3cpu.so | grep -Ei 'FEX|libFEXCore'
+          python3 -m py_compile ports/sotc/android/package_sotc_runtime.py
+          grep -Fq 'from aot.stage_on_device_compiler import stage as stage_aot_compiler' ports/sotc/android/package_sotc_runtime.py
+          grep -Fq 'result=stage_aot_compiler(Path(compiler_archive),base)' ports/sotc/android/package_sotc_runtime.py
+          python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install SDK and dependency tools
+        run: |
+          set -euo pipefail
+          sdkmanager 'ndk;29.0.14206865' 'ndk;30.0.16248370' 'build-tools;35.0.0' 'platforms;android-36'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build cmake clang lld pkg-config patchelf glslang-tools make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build launcher Java before native dependencies
+        run: |
+          set -euo pipefail
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac -PsotcAndroid=true --no-daemon --max-workers=2
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: native-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # Archive the native platform stage immediately after it succeeds.
+      # This prevents a later packaging-script typo from forcing a full GoW3
+      # bridge rebuild on every subsequent AOT APK attempt.
+      - uses: actions/cache/restore@v4
+        id: platform-runtime
+        with:
+          path: out/bionic
+          key: sotc-aot-057-bionic-r29-${{ hashFiles('src/**', 'tools/android/bionic/**', 'ports/sotc/android/gpu_bridge.c', 'ports/sotc/android/lowmem.c') }}
+      - name: Build Bionic platform and tools (native AOT CPU replaces FEX)
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          if [[ "${{ steps.platform-runtime.outputs.cache-hit }}" != 'true' ]]; then
+            bash tools/android/bionic/build_runtime.sh
+            bash tools/android/bionic/build_python.sh
+            bash tools/android/bionic/build_pkg.sh
+          fi
+          test -s out/bionic/bin/gow3-probe
+          test -s out/bionic/lib/libgow3cpu.so
+          test -s out/bionic/lib/libgow3gpu.so
+          test -s out/bionic/lib/libgow3present.so
+      - uses: actions/cache/save@v4
+        if: success() && steps.platform-runtime.outputs.cache-hit != 'true'
+        with:
+          path: out/bionic
+          key: sotc-aot-057-bionic-r29-${{ hashFiles('src/**', 'tools/android/bionic/**', 'ports/sotc/android/gpu_bridge.c', 'ports/sotc/android/lowmem.c') }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.native-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # The cached Bionic platform contains the compiled orbis-pkg tool, but
+      # not its source checkout. Keep the exact upstream copyright notices.
+      - name: Restore pinned orbis-pkg notices for cached platform
+        run: |
+          set -euo pipefail
+          dir=.local-deps/android/orbis-pkg
+          mkdir -p "$dir"
+          ref=13f1294a87a53d54f82feec56acbfd03f50667a9
+          for name in LICENSE-MIT LICENSE-APACHE; do
+            if [ ! -s "$dir/$name" ]; then
+              curl -fsSL --retry 3 --connect-timeout 15 \
+                "https://raw.githubusercontent.com/videobitva/orbis/$ref/$name" \
+                -o "$dir/$name"
+            fi
+            test -s "$dir/$name"
+          done
+          grep -Fq 'Copyright (c) 2026 videobitva' "$dir/LICENSE-MIT"
+          grep -Fq 'Apache License' "$dir/LICENSE-APACHE"
+      - name: Download hash-pinned official helper archive
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 20 --max-time 180 -o "$RUNNER_TEMP/bb-recomp-android-aarch64.tar.xz" \
+            'https://github.com/ducvd89/Bloodborne-android-rebuild-tool/releases/download/v1.3.0/bb-recomp-android-aarch64.tar.xz'
+          echo "e0598aebe5b148419d06484e2f02aa19a2a2743915cfdd87a45da814f34d0681  $RUNNER_TEMP/bb-recomp-android-aarch64.tar.xz" | sha256sum -c
+          echo "SOTC_AOT_COMPILER_TAR=$RUNNER_TEMP/bb-recomp-android-aarch64.tar.xz" >> "$GITHUB_ENV"
+      - name: Package strictly native SotC AOT runtime, no game assets
+        env:
+          SOTC_REQUIRE_ON_DEVICE_AOT: '1'
+          SOTC_AOT_CPU_DIR: out/sotc-arm64-aot
+          SOTC_AOT_PATCHED_COMPILER: out/sotc-patched-compiler/libbbrecomp.so
+        run: |
+          set -euo pipefail
+          # Keep the old NDK for platform build; use r30 C++ ABI for native AOT.
+          python3 ports/sotc/android/package_sotc_runtime.py \
+            --ndk "$ANDROID_HOME/ndk/30.0.16248370" --upstream upstream-sotc \
+            --renderer out/sotc-057/libbbgpu.so
+          tar -tzf out/release/sotc-runtime.tar.gz > "$RUNNER_TEMP/sotc-runtime-files.txt"
+          grep -Fq 'sotcport/arm64/lib/libgow3cpu.so' "$RUNNER_TEMP/sotc-runtime-files.txt"
+          grep -Fq 'sotcport/arm64/lib/libbbcpu.so' "$RUNNER_TEMP/sotc-runtime-files.txt"
+          grep -Fq 'sotcport/arm64/bin/sotc-probe' "$RUNNER_TEMP/sotc-runtime-files.txt"
+          if grep -Eq '^gow3port/|^home/sotcport/\.fex-emu/|/libFEXCore\.so' "$RUNNER_TEMP/sotc-runtime-files.txt"; then
+            echo "::error::Unexpected GoW3/FEX runtime in strict SotC package"; exit 1
+          fi
+          tar -xOzf out/release/sotc-runtime.tar.gz runtime-manifest.json |
+            python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["aot_mode"] == "strict" and not v["fex_runtime_included"] and v["version"] == "0.1.67-pc074-bootfix"'
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libbbgpu.so > "$RUNNER_TEMP/sotc-final-gpu.so"
+          strings "$RUNNER_TEMP/sotc-final-gpu.so" > "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_STAGING_LARGE_KEEP_MB' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_DEPTHFAST_VERIFY' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC GBFAST cand' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libgow3cpu.so > "$RUNNER_TEMP/sotc-final-cpu.so"
+          ! readelf -d "$RUNNER_TEMP/sotc-final-cpu.so" | grep -Ei 'FEX|libFEXCore'
+      - name: Assemble and validate the complete 0.1.67 APK
+        run: |
+          set -euo pipefail
+          # The release identity must be committed with the runtime, not
+          # generated by silently rewriting version metadata in CI.
+          grep -Fq 'versionCode = 10067' android-launcher/app/build.gradle.kts
+          grep -Fq 'versionName = "0.1.67-pc074-bootfix"' android-launcher/app/build.gradle.kts
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease -PsotcAndroid=true --no-daemon --max-workers=2
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          original=android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+          test -s "$original"
+          mkdir -p out/release
+          apk=out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-unsigned.apk
+          "$sdk/zipalign" -P 16 -f 4 "$original" "$apk"
+          "$sdk/aapt" dump badging "$apk" > out/release/sotc-057-badging.txt
+          grep -Fq "package: name='com.sotc.android.daedalus'" out/release/sotc-057-badging.txt
+          grep -Fq "versionName='0.1.67-pc074-bootfix'" out/release/sotc-057-badging.txt
+          python3 - "$apk" <<'PY'
+          import hashlib,sys,zipfile
+          p=sys.argv[1]
+          with zipfile.ZipFile(p) as z:
+              data=z.read('assets/runtime.payload')
+              digest=z.read('assets/runtime.sha256').decode().strip()
+              assert hashlib.sha256(data).hexdigest()==digest
+              assert 'lib/arm64-v8a/libbbrecomp.so' in z.namelist()
+          print("SotC 0.1.67 AOT payload hash and JNI compiler OK")
+          PY
+          (cd out/release && sha256sum Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-unsigned.apk > Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-unsigned.apk.sha256)
+          echo "Unsigned for fixed original signing identity: DO NOT INSTALL over original key."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-UNSIGNED
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-unsigned.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.67-unsigned.apk.sha256
+            out/release/sotc-057-badging.txt
+          if-no-files-found: error
+          retention-days: 7
