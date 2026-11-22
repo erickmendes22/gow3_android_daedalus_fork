@@ -923,7 +923,7 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
         if (depth_fast && depth_fast[0]=='0') pc_safe_mask |= UINT64_C(1) << 28;
         if (gbuffer_fast && gbuffer_fast[0]=='0') pc_safe_mask |= UINT64_C(1) << 29;
         __atomic_store_n(&runtime_disabled_optimizations,pc_safe_mask,__ATOMIC_RELEASE);
-        printf("SotC PC #308 depth fast=%s G-buffer fast=%s disabled=%llu\\n",
+        printf("SotC PC #308 depth fast=%s G-buffer fast=%s disabled=%llu\n",
                depth_fast && depth_fast[0]=='0' ? "off" : "on",
                gbuffer_fast && gbuffer_fast[0]=='0' ? "off" : "on",
                (unsigned long long)pc_safe_mask);
