@@ -64,6 +64,8 @@ jobs:
           grep -Fq 'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2' "$RUNNER_TEMP/sotc-compiler-strings.txt"
           ! readelf -d out/sotc-arm64-aot/libgow3cpu.so | grep -Ei 'FEX|libFEXCore'
           python3 -m py_compile ports/sotc/android/package_sotc_runtime.py
+          grep -Fq 'from aot.stage_on_device_compiler import stage as stage_aot_compiler' ports/sotc/android/package_sotc_runtime.py
+          grep -Fq 'result=stage_aot_compiler(Path(compiler_archive),base)' ports/sotc/android/package_sotc_runtime.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
       - uses: actions/setup-java@v4
         with:
@@ -99,15 +101,34 @@ jobs:
             .local-deps/android/bionic-prefix
             .local-deps/android/bionic-src
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # Archive the native platform stage immediately after it succeeds.
+      # This prevents a later packaging-script typo from forcing a full GoW3
+      # bridge rebuild on every subsequent AOT APK attempt.
+      - uses: actions/cache/restore@v4
+        id: platform-runtime
+        with:
+          path: out/bionic
+          key: sotc-aot-057-bionic-r29-${{ hashFiles('src/**', 'tools/android/bionic/**', 'ports/sotc/android/gpu_bridge.c', 'ports/sotc/android/lowmem.c') }}
       - name: Build Bionic platform and tools (native AOT CPU replaces FEX)
         shell: bash -el {0}
         run: |
           set -euo pipefail
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           bash tools/android/bionic/build_deps.sh
-          bash tools/android/bionic/build_runtime.sh
-          bash tools/android/bionic/build_python.sh
-          bash tools/android/bionic/build_pkg.sh
+          if [[ "${{ steps.platform-runtime.outputs.cache-hit }}" != 'true' ]]; then
+            bash tools/android/bionic/build_runtime.sh
+            bash tools/android/bionic/build_python.sh
+            bash tools/android/bionic/build_pkg.sh
+          fi
+          test -s out/bionic/bin/gow3-probe
+          test -s out/bionic/lib/libgow3cpu.so
+          test -s out/bionic/lib/libgow3gpu.so
+          test -s out/bionic/lib/libgow3present.so
+      - uses: actions/cache/save@v4
+        if: success() && steps.platform-runtime.outputs.cache-hit != 'true'
+        with:
+          path: out/bionic
+          key: sotc-aot-057-bionic-r29-${{ hashFiles('src/**', 'tools/android/bionic/**', 'ports/sotc/android/gpu_bridge.c', 'ports/sotc/android/lowmem.c') }}
       - uses: actions/cache/save@v4
         if: always() && steps.native-deps.outputs.cache-hit != 'true'
         with:
