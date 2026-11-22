@@ -24,7 +24,10 @@ RELEASE = "0.1.69-aot-ux"
 ROOTPATHS = {
     "sotcport/run-sotc-bionic.sh": ROOT / "ports/sotc/android/run-sotc-bionic.sh",
 }
-JNI_LIBS = {"libbbrecomp.so", "libgow3present.so", "libfxdisplay.so", "libfxio.so"}
+# fxdisplay and fxio are already provided by the launcher source-set's
+# tools/android/bridges. Duplicating them in apk-jni makes Gradle's
+# :app:mergeReleaseJniLibFolders fail even when the bytes are identical.
+JNI_LIBS = {"libbbrecomp.so", "libgow3present.so"}
 
 
 def dynamic_symbols(binary: Path, defined: bool) -> set[str]:
