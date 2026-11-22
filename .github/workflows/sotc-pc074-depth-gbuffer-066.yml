@@ -1,4 +1,4 @@
-name: SotC 0.1.66 PC depth/G-buffer exact fastpaths ARM64
+name: SotC 0.1.67 PC depth/G-buffer bootfix ARM64
 on:
   push:
     branches: [feature/sotc-pc074-depth-gbuffer-aot-066]
@@ -137,6 +137,26 @@ jobs:
           "$llvm/bin/llvm-readelf" -h "$so" | grep -F AArch64
           "$llvm/bin/llvm-nm" -D --defined-only "$so" > /tmp/sotc-057-exports.txt
           grep -Fwq bbgpu_init /tmp/sotc-057-exports.txt
+          # Android loads libbbgpu.so via dlopen(). A successful link of a
+          # shared object alone does NOT guarantee boot: 0.1.66 shipped six
+          # unresolved Vulkan::Dlssg references and failed before gameplay.
+          "$llvm/bin/llvm-nm" -D --undefined-only "$so" > /tmp/sotc-067-undefined.txt
+          if grep -E '(_ZN6Vulkan|_ZN6AmdGpu|_ZN9VideoCore)' /tmp/sotc-067-undefined.txt; then
+            echo "::error::Unresolved emulator-internal C++ API; libbbgpu.so would fail Android dlopen"
+            exit 1
+          fi
+          for abi in \
+            _ZN6Vulkan5Dlssg10NoteCameraERKN6AmdGpu4RegsEj \
+            _ZN6Vulkan5Dlssg12NoteHdrCurveEf \
+            _ZN6Vulkan5Dlssg13CameraLogOnlyEv \
+            _ZN6Vulkan5Dlssg24SuperResolutionUpscalingEv \
+            _ZN6Vulkan5Dlssg6SetHdrEb \
+            _ZN6Vulkan5Dlssg8HdrCurveEv; do
+            grep -Fq "$abi" /tmp/sotc-057-exports.txt || {
+              echo "::error::Missing PC 0.74 Android DLSS adapter ABI export $abi"
+              exit 1
+            }
+          done
           # Never export a renderer without the Android AHardwareBuffer bridge.
           grep -Fq '_ZN11Gow3Present6Client10SendBuffer' /tmp/sotc-057-exports.txt
           "$llvm/bin/llvm-readelf" -Ws "$so" > /tmp/sotc-057-symtab.txt
@@ -165,7 +185,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-066-pc074-depth-gbuffer-ahb-arm64
+          name: sotc-aot-067-pc074-depth-gbuffer-bootfix-ahb-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
