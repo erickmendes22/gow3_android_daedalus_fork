@@ -7,6 +7,7 @@ on:
       - 'ports/sotc/android/aot/compile_local.py'
       - 'ports/sotc/android/aot/cmdline_image.py'
       - 'ports/sotc/android/aot/select_local_aot.py'
+      - 'ports/sotc/android/aot/verify_compiler.py'
       - '.github/workflows/sotc-aot-056-release-sources.yml'
   workflow_dispatch:
 permissions:
@@ -25,6 +26,7 @@ jobs:
             ports/sotc/android/aot/compile_local.py
             ports/sotc/android/aot/cmdline_image.py
             ports/sotc/android/aot/select_local_aot.py
+            ports/sotc/android/aot/verify_compiler.py
             ports/sotc/android/aot/verify_libcxx_abi.py
             ports/sotc/android/package_sotc_runtime.py
           )
