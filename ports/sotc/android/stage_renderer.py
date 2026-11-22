@@ -544,6 +544,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Forest-area-change compute shaders go to translation workers ahead of dispatch.
     from stage_sotc_compute_prefetch_053 import patch_prefetch
     patch_prefetch(out)
+    # Profiled draw/bind CPU hotpath: skip only byte-identical UBO copies
+    # within a live Vulkan tick and a stable streaming-buffer wrap.
+    from stage_sotc_flatbuf_reuse_057 import patch as patch_flatbuf_reuse
+    patch_flatbuf_reuse(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
