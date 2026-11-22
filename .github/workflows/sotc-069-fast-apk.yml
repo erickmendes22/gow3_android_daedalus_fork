@@ -46,6 +46,8 @@ jobs:
           test -s out/android-release/assets/runtime.payload
           test -s out/bionic/apk-jni/arm64-v8a/libbbrecomp.so
           test -s out/bionic/apk-jni/arm64-v8a/libgow3present.so
+          test ! -e out/bionic/apk-jni/arm64-v8a/libfxdisplay.so
+          test ! -e out/bionic/apk-jni/arm64-v8a/libfxio.so
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
