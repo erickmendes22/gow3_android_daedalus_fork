@@ -62,25 +62,20 @@ jobs:
           grep -Fq 'slot.generation = vk_buffer.WrapGeneration()' "$r"
           grep -Fq 'SOTC FLATBUF REUSE' "$r"
           grep -Fq '__asm__ __volatile__("yield" ::: "memory")' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
-          grep -Fq 'for (u32 spin = 0; spin < 4096; ++spin)' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           grep -Fq 'SotcPerf::BindGraphicsPipeline' "$r"
-          grep -Fq 'SOTC_RT_MEMO' "$r"
           grep -Fq 'gpu_modified_ranges.Intersects(hot.addr, hot.size)' out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
           grep -Fq 'SOTC RB HOT PRUNE:' out/sotc-android/gpu/shadps4/core/libraries/videoout/driver.cpp
-          grep -Fq 'SOTC SUN CASCADES:' "$r"
-          grep -Fq 'clearDepthStencilImage(' "$r"
-          grep -Fq 'SOTC SUN ENGINE ONLY:' "$r"
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$r"
-          grep -Fq 'SOTC PM4 SAME-REG:' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           # Actual port of #308 requires all four fastpath control points.
+          # Preserve the PC #308 performance architecture, not older Android shortcuts.
           grep -Fq 'DepthFastBeginCheck' "$r"
           grep -Fq 'GBufferFastCheck' "$r"
           grep -Fq 'BeginRenderingFast' "$r"
           grep -Fq 'DrawRelSerial' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'src[i] != shadow[i]' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'return u32(vk13_props.requiredSubgroupSizeStages & stage)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'MetaEpoch' "$r"
           grep -Fq 'TransitIsNoop' "$r"
-          grep -Fq 'sysconf(_SC_PHYS_PAGES)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
-          grep -Fq 'fallback_mb = 256' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -146,10 +141,8 @@ jobs:
           grep -Fq 'SOTC_PRESENT_SOCKET' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC RB HOT PRUNE:' /tmp/sotc-057-strings.txt
-          grep -Fq 'SOTC SUN CASCADES:' /tmp/sotc-057-strings.txt
-          grep -Fq 'SOTC SUN ENGINE ONLY:' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC_DEPTHFAST_VERIFY' /tmp/sotc-057-strings.txt
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' /tmp/sotc-057-strings.txt
-          grep -Fq 'SOTC PM4 SAME-REG:' /tmp/sotc-057-strings.txt
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
           sha256sum "$so" > out/sotc-057/sha256.txt
