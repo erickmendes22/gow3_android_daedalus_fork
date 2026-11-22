@@ -62,6 +62,7 @@ public final class GameActivity extends Activity {
     // This HUD measures those frames, never fake patch targets or CPU loop speed.
     private TextView sotcFpsHud;
     private final FpsMeter sotcFpsMeter = new FpsMeter();
+    private volatile boolean sotcFgActive;
     private boolean gameLaunchedOnce;
     private boolean framesPollScheduled;
     private View resume;
@@ -652,6 +653,22 @@ public final class GameActivity extends Activity {
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","1");
+                // Bloodframe runs on the selected GameHub DD Vulkan driver,
+                // not the Android system driver. It is strictly opt-in.
+                final boolean bloodframe="mako2".equals(setting("sotc_bloodframe_fg"));
+                env.put("BB_LSFG_MULTIPLIER",bloodframe ? "2" : "0");
+                env.put("BB_LSFG_MODEL","mako");
+                env.put("BB_LSFG_LIB",BASE+"/arm64/lib/libbloodframe.so");
+                env.put("BB_MAKO_MODEL",BASE+"/mako-fg/model");
+                env.put("BB_LSFG_FORMAT","rgba8");
+                env.put("BB_LSFG_FLOW_SCALE","0.75");
+                env.put("BB_LSFG_PERFORMANCE","1");
+                env.put("BB_LSFG_FP16","1");
+                env.put("BB_LSFG_CHAIN","1");
+                env.put("BB_LSFG_PACE","1");
+                env.put("BB_LSFG_STATS","1");
+                env.put("SOTC_PRESENT_BUFFERS",bloodframe ? "6" : "3");
+
                 // Precisely the verified 0.1.68 profile; stay on original TAA/Adreno path.
                 env.put("BB_READBACKS","2");
                 env.put("SOTC_ADRENO_WAVE32","0");
@@ -892,7 +909,8 @@ public final class GameActivity extends Activity {
             final boolean visible=true;
             sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
             final double fps=sotcFpsMeter.sample(frames,now);
-            sotcFpsHud.setText(HudPresentation.text("compact",fps,Double.NaN,Double.NaN,false,false));
+            sotcFpsHud.setText(HudPresentation.text("compact",fps,Double.NaN,Double.NaN,false,false)
+                +(sotcFgActive ? " · FG ×2" : ""));
         }
         framesPollScheduled=true;
         main.postDelayed(() -> {
@@ -973,6 +991,7 @@ public final class GameActivity extends Activity {
     private void startGame() {
         if (destroyed) return;
         hadError=false;
+        sotcFgActive=false;
         sotcFpsMeter.reset();
         gameLaunchedOnce=true;
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
@@ -984,7 +1003,15 @@ public final class GameActivity extends Activity {
             Thread log=new Thread(() -> {
                 try (BufferedReader r=new BufferedReader(new InputStreamReader(launched.getInputStream()));
                      PrintWriter out=new PrintWriter(new File(BASE,"logs/android-game.log"))) {
-                    String line; while ((line=r.readLine())!=null) { out.println(line); out.flush(); }
+                    String line; while ((line=r.readLine())!=null) {
+                        if (sotcRuntime()) {
+                            if (line.contains("SOTC BLOODFRAME: ACTIVE")) sotcFgActive=true;
+                            if (line.contains("SOTC BLOODFRAME: failed") ||
+                                line.contains("SOTC BLOODFRAME: presentation failed"))
+                                sotcFgActive=false;
+                        }
+                        out.println(line);out.flush();
+                    }
                     int code=launched.waitFor();
                     if (game==launched) {
                         game=null;
