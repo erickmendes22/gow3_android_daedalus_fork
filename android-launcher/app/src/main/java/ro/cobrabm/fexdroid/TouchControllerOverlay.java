@@ -48,9 +48,59 @@ final class TouchControllerOverlay extends View {
             centers.put(name,new PointF(preferences.getFloat("overlay_x_"+name,DEFAULT[i][0]),
                                         preferences.getFloat("overlay_y_"+name,DEFAULT[i][1])));
         }
+        if (getContext().getPackageName().equals("com.sotc.android.daedalus"))
+            preventOverlap();
         setContentDescription("On-screen PlayStation controller");
     }
     private PointF center(String name) { return centers.get(name); }
+    /** Resolve button collisions after a size change. Persist the new editable
+     * layout, rather than letting buttons overlap visually and in hit testing.
+     * Never shrink user-requested buttons to make a collision disappear. */
+    private float collisionRadius(String name,float size) {
+        if (name.equals("leftstick") || name.equals("rightstick")) return 62f*size;
+        if (name.equals("l3") || name.equals("r3")) return 33f*size;
+        if (rectangle(name)) return (name.equals("touchpad") ? 79f : 67f)*size;
+        return 43f*size;
+    }
+    private void preventOverlap() {
+        final float factor=controlScale();
+        final boolean[] movable=new boolean[NAMES.length];
+        for(int i=0;i<NAMES.length;i++)movable[i]=true;
+        for(int pass=0;pass<48;pass++) {
+            boolean moved=false;
+            for(int i=0;i<NAMES.length;i++) for(int j=i+1;j<NAMES.length;j++) {
+                final String a=NAMES[i],b=NAMES[j];
+                // Shoulder keys are separated from the bottom clusters by
+                // hundreds of px, so do not perturb them unnecessarily.
+                PointF left=center(a),right=center(b);
+                float ra=collisionRadius(a,factor),rb=collisionRadius(b,factor);
+                float dx=right.x-left.x,dy=right.y-left.y;
+                float dist=(float)Math.hypot(dx,dy),min=ra+rb+8f;
+                if(dist>=min)continue;
+                if(dist<1f){dx=1f;dy=0f;dist=1f;}
+                float shift=(min-dist)*.51f;
+                float ux=dx/dist,uy=dy/dist;
+                left.x-=ux*shift;left.y-=uy*shift;
+                right.x+=ux*shift;right.y+=uy*shift;
+                moved=true;
+            }
+            for(int i=0;i<NAMES.length;i++){
+                String name=NAMES[i];
+                PointF p=center(name);
+                float r=collisionRadius(name,factor);
+                p.x=Math.max(r+3f,Math.min(1277f-r,p.x));
+                p.y=Math.max(r+3f,Math.min(717f-r,p.y));
+            }
+            if(!moved)break;
+        }
+        SharedPreferences.Editor editor=preferences.edit();
+        for(String name:NAMES) {
+            PointF p=center(name);
+            editor.putFloat("overlay_x_"+name,p.x).putFloat("overlay_y_"+name,p.y);
+        }
+        editor.apply();
+    }
+
     // User-adjustable without rebooting the game. SotC ships larger touch targets
     // than the older GoW3 layout; stored separately for each port.
     private float controlScale() {
@@ -59,6 +109,7 @@ final class TouchControllerOverlay extends View {
     }
     void setControlSize(float scale) {
         preferences.edit().putFloat("controller_size",Math.max(0.8f,Math.min(1.5f,scale))).apply();
+        preventOverlap();
         release();
         invalidate();
     }
@@ -152,7 +203,8 @@ final class TouchControllerOverlay extends View {
             String name=NAMES[i]; centers.get(name).set(DEFAULT[i][0],DEFAULT[i][1]);
             editor.remove("overlay_x_"+name).remove("overlay_y_"+name);
         }
-        editor.apply(); release(); invalidate();
+        editor.apply(); if(getContext().getPackageName().equals("com.sotc.android.daedalus"))preventOverlap();
+        release(); invalidate();
     }
 
     @Override public boolean onTouchEvent(MotionEvent e) {
