@@ -22,6 +22,13 @@ def valid(prepared:Path,report_file:Path)->bool:
     coverage=report.get("coverage",{})
     if image.get("patch_sha256")!=hash_file(prepared/"patches.bin"):return False
     if report.get("original_boot_sha256")!=hash_file(prepared/"boot-linked.bin"):return False
+    if report.get("cmdline_sha256")!=hash_file(prepared/"cmdline.bin"):return False
+    # Runtime MUST start the exact same image that the AOT compiler read.
+    boot=report_file.parent/"boot-native.bin"
+    if not boot.is_file() or report.get("aot_boot_sha256")!=hash_file(boot):
+        return False
+    if "cmdline" not in report or report["cmdline"].get("segment_count",0)<10:
+        return False
     so=report_file.parent/"libSotcAot.so"
     return so.is_file() and coverage.get("library_sha256")==hash_file(so)
 
