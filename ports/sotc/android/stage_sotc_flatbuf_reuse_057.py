@@ -118,12 +118,16 @@ def patch(gpu: Path) -> None:
     if source.count(ORIGINAL) != 1:
         raise ValueError("SotC Flatbuf: pinned Vulkan UBO copy changed")
     for required in (
-        "SotcPerf::BindGraphicsPipeline", "SOTC_RT_MEMO",
+        "SotcPerf::BindGraphicsPipeline",
         "const u32 ubo_size = stage.FlatBuf().size() * sizeof(u32);",
         "buffer_infos.emplace_back(vk_buffer.Handle(), offset, ubo_size);",
     ):
         if required not in source:
             raise ValueError("SotC Flatbuf: missing existing renderer safeguard " + required)
+    # The PC 0.74 depth/G-buffer fastpaths supersede the pre-0.74
+    # experimental SOTC_RT_MEMO. Do not require a removed marker.
+    if "DepthFastBeginCheck" not in source and "SOTC_RT_MEMO" not in source:
+        raise ValueError("SotC Flatbuf: neither PC exact fastpath nor legacy RT memo found")
     source = source.replace(ORIGINAL, REPLACEMENT)
     path.write_text(source)
     print("SotC ARM64: exact UBO de-duplication per tick, handle and wrap; no GPU readback or guest draw skipped")
