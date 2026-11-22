@@ -36,12 +36,36 @@ REPLACEMENT = r"""                // SotC 0.1.57: do not write an identical immu
                 const bool memo_eligible =
                     sotc_flatbuf_reuse && ubo_size >= 128 && ubo_size <= 8192 &&
                     (ubo_size % sizeof(u32)) == 0;
+                // The RedMagic trace measured only 4-5% reuse late in play.
+                // At that rate an 8-line lookup plus an extra vector copy
+                // for every miss can cost more CPU than copies it saves.
+                // Every 32768 eligible UBOs, probe 4096 with exact byte
+                // checks. If fewer than 6% reuse, bypass the memo for the
+                // remaining 28672. The mandatory vk_buffer.Copy still runs.
+                static const bool sotc_flatbuf_adaptive = [] {
+                    const char* v = std::getenv("SOTC_FLATBUF_ADAPTIVE");
+                    return !v || v[0] != '0';
+                }();
+                static thread_local u64 sotc_probe_queries{};
+                static thread_local u64 sotc_probe_hits{};
+                static thread_local bool sotc_probe_enabled{true};
+                if (memo_eligible && sotc_flatbuf_adaptive) {
+                    const u64 position = sotc_probe_queries++ & 32767ULL;
+                    if (position == 0) {
+                        sotc_probe_enabled = true;
+                        sotc_probe_hits = 0;
+                    } else if (position == 4096) {
+                        sotc_probe_enabled = sotc_probe_hits * 100 >= 4096ULL * 6;
+                    }
+                }
+                const bool memo_lookup = memo_eligible &&
+                    (!sotc_flatbuf_adaptive || sotc_probe_enabled);
                 const u64 sotc_current_tick = scheduler.CurrentTick();
                 const u64 sotc_current_wrap = vk_buffer.WrapGeneration();
                 const vk::Buffer sotc_current_handle = vk_buffer.Handle();
                 u64 offset{};
                 bool memo_hit = false;
-                if (memo_eligible) {
+                if (memo_lookup) {
                     for (const auto& line : sotc_flatbuf_cache) {
                         if (line.valid && line.tick == sotc_current_tick &&
                             line.generation == sotc_current_wrap &&
@@ -56,7 +80,7 @@ REPLACEMENT = r"""                // SotC 0.1.57: do not write an identical immu
                 }
                 if (!memo_hit) {
                     offset = vk_buffer.Copy(flat, ubo_size, alignment);
-                    if (memo_eligible) {
+                    if (memo_lookup) {
                         auto& slot = sotc_flatbuf_cache[
                             sotc_flatbuf_next++ % sotc_flatbuf_cache.size()];
                         slot.contents.assign(flat, flat + ubo_size / sizeof(u32));
@@ -66,6 +90,9 @@ REPLACEMENT = r"""                // SotC 0.1.57: do not write an identical immu
                         slot.offset = offset;
                         slot.valid = true;
                     }
+                }
+                if (memo_hit && sotc_flatbuf_adaptive) {
+                    ++sotc_probe_hits;
                 }
                 if (SotcStats::kFpsLog && memo_eligible) {
                     ++sotc_flatbuf_queries;
