@@ -579,7 +579,16 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # PC #308 renderer already has power-of-two staging. Do not patch its
     # newer allocator twice or replace its GPU cache invariants.
     from stage_sotc_gpu_work_052 import patch_gpu_work
-    patch_gpu_work(out)
+    if not pc074_exact_fastpaths:
+        patch_gpu_work(out)
+    else:
+        # PC 0.74 already implements TryFillThroughFromCpu, its GPU
+        # repeated-fill HLE, and the corresponding texture invalidation.
+        # Do not inject the older Android duplicate into this code.
+        c=(out / "shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text()
+        h=(out / "shadps4/video_core/buffer_cache/buffer_cache.h").read_text()
+        if "bool BufferCache::TryFillThroughFromCpu(" not in c or "TryFillThroughFromCpu" not in h:
+            raise ValueError("PC #308 missing existing GPU-resident HLE fill")
     # 2026-11-22: precise readback hot-mode scans up to 256 candidate
     # regions per fault; skip only those provably outside GPU-written bytes.
     from stage_sotc_hot_readback_prune_058 import patch_hot_readback_prune
