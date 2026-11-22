@@ -106,6 +106,7 @@ jobs:
           # unittest without test files exits nonzero on newer Python, and
           # must never silently skip this regression gate.
           test -s tests/test_sotc_vmabi_068.py
+          python3 -m py_compile ports/sotc/android/verify_sotc_link.py tests/test_sotc_vmabi_068.py
           python3 -m unittest discover -s tests -p 'test_sotc_vmabi_068.py' -v
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           python3 - <<'PY'
