@@ -229,7 +229,19 @@ case "$SOTC_SUN_CASCADES" in
   *) echo "SotC sun cascade setting invalid; using original 5" >&2
      export SOTC_SUN_CASCADES=5 ;;
 esac
-echo "SotC sun shadow cascade test: $SOTC_SUN_CASCADES (5=original, 0=disabled)"
+# The 0-cascade A/B must stop sun shadow generation at the GAME engine,
+# not only clear a Vulkan depth target after PM4 was already produced.
+# Verified in Lucas-blip-png/ShadowOfTheColossus-PC launcher:
+# fx_sunshadows off -> r_enableCascadeShadows=0 (2026-10-08 A/B).
+# This changes a startup CVar, not the AOT compiled guest instructions.
+if [ "$SOTC_SUN_CASCADES" = "0" ]; then
+    case " ${SOTC_CVARS:-} " in
+      *" r_enableCascadeShadows="*) ;;
+      *) export SOTC_CVARS="${SOTC_CVARS:+$SOTC_CVARS }r_enableCascadeShadows=0" ;;
+    esac
+    echo "SotC SUN SHADOW ENGINE OFF: r_enableCascadeShadows=0 requested in SOTC_CVARS"
+fi
+echo "SotC sun shadow cascade test: $SOTC_SUN_CASCADES (5=original, 0=engine-disabled)"
 # A/B performance *diagnostics*, not a performance tweak. The upstream
 # stats switches are getenv-presence based: setting either one to "0"
 # would STILL activate it. Unset both unless explicitly selected in UI.
