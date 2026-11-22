@@ -107,12 +107,12 @@ internal fun GpuDriverCard() {
         if (context.packageName == "com.sotc.android.daedalus" && !hasGameHub) {
             Text(
                 if (java.util.Locale.getDefault().language == "pt")
-                    "Turnip GameHub DD 26.3 não está instalada. Use Importar driver e escolha o ZIP GameHub DD que você já possui; após a validação ele será selecionado automaticamente."
-                else "GameHub DD 26.3 Turnip is not installed. Tap Import driver and choose your GameHub DD ZIP; the exact validated driver will be selected automatically.",
+                    "A Turnip GameHub DD 26.3 integrada ao aplicativo não foi localizada ou está inválida. Reinstale o APK completo."
+                else "The bundled GameHub DD 26.3 Turnip is missing or invalid. Reinstall the complete APK.",
                 color = LauncherColors.textMuted, fontSize = 12.sp
             )
         }
-        if (!isSotc || !hasGameHub) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!isSotc) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy, onClick = {
                 try { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
                 catch (ex: Exception) { error = GpuDriverManager.error(context, ex) }
