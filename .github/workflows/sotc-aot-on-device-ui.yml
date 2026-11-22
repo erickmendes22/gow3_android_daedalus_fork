@@ -5,6 +5,7 @@ on:
     paths:
       - 'android-launcher/app/src/main/java/com/gow3/android/**'
       - 'android-launcher/app/build.gradle.kts'
+      - 'android-launcher/gradle/libs.versions.toml'
       - '.github/workflows/sotc-aot-on-device-ui.yml'
   workflow_dispatch:
 permissions:
