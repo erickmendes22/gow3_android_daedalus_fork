@@ -25,7 +25,7 @@ jobs:
           repository: AjncSystem/ShadowOfTheColossus-PC
           ref: 732cb37d3470d2dad2cc99da19283253c96b53fc
           path: upstream-sotc
-          submodules: false
+          submodules: recursive
       - name: Stage PC #308 depth/G-buffer renderer into Android without building
         run: |
           set -euo pipefail
