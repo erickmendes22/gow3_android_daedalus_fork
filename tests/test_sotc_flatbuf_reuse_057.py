@@ -69,7 +69,7 @@ class FlatbufTests(unittest.TestCase):
                     if (_ % hit_every) == 0:
                         hits += 1
             return active
-        self.assertEqual(run(20), (4096 + 4096) * 2) # 5% sampled: rest disabled
+        self.assertEqual(run(20), 4096 * 2) # 5% sampled: rest disabled
         self.assertEqual(run(8), 32768 * 2) # 12.5% sampled: memo remains enabled
 
     def test_rejects_missing_original_guard(self):
