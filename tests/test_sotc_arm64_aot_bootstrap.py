@@ -121,19 +121,23 @@ class TestSotcArm64Aot(unittest.TestCase):
     def test_native_result_rejects_unsupported_ops(self):
         so=self.root/"libSotcAot.so";stats=self.root/"compile.txt";meta=self.root/"libSotcAot.json"
         so.write_bytes(b"\x7fELF"+b"\0"*14+struct.pack("<H",183))
-        md={"abi_version":2,"compiler_version":"1",
+        md={"abi_version":2,"compiler_version":"2",
             "so_sha256":aot.sha256(so),"unit_count":1000}
         meta.write_text(json.dumps(md))
         stats.write_text("units with bbr_trap (unsupported ops): 0 (0.0%)\n")
         self.assertEqual(aot.verify_native(so,stats,meta)["unit_count"],1000)
-        md["compiler_version"]="1"  # official bb-recomp 1.3.0 with --tso omitted
+        md["compiler_version"]="2"  # SotC compiler v2 fixes out-of-function jump tables
         meta.write_text(json.dumps(md))
-        self.assertEqual(aot.verify_native(so,stats,meta)["compiler_version"],"1")
+        self.assertEqual(aot.verify_native(so,stats,meta)["compiler_version"],"2")
+        md["compiler_version"]="1"
+        meta.write_text(json.dumps(md))
+        with self.assertRaisesRegex(ValueError,"ABI/compiler"):
+            aot.verify_native(so,stats,meta)
         md["compiler_version"]="5-tlou-tso-outlined-unaligned-v1"
         meta.write_text(json.dumps(md))
         with self.assertRaisesRegex(ValueError,"ABI/compiler"):
             aot.verify_native(so,stats,meta)
-        md["compiler_version"]="1"
+        md["compiler_version"]="2"
         meta.write_text(json.dumps(md))
         stats.write_text("LoadMemTSO\nunits with bbr_trap (unsupported ops): 0 (0.0%)\n")
         with self.assertRaisesRegex(ValueError,"Guest TSO operations"):
