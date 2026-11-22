@@ -301,8 +301,8 @@ if [ "$sotc_mode" = compile ]; then
         --bundle-dir "$bundle" --jobs 2 --shards 128
     [ -s "$base/user/aot-work/aot/libSotcAot.so" ] || exit 5
     [ -s "$base/user/aot-work/native-boot-linked.bin" ] || exit 5
-    next="$base/user/.aot-next-$"
-    backup="$base/user/.aot-backup-$"
+    next="$base/user/.aot-next-$$"
+    backup="$base/user/.aot-backup-$$"
     mkdir -p "$next"
     cp "$base/user/aot-work/aot/libSotcAot.so" "$next/libSotcAot.so"
     cp "$base/user/aot-work/native-boot-linked.bin" "$next/boot-native.bin"
