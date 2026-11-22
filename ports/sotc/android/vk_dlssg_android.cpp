@@ -2,7 +2,22 @@
 // Preserve ABI and FSR upscaler path; DLSS super resolution/frame-gen and
 // dependent camera/HUD capture are unavailable until a native port is made.
 #include "video_core/renderer_vulkan/vk_dlssg.h"
+#include <atomic>
+
+// The PC 0.74 presenter and rasterizer require these exact API functions.
+// Android cannot load the NVIDIA Streamline DLL, but these symbols must be
+// defined in libbbgpu.so or Android's dlopen rejects the whole renderer.
+// The HDR curve is an engine-side value, independent of NVIDIA's backend.
 namespace Vulkan::Dlssg {
+namespace {
+std::atomic<float> s_hdr_curve{1.0f};
+}
+void SetHdr(bool) {}
+void NoteHdrCurve(float k) { s_hdr_curve.store(k, std::memory_order_relaxed); }
+float HdrCurve() { return s_hdr_curve.load(std::memory_order_relaxed); }
+bool CameraLogOnly() { return false; }
+void NoteCamera(const AmdGpu::Regs&, u32) {}
+bool SuperResolutionUpscaling() { return false; }
 PFN_vkGetInstanceProcAddr LoadInterposer() { return nullptr; }
 void OnDeviceCreated(const Instance&) {}
 bool Enabled() { return false; }
