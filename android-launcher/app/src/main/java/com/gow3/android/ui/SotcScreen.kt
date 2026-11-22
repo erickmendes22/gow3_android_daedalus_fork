@@ -310,6 +310,13 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "Teste A/B experimental. Exclui desenhos das cascatas distantes e limpa as camadas desativadas com a profundidade original do jogo. Sombras locais continuam. A imagem pode ficar diferente; reinicie o jogo para aplicar e compare 5 vs 2 vs 0 no mesmo local."
                          else "Experimental A/B test. Excludes far cascade draws and clears disabled layers using the game's depth clear value. Local shadows remain. Visuals may change; restart to apply and compare 5 vs 2 vs 0 at the same spot.",
                         color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Otimizar draws indiretos vazios (teste)"
+                                       else "Skip bindings for empty indirect draws (test)",
+                        (values["sotc_indirect_empty_bind_063"]?:"0")=="1",
+                        {save("sotc_indirect_empty_bind_063",if(it)"1" else "0")})
+                    Text(if(pt) "Experimental e desligado por padrão. Em draws indiretos com contagem zero confirmada na memória CPU, preserva a limpeza do render pass e evita binds de recursos. Não altera draws GPU nem geometria válida. Compare FPS na mesma área e confira SOTC INDIRECT EMPTY BIND no log."
+                         else "Experimental and default OFF. For CPU-backed zero-count indirect draws, preserves render-pass clears and skips resource bindings. GPU-written arguments and nonempty geometry remain unchanged. Compare the same scene and check SOTC INDIRECT EMPTY BIND in the log.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
                                       else "CPU/GPU frame bottleneck profiling (log)",
                         (values["sotc_perf_profile"]?:"0")=="1",
