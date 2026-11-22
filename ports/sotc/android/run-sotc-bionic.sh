@@ -280,7 +280,7 @@ done
 # The output library is promoted only after a full successful LLVM build and ABI
 # validation. Its old working copy remains available on failure.
 if [ "$sotc_mode" = compile ]; then
-    compiler="$runtime/aot/bin/libbbrecomp.so"
+    compiler="${SOTC_AOT_COMPILER_BINARY:-$runtime/aot/bin/libbbrecomp.so}"
     bundle="$runtime/aot/bundle"
     script="$base/scripts/sotc_aot_compile.py"
     [ -x "$compiler" ] && [ -d "$bundle" ] && [ -s "$script" ] ||
