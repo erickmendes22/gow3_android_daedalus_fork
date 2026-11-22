@@ -290,19 +290,11 @@ if [ "$sotc_mode" = compile ]; then
         echo "SotC AOT: patched compiler manifest missing; refusing unsafe official tool" >&2
         exit 4
     }
-    "$python" - "$compiler" "$expected" <<'PY'
-import hashlib,sys
-from pathlib import Path
-exe,manifest=map(Path,sys.argv[1:])
-expected=manifest.read_text().strip().split()[0]
-if len(expected)!=64 or any(c not in "0123456789abcdef" for c in expected):
-    raise SystemExit("SotC AOT compiler hash manifest invalid")
-h=hashlib.sha256()
-with exe.open("rb") as f:
-    for part in iter(lambda:f.read(1024*1024),b""): h.update(part)
-if h.hexdigest()!=expected:
-    raise SystemExit("SotC AOT: compiler does not match audited SIMD/SSE4.2 backend")
-PY
+    # Android mksh may place here-doc temporary files in /data/local,
+    # which is forbidden to ordinary apps regardless of sandbox TMPDIR.
+    # Read the compiler ELF/hash using a normal Python script instead.
+    "$python" "$base/scripts/sotc_aot_verify_compiler.py" \
+        --compiler "$compiler" --manifest "$expected" || exit 4
     echo "SOTC AOT: starting on-device ARM64 rebuild (no TSO, no FEX)"
     "$python" "$script" --game "$game" --prepared "$out" \
         --out "$base/user/aot-work" --compiler "$compiler" \
