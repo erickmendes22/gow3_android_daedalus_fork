@@ -1,0 +1,113 @@
+name: SotC AOT 0.1.57 renderer flatbuf CPU optimization
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths:
+      - 'ports/sotc/android/stage_sotc_flatbuf_reuse_057.py'
+      - 'ports/sotc/android/stage_renderer.py'
+      - 'tests/test_sotc_flatbuf_reuse_057.py'
+      - '.github/workflows/sotc-aot-057-flatbuf-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 27f376d602cefad357299295fa51edad587272d5
+          path: upstream-sotc
+          submodules: recursive
+      - name: Test source and stage verified renderer
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py
+          python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          r=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          grep -Fq 'std::memcmp(line.contents.data(), flat, ubo_size) == 0' "$r"
+          grep -Fq 'slot.generation = vk_buffer.WrapGeneration()' "$r"
+          grep -Fq 'SOTC FLATBUF REUSE' "$r"
+          grep -Fq 'SotcPerf::BindGraphicsPipeline' "$r"
+          grep -Fq 'SOTC_RT_MEMO' "$r"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sdkmanager 'ndk;29.0.14206865'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build cmake clang lld pkg-config patchelf glslang-tools make curl tar zip unzip ccache
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - uses: actions/cache/restore@v4
+        id: sotc-apk-deps
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - name: Prepare Vulkan renderer dependencies
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          test -d .local-deps/android/bionic-prefix
+      - name: Compile only SotC libbbgpu.so for ARM64
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          prefix="$PWD/.local-deps/android/bionic-prefix"
+          ndk="$GOW3_NDK"
+          llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+          atomic="$("$llvm/bin/aarch64-linux-android30-clang" -print-file-name=libatomic.a)"
+          unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
+          export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
+          export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF \
+            -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
+            "-DCMAKE_PREFIX_PATH=$prefix;$CONDA_PREFIX"
+          cmake --build out/sotc-android/cmake --target bbgpu --parallel "$GOW3_JOBS"
+          so=out/sotc-android/cmake/libbbgpu.so
+          test -s "$so"
+          "$llvm/bin/llvm-readelf" -h "$so" | grep -F AArch64
+          "$llvm/bin/llvm-nm" -D --defined-only "$so" > /tmp/sotc-057-exports.txt
+          grep -Fwq bbgpu_init /tmp/sotc-057-exports.txt
+          mkdir -p out/sotc-057
+          cp "$so" out/sotc-057/libbbgpu.so
+          sha256sum "$so" > out/sotc-057/sha256.txt
+      - uses: actions/cache/save@v4
+        if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-src
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-aot-057-flatbuf-vulkan-arm64
+          path: out/sotc-057/
+          if-no-files-found: error
+          retention-days: 7
