@@ -9,7 +9,7 @@ import argparse
 import hashlib
 from pathlib import Path
 
-MARKER = b'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
+MARKER = b'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2'
 
 def verify_compiler(compiler: Path, manifest: Path) -> dict:
     expected = manifest.read_text(encoding='utf-8').split()[0]
