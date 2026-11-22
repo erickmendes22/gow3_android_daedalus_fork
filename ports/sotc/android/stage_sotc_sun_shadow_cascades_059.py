@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """SotC ARM64 native renderer: reversible *benchmark* of sun shadow cascade work.
 
-SOTC_SUN_CASCADES=5 (default original), 3, 2, 1, 0 (all sun cascades disabled).
+SOTC_SUN_CASCADES=5 (default original), 3, 2, 1 (experimental), 0 (engine-CVar-only, no Vulkan clear).
 The target is identified by the ACTUAL Android pass trace (20261122-124822): a
 1024x1024 depth-only map with five independently rendered slices (0..4), ONE
 renderer draw call per slice. No guessed 500-draw threshold from the PC port.
 Only a unique address that exhibited all five slices in one completed frame
 becomes eligible in the following frame. All other passes stay untouched.
 
-Draws into excluded cascades are not prepared/bound/submitted; each excluded
+Modes 1/2/3 are experimental: excluded cascade Draws into excluded cascades are not prepared/bound/submitted; each excluded
 depth slice is cleared ONCE per frame to the exact guest depth-clear value to
 avoid sampling stale sun shadows. No other shadows or shader outputs modified.
 The first frame is always unmodified, while the sun map classifier warms up.
@@ -37,6 +37,19 @@ bool Rasterizer::SkipSunShadowBenchmark() {
         if (std::strcmp(value, "3") == 0) return 3u;
         return 5u;
     }();
+    // The 0-mode renderer clear experiment did not remove visible shadows,
+    // but the Android logs show 15,901 extra depth clears in one test and
+    // associated EndRendering / image-layout transitions. Mode 0 now means
+    // engine CVar ONLY. Keep this experiment isolated from 1/2/3 and 5.
+    if (keep == 0) {
+        static const bool reported = [] {
+            std::fprintf(stderr,
+                "SOTC SUN ENGINE ONLY: keep=0; no Vulkan cascade draw interception or extra depth clears\\n");
+            return true;
+        }();
+        (void)reported;
+        return false;
+    }
     if (keep >= 5) return false;
 
     const auto& regs = liverpool->DrawRegs();
