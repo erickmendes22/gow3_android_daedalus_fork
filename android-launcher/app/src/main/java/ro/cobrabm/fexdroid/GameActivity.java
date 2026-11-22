@@ -210,21 +210,62 @@ public final class GameActivity extends Activity {
         if (sotcRuntime()) {
             // Separate Android UI view, above Vulkan but below the game drawer.
             // Keep it below the touch controller's top shoulder buttons.
-            sotcFpsHud=text("FPS --",12,0xfff7eddf);
+            sotcFpsHud=text("FPS --  |  -- ms",13,0xfff7eddf);
             sotcFpsHud.setTypeface(android.graphics.Typeface.MONOSPACE,
                                    android.graphics.Typeface.BOLD);
-            sotcFpsHud.setPadding(dp(9),dp(5),dp(9),dp(5));
+            sotcFpsHud.setSingleLine(true);
+            sotcFpsHud.setPadding(dp(10),dp(4),dp(10),dp(4));
             GradientDrawable hudBackground=new GradientDrawable();
-            hudBackground.setColor(0xb0151c24);
+            hudBackground.setColor(0xc0121b21);
             hudBackground.setCornerRadius(dp(7));
             sotcFpsHud.setBackground(hudBackground);
-            sotcFpsHud.setClickable(false);
+            sotcFpsHud.setClickable(true);
             sotcFpsHud.setFocusable(false);
             sotcFpsHud.setContentDescription("Shadow of the Colossus frame rate");
             FrameLayout.LayoutParams hudPos=frame(-2,-2,Gravity.TOP|Gravity.LEFT);
             hudPos.leftMargin=dp(12);
-            hudPos.topMargin=dp(72);
+            hudPos.topMargin=dp(8);
             screen.addView(sotcFpsHud,hudPos);
+            final android.content.SharedPreferences hudPrefs =
+                getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE);
+            // TLOU / Uncharted-style compact single-line HUD. Drag to move;
+            // persist normalized screen coordinates across orientation changes.
+            final float[] gesture = new float[4];
+            sotcFpsHud.setOnTouchListener((view,event) -> {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        gesture[0]=event.getRawX();
+                        gesture[1]=event.getRawY();
+                        gesture[2]=view.getX();
+                        gesture[3]=view.getY();
+                        return true;
+                    case MotionEvent.ACTION_MOVE: {
+                        float maxX=Math.max(0,screen.getWidth()-view.getWidth());
+                        float maxY=Math.max(0,screen.getHeight()-view.getHeight());
+                        view.setX(Math.max(0,Math.min(maxX,gesture[2]+event.getRawX()-gesture[0])));
+                        view.setY(Math.max(0,Math.min(maxY,gesture[3]+event.getRawY()-gesture[1])));
+                        return true;
+                    }
+                    case MotionEvent.ACTION_UP: {
+                        float maxX=Math.max(1,screen.getWidth()-view.getWidth());
+                        float maxY=Math.max(1,screen.getHeight()-view.getHeight());
+                        hudPrefs.edit().putFloat("sotc_hud_x",view.getX()/maxX)
+                            .putFloat("sotc_hud_y",view.getY()/maxY).apply();
+                        return true;
+                    }
+                    case MotionEvent.ACTION_CANCEL: return true;
+                    default: return false;
+                }
+            });
+            screen.post(() -> {
+                if(sotcFpsHud==null) return;
+                float maxX=Math.max(0,screen.getWidth()-sotcFpsHud.getWidth());
+                float maxY=Math.max(0,screen.getHeight()-sotcFpsHud.getHeight());
+                float x=hudPrefs.getFloat("sotc_hud_x",0.012f);
+                float y=hudPrefs.getFloat("sotc_hud_y",0.01f);
+                sotcFpsHud.setX(Math.max(0,Math.min(maxX,x*maxX)));
+                sotcFpsHud.setY(Math.max(0,Math.min(maxY,y*maxY)));
+            });
         }
 
         handle=new View(this);
@@ -518,7 +559,8 @@ public final class GameActivity extends Activity {
         return pad.motion(e) || super.dispatchGenericMotionEvent(e);
     }
     private boolean controllerEnabled() {
-        return getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("controller_overlay",false);
+        return getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE)
+            .getBoolean("controller_overlay",sotcRuntime());
     }
     @Override protected void onPause() {
         if (controllerOverlay!=null) controllerOverlay.release();
@@ -832,7 +874,7 @@ public final class GameActivity extends Activity {
             sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
             if (sotcFpsLastFrames<0 || now<sotcFpsLastAtMillis ||
                 frames<sotcFpsLastFrames) {
-                sotcFpsHud.setText("FPS --");
+                sotcFpsHud.setText("FPS --  |  -- ms");
                 sotcFpsLastFrames=frames;
                 sotcFpsLastAtMillis=now;
             } else if (now-sotcFpsLastAtMillis>=950) {
@@ -841,7 +883,8 @@ public final class GameActivity extends Activity {
                 // Count real renderer frames received by the Android bridge.
                 // They may be dropped by SurfaceFlinger if VSync is disabled.
                 final double fps=delivered*1000.0/elapsed;
-                sotcFpsHud.setText(String.format(java.util.Locale.US,"FPS %.1f",fps));
+                sotcFpsHud.setText(String.format(java.util.Locale.US,
+                    "FPS %.1f  |  %.1f ms",fps,fps>0 ? 1000.0/fps : 0.0));
                 sotcFpsLastFrames=frames;
                 sotcFpsLastAtMillis=now;
             }
