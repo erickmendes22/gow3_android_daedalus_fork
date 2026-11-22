@@ -21,8 +21,10 @@ import ro.cobrabm.fexdroid.SotcPaths
 /**
  * Direct, zero-copy PKG installation.
  *
- * Base game: select a PKG and an empty destination folder. Updates: select a
- * PKG and install directly into the already selected game folder after title validation.
+ * For Shadow of the Colossus base games, select a PKG and a destination
+ * parent folder. A new isolated game subfolder is created automatically.
+ * Other games keep their legacy empty-folder requirement.
+ * Updates retain the existing validated in-place extraction logic.
  * orbis-pkg-util opens the original local file and creates the unpacked files
  * inside that folder. The PKG is never duplicated; there is no staging folder
  * and the output is never copied between folders.
@@ -258,15 +260,22 @@ internal class PkgInstallManager(
         val pkg = localDocumentFile(sourceUri, directory = false)
             ?: throw IOException(localized("The PKG must be on accessible local storage. ", "O PKG precisa estar num armazenamento local acessível. ") +
                 localized("Remote or cloud files cannot be extracted directly without copying them.", "Não é possível extrair diretamente um arquivo remoto/cloud sem duplicá-lo."))
-        val dest = localDocumentFile(targetUri, directory = true)
+        val selectedParent = localDocumentFile(targetUri, directory = true)
             ?: throw IOException(localized("The destination is not an accessible local folder", "Pasta de destino não é um diretório local acessível"))
+        val createSotcSubfolder = !update && SotcPaths.isSotc(activity)
+        // Only create the child AFTER validating the PKG title. Never overwrite a
+        // previous extraction; the user may choose a parent with other files.
+        val dest = if (createSotcSubfolder) generateSequence(1) { it + 1 }
+            .map { index -> File(selectedParent, if (index == 1)
+                "Shadow of the Colossus" else "Shadow of the Colossus ($index)") }
+            .first { !it.exists() } else selectedParent
         if (!pkg.isFile || !pkg.canRead())
             throw IOException(localized("Original PKG unavailable: ${pkg.path}", "PKG original indisponível: ${pkg.path}"))
-        if (!dest.isDirectory || !dest.canWrite())
-            throw IOException(localized("No write access to the selected folder: ${dest.path}", "Sem permissão de escrita na pasta escolhida: ${dest.path}"))
+        if (!selectedParent.isDirectory || !selectedParent.canWrite())
+            throw IOException(localized("No write access to the selected folder: ${selectedParent.path}", "Sem permissão de escrita na pasta escolhida: ${selectedParent.path}"))
         if (!update && (pkg.canonicalFile == dest.canonicalFile || pkg.canonicalFile.parentFile == dest.canonicalFile))
             throw IOException(localized("Choose another folder: the PKG cannot be inside the destination", "Escolha outra pasta: o PKG não pode ficar dentro do destino"))
-        val existingEntries = dest.listFiles()
+        val existingEntries = if (createSotcSubfolder) emptyArray<File>() else dest.listFiles()
             ?: throw IOException(localized("Could not list the selected folder", "Não foi possível listar a pasta escolhida"))
         val base = preferences.getString("game_dir", null)?.let(::File)
         val replacingUpdate = update && base?.canonicalFile == dest.canonicalFile
@@ -287,11 +296,14 @@ internal class PkgInstallManager(
                 !magic.contentEquals(byteArrayOf(0x7f, 0x43, 0x4e, 0x54)))
                 throw IOException(localized("The file does not have a PS4 PKG signature", "Arquivo não possui assinatura PKG PS4"))
         }
-        val metadata = execute(loader, helper, listOf("info", pkg.canonicalPath), dest)
+        val metadata = execute(loader, helper, listOf("info", pkg.canonicalPath), selectedParent)
         val title = Regex("(?im)^\\s*Title ID:\\s*(CUSA[0-9]{5})\\s*$")
             .find(metadata)?.groupValues?.get(1)?.uppercase()
             ?: throw IOException(localized("TITLE_ID missing from the PKG header", "TITLE_ID ausente no cabeçalho PKG"))
         if (!TITLE_PATTERN.matches(title)) throw IOException(localized("Invalid TITLE_ID", "TITLE_ID inválido"))
+        if (createSotcSubfolder && title !in setOf("CUSA08809", "CUSA08034"))
+            throw IOException(localized("This is not a supported Shadow of the Colossus PKG",
+                "O PKG não é de uma edição compatível de Shadow of the Colossus"))
         if (!update && base != null && File(base, "eboot.bin").isFile &&
             ParamSfoTitle.readTitleId(File(base, "sce_sys/param.sfo")) == title)
             throw IOException(localized("Game ${title} is already installed in ${base.path}; ", "O jogo ${title} já está instalado em ${base.path}; ") +
@@ -307,7 +319,14 @@ internal class PkgInstallManager(
 
         // After title validation, update files replace their counterparts in
         // the selected game folder. The base files absent from the PKG remain.
+        var createdSotcSubfolder = false
         try {
+            if (createSotcSubfolder) {
+                if (!dest.mkdir()) throw IOException(localized(
+                    "Could not create a new Shadow of the Colossus folder",
+                    "Não foi possível criar uma nova pasta Shadow of the Colossus"))
+                createdSotcSubfolder = true
+            }
             val arguments = mutableListOf("extract", pkg.canonicalPath,
                 "--output", dest.canonicalPath, "--quiet")
             if (replacingUpdate) arguments.add("--force")
@@ -317,11 +336,14 @@ internal class PkgInstallManager(
             if (extractedTitle != title || !File(dest, "eboot.bin").isFile)
                 throw IOException(localized("Extracted content does not match the PKG or is incomplete", "Conteúdo extraído não corresponde ao PKG ou está incompleto"))
         } catch (failure: Exception) {
-            // Roll back outputs only when the user explicitly selected an empty
-            // directory. Never delete a previously installed update on failure:
-            // in-place replacement cannot be transactional without extra storage.
-            if (!replacingUpdate)
+            // Roll back ONLY the new directory created by this operation. Never
+            // erase files that were already present in the chosen parent folder
+            // or an installed in-place update.
+            if (createSotcSubfolder && createdSotcSubfolder) {
+                dest.deleteRecursively()
+            } else if (!createSotcSubfolder && !replacingUpdate) {
                 dest.listFiles()?.forEach { created -> created.deleteRecursively() }
+            }
             throw failure
         }
         val edit = preferences.edit().putString("game_dir", dest.canonicalPath)
