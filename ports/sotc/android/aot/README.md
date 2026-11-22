@@ -52,3 +52,32 @@ O primeiro compilador abortou com `bad FDE #12150`: o preparador antigo somava i
 - Correção: substituir **apenas** libc++_shared.so pela biblioteca que acompanha o NDK utilizado e validar por `verify_libcxx_abi.py` que nenhuma das 2.335 exportações anteriores foi removida e que o símbolo em falta passou a existir. A nova versão possui 2.337 símbolos exportados.
 - Lógica para preservar o trabalho de recompilação: `sotcport/user/aot/libSotcAot.so` é parte de `sotcport/user`, que o instalador Android preserva durante atualizações. O jogo deve iniciar sem exigir nova compilação se os patches e a imagem forem os mesmos.
 - A correção de link é necessária, mas não comprova gameplay. Testar próxima build no aparelho e investigar quaisquer traps nativos/indiretos restantes sem ativar TSO ou FEX.
+
+## Auditoria de pré-lançamento (21/11/2026) — NÃO LIBERAR AINDA
+
+O usuário compilou o AOT no Redmagic 11 Pro na 0.1.55 (BBR-DONE 0; 305,7 s). O jogo não inicializou devido a `_ZNSt6__ndk113__hash_memoryEPKvm` ausente no `libc++_shared.so` antigo. Foi confirmado que a substituição do NDK 30 exporta esse símbolo e não remove nenhum dos 2.335 símbolos públicos da biblioteca anterior. **Essa correção ainda não prova gameplay.**
+
+Outras falhas identificadas e corrigidas na branch, ainda não incluídas em APK novo:
+
+- O launcher exigirá biblioteca **local** validada: game SHA + patches SHA + cmdline SHA + SHA da imagem vinculada + SHA da biblioteca AOT. Nada de usar silenciosamente biblioteca pré-compilada que não corresponda às configurações.
+- BBPATCH2 é aplicado a um clone antes do AOT. O `SOTCCMD1` é pré-incorporado como nova região de dados de **16 KiB alinhada a 16 KiB**; o RIP-relative LEA é alterado *antes* da recompilação. O runtime recebe exatamente essa imagem, sem `--patches` ou `--sotc-cmdline` tardios.
+- Os três artefatos `boot-native.bin`, `libSotcAot.so` e `aot-report.json` são validados como conjunto e promovidos com diretório temporário/rollback em caso de falha.
+- A rota de empacotamento foi corrigida para **não carregar CPU FEX** por engano. Em modo `SOTC_REQUIRE_ON_DEVICE_AOT=1`, o pacote exige `libgow3cpu.so` AOT, `libbbcpu.so`, compilador e bundle LLVM, `libc++` compatível e manifest `aot_mode: strict`. O jogo AOT não é distribuído.
+- O instalador valida os componentes obrigatórios antes de substituir o runtime; os saves e diretório de usuário são preservados na atualização.
+- O caminho `--vulkan-only` do código nativo foi corrigido para não depender de `guest_cpu_init` quando não há biblioteca AOT local.
+- O compilador agora **recusa o resultado se houver até uma única unidade `bbr_trap`**, e só aceita metadata `compiler_version=1` do bb-recomp oficial sem `--tso`.
+
+**Bloqueio real restante**: o compilador 1.3.0 gera **10 unidades com armadilhas (109 sites)** no SotC:
+```
+0x688e40 VLoadVectorMasked + VStoreVectorMasked
+0xa120b0 VStoreVectorMasked
+0xb12bc0 VStoreVectorMasked
+0xb132b0 VStoreVectorMasked
+0xb139c0 VStoreVectorMasked
+0xe104e0 VStoreVectorMasked
+0xf0c000 VLoadVectorMasked + VStoreVectorMasked
+0x39b5460 VPCMPISTRX (libc.prx)
+0x39b5530 VPCMPISTRX (libc.prx)
+0x39e31a0 VLoadVectorMasked (libc.prx)
+```
+A versão oficial disponível no momento **não baixa esses três tipos de operação para AArch64 sem `bbr_trap`**. É necessária uma correção verdadeira do compilador e testes de semântica, não uma tentativa de ignorar essas instruções. O próximo APK só deverá ser gerado após compilar uma biblioteca sem trap, passar a compilação do novo probe/empacotador completo e conferir ELF/dependências/assinatura. Testes sintéticos do GitHub Actions não comprovam gameplay.
