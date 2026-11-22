@@ -33,21 +33,21 @@ jobs:
         with:
           name: sotc-aot-057-flatbuf-vulkan-arm64
           run-id: 44987127073
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
         uses: actions/download-artifact@v4
         with:
           name: sotc-aot-native-cpu-resume-unwind-arm64
           run-id: 44977159118
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: out/sotc-arm64-aot
       - name: Get SIMD + SSE4.2 patched Android AOT compiler
         uses: actions/download-artifact@v4
         with:
           name: sotc-bbrecomp-android-aarch64-native-simd-sse42
           run-id: 44978299295
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: out/sotc-patched-compiler
       - name: Validate exact ARM64 artifacts before expensive native work
         run: |
@@ -98,7 +98,7 @@ jobs:
           path: |
             .local-deps/android/bionic-prefix
             .local-deps/android/bionic-src
-          key: sotc-apk-native-r29-\${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - name: Build Bionic platform and tools (native AOT CPU replaces FEX)
         shell: bash -el {0}
         run: |
@@ -114,7 +114,7 @@ jobs:
           path: |
             .local-deps/android/bionic-prefix
             .local-deps/android/bionic-src
-          key: sotc-apk-native-r29-\${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+          key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - name: Download hash-pinned official helper archive
         run: |
           set -euo pipefail
