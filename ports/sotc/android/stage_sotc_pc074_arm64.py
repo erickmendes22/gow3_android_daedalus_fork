@@ -111,6 +111,17 @@ def patch(gpu: Path) -> None:
                   'ARM64 dispatch phase profiling clock')
     dispatch_path.write_text(dispatch)
 
+    # AArch64 NDK defines u64 as unsigned long, while strtoull returns
+    # unsigned long long. PC's no-trailing-return-type lambda mixes distinct
+    # return types; a width-correct cast preserves all 64 bits on Android.
+    image_path=root/'texture_cache/image.cpp'
+    image=image_path.read_text()
+    image=once(image,
+               'return t ? std::strtoull(t, nullptr, 10) : u64{2048} * 2048;',
+               'return t ? static_cast<u64>(std::strtoull(t, nullptr, 10)) : u64{2048} * 2048;',
+               'PC dedicated image size type parity on ARM64')
+    image_path.write_text(image)
+
     liverpool.write_text(code)
     print('SotC PC #308 depth/G-buffer fastpaths: ARM64 exact 32-bit register deltas + YIELD preserved')
 
