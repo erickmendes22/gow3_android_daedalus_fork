@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Mandatory, on-device native AOT before the first play.
  * A fast verification also reuses earlier verified patch profiles; recompilation
  * only runs for a new game or an effect combination that has not been compiled.
- * No FEX and no TSO, even on failed verification.
+ * Native ARM64, even on failed verification.
  */
 internal class SotcAotBuildManager(
     private val activity: Activity,
@@ -59,7 +59,7 @@ internal class SotcAotBuildManager(
                 }
                 val cfg = Gow3Ini.read(File(base, "sotc.ini"))
                 fun opt(name: String, default: String = "0") = cfg[name] ?: default
-                val modes = mutableListOf("fps60game")
+                val modes = mutableListOf<String>()
                 if (opt("sotc_af16") == "1") modes.add("af16")
                 val blur = opt("sotc_blur_suppression", "1") != "0"
                 val cvars = "doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0" +
@@ -139,7 +139,7 @@ internal class SotcAotBuildManager(
                     }
                 }
                 if (!ready) {
-                    status("Compilando o jogo para ARM64 (sem FEX e sem TSO)…")
+                    status("Compilando o jogo para ARM64 (tradução ARM64 nativa)…")
                     val code = execute("compile")
                     if (code != 0) throw IllegalStateException(
                         "Compilador saiu com erro $code. $last"
