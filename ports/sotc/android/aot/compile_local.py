@@ -18,6 +18,7 @@ import shutil
 import struct
 import subprocess
 import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from cmdline_image import embed as embed_cmdline
 
 HEADER = struct.Struct("<8s12Q")
