@@ -132,7 +132,10 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
-          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
+          # The old sun-cascade menu was intentionally removed after device
+          # tests showed it did not eliminate sunlight shadows. Do not run
+          # the obsolete UI test that requires those unsupported choices.
+          grep -Fq 'env.put("SOTC_SUN_CASCADES","5")' android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GameActivity.java
           python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
       - uses: actions/setup-java@v4
