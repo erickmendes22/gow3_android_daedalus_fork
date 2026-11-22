@@ -498,12 +498,6 @@ public final class Order1886Activity extends Activity {
                "gpuInlineClear",true);
         toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",
                "gpuMeters",true);
-        toggle(c,"Rastreamento rápido de memória (userfaultfd, fallback automático)",
-               "gpuFastPageTracking",true);
-        line(c,"Rastreamento de memória",
-            "Evita operações de mprotect em buffers que a CPU modifica continuamente, "+
-            "quando o kernel Android permite. Se houver incompatibilidade, usa o método "+
-            "anterior automaticamente. Em caso de problema, desative e reinicie o jogo.");
         line(c,"Medição de gargalos",
             "O Vulkan mede um frame a cada 90: sombras, G-buffer, cena, pós, "+
             "compute e cópias. Resultados de GPU e CPU são agregados no log "+
