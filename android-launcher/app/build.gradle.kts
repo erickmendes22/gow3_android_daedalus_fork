@@ -9,7 +9,7 @@ val bionicRuntime = providers.gradleProperty("gow3Bionic").orNull == "true" || s
 android {
     namespace = "com.gow3.android"
     compileSdk {
-        version = release(37)
+        version = release(36)
     }
 
     defaultConfig {
