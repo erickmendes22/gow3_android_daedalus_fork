@@ -496,6 +496,12 @@ public final class Order1886Activity extends Activity {
                "gpuTileMerge",true);
         toggle(c,"Reduzir GPU: limpar attachments sem fechar passe (Adreno)",
                "gpuInlineClear",true);
+        toggle(c,"Cache persistente de pipelines Vulkan do driver",
+               "gpuDriverPipelineCache",true);
+        line(c,"Cache de pipelines (reiniciar após alterar)",
+            "Grava pipelines compilados pelo Turnip para reutilizar nas próximas execuções "+
+            "com o mesmo driver e modo de renderização. A primeira visita à área ainda "+
+            "pode travar; caso ocorra tela preta, desative o cache e reinicie.");
         toggle(c,"Medidores de tempo GPU/CPU nos logs (amostragem)",
                "gpuMeters",true);
         line(c,"Medição de gargalos",
