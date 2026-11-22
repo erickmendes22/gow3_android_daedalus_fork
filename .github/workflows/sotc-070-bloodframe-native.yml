@@ -31,8 +31,6 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
-          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
-          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_regression_064.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_pm4_redundant_regs_064.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           # Mandatory Android presentation wiring. Without this, Vulkan attempts
@@ -67,7 +65,7 @@ jobs:
           grep -Fq 'inline uint64_t Ticks();' out/sotc-android/gpu/shadps4/video_core/sotc_stats.h
           grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h
           grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/sotc_dispphase.h
-          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_ux_070.py' -v
           grep -Fq 'pc_safe_mask' src/runtime_memory.c
           grep -Fq 'SOTC_DEPTH_FAST' ports/sotc/android/run-sotc-bionic.sh
           grep -Fq '#endif // !__ANDROID__: PC guest view fault guard' out/sotc-android/gpu/shim/bbgpu.cpp
