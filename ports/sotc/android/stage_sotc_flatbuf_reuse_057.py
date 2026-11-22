@@ -86,6 +86,8 @@ REPLACEMENT = r"""                // SotC 0.1.57: do not write an identical immu
 def patch(gpu: Path) -> None:
     path = gpu / "shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp"
     source = path.read_text()
+    if "SOTC FLATBUF REUSE:" in source:
+        raise ValueError("SotC Flatbuf: pinned Vulkan UBO copy changed (already patched)")
     if source.count(ORIGINAL) != 1:
         raise ValueError("SotC Flatbuf: pinned Vulkan UBO copy changed")
     for required in (
