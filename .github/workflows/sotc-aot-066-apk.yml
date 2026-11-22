@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 150); do
-            result=$(gh api repos/${{ github.repository }}/actions/runs/45063258673 --jq '.status+" "+(.conclusion // "")')
+            result=$(gh api repos/${{ github.repository }}/actions/runs/45063475320 --jq '.status+" "+(.conclusion // "")')
             if [ "$result" = 'completed success' ]; then exit 0; fi
             if [[ "$result" == completed* ]]; then echo "::error::Renderer failed: $result"; exit 1; fi
             sleep 20
@@ -44,7 +44,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sotc-aot-066-pc074-depth-gbuffer-ahb-arm64
-          run-id: 45063258673
+          run-id: 45063475320
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
