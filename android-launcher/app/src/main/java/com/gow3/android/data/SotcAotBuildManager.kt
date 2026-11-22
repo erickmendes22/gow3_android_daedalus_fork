@@ -74,6 +74,15 @@ internal class SotcAotBuildManager(
                 env["SOTC_GAME_DIR"] = selected.absolutePath
                 env["SOTC_RENDER"] = render
                 env["SOTC_MODES"] = modes.joinToString(",")
+                // Compile and launch MUST prepare the exact same guest image.
+                // GameActivity forwards sotc_sun_cascades to run-sotc-bionic.sh;
+                // the script appends r_enableCascadeShadows=0 for mode 0.
+                // Previously the AOT builder omitted this setting, compiled mode 5,
+                // and the launch correctly rejected the mismatched AOT image.
+                val sunCascades = opt("sotc_sun_cascades", "5")
+                    .takeIf { it == "0" || it == "1" || it == "2" ||
+                              it == "3" || it == "5" } ?: "5"
+                env["SOTC_SUN_CASCADES"] = sunCascades
                 env["SOTC_CVARS"] = cvars
                 env["SOTC_BACHATA_PERF"] = perf.joinToString(",")
                 status("Preparando eboot, PRX e patches atuais…")
