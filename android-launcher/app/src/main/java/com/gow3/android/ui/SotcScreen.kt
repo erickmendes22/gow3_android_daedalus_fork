@@ -1,5 +1,13 @@
 package com.gow3.android.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -102,6 +110,65 @@ internal fun SotcBackdrop() {
     }
 }
 
+/**
+ * Uses real local artwork from the legally selected PS4 game dump: pic1.png,
+ * pic0.png, or icon0.png. No PlayStation game artwork is bundled, scraped or
+ * downloaded. Loading happens off the UI thread with a bounded decoder.
+ */
+@Composable
+private fun SotcGameArtwork(gameDir: String?) {
+    var bitmap by remember(gameDir) { mutableStateOf<ImageBitmap?>(null) }
+    androidx.compose.runtime.LaunchedEffect(gameDir) {
+        bitmap = withContext(Dispatchers.IO) {
+            if (gameDir.isNullOrBlank()) return@withContext null
+            val base=File(gameDir,"sce_sys")
+            val artwork=listOf("pic1.png","pic0.png","icon0.png")
+                .map { File(base,it) }.firstOrNull { it.isFile && it.canRead() }
+                ?: return@withContext null
+            try {
+                val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
+                BitmapFactory.decodeFile(artwork.absolutePath,bounds)
+                var sample=1
+                while (bounds.outWidth/sample>1536 || bounds.outHeight/sample>1024) sample*=2
+                val options=BitmapFactory.Options().apply {
+                    inSampleSize=sample
+                    inPreferredConfig=android.graphics.Bitmap.Config.RGB_565
+                }
+                BitmapFactory.decodeFile(artwork.absolutePath,options)?.asImageBitmap()
+            } catch (_:Exception) { null }
+        }
+    }
+    Box(Modifier.fillMaxWidth().aspectRatio(1.9f)
+        .clip(RoundedCornerShape(15.dp))
+        .background(Color(0xFF13272A))) {
+        if(bitmap!=null) Image(bitmap=bitmap!!,contentDescription="Shadow of the Colossus",
+            modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+        else Canvas(Modifier.fillMaxSize()) {
+            val w=size.width;val h=size.height
+            drawRect(Brush.verticalGradient(listOf(Color(0xFF52635C),Color(0xFF243B3F),Color(0xFF121D20))))
+            val hills=Path().apply {
+                moveTo(0f,h*.78f);lineTo(w*.15f,h*.52f);lineTo(w*.33f,h*.72f)
+                lineTo(w*.55f,h*.35f);lineTo(w*.73f,h*.67f)
+                lineTo(w,h*.30f);lineTo(w,h);close()
+            }
+            drawPath(hills,Color(0xC30B1B20))
+            // Two silhouettes make the fallback recognisable without pretending
+            // a generated vector is a screenshot or a game asset.
+            drawRoundRect(Color(0xDD080F11),topLeft=Offset(w*.70f,h*.25f),
+                size=Size(w*.10f,h*.50f),
+                cornerRadius=androidx.compose.ui.geometry.CornerRadius(w*.025f))
+            drawCircle(Color(0xE6081113),w*.075f,Offset(w*.75f,h*.24f))
+            drawLine(Color(0xD80A1013),Offset(w*.70f,h*.65f),
+                Offset(w*.65f,h*.92f),strokeWidth=w*.045f)
+            drawLine(Color(0xD80A1013),Offset(w*.79f,h*.65f),
+                Offset(w*.84f,h*.93f),strokeWidth=w*.045f)
+            drawCircle(Color(0xFC101919),w*.017f,Offset(w*.28f,h*.72f))
+            drawLine(Color(0xF9121C1D),Offset(w*.28f,h*.74f),
+                Offset(w*.28f,h*.88f),strokeWidth=w*.02f)
+        }
+    }
+}
+
 private fun localized(context: Context, pt:String, en:String):String =
     if (context.resources.configuration.locales[0].language=="pt") pt else en
 
@@ -176,6 +243,9 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
         if (Gow3Ini.write(config,mapOf(key to value))) values=values+(key to value)
         else Toast.makeText(ctx,localized(ctx,"Não foi possível salvar.","Could not save setting."),Toast.LENGTH_SHORT).show()
     }
+    val prefs=ctx.getSharedPreferences(SotcPaths.prefsName(ctx),Context.MODE_PRIVATE)
+    var autoStart by remember { mutableStateOf(prefs.getBoolean("sotc_auto_start",false)) }
+    val launcherLanguage=prefs.getString("language","system") ?: "system"
     val pt=ctx.resources.configuration.locales[0].language=="pt"
     ScreenColumn {
         when(tabIndex) {
@@ -183,14 +253,44 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                 Spacer(Modifier.height(12.dp))
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontSize=26.sp,fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold)
-                Text("DAEDALUS  •  ARM64 AOT / NO FEX / NO TSO",color=SotcPalette.accent,
+                Text("DAEDALUS  •  ARM64 AOT NATIVO",color=SotcPalette.accent,
                     fontSize=12.sp,letterSpacing=1.sp)
                 Text(if(pt) "Port experimental baseado no projeto de PC de AjncSystem."
                      else "Experimental port based on AjncSystem's PC project.",
                     color=SotcPalette.secondary,fontSize=12.sp)
                 Spacer(Modifier.height(12.dp))
+                SotcGameArtwork(gameDir)
+                Spacer(Modifier.height(8.dp))
                 SotcAction(if(pt) "INICIAR SHADOW OF THE COLOSSUS" else "START SHADOW OF THE COLOSSUS",onStartGame,
                     Modifier.fillMaxWidth())
+                SotcPanel {
+                    SotcToggle(if(pt) "Entrar direto no jogo nas próximas vezes" else "Enter game automatically next time",
+                        autoStart,{ checked ->
+                            autoStart=checked
+                            prefs.edit().putBoolean("sotc_auto_start",checked).apply()
+                        })
+                    Text(if(pt) "IDIOMA DO LAUNCHER" else "LAUNCHER LANGUAGE",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    SotcChoice(if(pt) "Interface" else "Interface",
+                        launcherLanguage,listOf("system" to (if(pt) "Sistema" else "System"),
+                            "pt" to "Português (Brasil)","en" to "English"),onChangeLanguage)
+                    Text(if(pt) "IDIOMA DO JOGO" else "GAME LANGUAGE",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    SotcChoice(if(pt) "Vozes e textos" else "Voices and text",
+                        values["sotc_game_language"]?:"system",
+                        listOf("system" to (if(pt) "Seguir dispositivo" else "Follow device"),
+                            "1" to "English (US)",
+                            "7" to "Português (Portugal)",
+                            "17" to "Português (Brasil)",
+                            "3" to "Español",
+                            "2" to "Français",
+                            "4" to "Deutsch",
+                            "5" to "Italiano"),
+                        {save("sotc_game_language",it)})
+                    Text(if(pt) "O jogo precisa oferecer o idioma selecionado. A troca é aplicada no próximo início, sem recompilar."
+                         else "The selected language must exist in the game. Changes apply on next launch without AOT recompilation.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                }
                 SotcPanel {
                     Text(if(pt) "JOGO" else "GAME",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(gameDir ?: (if(pt) "Pasta não selecionada" else "Game folder not selected"),
@@ -263,11 +363,11 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
             else -> {
                 Text("SHADOW OF THE COLOSSUS",color=SotcPalette.text,
                     fontFamily=FontFamily.Serif,fontWeight=FontWeight.Bold,fontSize=23.sp)
-                Text("DAEDALUS • ARM64 AOT — recompilação local",color=SotcPalette.accent,fontSize=13.sp)
+                Text(if(pt) "DAEDALUS • ARM64 AOT NATIVO" else "DAEDALUS • NATIVE ARM64 AOT",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    Text(if(pt) "Port Android com renderer Vulkan do SotC, backend ARM64 AOT sem FEX e recompilação local."
-                         else "Android SotC port with Vulkan renderer and on-device ARM64 AOT recompilation without FEX.",
+                    Text(if(pt) "Port Android com renderizador Vulkan e recompilação ARM64 nativa no celular."
+                         else "Android port with Vulkan rendering and native ARM64 compilation on-device.",
                          color=SotcPalette.secondary,fontSize=13.sp)
                     Text("Original PC port: AjncSystem/ShadowOfTheColossus-PC",color=SotcPalette.text,fontSize=13.sp)
                     SotcAction(if(pt) "Projeto original" else "Original project") {
