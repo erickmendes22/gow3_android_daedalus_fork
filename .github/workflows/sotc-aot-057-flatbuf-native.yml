@@ -32,6 +32,13 @@ jobs:
           python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          # Mandatory Android presentation wiring. Without this, Vulkan attempts
+          # desktop CreateSurface(WindowSDL::Headless) and aborts during boot.
+          python3 ports/sotc/android/wire_ahb.py --root . --gpu out/sotc-android/gpu
+          grep -Fq 'vk_swapchain_ahb.h' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_swapchain.h
+          grep -Fq 'SOTC_PRESENT_SOCKET' out/sotc-android/gpu/shim/gow3_present_client.cpp
+          grep -Fq 'sotc_acquire_queues' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
+          grep -Fq 'skip_full_blit_clear' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_presenter.cpp
           r=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           grep -Fq 'std::memcmp(line.contents.data(), flat, ubo_size) == 0' "$r"
           grep -Fq 'slot.generation = vk_buffer.WrapGeneration()' "$r"
@@ -95,6 +102,13 @@ jobs:
           "$llvm/bin/llvm-readelf" -h "$so" | grep -F AArch64
           "$llvm/bin/llvm-nm" -D --defined-only "$so" > /tmp/sotc-057-exports.txt
           grep -Fwq bbgpu_init /tmp/sotc-057-exports.txt
+          # Never export a renderer without the Android AHardwareBuffer bridge.
+          grep -Fq '_ZN11Gow3Present6Client10SendBuffer' /tmp/sotc-057-exports.txt
+          "$llvm/bin/llvm-readelf" -Ws "$so" > /tmp/sotc-057-symtab.txt
+          grep -Fq 'AHardwareBuffer_sendHandleToUnixSocket' /tmp/sotc-057-symtab.txt
+          strings "$so" > /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC_PRESENT_SOCKET' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
           sha256sum "$so" > out/sotc-057/sha256.txt
@@ -107,7 +121,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-057-flatbuf-vulkan-arm64
+          name: sotc-aot-057-flatbuf-ahb-vulkan-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
