@@ -37,8 +37,8 @@ def inject(assets:Path,render:Path,bloodframe:Path):
     bf=bloodframe/"lib/libbloodframe.so"
     bf_bytes=bf.read_bytes()
     for path,data in ((render,render_bytes),(bf,bf_bytes)):
-        assert len(data)>500000 and data[:4]==b"\\x7fELF",str(path)+" is not an ELF"
-        assert data[18:20]==b"\\xb7\\x00",str(path)+" is not an ARM64 ELF"
+        assert len(data)>500000 and data[:4]==b"\x7fELF",str(path)+" is not an ELF"
+        assert data[18:20]==b"\xb7\x00",str(path)+" is not an ARM64 ELF"
     for symbol in ("bb_lsfg_present","bb_lsfg_init_v2","bb_lsfg_create_context"):
         assert symbol in syms(bf,True),"Bloodframe 2.0 lacks "+symbol
     verified={}
@@ -92,7 +92,7 @@ def inject(assets:Path,render:Path,bloodframe:Path):
                         "frames_per_game_frame":2,
                         "source_commit":"f4ac713aef58d9403a136e179b3b0d163d85eb66",
                     }
-                    data=(json.dumps(manifest,indent=2,ensure_ascii=False)+"\\n").encode()
+                    data=(json.dumps(manifest,indent=2,ensure_ascii=False)+"\n").encode()
                 elif entry.name in replacements:
                     data=replacements.pop(entry.name)
                 elif entry.isfile():
@@ -108,7 +108,7 @@ def inject(assets:Path,render:Path,bloodframe:Path):
                 tar.addfile(info,io.BytesIO(data))
     new=out.getvalue()
     payload.write_bytes(new)
-    digest.write_text(sha(new)+"\\n")
+    digest.write_text(sha(new)+"\n")
     print("SOTC BLOODFRAME VALID: native ARM64 shared library",len(bf_bytes),
           "Vulkan renderer",len(render_bytes),"MAKO-FG model SHA-verified")
     print("SOTC BLOODFRAME VALID: same game CPU/AOT and original GameHub driver; payload",len(new),sha(new))
