@@ -305,18 +305,11 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                                "3" to (if(pt) "3 — Reduzidas" else "3 — Reduced"),
                                "2" to (if(pt) "2 — Próximas" else "2 — Near only"),
                                "1" to (if(pt) "1 — Mínimo" else "1 — Minimum"),
-                               "0" to (if(pt) "0 — Sem sombras do sol" else "0 — No sun shadows")),
+                               "0" to (if(pt) "0 — Motor do jogo (sem limpezas Vulkan)" else "0 — Game engine only (no Vulkan clears)")),
                         {save("sotc_sun_cascades",it)})
-                    Text(if(pt) "Teste A/B experimental. Exclui desenhos das cascatas distantes e limpa as camadas desativadas com a profundidade original do jogo. Sombras locais continuam. A imagem pode ficar diferente; reinicie o jogo para aplicar e compare 5 vs 2 vs 0 no mesmo local."
-                         else "Experimental A/B test. Excludes far cascade draws and clears disabled layers using the game's depth clear value. Local shadows remain. Visuals may change; restart to apply and compare 5 vs 2 vs 0 at the same spot.",
+                    Text(if(pt) "5 = renderização original. 0 = solicita r_enableCascadeShadows=0 ao motor, sem descartar draws nem limpar a profundidade no Vulkan (o PC mostrou ganho, mas no Android ainda não comprovado). 1/2/3 são testes visuais de redução de cascatas. Alterações do modo 0 exigem recompilar AOT no celular."
+                         else "5 = original rendering. 0 = requests r_enableCascadeShadows=0 from the game engine, without skipping draws or clearing Vulkan depth (unverified performance on Android). 1/2/3 remain experimental reduced-cascade render modes. Changing to or from 0 requires recompiling the on-device AOT.",
                         color=SotcPalette.secondary,fontSize=11.sp)
-                    SotcToggle(if(pt) "Otimizar draws indiretos vazios (teste)"
-                                       else "Skip bindings for empty indirect draws (test)",
-                        (values["sotc_indirect_empty_bind_063"]?:"0")=="1",
-                        {save("sotc_indirect_empty_bind_063",if(it)"1" else "0")})
-                    Text(if(pt) "Experimental e desligado por padrão. Em draws indiretos com contagem zero confirmada na memória CPU, preserva a limpeza do render pass e evita binds de recursos. Não altera draws GPU nem geometria válida. Compare FPS na mesma área e confira SOTC INDIRECT EMPTY BIND no log."
-                         else "Experimental and default OFF. For CPU-backed zero-count indirect draws, preserves render-pass clears and skips resource bindings. GPU-written arguments and nonempty geometry remain unchanged. Compare the same scene and check SOTC INDIRECT EMPTY BIND in the log.",
-                         color=SotcPalette.secondary,fontSize=11.sp)
                     SotcToggle(if(pt) "Diagnóstico real de gargalo CPU/GPU (log)"
                                       else "CPU/GPU frame bottleneck profiling (log)",
                         (values["sotc_perf_profile"]?:"0")=="1",
