@@ -64,7 +64,7 @@ jobs:
               assert m['driver']['id']=='gamehub-dd-26.3'
               assert m['bloodframe']['mode']=='opt-in'
               assert m['bloodframe']['frames_per_game_frame']==2
-              assert t.extractfile('sotcport/arm64/lib/libbloodframe.so').read(4)==b'\\x7fELF'
+              assert t.extractfile('sotcport/arm64/lib/libbloodframe.so').read(4)==b'\x7fELF'
               assert len(t.extractfile('sotcport/mako-fg/model/weights.bin').read())>0
           print('PASS Bloodframe native, model, manifest and no fallback drivers')
           PY
