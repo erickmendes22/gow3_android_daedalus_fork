@@ -43,6 +43,26 @@ def main():
         (stage/'gow3port').rename(base)
         (stage/'home/gow3port').rename(stage/'home/sotcport')
         libs=base/'arm64/lib'
+        # The AOT CPU engine was linked with a newer Android NDK. Never ship
+        # the GoW3/FEX-era libc++_shared.so unchanged: the on-device loader
+        # fails before the game even starts (missing std::__hash_memory).
+        libcxx_candidate=os.environ.get('SOTC_AOT_LIBCXX_SHARED','')
+        if libcxx_candidate or os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1':
+            cxx=Path(libcxx_candidate) if libcxx_candidate else (
+                args.ndk.resolve()/'toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib'
+                /'aarch64-linux-android/libc++_shared.so')
+            if not cxx.is_file():
+                raise SystemExit('AOT-matching libc++_shared.so missing: '+str(cxx))
+            readelf=args.ndk.resolve()/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf'
+            subprocess.run(['python3',str(original/'aot/verify_libcxx_abi.py'),
+                            '--old',str(libs/'libc++_shared.so'),
+                            '--new',str(cxx),
+                            '--cpu',str(libs/'libgow3cpu.so'),
+                            '--readelf',str(readelf)],check=True)
+            shutil.copy2(cxx,libs/'libc++_shared.so')
+            # Keep the compiled dynamic symbol table, remove only debug data.
+            strip=args.ndk.resolve()/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+            subprocess.run([str(strip),'--strip-unneeded',str(libs/'libc++_shared.so')],check=True)
         scripts=base/'scripts'
         notices=base/'licenses'
         target=libs/'libbbgpu.so'
