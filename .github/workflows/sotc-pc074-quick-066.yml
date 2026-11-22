@@ -30,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/stage_renderer.py
+          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           renderer=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           liverpool=out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
