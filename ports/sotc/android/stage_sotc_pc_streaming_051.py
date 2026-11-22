@@ -7,8 +7,8 @@ Upstream:
   26e742030b0 -- 256-KiB+ geometry copies off draw thread, joined before submit.
 
 Only the staged SotC Vulkan renderer changes, not GoW3 or guest files.
-Android retains <=128 MiB of idle large staging per memory type, rather than
-the desktop 256 MiB default. Incoherent or disabled copy pools keep original
+Android retains 128 MiB on smaller devices or 256 MiB on >=10 GiB RAM
+devices, not the desktop v0.76 768 MiB reserve. Incoherent or disabled copy pools keep original
 synchronous semantics, and no guest resource operation is skipped.
 """
 from pathlib import Path
@@ -24,6 +24,9 @@ def patch_pc_streaming(gpu: Path) -> None:
     root = gpu / "shadps4/video_core"
     staging = root / "renderer_vulkan/vk_staging_buffer_pool.cpp"
     s = staging.read_text()
+    s = swap(s, "#include <cstdlib>\\n",
+        "#include <cstdlib>\\n#if defined(__ANDROID__)\\n#include <unistd.h>\\n#endif\\n",
+        "Android physical RAM probe for upstream staging cap")
     s = swap(s, """} // Anonymous namespace
 
 StagingBufferPool::StagingBufferPool""", """// SotC PC #339: avoid per-frame allocations for different-sized streaming bursts.
@@ -38,7 +41,22 @@ bool SotcStagingLargePow2() {
 u64 SotcStagingLargeKeepBytes() {
     static const u64 bytes = [] {
         const char* v = std::getenv("SOTC_STAGING_LARGE_KEEP_MB");
-        return (v ? std::strtoull(v, nullptr, 10) : 128ULL) << 20;
+        // PC v0.76 increased the idle staging reserve after repeated large
+        // allocations caused area-transition stalls. On Android keep it bounded
+        // to 128 MiB for small devices and 256 MiB only with >=10 GiB physical
+        // RAM; unlike desktop, never reserve 768 MiB per memory type.
+        u64 fallback_mb = 128;
+#if defined(__ANDROID__)
+        const long pages = sysconf(_SC_PHYS_PAGES);
+        const long page_size = sysconf(_SC_PAGESIZE);
+        if (pages > 0 && page_size > 0 &&
+            u64(pages) * u64(page_size) >= (10ULL << 30)) {
+            fallback_mb = 256;
+        }
+#endif
+        // 'auto' lets the Android launcher explicitly request the RAM-aware
+        // default. Numeric overrides including zero remain supported for A/B.
+        return (v && v[0] != 'a' ? std::strtoull(v, nullptr, 10) : fallback_mb) << 20;
     }();
     return bytes;
 }
