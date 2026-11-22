@@ -101,6 +101,29 @@ def main():
             print('SotC on-device AOT toolchain:',result)
         elif os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1':
             raise SystemExit('AOT compiler archive missing: SOTC_AOT_COMPILER_TAR')
+        if strict_aot:
+            # The official archive supplies the ABI-2 helper bundle ONLY. The
+            # old official bb-recomp has 10 fatal traps on SotC and must not
+            # appear as a runnable fallback anywhere in the strict runtime.
+            patched=Path(os.environ.get('SOTC_AOT_PATCHED_COMPILER',''))
+            if not patched.is_file():
+                raise SystemExit('Strict AOT requires patched Android compiler: SOTC_AOT_PATCHED_COMPILER')
+            binary=patched.read_bytes()
+            if len(binary)<4096 or binary[:4]!=b'\\x7fELF' or int.from_bytes(binary[18:20],'little')!=183:
+                raise SystemExit('SotC patched AOT compiler must be AArch64 ELF PIE')
+            marker=b'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
+            if marker not in binary:
+                raise SystemExit('SotC patched compiler lacks native SIMD/SSE4.2 code marker')
+            patched_sha=hashlib.sha256(binary).hexdigest()
+            jni=ROOT/'out/bionic/apk-jni/arm64-v8a/libbbrecomp.so'
+            jni.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(patched,jni)
+            # APP nativeLibraryDir is executable under Android W^X.
+            # Do not store an extra 53-MB stock compiler in the runtime.
+            (base/'arm64/aot/bin/libbbrecomp.so').unlink(missing_ok=True)
+            digest=base/'arm64/aot/sotc-patched-compiler.sha256'
+            digest.write_text(patched_sha+'  libbbrecomp.so\\n')
+            print('Strict SotC patched AOT SHA256:',patched_sha)
 
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
                         ignore=shutil.ignore_patterns('__pycache__'))
