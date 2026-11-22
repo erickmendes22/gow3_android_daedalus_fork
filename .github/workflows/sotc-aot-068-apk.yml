@@ -103,6 +103,9 @@ jobs:
           # implemented only 30 of 31 strong runtime_* imports.
           grep -Fq 'uint64_t runtime_memory_clamp_gap_hits(void)' src/runtime_memory.c
           grep -Fq '__atomic_fetch_add(&clamp_gap_hits' src/runtime_memory.c
+          # unittest without test files exits nonzero on newer Python, and
+          # must never silently skip this regression gate.
+          test -s tests/test_sotc_vmabi_068.py
           python3 -m unittest discover -s tests -p 'test_sotc_vmabi_068.py' -v
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           python3 - <<'PY'
