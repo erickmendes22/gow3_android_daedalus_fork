@@ -88,11 +88,11 @@ class SotcPc074Tests(unittest.TestCase):
 
     def test_aot_identity_without_fex_or_tso(self):
         gradle=source("android-launcher/app/build.gradle.kts")
-        self.assertIn("versionCode = 10068",gradle)
-        self.assertIn('versionName = "0.1.68-pc074-vmabi"',gradle)
+        self.assertIn("versionCode = 10069",gradle)
+        self.assertIn('versionName = "0.1.69-aot-ux"',gradle)
         self.assertIn('applicationId = "com.sotc.android.daedalus"',gradle)
         package=source("ports/sotc/android/package_sotc_runtime.py")
-        self.assertIn("version='0.1.68-pc074-vmabi'",package)
+        self.assertIn("version='0.1.69-aot-ux'",package)
         self.assertIn("strict_aot=os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1'",package)
 
 if __name__ == '__main__':
