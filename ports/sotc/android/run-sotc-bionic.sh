@@ -227,10 +227,16 @@ echo "SotC Bionic VM: interval cache=$SOTC_VM_RANGE_CACHE; reserve logging cappe
 if [ "${SOTC_PERF_PROFILE:-0}" = "1" ]; then
     export SOTC_FPS=1
     export SOTC_DRAW_SPLIT=1
+    # Native renderer has a bounded scene pass trace: one frame every 300
+    # flips. It names the depth target, shadow cascade slice, attachments
+    # and number of draw submissions. Never enabled during FPS comparisons.
+    export SOTC_PASS_TRACE=1
     unset SOTC_CMD_STATS
-    echo "SotC CPU/GPU frame profiling ON: five-second SOTC FPS/FRAMES/DRAW SPLIT counters"
+    echo "SotC CPU/GPU frame profiling ON: five-second CPU counters + one shadow/pass trace per 300 flips"
 else
-    unset SOTC_FPS SOTC_DRAW_SPLIT SOTC_CMD_STATS
+    # All three source toggles are getenv-presence based, not value based:
+    # explicitly unset for ordinary gameplay and unbiased FPS comparisons.
+    unset SOTC_FPS SOTC_DRAW_SPLIT SOTC_CMD_STATS SOTC_PASS_TRACE
 fi
 export SOTC_FAST_BIND=1
 export SOTC_RECORD_THREAD=1
