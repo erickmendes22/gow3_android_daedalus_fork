@@ -84,6 +84,7 @@ jobs:
             echo "::error::Renderer has unresolved internal symbols; Android dlopen would fail"
             exit 1
           fi
+          nm -D --defined-only out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-067-defined.txt"
           for abi in \
             _ZN6Vulkan5Dlssg10NoteCameraERKN6AmdGpu4RegsEj \
             _ZN6Vulkan5Dlssg12NoteHdrCurveEf \
@@ -91,7 +92,7 @@ jobs:
             _ZN6Vulkan5Dlssg24SuperResolutionUpscalingEv \
             _ZN6Vulkan5Dlssg6SetHdrEb \
             _ZN6Vulkan5Dlssg8HdrCurveEv; do
-            nm -D --defined-only out/sotc-057/libbbgpu.so | grep -Fq "$abi" || {
+            grep -Fq "$abi" "$RUNNER_TEMP/sotc-067-defined.txt" || {
               echo "::error::Missing Android PC Dlssg export $abi"
               exit 1
             }
