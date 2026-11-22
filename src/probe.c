@@ -701,6 +701,13 @@ int main(int argc, char **argv) {
     mallopt(M_ARENA_MAX,1);
     mallopt(M_MMAP_THRESHOLD,32*1024*1024);
 #endif
+    /* SotC's AOT-only APK has no bundled game code on first run. The Vulkan
+     * smoke check must not load BB_AOT before the player compiles the game.
+     * This is GPU-only and does not change the default GoW3 startup path. */
+#ifdef __ANDROID__
+    if (getenv("SOTC_PORT") && argc == 2 && !strcmp(argv[1], "--vulkan-only"))
+        return vulkan_smoke();
+#endif
     /* The guest CPU allocates the memory the guest may hold pointers to through this (below
      * 1 TiB). No-op on x86-64 hosts (src/runtime_cpu.c). */
     guest_cpu_init(runtime_low_map);
