@@ -41,7 +41,7 @@ class SotcAndroidHostAbiTests(unittest.TestCase):
         self.assertIn("sotcport/arm64/bin/sotc-probe > \"$RUNNER_TEMP/sotc-final-probe\"", workflow)
         self.assertIn('--probe "$RUNNER_TEMP/sotc-final-probe"', workflow)
         self.assertIn("run-id: 45069117755", workflow)  # Reuse already validated renderer.
-        self.assertIn("versionCode = 10068", (ROOT / "android-launcher/app/build.gradle.kts").read_text())
+        self.assertIn("versionCode = 10069", (ROOT / "android-launcher/app/build.gradle.kts").read_text())
 
 
 if __name__ == "__main__":
