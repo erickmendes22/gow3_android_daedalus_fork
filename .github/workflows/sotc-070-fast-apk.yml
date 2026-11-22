@@ -21,10 +21,10 @@ jobs:
       - name: Download hash-checked successful 0.1.69 native AOT APK baseline
         uses: actions/download-artifact@v4
         with:
-          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-UNSIGNED
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-UNSIGNED-INCREMENTAL
           run-id: 45076980313
           github-token: ${{ github.token }}
-          path: out/base-068
+          path: out/base-069
       - name: Verify baseline and exact source changes
         run: |
           set -euo pipefail
