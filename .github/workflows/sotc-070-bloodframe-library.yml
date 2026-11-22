@@ -1,0 +1,67 @@
+name: SotC 0.1.70 Bloodframe 2.0 native Android library + verified MAKO model
+on:
+  push:
+    branches: [feature/sotc-070-gamehub-ux-bloodframe]
+    paths: ['.github/workflows/sotc-070-bloodframe-library.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bloodframe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Prepare NDK r29 and host shader tools
+        run: |
+          set -euo pipefail
+          sdkmanager 'ndk;29.0.14206865'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build glslang-tools git
+      - name: Clone SHA-pinned Bloodframe v2.0 + check license and C ABI
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/ducvd89/bloodframe.git .local-bloodframe
+          git -C .local-bloodframe checkout -q f4ac713aef58d9403a136e179b3b0d163d85eb66
+          test "$(git -C .local-bloodframe rev-parse HEAD)" = f4ac713aef58d9403a136e179b3b0d163d85eb66
+          cmp ports/sotc/android/bloodframe/bb_lsfg.h .local-bloodframe/android/bb_lsfg.h
+          grep -Fq 'bb_lsfg_init_v2' .local-bloodframe/android/bb_lsfg.h
+      - name: Build native Android Bloodframe; no Lossless.dll is bundled
+        run: |
+          set -euo pipefail
+          .local-bloodframe/build-android.sh --ndk "$ANDROID_HOME/ndk/29.0.14206865" \
+            --api 30 --out "$PWD/out/bloodframe" --build-dir "$PWD/out/bloodframe-build" --jobs 3
+          so=out/bloodframe/lib/libbloodframe.so
+          test -s "$so"
+          file "$so" | grep -Fq 'ARM aarch64'
+          "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            -D --defined-only "$so" | grep -Fq 'bb_lsfg_present'
+          "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            -D --defined-only "$so" | grep -Fq 'bb_lsfg_init_v2'
+      - name: Fetch verified openly released MAKO-FG V1.24 model (NC license)
+        run: |
+          set -euo pipefail
+          rev=18d7d690515a658c993f84029b245cb710cb83f2
+          mkdir -p out/bloodframe/mako-fg/model
+          fetch() {
+            local path="$1" sha="$2" dest="out/bloodframe/mako-fg/$1"
+            curl -fsSL --retry 5 --retry-delay 3 \
+              "https://huggingface.co/eugeniosegala/MAKO-FG/resolve/$rev/$path?download=true" -o "$dest"
+            printf '%s  %s\n' "$sha" "$dest" | sha256sum -c -
+          }
+          fetch LICENSE e990112837dcd5af880065d292f22f394f87c69912f957eabc54dc0285c6a7fc
+          fetch model/mixture.spv f5395a370e03783273c68295c1b11215e8c0c7c978e07299b68d7e843d6c0e8e
+          fetch model/ops.spv 431ec6d0224111435a62e9e1235d844cc9180083e9e5c79461b47d46a2b950ea
+          fetch model/transport.spv d2285a08b046fcb40ef63254589df3e1defa43e11e8f1026dd9a10c922db992d
+          fetch model/weights.bin 08ed3acfefa71a6d29a208e9a64c73d6593bfc2e83eb0230fe4f8d62ff7ea781
+          cp .local-bloodframe/mako/release.json out/bloodframe/mako-fg/release.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-070-bloodframe-android-v2.0-mako-verified
+          path: |
+            out/bloodframe/lib/libbloodframe.so
+            out/bloodframe/licenses/
+            out/bloodframe/mako-fg/
+          if-no-files-found: error
+          retention-days: 7
