@@ -102,8 +102,26 @@ endif()""",'exclude desktop-only DXGI source')
     text=s.read_text()
     text=swap(text,'#include <SDL3/SDL.h>',
               '#ifndef __ANDROID__\n#include <SDL3/SDL.h>\n#endif','SDL include')
-    text=swap(text,'const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());\n        const u32 rate = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;',
-              '#ifdef __ANDROID__\n        const u32 rate = 60;\n#else\n        const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());\n        const u32 rate = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;\n#endif','display')
+    # PC 0.74 queries the monitor at its window coordinates. Android has
+    # no SDL video: guard the entire desktop refresh-rate calculation.
+    legacy_display='const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());\\n        const u32 rate = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;'
+    monitor_display='''        SDL_DisplayID display = 0;
+        if (const char* at = std::getenv("SOTC_MONITOR_AT")) {
+            SDL_Point point{};
+            if (std::sscanf(at, "%d,%d", &point.x, &point.y) == 2) {
+                display = SDL_GetDisplayForPoint(&point);
+            }
+        }
+        const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display ? display : SDL_GetPrimaryDisplay());
+        const u32 rate = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;'''
+    if legacy_display in text:
+        text=swap(text,legacy_display,
+                  '#ifdef __ANDROID__\\n        const u32 rate = 60;\\n#else\\n        '+legacy_display+'\\n#endif',
+                  'legacy SDL refresh rate')
+    else:
+        text=swap(text,monitor_display,
+                  '        #ifdef __ANDROID__\\n        const u32 rate = 60;\\n        #else\\n'+monitor_display+'\\n        #endif',
+                  'PC 0.74 monitor selection SDL guard')
     text=text.replace('SDL_Delay(2);','std::this_thread::sleep_for(std::chrono::milliseconds(2));')
     text=text.replace('SDL_Delay(50);','std::this_thread::sleep_for(std::chrono::milliseconds(50));')
     s.write_text(text)
