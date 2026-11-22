@@ -80,11 +80,11 @@ jobs:
           tool=/tmp/sotc-bbrecomp-src/out/android-ndk/bb-recomp
           readelf -h "$tool" | grep -F AArch64
           readelf -l "$tool" | grep -F '/system/bin/linker64'
-          strings "$tool" | grep -Fq 'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
+          strings "$tool" | grep -Fq 'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2'
           mkdir -p out/arm64-sotc-patched-compiler
           install -m 755 "$tool" out/arm64-sotc-patched-compiler/libbbrecomp.so
           sha256sum out/arm64-sotc-patched-compiler/libbbrecomp.so > out/arm64-sotc-patched-compiler/sotc-patched-compiler.sha256
-          echo 'SOTC_AOT_MASKED_SSE42_NO_TSO_1' > out/arm64-sotc-patched-compiler/patch-version.txt
+          echo 'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2' > out/arm64-sotc-patched-compiler/patch-version.txt
           file out/arm64-sotc-patched-compiler/libbbrecomp.so
       - uses: actions/upload-artifact@v4
         with:
