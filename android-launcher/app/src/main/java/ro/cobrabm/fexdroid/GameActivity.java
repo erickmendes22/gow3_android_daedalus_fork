@@ -628,6 +628,14 @@ public final class GameActivity extends Activity {
                 // when this diagnostic setting is disabled.
                 env.put("SOTC_PERF_PROFILE",
                         "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
+                // Pure renderer-side A/B: 5 = original; 3/2/1 near cascades
+                // only; 0 = sun map cleared to the guest's far-depth value.
+                // Unrelated eboot patches, local shadows and readbacks untouched.
+                String sunCascades=setting("sotc_sun_cascades");
+                if (!"0".equals(sunCascades) && !"1".equals(sunCascades) &&
+                    !"2".equals(sunCascades) && !"3".equals(sunCascades)) sunCascades="5";
+                env.put("SOTC_SUN_CASCADES",sunCascades);
+
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
                 env.put("SOTC_PIPELINE_BIND_MEMO","1");
