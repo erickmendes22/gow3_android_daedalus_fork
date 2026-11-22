@@ -908,6 +908,16 @@ static void *toggle_watcher(void *path) {
     return NULL;
 }
 void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalidate) {
+    // SotC PC v0.74 #308 verified defaults: depth and G-buffer exact fastpaths
+    // (bits 28/29 CLEAR), while experimental bits 39,59,60 remain OFF.
+    // Only the SotC process adopts these values; GoW3's mask is unchanged.
+    // Install before accepting rendering hooks and before the draw worker.
+    if (getenv("SOTC_PORT")) {
+        const uint64_t pc_safe_mask = (UINT64_C(1) << 39) |
+                                      (UINT64_C(1) << 59) |
+                                      (UINT64_C(1) << 60);
+        __atomic_store_n(&runtime_disabled_optimizations,pc_safe_mask,__ATOMIC_RELEASE);
+    }
     const char *toggles=getenv("GOW3_TOGGLE_FILE");
     static pthread_t watcher;
     if (toggles && !watcher) pthread_create(&watcher,NULL,toggle_watcher,(void *)toggles);
