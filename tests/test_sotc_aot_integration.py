@@ -72,11 +72,19 @@ class SotcAotIntegrationGuards(unittest.TestCase):
         self.assertTrue(0 <= early < first)
         self.assertNotIn("getenv(\"SOTC_PORT\") && argc",c[:first])
 
+    def test_packager_keeps_runtime_staging_directory_after_compiler_import(self):
+        # Regression for 0.1.57 CI crash: importing "stage" directly in main()
+        # overwrites the Path stage variable; packaging then fails at stage/'home'.
+        script=source("ports/sotc/android/package_sotc_runtime.py")
+        self.assertIn("from aot.stage_on_device_compiler import stage as stage_aot_compiler",script)
+        self.assertIn("result=stage_aot_compiler(Path(compiler_archive),base)",script)
+        self.assertNotIn("from aot.stage_on_device_compiler import stage\\n",script)
+
     def test_application_identity_for_install_over(self):
         app=source("android-launcher/app/build.gradle.kts")
         self.assertIn('applicationId = "com.sotc.android.daedalus"',app)
-        self.assertIn('versionCode = 10056',app)
-        self.assertIn('versionName = "0.1.56-aot-libcxx-compat"',app)
+        self.assertIn('versionCode = 10057',app)
+        self.assertIn('versionName = "0.1.57-aot-flatbuf"',app)
 
 if __name__=="__main__":
     unittest.main()
