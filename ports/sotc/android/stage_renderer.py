@@ -541,6 +541,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     patch_pc_streaming(out)
     from stage_sotc_gpu_work_052 import patch_gpu_work
     patch_gpu_work(out)
+    # 2026-11-22: precise readback hot-mode scans up to 256 candidate
+    # regions per fault; skip only those provably outside GPU-written bytes.
+    from stage_sotc_hot_readback_prune_058 import patch_hot_readback_prune
+    patch_hot_readback_prune(out)
     # Forest-area-change compute shaders go to translation workers ahead of dispatch.
     from stage_sotc_compute_prefetch_053 import patch_prefetch
     patch_prefetch(out)
