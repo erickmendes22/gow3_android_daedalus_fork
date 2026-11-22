@@ -79,6 +79,7 @@ def main():
         # proprietary game image is reconstructed on the user's device.
         aot=original/'aot'
         shutil.copy2(aot/'compile_local.py',scripts/'sotc_aot_compile.py')
+        shutil.copy2(aot/'cmdline_image.py',scripts/'cmdline_image.py')
         shutil.copy2(aot/'select_local_aot.py',scripts/'sotc_aot_select.py')
         compiler_archive=os.environ.get('SOTC_AOT_COMPILER_TAR','')
         if compiler_archive:
@@ -115,7 +116,8 @@ def main():
             (base/legacy).unlink(missing_ok=True)
         for entry in scripts.iterdir():
             if entry.name not in ('sotc_prepare_game.py','bachata_perf.py','sotc-upstream',
-                                   'sotc_aot_compile.py','sotc_aot_select.py'):
+                                   'sotc_aot_compile.py','sotc_aot_select.py',
+                                   'cmdline_image.py'):
                 if entry.is_dir(): shutil.rmtree(entry)
                 else: entry.unlink()
         (base/'arm64/bin/gow3-probe').rename(base/'arm64/bin/sotc-probe')
