@@ -560,6 +560,11 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # 3/2/1 experimental depth layers. Disabled in default mode.
     from stage_sotc_sun_shadow_cascades_059 import patch as patch_sun_cascades
     patch_sun_cascades(out)
+    # Source-equivalent PM4 register state, with no redundant producer memcpy
+    # or draw-ring dirty chunk for exact repeats. The context CB/DB extent
+    # processing, guest draw count, shaders, and Vulkan barriers are unchanged.
+    from stage_sotc_pm4_redundant_regs_064 import patch as patch_pm4_redundant
+    patch_pm4_redundant(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
