@@ -598,34 +598,16 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_PRESENT_SOCKET",BASE+"/present.sock");
                 env.put("SOTC_SCREEN_W","1280"); env.put("SOTC_SCREEN_H","720");
                 if (gameDir!=null) env.put("SOTC_GAME_DIR",gameDir);
-                String sotcResolution=setting("sotc_resolution");
-                if(sotcResolution==null) sotcResolution="720p";
-                switch(sotcResolution) {
-                    case "360p": env.put("SOTC_RENDER","640x360"); break;
-                    case "540p": env.put("SOTC_RENDER","960x540"); break;
-                    case "900p": env.put("SOTC_RENDER","1600x900"); break;
-                    case "1080p": env.put("SOTC_RENDER","1920x1080"); break;
-                    default: env.put("SOTC_RENDER","1280x720"); break;
-                }
-                String fps=setting("sotc_fps_mode");
-                if(!"30".equals(fps) && !"fps60".equals(fps)) fps="fps60game";
-                String modes="30".equals(fps) ? "" : fps;
+                // Fixed, device-tested profile; no risky advanced controls in the launcher.
+                env.put("SOTC_RENDER","1280x720");
+                String modes="fps60game";
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","1");
-                // Per-game readback level: 0 Disabled, 1 Relaxed, 2 Precise.
-                String rbMode=setting("sotc_readbacks");
-                if(!"0".equals(rbMode) && !"1".equals(rbMode) && !"2".equals(rbMode)) rbMode="2";
-                env.put("BB_READBACKS",rbMode);
-                // Wave32 is experimental; opt-in avoids unexpected visual regressions.
-                env.put("SOTC_ADRENO_WAVE32",
-                        "1".equals(setting("sotc_adreno_wave32")) ? "1" : "0");
-                // GPU barycentric interpolation is fixed; remaining ghost copies
-                // can originate from native TAA sampling an invalid old frame.
-                // Keep exposure and tonemap; disable ONLY its history blend.
-                // User can re-enable original history from SotC patches for A/B.
-                env.put("SOTC_TAA_OFF",
-                        "1".equals(setting("sotc_taa_history")) ? "0" : "1");
+                // Precisely the verified 0.1.68 profile; stay on original TAA/Adreno path.
+                env.put("BB_READBACKS","2");
+                env.put("SOTC_ADRENO_WAVE32","0");
+                env.put("SOTC_TAA_OFF","1");
                 String cvars="doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0";
                 // SotC 0.1.17: legacy sotc_blur_off=0 was installed by default,
                 // so it cannot distinguish a previous default from a user choice.
@@ -665,18 +647,11 @@ public final class GameActivity extends Activity {
                 // SotC-only VM journal and 512-slot direct cache, fail-closed
                 // to the original Bionic pthread RW lock on any uncertainty.
                 env.put("SOTC_VM_RANGE_CACHE","1");
-                // Existing, native SotC frame-split profiler (not an FPS boost).
-                // The Bionic launcher script unsets getenv-presence switches
-                // when this diagnostic setting is disabled.
-                env.put("SOTC_PERF_PROFILE",
-                        "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
-                // Mode 0 uses the game's engine cascade CVar ONLY; Vulkan does
-                // not skip draws or clear depth slices. 1/2/3 remain optional
-                // isolated experiments, 5 is the original renderer.
-                String sunCascades=setting("sotc_sun_cascades");
-                if (!"0".equals(sunCascades) && !"1".equals(sunCascades) &&
-                    !"2".equals(sunCascades) && !"3".equals(sunCascades)) sunCascades="5";
-                env.put("SOTC_SUN_CASCADES",sunCascades);
+                // Diagnostic counters add CPU overhead. Hidden and OFF in the user profile.
+                env.put("SOTC_PERF_PROFILE","0");
+                // Sun shadow cascade 0 never removed shadows in device tests.
+                // Restore the original game behavior and remove the invalid toggle.
+                env.put("SOTC_SUN_CASCADES","5");
 
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
@@ -702,12 +677,8 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_VM_GAP_CACHE","1");
                 env.put("SOTC_COPY_BATCH","1");
                 env.put("SOTC_RB_NARROW","64");
-                // PC 0.72 +25% PC-only Shrine result; optional here until Android tests.
-                // Precise Readback 2 required; game-revision check in probe fails closed.
-                env.put("SOTC_RB_HOT",
-                        "1".equals(setting("sotc_pc072_fast_readbacks_050")) &&
-                        !"0".equals(setting("sotc_readbacks")) &&
-                        !"1".equals(setting("sotc_readbacks")) ? "1" : "0");
+                // Retain the user-tested precise + hot-readback profile.
+                env.put("SOTC_RB_HOT","1");
                 // Exact native SotC sequential GPU readbacks with bounded prefetch.
                 env.put("SOTC_RB_STREAM","1");
                 env.put("SOTC_RB_STREAM_MAX_KB","1024");
