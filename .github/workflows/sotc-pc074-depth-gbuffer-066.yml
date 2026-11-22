@@ -3,21 +3,6 @@ on:
   push:
     branches: [feature/sotc-pc074-depth-gbuffer-aot-066]
     paths:
-      - 'ports/sotc/android/stage_sotc_flatbuf_reuse_057.py'
-      - 'ports/sotc/android/stage_sotc_pc_streaming_051.py'
-      - 'ports/sotc/android/run-sotc-bionic.sh'
-      - 'tests/test_sotc_pc_staging_065.py'
-      - 'ports/sotc/android/stage_renderer.py'
-      - 'tests/test_sotc_flatbuf_reuse_057.py'
-      - 'ports/sotc/android/stage_sotc_cp_relax_arm64.py'
-      - 'ports/sotc/android/stage_sotc_hot_readback_prune_058.py'
-      - 'ports/sotc/android/stage_sotc_sun_shadow_cascades_059.py'
-      - 'tests/test_sotc_sun_shadow_regression_064.py'
-      - 'ports/sotc/android/stage_sotc_pm4_redundant_regs_064.py'
-      - 'tests/test_sotc_pm4_redundant_regs_064.py'
-      - 'tests/test_sotc_hot_readback_prune_058.py'
-      - 'tests/test_sotc_sun_shadow_cascades_059.py'
-      - 'tests/test_sotc_cp_relax_arm64.py'
       - '.github/workflows/sotc-pc074-depth-gbuffer-066.yml'
   workflow_dispatch:
 permissions:
