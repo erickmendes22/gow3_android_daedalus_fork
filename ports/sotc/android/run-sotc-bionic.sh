@@ -16,10 +16,9 @@ prepare="$base/scripts/sotc_prepare_game.py"
 [ -f "$runtime/lib/libbbcpu.so" ] && [ -f "$runtime/lib/libgow3cpu.so" ] || {
     echo "SotC AOT CPU backend missing (do not silently start FEX)" >&2; exit 2;
 }
-[ -s "$runtime/lib/libSotcAot.so" ] || {
-    echo "SotC bundled AOT code missing (do not silently start FEX)" >&2; exit 2;
-}
-export BB_AOT="$runtime/lib/libSotcAot.so"
+# No copyrighted game code is packaged. On-device compilation is mandatory:
+# the local libSotcAot.so is checked against this game's image and patches.
+# During 'compile' mode the standalone bb-recomp tool runs without guest CPU.
 export BB_AOT_MISS_LOG="$base/logs/aot-misses.log"
 
 [ -f "$runtime/lib/libbbgpu.so" ] || { echo "SotC Vulkan library libbbgpu.so missing" >&2; exit 2; }
@@ -32,10 +31,8 @@ export HOME="$files/home/sotcport" TMPDIR="$base/tmp" XDG_RUNTIME_DIR="$base/tmp
 export SOTC_PORT=1
 export PATH=/system/bin LD_LIBRARY_PATH="$runtime/lib:$runtime/python/lib"
 export PYTHONHOME="$runtime/python" PYTHONPATH="$base/scripts" PYTHONUTF8=1
-export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/"
-export FEX_APP_DATA_LOCATION="$HOME/.fex-emu/"
-export FEX_APP_CACHE_LOCATION="$HOME/.cache/fex-emu/"
-mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/logs" "$out"
+mkdir -p "$TMPDIR" "$HOME" "$base/user" "$base/logs" "$out"
+# The AOT-only launcher does not configure or execute any FEX runtime.
 # GPU pass dumps remain available on demand but are not forced at launch.
 # Automatic volumetric-fog capture was unrelated to the missing geometry.
 # Do not alter SOTC_DUMP/SOTC_AUTO_GPU_DUMP_AFTER supplied by the caller.
