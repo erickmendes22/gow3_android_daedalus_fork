@@ -90,6 +90,9 @@ final class Order1886LauncherConfig {
         env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
         env.put("ORDER1886_PIPELINE_BINARIES","0");
+        // Dedicated native VkPipelineCache identity for the single-MSAA renderer.
+        // No archived graphics pipeline replay. Toggle allows immediate rollback.
+        env.put("GOW3_DRIVER_CACHE",p.getBoolean("gpuDriverPipelineCache",true)?"1":"0");
         env.put("ORDER1886_PARALLEL_WARMUP","0");
         env.put("ORDER1886_DEFERRED_READBACK","0");
         env.put("ORDER1886_PREP_WORKERS","0");
