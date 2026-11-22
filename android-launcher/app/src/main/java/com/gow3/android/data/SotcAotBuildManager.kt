@@ -37,7 +37,7 @@ internal class SotcAotBuildManager(
                 require(File(selected, "eboot.bin").isFile) { "eboot.bin não encontrado no jogo selecionado" }
                 RuntimeInstaller.ensure(activity, files) { status(it) }
                 val script = File(base, "run-sotc-bionic.sh")
-                val tool = File(base, "arm64/aot/bin/libbbrecomp.so")
+                val tool = File(activity.applicationInfo.nativeLibraryDir, "libbbrecomp.so")
                 require(script.isFile && tool.isFile) {
                     "Este APK não inclui o compilador AOT ARM64"
                 }
@@ -70,6 +70,7 @@ internal class SotcAotBuildManager(
                 env["TMPDIR"] = File(base, "tmp").absolutePath
                 env["LD_LIBRARY_PATH"] = File(base, "arm64/lib").absolutePath + ":" +
                     File(base, "arm64/python/lib").absolutePath
+                env["SOTC_AOT_COMPILER_BINARY"] = tool.absolutePath
                 env["SOTC_GAME_DIR"] = selected.absolutePath
                 env["SOTC_RENDER"] = render
                 env["SOTC_MODES"] = modes.joinToString(",")
