@@ -913,10 +913,20 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
     // Only the SotC process adopts these values; GoW3's mask is unchanged.
     // Install before accepting rendering hooks and before the draw worker.
     if (getenv("SOTC_PORT")) {
-        const uint64_t pc_safe_mask = (UINT64_C(1) << 39) |
+        uint64_t pc_safe_mask = (UINT64_C(1) << 39) |
                                       (UINT64_C(1) << 59) |
                                       (UINT64_C(1) << 60);
+        // Reversible per-fastpath controls for command-density-matched A/B.
+        // Setting either to 0 restores only that exact PC rendering path.
+        const char *depth_fast=getenv("SOTC_DEPTH_FAST");
+        const char *gbuffer_fast=getenv("SOTC_GBUFFER_FAST");
+        if (depth_fast && depth_fast[0]=='0') pc_safe_mask |= UINT64_C(1) << 28;
+        if (gbuffer_fast && gbuffer_fast[0]=='0') pc_safe_mask |= UINT64_C(1) << 29;
         __atomic_store_n(&runtime_disabled_optimizations,pc_safe_mask,__ATOMIC_RELEASE);
+        printf("SotC PC #308 depth fast=%s G-buffer fast=%s disabled=%llu\\n",
+               depth_fast && depth_fast[0]=='0' ? "off" : "on",
+               gbuffer_fast && gbuffer_fast[0]=='0' ? "off" : "on",
+               (unsigned long long)pc_safe_mask);
     }
     const char *toggles=getenv("GOW3_TOGGLE_FILE");
     static pthread_t watcher;
