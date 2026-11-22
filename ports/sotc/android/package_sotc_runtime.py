@@ -109,7 +109,7 @@ def main():
             if not patched.is_file():
                 raise SystemExit('Strict AOT requires patched Android compiler: SOTC_AOT_PATCHED_COMPILER')
             binary=patched.read_bytes()
-            if len(binary)<4096 or binary[:4]!=b'\\x7fELF' or int.from_bytes(binary[18:20],'little')!=183:
+            if len(binary)<4096 or binary[:4]!=b'\x7fELF' or int.from_bytes(binary[18:20],'little')!=183:
                 raise SystemExit('SotC patched AOT compiler must be AArch64 ELF PIE')
             marker=b'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
             if marker not in binary:
@@ -122,7 +122,7 @@ def main():
             # Do not store an extra 53-MB stock compiler in the runtime.
             (base/'arm64/aot/bin/libbbrecomp.so').unlink(missing_ok=True)
             digest=base/'arm64/aot/sotc-patched-compiler.sha256'
-            digest.write_text(patched_sha+'  libbbrecomp.so\\n')
+            digest.write_text(patched_sha+'  libbbrecomp.so\n')
             print('Strict SotC patched AOT SHA256:',patched_sha)
 
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
