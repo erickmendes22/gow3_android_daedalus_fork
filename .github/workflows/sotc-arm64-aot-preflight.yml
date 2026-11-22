@@ -27,6 +27,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/aot/compile_local.py ports/sotc/android/aot/port_guest_context.py tests/test_sotc_arm64_aot_bootstrap.py tests/test_sotc_aot_guest_context.py
           python3 -m py_compile ports/sotc/android/aot/cmdline_image.py tests/test_sotc_aot_cmdline.py
+          python3 -m py_compile ports/sotc/android/package_sotc_runtime.py ports/sotc/android/aot/select_local_aot.py ports/sotc/android/aot/verify_libcxx_abi.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
           bash -n ports/sotc/android/aot/build_native_cpu.sh
       - name: Guard BBPROBE5 codegen, original game files, patches and NO x86 TSO
         run: |
