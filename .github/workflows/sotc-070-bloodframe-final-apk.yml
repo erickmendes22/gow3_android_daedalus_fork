@@ -100,6 +100,9 @@ jobs:
           print('PASS SotC 0.1.70 Android APK, Bloodframe payload, AOT compiler and CRC')
           PY
           (cd out/release && sha256sum Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk > Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk.sha256)
+          # Signing occurs in our private environment with the user's ORIGINAL
+          # PKCS#12 certificate; never upload or commit the private key to CI.
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" out/release/apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
           name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-UNSIGNED
@@ -107,5 +110,6 @@ jobs:
             out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk
             out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk.sha256
             out/release/sotc-070-final-badging.txt
+            out/release/apksigner.jar
           if-no-files-found: error
           retention-days: 7
