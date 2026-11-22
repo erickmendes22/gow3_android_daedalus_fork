@@ -3,7 +3,7 @@ on:
   push:
     branches: [feature/sotc-070-gamehub-ux-bloodframe]
     paths:
-      - '.github/workflows/sotc-pc074-depth-gbuffer-066.yml'
+      - '.github/workflows/sotc-070-bloodframe-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -107,7 +107,7 @@ jobs:
         id: sotc-arm64-ccache
         with:
           path: ~/.cache/ccache
-          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
+          key: sotc-bloodframe-070-ccache-${{ github.run_id }}
           restore-keys: |
             sotc-pc074-arm64-ccache-
       - name: Prepare Vulkan renderer dependencies
@@ -182,7 +182,7 @@ jobs:
         if: always()
         with:
           path: ~/.cache/ccache
-          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
+          key: sotc-bloodframe-070-ccache-${{ github.run_id }}
       - uses: actions/cache/save@v4
         if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
         with:
@@ -192,7 +192,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-067-pc074-depth-gbuffer-bootfix-ahb-arm64
+          name: sotc-aot-070-bloodframe-ahb-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
