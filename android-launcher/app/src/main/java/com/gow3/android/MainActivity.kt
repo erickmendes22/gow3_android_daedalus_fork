@@ -78,7 +78,15 @@ class MainActivity : ComponentActivity() {
                         } else if (aotBusy.value) {
                             android.widget.Toast.makeText(this,"Recompilação AOT em andamento",android.widget.Toast.LENGTH_LONG).show()
                         } else if (gameFolderManager.hasGameFolder()) {
-                            startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
+                            if (packageName == "com.sotc.android.daedalus") {
+                                // Never enter a game with stale/missing AOT. On first play
+                                // compile automatically; later reuse the checked build.
+                                sotcAotBuilder.ensureReadyThen {
+                                    startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
+                                }
+                            } else {
+                                startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
+                            }
                         }
                     },
                     onChooseGameFolder = { gameFolderManager.chooseGameFolder() },
