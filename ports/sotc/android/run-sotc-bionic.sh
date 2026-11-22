@@ -295,7 +295,7 @@ mkdir -p "$BB_GPU_USER_DIR"
 echo "SotC GPU cache revision: srt-phi7-tess-gs-position-turnip-nomultipos; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
-    game|compile) ;;
+    game|compile|verify) ;;
     *) echo "Unknown SotC launcher mode" >&2; exit 2 ;;
 esac
 sotc_mode=${1:-game}
@@ -311,6 +311,33 @@ fi
 for item in boot-linked.bin content.bin patches.bin sotc-cpu.bin; do
     [ -s "$out/$item" ] || { echo "Missing prepared SotC file: $item" >&2; exit 3; }
 done
+# Non-playing AOT verification. The user never reaches a broken boot or has
+# to manually discover that a code library does not match the selected patches.
+# A known compiled profile is swapped back in constant time; two previous
+# profiles are preserved. Game data and the original eboot are never modified.
+if [ "$sotc_mode" = verify ]; then
+    select_script="$base/scripts/sotc_aot_select.py"
+    if [ -s "$base/user/aot/libSotcAot.so" ] &&
+       "$python" "$select_script" --prepared "$out" --report "$base/user/aot/aot-report.json"; then
+        echo "SOTC_AOT_VERIFIED: current profile"
+        exit 0
+    fi
+    for candidate in "$base/user/aot-profiles/previous-1" "$base/user/aot-profiles/previous-2"; do
+        [ -s "$candidate/libSotcAot.so" ] || continue
+        if "$python" "$select_script" --prepared "$out" --report "$candidate/aot-report.json"; then
+            swap="$base/user/.aot-swap-$"
+            mv "$candidate" "$swap"
+            if [ -d "$base/user/aot" ]; then
+                mv "$base/user/aot" "$candidate"
+            fi
+            mv "$swap" "$base/user/aot"
+            echo "SOTC_AOT_VERIFIED: reused compiled patch profile"
+            exit 0
+        fi
+    done
+    echo "SOTC_AOT_REBUILD_REQUIRED: first access, new game, or changed patch profile"
+    exit 6
+fi
 # Recompile game code on the phone, using the exact same prepared settings.
 # The output library is promoted only after a full successful LLVM build and ABI
 # validation. Its old working copy remains available on failure.
@@ -357,7 +384,18 @@ if [ "$sotc_mode" = compile ]; then
         [ ! -d "$backup" ] || mv "$backup" "$base/user/aot"
         exit 5
     fi
-    rm -rf "$backup"
+    # Retain the preceding two validated AOT profiles: moving between
+    # already-compiled effect settings then needs only preparation + SHA checks.
+    # Do not copy large code libraries or silently reuse an unverified one.
+    if [ -d "$backup" ]; then
+        cache="$base/user/aot-profiles"
+        mkdir -p "$cache"
+        rm -rf "$cache/previous-2"
+        if [ -d "$cache/previous-1" ]; then
+            mv "$cache/previous-1" "$cache/previous-2"
+        fi
+        mv "$backup" "$cache/previous-1"
+    fi
     echo "SOTC_AOT_READY: $(wc -c < "$base/user/aot/libSotcAot.so") bytes"
     exit 0
 fi
