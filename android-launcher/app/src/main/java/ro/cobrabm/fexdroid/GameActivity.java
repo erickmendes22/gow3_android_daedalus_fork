@@ -61,8 +61,8 @@ public final class GameActivity extends Activity {
     // SotC's Android surface receives decoded game frames through Gow3Present.
     // This HUD measures those frames, never fake patch targets or CPU loop speed.
     private TextView sotcFpsHud;
-    private long sotcFpsLastFrames = -1L;
-    private long sotcFpsLastAtMillis = 0L;
+    private final FpsMeter sotcFpsMeter = new FpsMeter();
+    private boolean gameLaunchedOnce;
     private boolean framesPollScheduled;
     private View resume;
     private LinearLayout gameSettingsItem, cheatsItem, graphicsItem, controllerItem, swapFaceItem;
@@ -140,8 +140,9 @@ public final class GameActivity extends Activity {
             if (Build.VERSION.SDK_INT < 30) throw new java.io.IOException("Bionic runtime requires Android 11 or newer");
             String result=Gow3Present.start(holder,BASE+"/present.sock","1".equals(setting("android_fullscreen")));
             if (!result.startsWith("bridge running:")) throw new java.io.IOException(result);
-            if (!displayOnly && game==null && !startingX) {
+            if (!displayOnly && game==null && !startingX && !gameLaunchedOnce) {
                 startingX=true;
+                gameLaunchedOnce=true;
                 worker.execute(() -> {
                     if (audio!=null) audio.start();
                     if (audio==null || !audio.awaitReady(5000)) { error("Android audio bridge could not start"); return; }
@@ -210,15 +211,9 @@ public final class GameActivity extends Activity {
         if (sotcRuntime()) {
             // Separate Android UI view, above Vulkan but below the game drawer.
             // Keep it below the touch controller's top shoulder buttons.
-            sotcFpsHud=text("FPS --  |  -- ms",13,0xfff7eddf);
-            sotcFpsHud.setTypeface(android.graphics.Typeface.MONOSPACE,
-                                   android.graphics.Typeface.BOLD);
-            sotcFpsHud.setSingleLine(true);
-            sotcFpsHud.setPadding(dp(10),dp(4),dp(10),dp(4));
-            GradientDrawable hudBackground=new GradientDrawable();
-            hudBackground.setColor(0xc0121b21);
-            hudBackground.setCornerRadius(dp(7));
-            sotcFpsHud.setBackground(hudBackground);
+            sotcFpsHud=text("FPS --",12,HudPresentation.FPS_COLOR);
+            HudPresentation.style(sotcFpsHud,
+                getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE));
             sotcFpsHud.setClickable(true);
             sotcFpsHud.setFocusable(false);
             sotcFpsHud.setContentDescription("Shadow of the Colossus frame rate");
@@ -480,7 +475,8 @@ public final class GameActivity extends Activity {
         setDetail(cheatsItem,cheats.isEmpty() ? "Off" : String.join(" · ",cheats));
          */
         if (sotcRuntime()) {
-            setDetail(graphicsItem,"720p · game 60 FPS · patches on launcher");
+            setDetail(graphicsItem,UiText.portuguese(this) ?
+                "720p · 30 FPS do jogo · patches no launcher" : "720p · 30 FPS game · patches on launcher");
             setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
             setDetail(swapFaceItem,getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
             return;
@@ -633,7 +629,7 @@ public final class GameActivity extends Activity {
                 if (gameDir!=null) env.put("SOTC_GAME_DIR",gameDir);
                 // Fixed, device-tested profile; no risky advanced controls in the launcher.
                 env.put("SOTC_RENDER","1280x720");
-                String modes="fps60game";
+                String modes="";
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
                 env.put("SOTC_VSYNC","1");
@@ -870,28 +866,14 @@ public final class GameActivity extends Activity {
 
     private void pollFrames() {
         if (destroyed || framesPollScheduled) return;
-        final long now=android.os.SystemClock.elapsedRealtime();
+        final long now=android.os.SystemClock.elapsedRealtimeNanos();
         final long frames=bionicRuntime() ? Gow3Present.framesIfLoaded() : DisplayBridge.directFrames();
         if (!hadError && frames>0) status.setVisibility(View.GONE);
         if (sotcFpsHud!=null) {
             final boolean visible=true;
             sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
-            if (sotcFpsLastFrames<0 || now<sotcFpsLastAtMillis ||
-                frames<sotcFpsLastFrames) {
-                sotcFpsHud.setText("FPS --  |  -- ms");
-                sotcFpsLastFrames=frames;
-                sotcFpsLastAtMillis=now;
-            } else if (now-sotcFpsLastAtMillis>=950) {
-                final long elapsed=now-sotcFpsLastAtMillis;
-                final long delivered=frames-sotcFpsLastFrames;
-                // Count real renderer frames received by the Android bridge.
-                // They may be dropped by SurfaceFlinger if VSync is disabled.
-                final double fps=delivered*1000.0/elapsed;
-                sotcFpsHud.setText(String.format(java.util.Locale.US,
-                    "FPS %.1f  |  %.1f ms",fps,fps>0 ? 1000.0/fps : 0.0));
-                sotcFpsLastFrames=frames;
-                sotcFpsLastAtMillis=now;
-            }
+            final double fps=sotcFpsMeter.sample(frames,now);
+            sotcFpsHud.setText(HudPresentation.text("compact",fps,Double.NaN,Double.NaN,false,false));
         }
         framesPollScheduled=true;
         main.postDelayed(() -> {
@@ -972,8 +954,8 @@ public final class GameActivity extends Activity {
     private void startGame() {
         if (destroyed) return;
         hadError=false;
-        sotcFpsLastFrames=-1L;
-        sotcFpsLastAtMillis=0L;
+        sotcFpsMeter.reset();
+        gameLaunchedOnce=true;
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
         try {
             Process launched=bionicRuntime() ? process("/system/bin/sh",
