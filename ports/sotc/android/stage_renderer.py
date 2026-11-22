@@ -548,6 +548,10 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # within a live Vulkan tick and a stable streaming-buffer wrap.
     from stage_sotc_flatbuf_reuse_057 import patch as patch_flatbuf_reuse
     patch_flatbuf_reuse(out)
+    # Android ARM64 only: restore the CPU yield hint while waiting for the
+    # CP->draw ring; retain 4096 spins, 512 slots and all queue ordering.
+    from stage_sotc_cp_relax_arm64 import patch as patch_cp_relax
+    patch_cp_relax(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
