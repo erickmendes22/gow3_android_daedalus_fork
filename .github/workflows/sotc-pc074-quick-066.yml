@@ -31,6 +31,14 @@ jobs:
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/stage_renderer.py
           python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_regression_064.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pm4_redundant_regs_064.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           renderer=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           liverpool=out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
