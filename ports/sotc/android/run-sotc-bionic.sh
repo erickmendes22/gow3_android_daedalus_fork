@@ -11,6 +11,17 @@ out="$base/sotc-out"
 upstream="$base/scripts/sotc-upstream"
 prepare="$base/scripts/sotc_prepare_game.py"
 [ -x "$probe" ] || { echo "SotC Bionic native loader missing" >&2; exit 2; }
+# The strict AOT variant needs both the native CPU engine and the selected
+# code library. An on-device rebuild is a separate non-game launch mode.
+[ -f "$runtime/lib/libbbcpu.so" ] && [ -f "$runtime/lib/libgow3cpu.so" ] || {
+    echo "SotC AOT CPU backend missing (do not silently start FEX)" >&2; exit 2;
+}
+[ -s "$runtime/lib/libSotcAot.so" ] || {
+    echo "SotC bundled AOT code missing (do not silently start FEX)" >&2; exit 2;
+}
+export BB_AOT="$runtime/lib/libSotcAot.so"
+export BB_AOT_MISS_LOG="$base/logs/aot-misses.log"
+
 [ -f "$runtime/lib/libbbgpu.so" ] || { echo "SotC Vulkan library libbbgpu.so missing" >&2; exit 2; }
 [ -x "$python" ] && [ -f "$prepare" ] && [ -f "$upstream/scripts/prepare.py" ] ||
     { echo "SotC game preparation scripts missing" >&2; exit 2; }
@@ -249,9 +260,10 @@ mkdir -p "$BB_GPU_USER_DIR"
 echo "SotC GPU cache revision: srt-phi7-tess-gs-position-turnip-nomultipos; profile=$sotc_gpu_profile; directory=$BB_GPU_USER_DIR"
 case ${1:-game} in
     vulkan) exec "$probe" --vulkan-only ;;
-    game) ;;
+    game|compile) ;;
     *) echo "Unknown SotC launcher mode" >&2; exit 2 ;;
 esac
+sotc_mode=${1:-game}
 echo "SotC requested guest render: ${SOTC_RENDER:-1280x720}; Android output: ${SOTC_SCREEN_W}x${SOTC_SCREEN_H} (output remains 720p)"
 set -- "$python" "$prepare" --upstream "$upstream" --game-dir "$game" \
     --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-fps60game}" \
@@ -264,13 +276,46 @@ fi
 for item in boot-linked.bin content.bin patches.bin sotc-cpu.bin; do
     [ -s "$out/$item" ] || { echo "Missing prepared SotC file: $item" >&2; exit 3; }
 done
-# FEX implements guest x86 SSE4a; PC-only Xbyak CPU patchers are not native ARM64.
+# Recompile game code on the phone, using the exact same prepared settings.
+# The output library is promoted only after a full successful LLVM build and ABI
+# validation. Its old working copy remains available on failure.
+if [ "$sotc_mode" = compile ]; then
+    compiler="$runtime/aot/bin/libbbrecomp.so"
+    bundle="$runtime/aot/bundle"
+    script="$base/scripts/sotc_aot_compile.py"
+    [ -x "$compiler" ] && [ -d "$bundle" ] && [ -s "$script" ] ||
+        { echo "AOT compiler tools not included in this APK" >&2; exit 4; }
+    echo "SOTC AOT: starting on-device ARM64 rebuild (no TSO, no FEX)"
+    "$python" "$script" --game "$game" --prepared "$out" \
+        --out "$base/user/aot-work" --compiler "$compiler" \
+        --bundle-dir "$bundle" --jobs 2 --shards 128
+    [ -s "$base/user/aot-work/aot/libSotcAot.so" ] || exit 5
+    mkdir -p "$base/user/aot"
+    cp "$base/user/aot-work/aot/libSotcAot.so" "$base/user/aot/libSotcAot.so.new"
+    mv "$base/user/aot/libSotcAot.so.new" "$base/user/aot/libSotcAot.so"
+    cp "$base/user/aot-work/aot-report.json" "$base/user/aot/aot-report.json.new"
+    mv "$base/user/aot/aot-report.json.new" "$base/user/aot/aot-report.json"
+    echo "SOTC_AOT_READY: $(wc -c < "$base/user/aot/libSotcAot.so") bytes"
+    exit 0
+fi
+# Select only a locally compiled library whose source and patch fingerprints
+# match the prepared image. Never reuse stale code when graphics toggles change.
+if [ -s "$base/user/aot/libSotcAot.so" ]; then
+    if "$python" "$base/scripts/sotc_aot_select.py" \
+        --prepared "$out" --report "$base/user/aot/aot-report.json"; then
+        export BB_AOT="$base/user/aot/libSotcAot.so"
+        echo "SOTC AOT: using verified local user recompilation"
+    else
+        echo "SOTC AOT: local build is stale; rebuild from the launcher" >&2
+        exit 6
+    fi
+fi
 set -- "$probe" "$out/boot-linked.bin" \
     --content-profile "$out/content.bin" --patches "$out/patches.bin" \
     --app0 "$game" --user "$base/user" --timeout "${SOTC_TIMEOUT:-0}"
-if [ -s "$out/cmdline.bin" ]; then
-    set -- "$@" --sotc-cmdline "$out/cmdline.bin"
-fi
-echo "SotC Bionic: title from original BBPROBE5, driver=$driver, FEX ARM64"
+# --sotc-cmdline edits executable bytes at runtime and would invalidate AOT.
+# Keep it disabled until that string is injected before compilation.
+
+echo "SotC Bionic: title from BBPROBE5, driver=$driver, ARM64 AOT NO-FEX NO-TSO"
 cd "$base"
 exec "$@"
