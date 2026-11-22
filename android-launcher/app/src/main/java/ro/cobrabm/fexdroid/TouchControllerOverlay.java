@@ -42,7 +42,7 @@ final class TouchControllerOverlay extends View {
 
     TouchControllerOverlay(Context context,PadBridge pad,boolean mouseEnabled) {
         super(context); this.pad=pad; this.mouseEnabled=mouseEnabled;
-        preferences=context.getSharedPreferences("gow3",Context.MODE_PRIVATE);
+        preferences=context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE);
         for (int i=0;i<NAMES.length;i++) {
             String name=NAMES[i];
             centers.put(name,new PointF(preferences.getFloat("overlay_x_"+name,DEFAULT[i][0]),
@@ -51,6 +51,22 @@ final class TouchControllerOverlay extends View {
         setContentDescription("On-screen PlayStation controller");
     }
     private PointF center(String name) { return centers.get(name); }
+    // User-adjustable without rebooting the game. SotC ships larger touch targets
+    // than the older GoW3 layout; stored separately for each port.
+    private float controlScale() {
+        return Math.max(0.8f,Math.min(1.5f,preferences.getFloat("controller_size",
+            getContext().getPackageName().equals("com.sotc.android.daedalus") ? 1.18f : 1.0f)));
+    }
+    void setControlSize(float scale) {
+        preferences.edit().putFloat("controller_size",Math.max(0.8f,Math.min(1.5f,scale))).apply();
+        release();
+        invalidate();
+    }
+    void setCameraSensitivity(float sensitivity) {
+        preferences.edit().putFloat("controller_camera_sensitivity",
+            Math.max(0.6f,Math.min(1.75f,sensitivity))).apply();
+        release();
+    }
     // The 1280x720 layout drawn at one scale in the centred 16:9 area, as the game (MainActivity):
     // round on any screen shape. Controls may be dragged into the bars around it.
     private float scale() { return Math.max(1e-3f,Math.min(getWidth()/1280f,getHeight()/720f)); }
@@ -70,7 +86,8 @@ final class TouchControllerOverlay extends View {
     }
     private String hit(float x,float y) {
         PointF dpad=dpadCenter();
-        if (!editing && distance(x,y,dpad)<112 && distance(center("up").x,center("up").y,dpad)<115 &&
+        float factor=controlScale();
+        if (!editing && distance(x,y,dpad)<112*factor && distance(center("up").x,center("up").y,dpad)<115 &&
             distance(center("left").x,center("left").y,dpad)<115 &&
             distance(center("right").x,center("right").y,dpad)<115 &&
             distance(center("down").x,center("down").y,dpad)<115) return "dpad";
@@ -78,8 +95,8 @@ final class TouchControllerOverlay extends View {
         for (String name:NAMES) {
             PointF p=center(name);
             float dx=Math.abs(x-p.x),dy=Math.abs(y-p.y);
-            boolean inside=rectangle(name) ? dx<(name.equals("touchpad") ? 72 : 62) && dy<38
-                    : distance(x,y,p)<(stick(name) ? 70 : name.equals("l3") || name.equals("r3") ? 39 : 48);
+            boolean inside=rectangle(name) ? dx<(name.equals("touchpad") ? 72*factor : 65*factor) && dy<40*factor
+                    : distance(x,y,p)<(stick(name) ? 76*factor : name.equals("l3") || name.equals("r3") ? 40*factor : 51*factor);
             if (inside && distance(x,y,p)<best) { best=distance(x,y,p); winner=name; }
         }
         return winner;
@@ -106,8 +123,9 @@ final class TouchControllerOverlay extends View {
                 ly=axis(Math.max(-1f,Math.min(1f,(p.y-c.y)/56f)));
             } else if (control.equals("rightstick")) {
                 right=true; PointF c=center(control);
-                rx=axis(Math.max(-1f,Math.min(1f,(p.x-c.x)/56f)));
-                ry=axis(Math.max(-1f,Math.min(1f,(p.y-c.y)/56f)));
+                float sens=preferences.getFloat("controller_camera_sensitivity",1.18f);
+                rx=axis(Math.max(-1f,Math.min(1f,((p.x-c.x)/60f)*sens)));
+                ry=axis(Math.max(-1f,Math.min(1f,((p.y-c.y)/60f)*sens)));
             } else if (control.equals("l2")) { l2=255; pressed.add(control); }
             else if (control.equals("r2")) { r2=255; pressed.add(control); }
             else if (control.equals("touchpad")) pressed.add("touchpad_right"); /* 右侧点击:打开游戏暂停菜单,进而可进存档列表 */
@@ -165,7 +183,9 @@ final class TouchControllerOverlay extends View {
         if (action==MotionEvent.ACTION_DOWN || action==MotionEvent.ACTION_POINTER_DOWN) {
             float x=layoutX(e,at),y=layoutY(e,at);
             String name=hit(x,y);
-            if (name==null && !mouseEnabled) return true;
+            // Let empty-area touches reach the game drawer and Android's
+            // edge gesture rather than swallowing the whole screen.
+            if (name==null && !mouseEnabled) return action==MotionEvent.ACTION_POINTER_DOWN && controls.size()>0;
             controls.put(id,name==null ? "mouse" : name);
             positions.put(id,new PointF(x,y));
         } else if (action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_POINTER_UP) {
@@ -184,9 +204,9 @@ final class TouchControllerOverlay extends View {
         PointF p=center(name);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : pressed.contains(name) ? 0xaae8dfc9 : 0x6630394c);
-        c.drawCircle(p.x,p.y,r,paint);
+        c.drawCircle(p.x,p.y,r*controlScale(),paint);
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3); paint.setColor(accent);
-        c.drawCircle(p.x,p.y,r,paint);
+        c.drawCircle(p.x,p.y,r*controlScale(),paint);
         paint.setStyle(Paint.Style.FILL); paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setTextSize(label.length()>2 ? 19 : 33); paint.setTextAlign(Paint.Align.CENTER);
         c.drawText(label,p.x,p.y-(paint.ascent()+paint.descent())/2,paint);
@@ -199,9 +219,10 @@ final class TouchControllerOverlay extends View {
             (name.equals("touchpad") && pressed.contains("touchpad_right"));
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : lit ? 0xaae8dfc9 : 0x6630394c);
-        c.drawRoundRect(p.x-width/2,p.y-25,p.x+width/2,p.y+25,14,14,paint);
+        float w=width*controlScale(), h=25*controlScale();
+        c.drawRoundRect(p.x-w/2,p.y-h,p.x+w/2,p.y+h,14,14,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setColor(0xbbc6ad76); paint.setStrokeWidth(2);
-        c.drawRoundRect(p.x-width/2,p.y-25,p.x+width/2,p.y+25,14,14,paint);
+        c.drawRoundRect(p.x-w/2,p.y-h,p.x+w/2,p.y+h,14,14,paint);
         paint.setStyle(Paint.Style.FILL); paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setTextSize(19); paint.setTextAlign(Paint.Align.CENTER);
         c.drawText(label,p.x,p.y-(paint.ascent()+paint.descent())/2,paint);
@@ -209,9 +230,9 @@ final class TouchControllerOverlay extends View {
     private void drawStick(Canvas c,String name) {
         PointF center=center(name);
         paint.setStyle(Paint.Style.FILL); paint.setColor(name.equals(dragged) ? 0xffe8dfc9 : 0x6630394c);
-        c.drawCircle(center.x,center.y,57,paint);
+        c.drawCircle(center.x,center.y,57*controlScale(),paint);
         paint.setStyle(Paint.Style.STROKE); paint.setColor(0xffa0aec0); paint.setStrokeWidth(3);
-        c.drawCircle(center.x,center.y,57,paint);
+        c.drawCircle(center.x,center.y,57*controlScale(),paint);
         float knobX=center.x,knobY=center.y;
         for (int i=0;i<controls.size();i++) {
             if (name.equals(controls.valueAt(i))) {
@@ -224,7 +245,7 @@ final class TouchControllerOverlay extends View {
             }
         }
         paint.setStyle(Paint.Style.FILL); paint.setColor(0xbba0aec0);
-        c.drawCircle(knobX,knobY,28,paint);
+        c.drawCircle(knobX,knobY,28*controlScale(),paint);
         paint.setColor(0xff15202c); paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setTextAlign(Paint.Align.CENTER); paint.setTextSize(22);
         c.drawText(name.equals("leftstick") ? "L" : "R",knobX,
