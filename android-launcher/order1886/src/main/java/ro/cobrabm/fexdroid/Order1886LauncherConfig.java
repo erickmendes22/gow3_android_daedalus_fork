@@ -81,10 +81,11 @@ final class Order1886LauncherConfig {
         // it touches hash maps after thousands of PM4 drain sites per second.
         // Frame/compilation/queue meters stay enabled independently.
         env.remove("ORDER1886_FRAME_STATS");
-        // Guarded write-protect backend: preflight checks shared-memfd UFFD
-        // capabilities and automatically falls back to mprotect/signals.
-        // User can force the old backend without changing any game graphics.
-        env.put("ORDER1886_UFFD",p.getBoolean("gpuFastPageTracking",true)?"1":"0");
+        // v0.1.34 UFFD caused a loading transition regression: preflight
+        // succeeded but multiple write-fault waiters could remain asleep.
+        // Force the known working signal tracker even if a saved preference
+        // from the broken version had enabled UFFD.
+        env.put("ORDER1886_UFFD","0");
         env.put("ORDER1886_PP_NOCLEAR",p.getBoolean("gpuPpNoClear",true)?"1":"0");
         env.put("ORDER1886_FAST_BGRA_BLIT",p.getBoolean("gpuFastBgraBlit",true)?"1":"0");
         env.put("ORDER1886_HTILE","0");
