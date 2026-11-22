@@ -628,18 +628,13 @@ public final class GameActivity extends Activity {
                 // when this diagnostic setting is disabled.
                 env.put("SOTC_PERF_PROFILE",
                         "1".equals(setting("sotc_perf_profile")) ? "1" : "0");
-                // Pure renderer-side A/B: 5 = original; 3/2/1 near cascades
-                // only; 0 = sun map cleared to the guest's far-depth value.
-                // Unrelated eboot patches, local shadows and readbacks untouched.
+                // Mode 0 uses the game's engine cascade CVar ONLY; Vulkan does
+                // not skip draws or clear depth slices. 1/2/3 remain optional
+                // isolated experiments, 5 is the original renderer.
                 String sunCascades=setting("sotc_sun_cascades");
                 if (!"0".equals(sunCascades) && !"1".equals(sunCascades) &&
                     !"2".equals(sunCascades) && !"3".equals(sunCascades)) sunCascades="5";
                 env.put("SOTC_SUN_CASCADES",sunCascades);
-                // Optional, default OFF: skip descriptor/vertex binding for
-                // CPU-backed single indirect draws with zero vertex/instance
-                // counts, while still beginning the guest render pass for clears.
-                env.put("SOTC_INDIRECT_EMPTY_BIND",
-                        "1".equals(setting("sotc_indirect_empty_bind_063")) ? "1" : "0");
 
                 // Controlled native GPU A/B with independent reversible settings.
                 // Exact host Vulkan state reuse; never skip guest uploads or barriers.
