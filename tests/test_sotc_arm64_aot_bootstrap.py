@@ -121,7 +121,7 @@ class TestSotcArm64Aot(unittest.TestCase):
     def test_native_result_rejects_unsupported_ops(self):
         so=self.root/"libSotcAot.so";stats=self.root/"compile.txt";meta=self.root/"libSotcAot.json"
         so.write_bytes(b"\x7fELF"+b"\0"*14+struct.pack("<H",183))
-        md={"abi_version":2,"compiler_version":"3-tlou-string",
+        md={"abi_version":2,"compiler_version":"1",
             "so_sha256":aot.sha256(so),"unit_count":1000}
         meta.write_text(json.dumps(md))
         stats.write_text("units with bbr_trap (unsupported ops): 0 (0.0%)\n")
@@ -129,10 +129,10 @@ class TestSotcArm64Aot(unittest.TestCase):
         md["compiler_version"]="1"  # official bb-recomp 1.3.0 with --tso omitted
         meta.write_text(json.dumps(md))
         self.assertEqual(aot.verify_native(so,stats,meta)["compiler_version"],"1")
-        stats.write_text("LoadMemTSO\nunits with bbr_trap (unsupported ops): 0 (0.0%)\n")
+        md["compiler_version"]="5-tlou-tso-outlined-unaligned-v1"\n        meta.write_text(json.dumps(md))\n        with self.assertRaisesRegex(ValueError,"ABI/compiler"):\n            aot.verify_native(so,stats,meta)\n        md["compiler_version"]="1"\n        meta.write_text(json.dumps(md))\n        stats.write_text("LoadMemTSO\nunits with bbr_trap (unsupported ops): 0 (0.0%)\n")
         with self.assertRaisesRegex(ValueError,"Guest TSO operations"):
             aot.verify_native(so,stats,meta)
-        stats.write_text("units with bbr_trap (unsupported ops): 80 (8.0%)\n")
+        stats.write_text("units with bbr_trap (unsupported ops): 1 (0.01%)\n")\n        with self.assertRaisesRegex(ValueError,"fatal unsupported"):\n            aot.verify_native(so,stats,meta)\n        stats.write_text("units with bbr_trap (unsupported ops): 80 (8.0%)\n")
         with self.assertRaisesRegex(ValueError,"unsupported"):
             aot.verify_native(so,stats,meta)
 
