@@ -1,0 +1,43 @@
+name: SotC PC 0.74 depth and G-buffer fastpaths source preflight
+on:
+  push:
+    branches: [feature/sotc-pc074-depth-gbuffer-aot-066]
+    paths:
+      - 'ports/sotc/android/stage*.py'
+      - 'tests/test_sotc_pc074_066.py'
+      - '.github/workflows/sotc-pc074-quick-066.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sotc-pc074-fast-preflight
+  cancel-in-progress: true
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AjncSystem/ShadowOfTheColossus-PC
+          ref: 732cb37d3470d2dad2cc99da19283253c96b53fc
+          path: upstream-sotc
+          submodules: false
+      - name: Stage PC #308 depth/G-buffer renderer into Android without building
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/stage_renderer.py
+          python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
+          renderer=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
+          liverpool=out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          for expected in DepthFastBeginCheck GBufferFastCheck BeginRenderingFast DepthFastBeginApply GBufferFastApply; do
+            grep -Fq "$expected" "$renderer"
+          done
+          grep -Fq 'DrawRelSerial' "$liverpool"
+          grep -Fq 'ImageSetGeneration' "$renderer"
+          grep -Fq 'MetaEpoch' "$renderer"
+          grep -Fq 'TransitIsNoop' "$renderer"
+          echo "SotC 0.74 exact G-buffer/depth fastpaths integrated in Android staged renderer"
