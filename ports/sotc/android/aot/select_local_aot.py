@@ -20,6 +20,11 @@ def valid(prepared:Path,report_file:Path)->bool:
         return False
     image=report.get("image",{})
     coverage=report.get("coverage",{})
+    # Compiler v1 omitted many clang switch-table destinations in .rodata.
+    # Its libSotcAot.so must never be reused after the corrected v2 tool ships.
+    # ABI stays at 2; compiler version affects the generated unit graph.
+    if coverage.get("compiler_version")!="2" or coverage.get("unsupported_units")!=0:
+        return False
     if image.get("patch_sha256")!=hash_file(prepared/"patches.bin"):return False
     if report.get("original_boot_sha256")!=hash_file(prepared/"boot-linked.bin"):return False
     if report.get("cmdline_sha256")!=hash_file(prepared/"cmdline.bin"):return False
@@ -41,7 +46,7 @@ def main():
         if valid(a.prepared,a.report):return 0
     except (OSError,ValueError,KeyError,TypeError):
         pass
-    print("AOT game image or patches changed; use Build AOT before starting game.",flush=True)
+    print("SotC AOT code/image/compiler version mismatch (v2 jump-table compiler required); use Compilar AOT no celular.",flush=True)
     return 1
 if __name__=="__main__":
     raise SystemExit(main())
