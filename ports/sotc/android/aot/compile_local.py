@@ -171,8 +171,11 @@ def verify_native(so: Path, stats: Path, meta_file: Path) -> dict:
         raise ValueError("Guest TSO operations appeared despite no-TSO codegen or coverage report missing")
     dirty,percent=int(m.group(1)),float(m.group(2))
     total=int(meta.get("unit_count",0))
-    if total<=0 or dirty>total or percent>0.25:
-        raise ValueError(f"AOT unsupported instructions: {dirty}/{total} ({percent}%)")
+    # Strict AOT has no JIT fallback. Even ONE bbr_trap can crash in gameplay:
+    # do not promote a library with unsupported guest instructions. Past builds
+    # accepted 10/67951 units, hiding up to 109 fatal trap sites.
+    if total<=0 or dirty>total or dirty!=0 or percent!=0.0:
+        raise ValueError(f"AOT has fatal unsupported instructions: {dirty}/{total} ({percent}%) - stop before APK")
     return dict(compiler_version=version,unit_count=total,
                 unsupported_units=dirty,unsupported_percent=percent,
                 library_sha256=sha256(so),abi_version=2)
