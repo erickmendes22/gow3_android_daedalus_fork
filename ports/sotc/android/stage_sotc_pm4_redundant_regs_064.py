@@ -7,7 +7,7 @@ A repeated SET_CONTEXT/CONFIG/SH/UCONFIG_REG with the *same exact values*
 need not copy those words nor add a dirty register chunk to the draw ring.
 Crucially, SET_CONTEXT still executes its trailing NOP/CB/DB extent logic.
 No draw, dispatch, PM4 packet, resource barrier or write to guest memory is
-removed. An adaptive probe disables this comparison if duplicate rate is low.
+removed. The path is OFF by default after the 0.1.64 Android A/B showed no FPS gain;\nSOTC_PM4_REDUNDANT_REGS=1 is a reversible opt-in for controlled trials.\nAn adaptive probe disables this comparison if duplicate rate is low.
 """
 from pathlib import Path
 
@@ -19,7 +19,11 @@ static bool SotcRedundantRegBlock(const void* dst, const void* src, size_t words
 #if defined(__aarch64__) && defined(__ANDROID__)
     static const bool requested = [] {
         const char* p = std::getenv("SOTC_PM4_REDUNDANT_REGS");
-        return !p || p[0] != '0';
+        // The 0.1.64 Android capture skipped 32.9% of register writes, but
+        // command-density-matched frame times did not improve. Avoid charging
+        // the extra memcmp on every PM4 packet without demonstrated benefit.
+        // Retain explicit opt-in for controlled A/B (SOTC_PM4_REDUNDANT_REGS=1).
+        return p && p[0] == '1';
     }();
     static thread_local bool active = true;
     static thread_local u64 probes = 0;
