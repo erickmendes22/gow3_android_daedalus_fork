@@ -89,6 +89,15 @@ endif()
                  renderer/'vk_dlssg_android.cpp')
     shutil.copy2(root/'ports/sotc/android/vk_framegen_android.cpp',
                  renderer/'vk_framegen_android.cpp')
+    # PC 0.74 added FSR4 via Windows-only LoadLibraryExW. On Android
+    # preserve its FSR fallback and never build a Windows DLL loader.
+    fsr4_cpp = renderer/'vk_fsr4.cpp'
+    if fsr4_cpp.exists():
+        original = fsr4_cpp.read_text()
+        if '#include <windows.h>' not in original or 'namespace Vulkan::Fsr4' not in original:
+            raise ValueError('PC FSR4 DLL loader source drift')
+        shutil.copy2(root/'ports/sotc/android/vk_fsr4_android.cpp',fsr4_cpp)
+
     c=out/'CMakeLists.txt'
     cmake=c.read_text()
     cmake=swap(cmake,r'list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")',
