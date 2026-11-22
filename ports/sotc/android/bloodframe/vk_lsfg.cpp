@@ -211,7 +211,7 @@ bool Lsfg::Initialize() {
     }
 
     BbLsfgConfig config{};
-    config.vk_get_instance_proc_addr = reinterpret_cast<void*>(bb_vk_get_instance_proc_addr());
+    config.vk_get_instance_proc_addr = reinterpret_cast<void*>(gow3_vk_get_instance_proc_addr());
     config.dll_path = mako ? nullptr : dll.c_str();
     const auto props_chain = instance.GetPhysicalDevice()
                                  .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceIDProperties>();
