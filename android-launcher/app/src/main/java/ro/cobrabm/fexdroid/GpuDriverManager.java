@@ -49,10 +49,12 @@ public final class GpuDriverManager {
             new File(context.getFilesDir(),"sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so").isFile();
     }
     public static String selected(Context context) {
-        return context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).getString("gpu_driver","auto");
+        return SotcPaths.isSotc(context) ? "gamehub-dd" : context.getSharedPreferences(SotcPaths.prefsName(context),Context.MODE_PRIVATE).getString("gpu_driver","auto");
     }
     public static void select(Context context,String value) throws IOException {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
+        if (SotcPaths.isSotc(context) && !"gamehub-dd".equals(value))
+            throw new IOException("Shadow of the Colossus only supports the verified GameHub DD Turnip");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
         else if ("gamehub-dd".equals(value)) {
             if (!hasGameHubDD(context)) throw new IOException("GameHub DD Turnip ZIP not installed");
@@ -79,9 +81,16 @@ public final class GpuDriverManager {
                 return new DriverArchive.Metadata(json.getString("name"),json.getString("libraryName"),json.getInt("minApi"));
             });
         }
-        // The exact tested ZIP appears as GameHub-DD, not a generic custom hash.
-        select(context,GAMEHUB_DD_ARCHIVE_SHA256.equals(result.id) ?
-            "gamehub-dd" : "custom:"+result.id);
+        // SotC is strict: do not store a different driver as a selectable choice.
+        if (SotcPaths.isSotc(context)) {
+            if (!GAMEHUB_DD_ARCHIVE_SHA256.equals(result.id) ||
+                !GAMEHUB_DD_ELF_SHA256.equals(sha256(result.library)))
+                throw new IOException("Only the original verified GameHub DD 26.3 ZIP is supported");
+            select(context,"gamehub-dd");
+        } else {
+            select(context,GAMEHUB_DD_ARCHIVE_SHA256.equals(result.id) ?
+                "gamehub-dd" : "custom:"+result.id);
+        }
         return result;
     }
     public static String error(Context context,Exception error) {
@@ -96,6 +105,8 @@ public final class GpuDriverManager {
     /** Explicit choices never fall back to a different driver after a load failure. */
     public static void configureEnvironment(Context context,Map<String,String> environment) throws IOException {
         String selection=selected(context);
+        if (SotcPaths.isSotc(context) && !hasGameHubDD(context))
+            throw new IOException("Instale o Turnip GameHub DD 26.3 validado antes de iniciar o jogo");
         environment.remove("GOW3_CUSTOM_VULKAN_DRIVER"); environment.remove("GOW3_VULKAN_DRIVER");
         if (selection.startsWith("custom:")) {
             DriverArchive.Installed driver=DriverArchive.read(root(context),selection.substring(7),Build.VERSION.SDK_INT);
