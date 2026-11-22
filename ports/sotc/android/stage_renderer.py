@@ -507,6 +507,16 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
         'SotC Vulkan Android ImGui required-function guard and device proc loader')
     overlay.write_text(pane)
 
+    # The released PC #308 depth/G-buffer implementation is imported whole
+    # from the checked out PC renderer; preserve its cross-file epochs and
+    # scheduler interfaces. Adapt only the x86 PM4 producer comparison for
+    # real Android ARM64, never silently substitute an incomplete RT memo.
+    pc074_exact_fastpaths = (
+        "DepthFastBeginCheck" in (out / "shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+    )
+    if pc074_exact_fastpaths:
+        from stage_sotc_pc074_arm64 import patch as patch_pc074_fastpaths
+        patch_pc074_fastpaths(out)
     # SotC's original SRT walker only implements x86 Xbyak. Android needs
     # the validated portable ARM64 pass plus its cache/ABI adaptations.
     from stage_srt_arm64 import patch_sotc_arm64
@@ -547,16 +557,27 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # 12:42 log: verified stage variant reuse + zero-copy draw snapshot.
     # Neither the 0.1.28 register-chunk change nor its spin change is ported.
     from stage_sotc_stage_spec_cpu import patch_sotc_stage_spec_cpu
-    patch_sotc_stage_spec_cpu(out)
+    if pc074_exact_fastpaths:
+        print("SotC #308: retaining upstream pipeline/memo implementation; skip outdated Android CP copy patch")
+    else:
+        patch_sotc_stage_spec_cpu(out)
     # Skip duplicate last-published register snapshots on the CP->draw FIFO.
     from stage_sotc_reg_snapshot import patch_sotc_reg_snapshot
-    patch_sotc_reg_snapshot(out)
+    if not pc074_exact_fastpaths:
+        patch_sotc_reg_snapshot(out)
+    # PC #308 transmits exact changed dwords and serials; do not overwrite
+    # that protocol with the earlier Android 64-dword snapshot optimization.
     # Conservative render-state cache from other ports, SotC hazards preserved.
     from stage_sotc_rt_memo import patch_sotc_rt_memo
-    patch_sotc_rt_memo(out)
+    if not pc074_exact_fastpaths:
+        patch_sotc_rt_memo(out)
+    # PC depth/G-buffer memos are exact and include metadata/barrier epochs.
     # Upstream PC streaming wins, ported to Android without skipping GPU work.
     from stage_sotc_pc_streaming_051 import patch_pc_streaming
-    patch_pc_streaming(out)
+    if not pc074_exact_fastpaths:
+        patch_pc_streaming(out)
+    # PC #308 renderer already has power-of-two staging. Do not patch its
+    # newer allocator twice or replace its GPU cache invariants.
     from stage_sotc_gpu_work_052 import patch_gpu_work
     patch_gpu_work(out)
     # 2026-11-22: precise readback hot-mode scans up to 256 candidate
@@ -573,16 +594,22 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # Android ARM64 only: restore the CPU yield hint while waiting for the
     # CP->draw ring; retain 4096 spins, 512 slots and all queue ordering.
     from stage_sotc_cp_relax_arm64 import patch as patch_cp_relax
-    patch_cp_relax(out)
+    if not pc074_exact_fastpaths:
+        patch_cp_relax(out)
+    # For #308 the native ARM64 YIELD is installed in the exact PM4 port.
     # Experimental CPU/GPU A/B: 5 original, 0 engine-only (no Vulkan clear);
     # 3/2/1 experimental depth layers. Disabled in default mode.
     from stage_sotc_sun_shadow_cascades_059 import patch as patch_sun_cascades
-    patch_sun_cascades(out)
+    if not pc074_exact_fastpaths:
+        patch_sun_cascades(out)
+    # Do not mix unverified cascade interception with the real PC depth path.
     # Source-equivalent PM4 register state, with no redundant producer memcpy
     # or draw-ring dirty chunk for exact repeats. The context CB/DB extent
     # processing, guest draw count, shaders, and Vulkan barriers are unchanged.
     from stage_sotc_pm4_redundant_regs_064 import patch as patch_pm4_redundant
-    patch_pm4_redundant(out)
+    if not pc074_exact_fastpaths:
+        patch_pm4_redundant(out)
+    # #308 performs its own changed-dword comparison and exact queue transfer.
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
