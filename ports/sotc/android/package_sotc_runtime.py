@@ -97,8 +97,8 @@ def main():
         shutil.copy2(aot/'verify_compiler.py',scripts/'sotc_aot_verify_compiler.py')
         compiler_archive=os.environ.get('SOTC_AOT_COMPILER_TAR','')
         if compiler_archive:
-            from aot.stage_on_device_compiler import stage
-            result=stage(Path(compiler_archive),base)
+            from aot.stage_on_device_compiler import stage as stage_aot_compiler
+            result=stage_aot_compiler(Path(compiler_archive),base)
             print('SotC on-device AOT toolchain:',result)
         elif os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1':
             raise SystemExit('AOT compiler archive missing: SOTC_AOT_COMPILER_TAR')
