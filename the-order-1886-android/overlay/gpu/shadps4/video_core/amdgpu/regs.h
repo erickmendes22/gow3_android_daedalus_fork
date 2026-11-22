@@ -4,9 +4,11 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <bitset>
 #include <cstring>
 #include <vector>
+#include "common/assert.h"
 #include "video_core/amdgpu/regs_color.h"
 #include "video_core/amdgpu/regs_depth.h"
 #include "video_core/amdgpu/regs_primitive.h"
