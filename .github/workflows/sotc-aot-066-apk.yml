@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 150); do
-            result=$(gh api repos/${{ github.repository }}/actions/runs/45062573716 --jq '.status+" "+(.conclusion // "")')
+            result=$(gh api repos/${{ github.repository }}/actions/runs/45063258673 --jq '.status+" "+(.conclusion // "")')
             if [ "$result" = 'completed success' ]; then exit 0; fi
             if [[ "$result" == completed* ]]; then echo "::error::Renderer failed: $result"; exit 1; fi
             sleep 20
@@ -44,7 +44,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sotc-aot-066-pc074-depth-gbuffer-ahb-arm64
-          run-id: 45062573716
+          run-id: 45063258673
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
@@ -101,6 +101,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
