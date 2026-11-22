@@ -4,6 +4,8 @@ on:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
     paths:
       - 'ports/sotc/android/aot/patch_bbrecomp_lowering.py'
+      - 'ports/sotc/android/aot/patch_bbrecomp_jump_tables.py'
+      - 'tests/sotc_jump_table_outside_function.cpp'
       - '.github/workflows/sotc-aot-patched-compiler.yml'
   workflow_dispatch:
 permissions:
@@ -37,6 +39,12 @@ jobs:
           test "$(git -C /tmp/sotc-compiler rev-parse HEAD)" = "6ebb33b0c"$(git -C /tmp/sotc-compiler rev-parse HEAD | cut -c 10-40)
           bash /tmp/sotc-compiler/fetch-fex.sh
           python3 ports/sotc/android/aot/patch_bbrecomp_lowering.py /tmp/sotc-compiler
+          python3 ports/sotc/android/aot/patch_bbrecomp_jump_tables.py /tmp/sotc-compiler
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            -I /tmp/sotc-compiler/src \
+            tests/sotc_jump_table_outside_function.cpp /tmp/sotc-compiler/src/jumptable.cpp \
+            -o /tmp/sotc-switch-test
+          /tmp/sotc-switch-test
           grep -F 'case OP_VPCMPISTRX:' /tmp/sotc-compiler/src/lower_vector.cpp
       - name: Build native Linux AOT compiler with full patched LLVM lowering
         run: |
