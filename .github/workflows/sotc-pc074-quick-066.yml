@@ -42,6 +42,11 @@ jobs:
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           grep -Fq 'FSR4 unavailable on Android' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp
           grep -Fq 'static_cast<u64>(std::strtoull(t, nullptr, 10))' out/sotc-android/gpu/shadps4/video_core/texture_cache/image.cpp
+          shim=out/sotc-android/gpu/shim/bbgpu.cpp
+          grep -Fq '#endif // !__ANDROID__: PC guest view fault guard' "$shim"
+          grep -Fq '#if !defined(__ANDROID__)' "$shim"
+          grep -Fq 'runtime_memory_backing_pointer(source)' "$shim"
+          grep -Fq 'std::memcpy(dest, backing, n)' "$shim"
           ! grep -Fq 'windows.h' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp
           renderer=out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp
           liverpool=out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
