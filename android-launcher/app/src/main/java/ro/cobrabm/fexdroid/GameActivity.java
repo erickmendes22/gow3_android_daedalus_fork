@@ -330,10 +330,10 @@ public final class GameActivity extends Activity {
                 new SettingsDialog(this,new File(BASE,SotcPaths.iniName(this)),this::restartGame).show();
             });
         } else {
-            graphicsItem=menuItem("ic_tune","Shadow of the Colossus settings","Change settings in the launcher",() -> {
+            graphicsItem=menuItem("ic_tune","Shadow of the Colossus patches","Edit patches in launcher",() -> {
                 closeDrawer();
                 android.widget.Toast.makeText(this,
-                    "Configure resolution, FPS and patches on the launcher Home screen.",android.widget.Toast.LENGTH_LONG).show();
+                    "Change game patches in the launcher's Patches tab.",android.widget.Toast.LENGTH_LONG).show();
             });
         }
 
@@ -480,7 +480,7 @@ public final class GameActivity extends Activity {
         setDetail(cheatsItem,cheats.isEmpty() ? "Off" : String.join(" · ",cheats));
          */
         if (sotcRuntime()) {
-            setDetail(graphicsItem,setting("sotc_resolution")+" · "+setting("sotc_fps_mode"));
+            setDetail(graphicsItem,"720p · game 60 FPS · patches on launcher");
             setDetail(controllerItem,controllerEnabled() ? "On" : "Off");
             setDetail(swapFaceItem,getSharedPreferences(SotcPaths.prefsName(this),MODE_PRIVATE).getBoolean("swap_square_triangle",false) ? "On" : "Off");
             return;
@@ -541,7 +541,10 @@ public final class GameActivity extends Activity {
         if (e.getActionMasked()==MotionEvent.ACTION_DOWN) {
             swipeConsumed=false;
             touchX=e.getX(); touchY=e.getY();
-            edgeGesture=!drawerOpen && touchX<dp(28);
+            boolean overHud=sotcFpsHud!=null && sotcFpsHud.getVisibility()==View.VISIBLE &&
+                touchX>=sotcFpsHud.getX() && touchX<=sotcFpsHud.getX()+sotcFpsHud.getWidth() &&
+                touchY>=sotcFpsHud.getY() && touchY<=sotcFpsHud.getY()+sotcFpsHud.getHeight();
+            edgeGesture=!drawerOpen && touchX<dp(28) && !overHud;
         }
         if (swipeConsumed) return true;
         if (e.getActionMasked()==MotionEvent.ACTION_MOVE) {
