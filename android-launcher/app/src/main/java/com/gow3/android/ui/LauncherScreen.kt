@@ -55,6 +55,9 @@ internal fun LauncherScreen(
     pkgInstallBusy: Boolean,
     pkgInstallMessage: String?,
     pkgGeneration: Int,
+    onBuildSotcAot: () -> Unit,
+    aotBusy: Boolean,
+    aotMessage: String?,
     saves: SaveManager,
     logs: LogManager,
     onChangeLanguage: (String) -> Unit,
@@ -93,7 +96,8 @@ internal fun LauncherScreen(
             if (isSotc) {
                 SotcScreen(selectedTab,onStartGame,onChooseGameFolder,onChooseUpdateFolder,
                     onInstallBasePkg,onInstallUpdatePkg,pkgInstallBusy,pkgInstallMessage,
-                    pkgGeneration,saves,logs,onChangeLanguage)
+                    pkgGeneration,saves,logs,onChangeLanguage,
+                    onBuildSotcAot,aotBusy,aotMessage)
             } else {
                 when (tab) {
                     LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg,
