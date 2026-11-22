@@ -6,6 +6,8 @@ on:
       - "ports/sotc/android/aot/**"
       - "tests/test_sotc_arm64_aot_bootstrap.py"
       - "tests/test_sotc_aot_guest_context.py"
+      - "tests/test_sotc_aot_cmdline.py"
+      - "ports/sotc/android/run-sotc-bionic.sh"
       - ".github/workflows/sotc-arm64-aot-preflight.yml"
   workflow_dispatch:
 permissions:
@@ -20,12 +22,14 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/aot/compile_local.py ports/sotc/android/aot/port_guest_context.py tests/test_sotc_arm64_aot_bootstrap.py tests/test_sotc_aot_guest_context.py
+          python3 -m py_compile ports/sotc/android/aot/cmdline_image.py tests/test_sotc_aot_cmdline.py
           bash -n ports/sotc/android/aot/build_native_cpu.sh
       - name: Guard BBPROBE5 codegen, original game files, patches and NO x86 TSO
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_sotc_arm64_aot_bootstrap.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_guest_context.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_aot_cmdline.py' -v
           grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
           ! grep -Fq '"--tso"' ports/sotc/android/aot/compile_local.py
           grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
