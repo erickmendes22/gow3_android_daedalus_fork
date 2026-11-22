@@ -1,0 +1,143 @@
+name: SotC 0.1.72 CUSA08034 GameHub bundled APK (incremental)
+on:
+  push:
+    branches: [feature/sotc-072-cusa08034-gamehub]
+    paths:
+      - '.github/workflows/sotc-072-fast-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-072-gamehub-bundle
+  cancel-in-progress: true
+jobs:
+  incremental:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout approved strict AOT Android port
+        uses: actions/checkout@v4
+      - name: Download prior verified native AOT 0.1.69 APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-UNSIGNED-INCREMENTAL
+          run-id: 45076980313
+          github-token: ${{ github.token }}
+          path: out/base-069
+      - name: Verify baseline and source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd out/base-069 && sha256sum -c Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk.sha256)
+          python3 -m unittest discover -s tests -p 'test_sotc_ux_072.py' -v
+          python3 -m py_compile ports/sotc/android/{bachata_perf,prepare_game,repack_sotc_072,vendor_turnip,verify_sotc_link}.py
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq 'versionCode = 10072' android-launcher/app/build.gradle.kts
+          grep -Fq 'versionName = "0.1.72-cusa08034-gamehub"' android-launcher/app/build.gradle.kts
+      - name: Fetch EXACT user GameHub DD Turnip archive from WinlatorComponents release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/vendor
+          curl -fsSL --retry 4 --retry-delay 2 \
+            'https://github.com/erickmendes22/WinlatorComponents/releases/download/turnip-gamehub-26.3-dd-gmem-pwrmax/Turnip_GameHub_26.3_DD_GMEM_PWRMAX_EXPERIMENTAL.zip' \
+            -o out/vendor/turnip_gamehub_dd.zip
+          echo '8255659cc205110e0fa89f2d364292b86fe563a2cedafbc41915bead5a611ecb  out/vendor/turnip_gamehub_dd.zip' | sha256sum -c -
+      - name: Repackage native verified runtime WITHOUT recompiling renderer/AOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/repack_sotc_072.py \
+            --base-apk out/base-069/Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk \
+            --gamehub-zip out/vendor/turnip_gamehub_dd.zip \
+            --assets out/android-release/assets \
+            --jni out/bionic/apk-jni
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,tarfile,json
+          with tarfile.open('out/android-release/assets/runtime.payload',mode='r:gz') as t:
+              names=t.getnames()
+              must=('sotcport/scripts/bachata_perf.py',
+                    'sotcport/scripts/sotc_prepare_game.py',
+                    'sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so',
+                    'sotcport/arm64/bin/sotc-probe',
+                    'sotcport/arm64/lib/libbbgpu.so')
+              for name in must: assert name in names,name
+              assert not any('/drivers/gen8/' in x or '/drivers/adreno7xx/' in x for x in names)
+              m=json.load(t.extractfile('runtime-manifest.json'))
+              assert m['version']=='0.1.72-cusa08034-gamehub'
+              assert m['driver']['id']=='gamehub-dd-26.3' and m['driver']['bundled'] is True
+              assert m['gamehub_dd_turnip_bundled'] is True
+              b=t.extractfile('sotcport/scripts/bachata_perf.py').read()
+              assert b'"CUSA08809", "CUSA08034"' in b
+              print('PASS runtime manifest and exact updated CUSA08034 patch source')
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Verify both ARM64 ELF ABIs from final repackaged payload (mandatory boot gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/27.2.12479018"
+          if [ ! -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" ]; then
+            sdkmanager 'ndk;27.2.12479018'
+          fi
+          mkdir -p out/abi
+          python3 - <<'PY'
+          import tarfile
+          from pathlib import Path
+          with tarfile.open('out/android-release/assets/runtime.payload','r:gz') as t:
+              for member,name in [('sotcport/arm64/bin/sotc-probe','sotc-probe'),
+                                  ('sotcport/arm64/lib/libbbgpu.so','libbbgpu.so')]:
+                  Path('out/abi',name).write_bytes(t.extractfile(member).read())
+          PY
+          python3 ports/sotc/android/verify_sotc_link.py --ndk "$ndk" \
+            --renderer out/abi/libbbgpu.so --probe out/abi/sotc-probe
+      - name: Android build-tools only, then compile launcher APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;35.0.0' 'platforms;android-36'
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -PsotcAndroid=true --no-daemon --max-workers=2
+          src=android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+          test -s "$src"
+          mkdir -p out/release
+          apk=out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -P 16 -f 4 "$src" "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -P 16 -c 4 "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > out/release/sotc-072-badging.txt
+          grep -Fq "package: name='com.sotc.android.daedalus'" out/release/sotc-072-badging.txt
+          grep -Fq "versionName='0.1.72-cusa08034-gamehub'" out/release/sotc-072-badging.txt
+          python3 - "$apk" <<'PY'
+          from pathlib import Path
+          import zipfile,hashlib,sys,io,tarfile,json
+          apk=Path(sys.argv[1])
+          with zipfile.ZipFile(apk) as z:
+              assert z.testzip() is None
+              payload=z.read('assets/runtime.payload')
+              assert hashlib.sha256(payload).hexdigest()==z.read('assets/runtime.sha256').decode().strip()
+              assert z.getinfo('lib/arm64-v8a/libbbrecomp.so').file_size > 70_000_000
+              with tarfile.open(fileobj=io.BytesIO(payload),mode='r:gz') as t:
+                  driver=t.extractfile('sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so').read()
+                  assert hashlib.sha256(driver).hexdigest()=='4f242a453496ab27fc29be950d632edbae494dcc0c9b7d56c37c7ebdffe42df9'
+          print('PASS APK CRC, payload SHA256, compiler JNI, integrated GameHub ELF SHA256')
+          PY
+          (cd out/release && sha256sum Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-unsigned.apk > Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-unsigned.apk.sha256)
+      - name: Publish verified UNSIGNED APK (original user signing key is not in CI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-UNSIGNED-INCREMENTAL
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-unsigned.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.72-unsigned.apk.sha256
+            out/release/sotc-072-badging.txt
+          if-no-files-found: error
+          retention-days: 7
