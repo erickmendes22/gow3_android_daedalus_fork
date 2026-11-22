@@ -32,7 +32,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sotc-aot-057-flatbuf-ahb-vulkan-arm64
-          run-id: 44991906148
+          run-id: 45025488726
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
@@ -60,6 +60,12 @@ jobs:
           printf '%s  %s\n' "$sha_expected" out/sotc-057/libbbgpu.so | sha256sum -c
           strings out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          gpu = Path('out/sotc-057/libbbgpu.so').read_bytes()
+          assert b'\x3f\x20\x03\xd5' in gpu, 'Missing ARM64 YIELD wait hint'
+          PY
           # Absolute Android boot gate: never export a desktop-only Vulkan
           # surface renderer with WindowSDL::Headless in the Android launcher.
           grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-gpu-strings.txt"
@@ -73,6 +79,7 @@ jobs:
           grep -Fq 'from aot.stage_on_device_compiler import stage as stage_aot_compiler' ports/sotc/android/package_sotc_runtime.py
           grep -Fq 'result=stage_aot_compiler(Path(compiler_archive),base)' ports/sotc/android/package_sotc_runtime.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -191,6 +198,7 @@ jobs:
           strings "$RUNNER_TEMP/sotc-final-gpu.so" > "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libgow3cpu.so > "$RUNNER_TEMP/sotc-final-cpu.so"
           ! readelf -d "$RUNNER_TEMP/sotc-final-cpu.so" | grep -Ei 'FEX|libFEXCore'
       - name: Assemble and validate the complete 0.1.57 APK
