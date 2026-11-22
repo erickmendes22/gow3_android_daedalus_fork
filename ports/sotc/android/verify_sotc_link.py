@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the actual SotC Vulkan DSO resolves its runtime_* imports in FEX's PIE.
+"""Verify ALL SotC Vulkan host runtime_* imports against the actual ARM64 probe ELF.
 
 A successfully linked ELF is not enough: Android dlopen(RTLD_NOW) needs every
 strong HLE import from the main executable or a declared shared dependency.
@@ -33,7 +33,7 @@ def verify(tc,renderer,probe):
     nm=tc/'bin/llvm-nm'
     readelf=tc/'bin/llvm-readelf'
     if not renderer.is_file() or not probe.is_file():
-        raise ValueError('Built SotC renderer and FEX probe must both exist')
+        raise ValueError('Built SotC renderer and native ARM64 probe must both exist')
     for f in (renderer,probe):
         h=run(str(readelf),'-h',str(f))
         if 'AArch64' not in h:
@@ -50,12 +50,12 @@ def verify(tc,renderer,probe):
     probe_exports=dynamic_symbols(run(str(nm),'-D','--defined-only',str(probe)),True)
     missing_runtime={name for name in undefined if name.startswith('runtime_') and name not in probe_exports}
     if missing_runtime:
-        raise ValueError('Unresolved FEX main-executable HLE symbols: '+', '.join(sorted(missing_runtime)))
+        raise ValueError('Unresolved Android host-runtime symbols (dlopen would fail): '+', '.join(sorted(missing_runtime)))
     other={name for name in undefined if name.startswith(('bbgpu_','sotc_')) and name not in probe_exports}
     if other:
         raise ValueError('Unresolved SotC-specific symbols: '+', '.join(sorted(other)))
     print(f'SotC DSO ABI verified: {len(defined)} exported symbols; '
-          f'{len(undefined & probe_exports)} imports from FEX executable; '
+          f'{len(undefined & probe_exports)} imports from ARM64 host executable; '
           f'NEEDED={sorted(needed)}')
 
 def main():
