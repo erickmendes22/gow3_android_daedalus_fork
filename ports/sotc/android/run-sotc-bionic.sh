@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# SotC Bionic/FEX launcher, separate from the God of War III launcher.
+# Shadow of the Colossus native ARM64 AOT launcher, separate from God of War III.
 set -eu
 files=${FXD_FILES:?FXD_FILES is required}
 base="$files/sotcport"
@@ -38,57 +38,22 @@ mkdir -p "$TMPDIR" "$HOME" "$base/user" "$base/logs" "$out"
 # Do not alter SOTC_DUMP/SOTC_AUTO_GPU_DUMP_AFTER supplied by the caller.
 export SOTC_GPU_DUMP_DIR="$base/logs/gpu_capture"
 
-chip=$("$runtime/bin/kgsl-chip-id" 2>/dev/null || true)
-driver=${GOW3_BIONIC_DRIVER:-auto}
-case "$driver" in
-  auto)
-    case "$chip" in
-      0x44??????)
-        # Prefer the validated GameHub driver on supported Android 14+
-        # only when the exact driver is genuinely bundled in the APK.
-        sdk=$(/system/bin/getprop ro.build.version.sdk 2>/dev/null || echo 0)
-        if [ "${sdk:-0}" -ge 34 ] && [ -f "$runtime/drivers/gamehub-dd/libvulkan_freedreno.so" ]; then
-            driver=gamehub-dd
-        else
-            driver=gen8
-        fi ;;
-      0x07??????|0x43020[01]00|0x43030b00|0x43050a01|0x43050b00|0x43051401)
-        driver=adreno7xx ;;
-      *) driver=system ;;
-    esac ;;
-  gen8|adreno7xx|gamehub-dd|system|custom) ;;
-  *) echo "Invalid SotC Vulkan driver" >&2; exit 2 ;;
+# Shadow of the Colossus is distributed with exactly one verified Vulkan
+# driver. No silent fallback to system/Gen8/R1/R6/patched alternatives.
+driver=${GOW3_BIONIC_DRIVER:-gamehub-dd}
+[ "$driver" = gamehub-dd ] || {
+    echo "Shadow of the Colossus requires bundled GameHub DD 26.3 Turnip" >&2; exit 2;
+}
+export GOW3_VULKAN_DRIVER="$runtime/drivers/gamehub-dd/libvulkan_freedreno.so"
+[ -f "$GOW3_VULKAN_DRIVER" ] || {
+    echo "Bundled GameHub DD Turnip missing from this APK" >&2; exit 2;
+}
+# Preserve TU_DEBUG geometry workaround used in the verified Adreno path.
+case ",${TU_DEBUG:-}," in
+  *,nomultipos,*) ;;
+  *) TU_DEBUG="${TU_DEBUG:+$TU_DEBUG,}nomultipos"; export TU_DEBUG ;;
 esac
-if [ "$driver" = gen8 ] || [ "$driver" = adreno7xx ] || [ "$driver" = gamehub-dd ]; then
-    export GOW3_VULKAN_DRIVER="$runtime/drivers/$driver/libvulkan_freedreno.so"
-    [ -f "$GOW3_VULKAN_DRIVER" ] || { echo "Bundled SotC Vulkan driver missing" >&2; exit 2; }
-elif [ "$driver" = custom ]; then
-    custom=${GOW3_CUSTOM_VULKAN_DRIVER:-}
-    case "$custom" in "$files"/gpu-drivers/*/*.so) ;;
-      *) echo "Custom driver path is not allowed" >&2; exit 2 ;;
-    esac
-    [ -f "$custom" ] || { echo "Custom Vulkan driver missing" >&2; exit 2; }
-    export GOW3_VULKAN_DRIVER="$custom"
-    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${custom%/*}"
-else
-    unset GOW3_VULKAN_DRIVER
-fi
-
-# Geometry correctness on Turnip: the Adreno 830 is running a generated
-# barycentric geometry shader. Mesa's multi-position shader optimization can
-# produce stretched/repeated polygons on this path. TU_DEBUG=nomultipos is
-# consumed by Turnip before VkCreateDevice and sets IR3 no_multi_pos.
-# Only change bundled Mesa drivers, never the proprietary Vulkan system driver.
-# Preserve any existing comma-separated TU_DEBUG choices from the launcher.
-case "$driver" in
-  gen8|adreno7xx)
-    case ",${TU_DEBUG:-}," in
-      *,nomultipos,*) ;;
-      *) TU_DEBUG="${TU_DEBUG:+$TU_DEBUG,}nomultipos"; export TU_DEBUG ;;
-    esac
-    echo "SotC Turnip vertex integrity: nomultipos requested; TU_DEBUG=$TU_DEBUG"
-    ;;
-esac
+echo "SotC GameHub DD 26.3 Turnip selected; TU_DEBUG=$TU_DEBUG"
 
 export GOW3_ANDROID_INPUT=1 GOW3_PAD_FILE="$base/android-pad.state"
 export GOW3_PAD_QUIET=1 GOW3_IME_FILE="$base/ime.request"
