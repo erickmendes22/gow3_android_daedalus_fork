@@ -1,0 +1,42 @@
+name: SotC strict AOT 0.1.56 public runtime sources
+on:
+  push:
+    branches: [experiment/sotc-arm64-aot-no-tso-055]
+    paths:
+      - 'ports/sotc/android/run-sotc-bionic.sh'
+      - 'ports/sotc/android/aot/compile_local.py'
+      - 'ports/sotc/android/aot/cmdline_image.py'
+      - 'ports/sotc/android/aot/select_local_aot.py'
+      - '.github/workflows/sotc-aot-056-release-sources.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and archive strict AOT runtime scripts only
+        run: |
+          set -euo pipefail
+          paths=(
+            ports/sotc/android/run-sotc-bionic.sh
+            ports/sotc/android/aot/compile_local.py
+            ports/sotc/android/aot/cmdline_image.py
+            ports/sotc/android/aot/select_local_aot.py
+            ports/sotc/android/aot/verify_libcxx_abi.py
+            ports/sotc/android/package_sotc_runtime.py
+          )
+          bash -n "${paths[0]}"
+          python3 -m py_compile "${paths[@]:1}"
+          tar -czf sotc-aot-056-public-sources.tar.gz "${paths[@]}"
+          sha256sum sotc-aot-056-public-sources.tar.gz > sotc-aot-056-public-sources.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sotc-strict-aot-056-public-runtime-sources
+          path: |
+            sotc-aot-056-public-sources.tar.gz
+            sotc-aot-056-public-sources.sha256
+          if-no-files-found: error
+          retention-days: 7
