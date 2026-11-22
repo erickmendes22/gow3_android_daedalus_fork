@@ -38,12 +38,39 @@ class FlatbufTests(unittest.TestCase):
                 "slot.contents.assign(flat, flat + ubo_size / sizeof(u32))",
                 "const u64 offset = vk_buffer.Copy(flat, ubo_size, alignment);",
                 "SOTC_FLATBUF_REUSE",
+                "SOTC_FLATBUF_ADAPTIVE",
+                "sotc_probe_queries++ & 32767ULL",
+                "sotc_probe_hits * 100 >= 4096ULL * 6",
+                "const bool memo_lookup = memo_eligible",
+                "if (memo_lookup) {",
+                "if (memo_hit && sotc_flatbuf_adaptive)",
                 "SOTC FLATBUF REUSE:",
             ):
                 self.assertIn(required, got)
             self.assertEqual(got.count("buffer_infos.emplace_back(vk_buffer.Handle(), offset, ubo_size);"), 1)
             with self.assertRaisesRegex(ValueError, "pinned Vulkan UBO copy changed"):
                 mod.patch(Path(work))
+
+    def test_adaptive_window_is_bounded_and_recovers(self):
+        # Pure decision model for the C++ 4096/32768 sample guard.
+        # Bypassing memo is an optimization choice, never a skipped upload.
+        def run(hit_every):
+            queries, hits, enabled = 0, 0, True
+            active = 0
+            for _ in range(32768 * 2):
+                position = queries & 32767
+                queries += 1
+                if position == 0:
+                    enabled, hits = True, 0
+                elif position == 4096:
+                    enabled = hits * 100 >= 4096 * 6
+                if enabled:
+                    active += 1
+                    if (_ % hit_every) == 0:
+                        hits += 1
+            return active
+        self.assertEqual(run(20), (4096 + 4096) * 2) # 5% sampled: rest disabled
+        self.assertEqual(run(8), 32768 * 2) # 12.5% sampled: memo remains enabled
 
     def test_rejects_missing_original_guard(self):
         with tempfile.TemporaryDirectory() as work:
