@@ -54,6 +54,20 @@ def main():
         (base/'run-sotc-bionic.sh').chmod(0o755)
         shutil.copy2(original/'prepare_game.py',scripts/'sotc_prepare_game.py')
         shutil.copy2(original/'bachata_perf.py',scripts/'bachata_perf.py')
+        # SotC on-device ARM64 recompilation is opt-in and self-contained.
+        # Only the official pinned bb-recomp toolchain enters the APK; the
+        # proprietary game image is reconstructed on the user's device.
+        aot=original/'aot'
+        shutil.copy2(aot/'compile_local.py',scripts/'sotc_aot_compile.py')
+        shutil.copy2(aot/'select_local_aot.py',scripts/'sotc_aot_select.py')
+        compiler_archive=os.environ.get('SOTC_AOT_COMPILER_TAR','')
+        if compiler_archive:
+            from aot.stage_on_device_compiler import stage
+            result=stage(Path(compiler_archive),base)
+            print('SotC on-device AOT toolchain:',result)
+        elif os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1':
+            raise SystemExit('AOT compiler archive missing: SOTC_AOT_COMPILER_TAR')
+
         shutil.copytree(upstream/'scripts',scripts/'sotc-upstream/scripts',
                         ignore=shutil.ignore_patterns('__pycache__'))
         # Patch the real pinned SotC scripts *inside the packaged payload*.
@@ -80,7 +94,8 @@ def main():
         for legacy in ('run-bionic.sh','gow3.ini','gow3.default.ini'):
             (base/legacy).unlink(missing_ok=True)
         for entry in scripts.iterdir():
-            if entry.name not in ('sotc_prepare_game.py','bachata_perf.py','sotc-upstream'):
+            if entry.name not in ('sotc_prepare_game.py','bachata_perf.py','sotc-upstream',
+                                   'sotc_aot_compile.py','sotc_aot_select.py'):
                 if entry.is_dir(): shutil.rmtree(entry)
                 else: entry.unlink()
         (base/'arm64/bin/gow3-probe').rename(base/'arm64/bin/sotc-probe')
