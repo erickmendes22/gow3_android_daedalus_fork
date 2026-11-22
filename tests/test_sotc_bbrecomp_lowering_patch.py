@@ -14,7 +14,7 @@ class LoweringPatchTests(unittest.TestCase):
     def test_pinned_upstream_anchor_and_three_real_implementations(self):
         with tempfile.TemporaryDirectory() as tmp:
             src=Path(tmp)/"lower_vector.cpp"
-            src.write_text("bool Lower::emitVectorOp() {\n  switch (op->Op) {\n  case OP_VLOADTWOGPRS: {\n  return true;\n}\n}\n}\n")
+            src.write_text("using namespace llvm;\nbool Lower::emitVectorOp() {\n  switch (op->Op) {\n  case OP_VLOADTWOGPRS: {\n  return true;\n}\n}\n}\n")
             result=patcher.patch(src)
             patched=src.read_text()
             self.assertTrue(result["masked_load"])
@@ -29,6 +29,7 @@ class LoweringPatchTests(unittest.TestCase):
             self.assertIn("store->setVolatile(true)",patched)
             self.assertIn("B.CreateICmpSLT(mask, ConstantInt::get(elemTy, 0))",patched)
             self.assertIn("case OP_VLOADTWOGPRS: {",patched)
+            self.assertIn("SOTC_AOT_MASKED_SSE42_NO_TSO_1",patched)
             self.assertNotIn("bbr_trap(",patched)
             self.assertNotIn("FEXCore::CPU::",patched)
             self.assertNotIn("--tso",patched.lower())
