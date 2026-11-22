@@ -18,6 +18,7 @@ import shutil
 import struct
 import subprocess
 import sys
+from cmdline_image import embed as embed_cmdline
 
 HEADER = struct.Struct("<8s12Q")
 SUPPORTED = {"CUSA08809", "CUSA08034"}
@@ -204,13 +205,20 @@ def main(argv:list[str]|None=None)->int:
         dest.mkdir(parents=True,exist_ok=True)
         boot=args.prepared/"boot-linked.bin"
         patches=args.prepared/"patches.bin"
+        # Preserve SotC command-line options before AOT code generation.
+        patch_only=dest/"native-boot-patches.bin"
+        info=stage_native_boot(boot,patches,patch_only)
+        cmdline=args.prepared/"cmdline.bin"
+        if not cmdline.is_file():
+            raise ValueError("Prepared engine command line missing")
         native=dest/"native-boot-linked.bin"
-        info=stage_native_boot(boot,patches,native)
+        cmdline_info=embed_cmdline(patch_only,cmdline,native)
         so=dest/"aot/libSotcAot.so"
         stats=dest/"aot/compile.txt"
         cmd=compiler_command(args.compiler or Path("/unconfigured/compiler"),
                              args.game,native,so,stats,args.bundle_dir,args.jobs,args.shards)
-        report.update(game=game,image=info, guest_cpu_model="ARM64 AOT without FEX/TSO",
+        report.update(game=game,image=info,cmdline=cmdline_info,
+                      cmdline_sha256=sha256(cmdline), guest_cpu_model="ARM64 AOT without FEX/TSO",
                       original_boot_sha256=sha256(boot),
                       aot_boot_sha256=sha256(native),
                       command=cmd,status="preflight_ok")
