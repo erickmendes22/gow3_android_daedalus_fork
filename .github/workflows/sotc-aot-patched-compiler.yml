@@ -53,7 +53,13 @@ jobs:
       - name: Confirm real compiler command line and no x86 TSO
         run: |
           set -euo pipefail
-          /tmp/sotc-bbrecomp-build/bb-recomp --help | head -80
+          # Upstream --help prints usage and exits 2; this is not a build error.
+          /tmp/sotc-bbrecomp-build/bb-recomp --help > /tmp/sotc-bb-help.txt 2>&1 || test "$?" -eq 2
+          grep -F -- '--resume-entries' /tmp/sotc-bb-help.txt
+          grep -F -- '--target aarch64' /tmp/sotc-bb-help.txt
+          # The compiler must carry our retained native SIMD/SSE4.2 marker,
+          # and must not pass --tso when invoked by SotC.
+          strings /tmp/sotc-bbrecomp-build/bb-recomp | grep -Fq 'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
           install -Dm755 /tmp/sotc-bbrecomp-build/bb-recomp out/sotc-bb-recomp/bb-recomp
           sha256sum out/sotc-bb-recomp/bb-recomp > out/sotc-bb-recomp/sha256.txt
       - uses: actions/upload-artifact@v4
