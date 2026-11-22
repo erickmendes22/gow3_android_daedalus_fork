@@ -30,6 +30,7 @@
 #include "ps4_settings.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/ps4_msaa.h"
+#include "video_core/renderer_vulkan/vk_amd_paths.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_depth_stencil_state.h"
@@ -369,23 +370,21 @@ struct PipelineCache::DriverCacheState {
 };
 
 std::vector<u8> PipelineCache::LoadDriverCache() {
-#ifdef __ANDROID__
-    // With the Adreno 830 single-sample renderer, a second launch was black
-    // even with the same Turnip. The native driver cache is keyed only by
-    // device/driver, not by the renderer's MSAA compatibility mode.
-    // Keep the in-memory VkPipelineCache but do not restore or checkpoint the
-    // disk snapshot until it has a complete render-state-specific identity.
-    if (AmdGpu::NoMsaa()) {
-        std::printf("ORDER1886_CACHE_REPLAY driver=disabled reason=single-msaa\n");
-        std::fflush(stdout);
-        return {};
-    }
-#endif
+    // The legacy native driver cache was keyed only by driver/device and
+    // caused a black screen on the first second launch on single-MSAA Adreno.
+    // Its old driver-v1 snapshot must NEVER be loaded for the altered renderer.
+    // Use a new cache namespace with the shader-translation profile (17 + 32
+    // for AMD shader-ext + 64 for single-MSAA) and the exact VK renderer mode.
+    // We still create the graphics pipelines LIVE, from current render state:
+    // this is NOT the unsafe archived GraphicsPipeline replay path.
     // Complement the current shader cache only when pipeline binaries cannot persist the
     // driver's compiled code. Never replace or duplicate the pipeline-binary cache path.
     if (!std::getenv("GOW3_ANDROID_PORT") || !EmulatorSettings.IsPipelineCacheEnabled() ||
         instance.GetPipelineBinaryGlobalKey().keySize) return {};
-    if (const char* value = std::getenv("GOW3_DRIVER_CACHE"); value && value[0] == '0') return {};
+    if (const char* value = std::getenv("GOW3_DRIVER_CACHE"); value && value[0] == '0') {
+        std::printf("ORDER1886_DRIVER_CACHE disabled_by_user=1\n");
+        return {};
+    }
     try {
         driver_cache = std::make_unique<DriverCacheState>();
         auto& state = *driver_cache;
@@ -394,9 +393,18 @@ std::vector<u8> PipelineCache::LoadDriverCache() {
         std::copy(uuid.begin(), uuid.end(), state.identity.uuid.begin());
         const auto key = fmt::format("{:x}-{:x}-{:x}-{:016x}", state.identity.vendor,
             state.identity.device, state.identity.driver, DriverCacheFile::Checksum(state.identity.uuid));
+        const u32 shader_version = 17u + (AmdPathsOff::Current().shaderext ? 32u : 0u) +
+                                   (AmdGpu::NoMsaa() ? 64u : 0u);
+        const auto profile_dir = AmdGpu::NoMsaa()
+            ? fmt::format("driver-v2-single-msaa-profile-{}", shader_version)
+            : std::string("driver-v1");
         state.directory = Common::FS::GetUserPath(Common::FS::PathType::CacheDir) /
-            Common::ElfInfo::Instance().GameSerial() / "driver-v1" / key;
-        return DriverCacheFile::Load(state.File(0), state.identity);
+            Common::ElfInfo::Instance().GameSerial() / profile_dir / key;
+        auto saved = DriverCacheFile::Load(state.File(0), state.identity);
+        std::printf("ORDER1886_DRIVER_CACHE mode=%s profile=%u restored_bytes=%zu snapshot=v2\n",
+                    AmdGpu::NoMsaa() ? "single-msaa" : "standard",
+                    shader_version, saved.size());
+        return saved;
     } catch (...) {
         driver_cache.reset();
         return {};
