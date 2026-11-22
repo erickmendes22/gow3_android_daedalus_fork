@@ -136,6 +136,14 @@ echo "SotC PC v0.72: pool_owner=$SOTC_POOL_OWNER fast_readbacks=$SOTC_RB_HOT (ve
 export SOTC_RB_ASYNC=1
 # Measured PC v0.76 streaming paths, guarded by coherent staging / join on submit.
 # 128 MiB idle large staging per memory type on Android, not PC's 256 MiB.
+# PC #308 fastpath switches: only accepted values are 0 (old path) or 1.
+# Keep these independent from the old experimental RT/PM4 optimizations.
+export SOTC_DEPTH_FAST="${SOTC_DEPTH_FAST:-1}"
+export SOTC_GBUFFER_FAST="${SOTC_GBUFFER_FAST:-1}"
+case "$SOTC_DEPTH_FAST:$SOTC_GBUFFER_FAST" in 0:0|0:1|1:0|1:1) ;;
+  *) echo "Invalid PC depth/G-buffer fastpath switches" >&2; exit 2 ;;
+esac
+echo "SotC PC #308 fastpath: depth=$SOTC_DEPTH_FAST gbuffer=$SOTC_GBUFFER_FAST"
 export SOTC_STAGING_LARGE_POW2=1
 # PC 0.74 exact depth/G-buffer port: keep the tested Android 128 MiB
 # numeric reserve until the newer 0.76 allocator policy is merged. The PC
