@@ -1,9 +1,12 @@
-name: SotC 0.1.64 ARM64 PM4 exact-reg optimization + shadow cleanup
+name: SotC 0.1.65 PC v0.76 Android RAM-aware staging cache
 on:
   push:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
     paths:
       - 'ports/sotc/android/stage_sotc_flatbuf_reuse_057.py'
+      - 'ports/sotc/android/stage_sotc_pc_streaming_051.py'
+      - 'ports/sotc/android/run-sotc-bionic.sh'
+      - 'tests/test_sotc_pc_staging_065.py'
       - 'ports/sotc/android/stage_renderer.py'
       - 'tests/test_sotc_flatbuf_reuse_057.py'
       - 'ports/sotc/android/stage_sotc_cp_relax_arm64.py'
@@ -38,8 +41,9 @@ jobs:
       - name: Test source and stage verified renderer
         run: |
           set -euo pipefail
-          python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py
+          python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py ports/sotc/android/stage_sotc_pc_streaming_051.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
@@ -68,6 +72,8 @@ jobs:
           grep -Fq 'SOTC SUN ENGINE ONLY:' "$r"
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$r"
           grep -Fq 'SOTC PM4 SAME-REG:' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'sysconf(_SC_PHYS_PAGES)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
+          grep -Fq 'fallback_mb = 256' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -149,7 +155,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-064-pm4-reg-dedupe-ahb-arm64
+          name: sotc-aot-065-pc076-staging-ahb-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
