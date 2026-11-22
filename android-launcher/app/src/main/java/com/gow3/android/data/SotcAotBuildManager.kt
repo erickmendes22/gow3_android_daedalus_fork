@@ -98,7 +98,7 @@ internal class SotcAotBuildManager(
                     var lastProgress = ""
                     var lastUpdate = 0L
                     log.appendText("\n--- SotC AOT ${mode}, ${System.currentTimeMillis()} ---\n")
-                    log.outputStream().bufferedWriter().use { writer ->
+                    java.io.FileOutputStream(log, true).bufferedWriter().use { writer ->
                         proc.inputStream.bufferedReader().useLines { lines ->
                             lines.forEach { line ->
                                 writer.appendLine(line)
