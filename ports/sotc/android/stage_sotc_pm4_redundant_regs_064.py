@@ -15,7 +15,7 @@ HELPER = r'''
 // SotC Android 0.1.64: identical PM4 register payloads have no architectural
 // effect on the register file. Preserve all SET_CONTEXT extent hint processing.
 // The producer's outstanding dirty bits stay untouched on a redundant write.
-static bool SotcRedundantRegBlock(const u32* dst, const u32* src, size_t words) {
+static bool SotcRedundantRegBlock(const void* dst, const void* src, size_t words) {
 #if defined(__aarch64__) && defined(__ANDROID__)
     static const bool requested = [] {
         const char* p = std::getenv("SOTC_PM4_REDUNDANT_REGS");
