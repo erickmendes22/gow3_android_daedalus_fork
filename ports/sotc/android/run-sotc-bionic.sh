@@ -301,7 +301,7 @@ esac
 sotc_mode=${1:-game}
 echo "SotC requested guest render: ${SOTC_RENDER:-1280x720}; Android output: ${SOTC_SCREEN_W}x${SOTC_SCREEN_H} (output remains 720p)"
 set -- "$python" "$prepare" --upstream "$upstream" --game-dir "$game" \
-    --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-fps60game}" \
+    --out "$out" --render "${SOTC_RENDER:-1280x720}" --modes "${SOTC_MODES-}" \
     --cvars "${SOTC_CVARS:-doIndexBufferCulling=0 doSunShadowIndexBufferCulling=0}" \
     --perf "$SOTC_BACHATA_PERF"
 if [ -n "${SOTC_SYS_MODULES:-}" ]; then
@@ -414,6 +414,17 @@ if ! "$python" "$base/scripts/sotc_aot_select.py" \
     echo "SOTC AOT: game or settings changed. Recompile AOT from the launcher." >&2
     exit 6
 fi
+# Do not start a purported frame generation mode with an absent library
+# or model. The off mode never loads Bloodframe and retains the proven
+# 0.1.69 Vulkan presentation fast paths with zero FG overhead.
+if [ "${BB_LSFG_MULTIPLIER:-0}" = 2 ]; then
+    [ -s "$runtime/lib/libbloodframe.so" ] &&
+    [ -s "$base/mako-fg/model/weights.bin" ] || {
+        echo "SOTC BLOODFRAME: requested MAKO x2 but engine/model unavailable" >&2
+        exit 7
+    }
+    echo "SOTC BLOODFRAME: requesting genuine MAKO-FG x2 with Vulkan AHB"
+fi
 export BB_AOT="$base/user/aot/libSotcAot.so"
 echo "SOTC AOT: verified local library (matches current game and patches)"
 # Execute the exact image compiled into libSotcAot.so: patches and engine
@@ -424,6 +435,6 @@ set -- "$probe" "$base/user/aot/boot-native.bin" \
 # --sotc-cmdline edits executable bytes at runtime and would invalidate AOT.
 # Keep it disabled until that string is injected before compilation.
 
-echo "SotC Bionic: title from BBPROBE5, driver=$driver, ARM64 AOT NO-FEX NO-TSO"
+echo "SotC native ARM64 AOT: title from BBPROBE5, driver=$driver"
 cd "$base"
 exec "$@"
