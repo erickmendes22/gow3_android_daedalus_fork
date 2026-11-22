@@ -282,6 +282,27 @@ if [ "$sotc_mode" = compile ]; then
     script="$base/scripts/sotc_aot_compile.py"
     [ -x "$compiler" ] && [ -d "$bundle" ] && [ -s "$script" ] ||
         { echo "AOT compiler tools not included in this APK" >&2; exit 4; }
+    # Reject the original bb-recomp 1.3.0: it still generates 10 fatal
+    # VLoadVectorMasked / VStoreVectorMasked / VPCMPISTRX trap units for SotC.
+    # Only the hash-locked patched compiler may be used in a strict AOT release.
+    expected="$runtime/aot/sotc-patched-compiler.sha256"
+    [ -s "$expected" ] || {
+        echo "SotC AOT: patched compiler manifest missing; refusing unsafe official tool" >&2
+        exit 4
+    }
+    "$python" - "$compiler" "$expected" <<'PY'
+import hashlib,sys
+from pathlib import Path
+exe,manifest=map(Path,sys.argv[1:])
+expected=manifest.read_text().strip().split()[0]
+if len(expected)!=64 or any(c not in "0123456789abcdef" for c in expected):
+    raise SystemExit("SotC AOT compiler hash manifest invalid")
+h=hashlib.sha256()
+with exe.open("rb") as f:
+    for part in iter(lambda:f.read(1024*1024),b""): h.update(part)
+if h.hexdigest()!=expected:
+    raise SystemExit("SotC AOT: compiler does not match audited SIMD/SSE4.2 backend")
+PY
     echo "SOTC AOT: starting on-device ARM64 rebuild (no TSO, no FEX)"
     "$python" "$script" --game "$game" --prepared "$out" \
         --out "$base/user/aot-work" --compiler "$compiler" \
