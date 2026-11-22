@@ -28,11 +28,11 @@ jobs:
           ref: 27f376d602cefad357299295fa51edad587272d5
           path: upstream-sotc
           submodules: recursive
-      - name: Get verified sun-cascade A/B benchmark Android Vulkan renderer
+      - name: Get verified zero-count indirect fastpath Android Vulkan renderer
         uses: actions/download-artifact@v4
         with:
-          name: sotc-aot-059-sun-cascades-ahb-arm64
-          run-id: 45040762277
+          name: sotc-aot-063-indirect-zero-ahb-arm64
+          run-id: 45046015189
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
@@ -63,6 +63,7 @@ jobs:
           grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC SUN CASCADES:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'confirmed=%u' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC_SUN_CASCADES' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           python3 - <<'PY'
@@ -86,6 +87,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_indirect_empty_bind_063.py' -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
