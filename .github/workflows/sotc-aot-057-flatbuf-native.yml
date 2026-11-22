@@ -1,4 +1,4 @@
-name: SotC AOT 0.1.57 renderer flatbuf CPU optimization
+name: SotC 0.1.58 readback hot-region CPU overhead reduction
 on:
   push:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
@@ -7,6 +7,8 @@ on:
       - 'ports/sotc/android/stage_renderer.py'
       - 'tests/test_sotc_flatbuf_reuse_057.py'
       - 'ports/sotc/android/stage_sotc_cp_relax_arm64.py'
+      - 'ports/sotc/android/stage_sotc_hot_readback_prune_058.py'
+      - 'tests/test_sotc_hot_readback_prune_058.py'
       - 'tests/test_sotc_cp_relax_arm64.py'
       - '.github/workflows/sotc-aot-057-flatbuf-native.yml'
   workflow_dispatch:
@@ -34,6 +36,7 @@ jobs:
           python3 -m py_compile ports/sotc/android/stage_sotc_flatbuf_reuse_057.py ports/sotc/android/stage_renderer.py
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           # Mandatory Android presentation wiring. Without this, Vulkan attempts
           # desktop CreateSurface(WindowSDL::Headless) and aborts during boot.
@@ -50,6 +53,8 @@ jobs:
           grep -Fq 'for (u32 spin = 0; spin < 4096; ++spin)' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           grep -Fq 'SotcPerf::BindGraphicsPipeline' "$r"
           grep -Fq 'SOTC_RT_MEMO' "$r"
+          grep -Fq 'gpu_modified_ranges.Intersects(hot.addr, hot.size)' out/sotc-android/gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp
+          grep -Fq 'SOTC RB HOT PRUNE:' out/sotc-android/gpu/shadps4/core/libraries/videoout/driver.cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -114,6 +119,7 @@ jobs:
           strings "$so" > /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC_PRESENT_SOCKET' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC RB HOT PRUNE:' /tmp/sotc-057-strings.txt
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
           sha256sum "$so" > out/sotc-057/sha256.txt
@@ -126,7 +132,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-057-flatbuf-ahb-vulkan-arm64
+          name: sotc-aot-058-rb-hot-prune-ahb-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
