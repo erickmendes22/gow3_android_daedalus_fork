@@ -556,6 +556,11 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # CP->draw ring; retain 4096 spins, 512 slots and all queue ordering.
     from stage_sotc_cp_relax_arm64 import patch as patch_cp_relax
     patch_cp_relax(out)
+    # Experimental CPU/GPU A/B: original / 3 / 2 / 1 / zero sun cascades.
+    # Excluded layers are cleared to the game's depth clear value per frame,
+    # never sampled as stale last-frame shadows. Disabled in default mode.
+    from stage_sotc_sun_shadow_cascades_059 import patch as patch_sun_cascades
+    patch_sun_cascades(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
