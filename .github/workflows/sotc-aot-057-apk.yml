@@ -32,7 +32,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sotc-aot-059-sun-cascades-ahb-arm64
-          run-id: 45038937184
+          run-id: 45040762277
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
@@ -63,6 +63,7 @@ jobs:
           grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC SUN CASCADES:' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'confirmed=%u' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC_SUN_CASCADES' "$RUNNER_TEMP/sotc-gpu-strings.txt"
           python3 - <<'PY'
           from pathlib import Path
@@ -206,6 +207,7 @@ jobs:
           grep -Fq 'SOTC_FLATBUF_ADAPTIVE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC RB HOT PRUNE:' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           grep -Fq 'SOTC SUN CASCADES:' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'confirmed=%u' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libgow3cpu.so > "$RUNNER_TEMP/sotc-final-cpu.so"
           ! readelf -d "$RUNNER_TEMP/sotc-final-cpu.so" | grep -Ei 'FEX|libFEXCore'
       - name: Assemble and validate the complete 0.1.57 APK
