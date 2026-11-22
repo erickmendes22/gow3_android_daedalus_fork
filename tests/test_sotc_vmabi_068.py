@@ -22,12 +22,12 @@ class SotcAndroidHostAbiTests(unittest.TestCase):
 
     def test_dynamic_abi_checker_catches_the_exact_067_failure(self):
         undef = checker.dynamic_symbols(
-            "                 U runtime_memory_clamp\\n"
-            "                 U runtime_memory_clamp_gap_hits\\n"
-            "                 w runtime_pool_release_dump\\n", False)
+            "                 U runtime_memory_clamp\n"
+            "                 U runtime_memory_clamp_gap_hits\n"
+            "                 w runtime_pool_release_dump\n", False)
         host = checker.dynamic_symbols(
-            "0000000000315f2c T runtime_memory_clamp\\n"
-            "00000000003138c0 T runtime_process_time_us\\n", True)
+            "0000000000315f2c T runtime_memory_clamp\n"
+            "00000000003138c0 T runtime_process_time_us\n", True)
         missing = {s for s in undef if s.startswith("runtime_") and s not in host}
         self.assertEqual(missing, {"runtime_memory_clamp_gap_hits"})
         host.add("runtime_memory_clamp_gap_hits")
