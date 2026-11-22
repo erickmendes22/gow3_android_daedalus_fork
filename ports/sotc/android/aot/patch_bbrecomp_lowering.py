@@ -184,6 +184,13 @@ def patch(file: Path) -> dict:
     if "case OP_VPCMPISTRX:" in source or "case OP_VSTOREVECTORMASKED:" in source:
         raise ValueError("Compiler already implements missing ops; inspect before patching")
     source=source.replace(marker, MASKED_MEMORY + STRING_COMPARE + marker, 1)
+    # Keep a linker-retained, externally visible marker in the *compiled tool*.
+    # A release packager can reject official unpatched bb-recomp even if it
+    # presents the same upstream CLI version.
+    signature='extern "C" __attribute__((used, retain, visibility("default"))) const char sotcAotLoweringSignature[] = "SOTC_AOT_MASKED_SSE42_NO_TSO_1";\\n'
+    if source.count("using namespace llvm;") != 1:
+        raise ValueError("Pinned source missing compiler signature insertion point")
+    source=source.replace("using namespace llvm;", signature + "using namespace llvm;", 1)
     file.write_text(source)
     return {"file":str(file), "masked_load":True, "masked_store":True,
             "pcmpistrx":True, "no_tso":True, "no_bbr_trap_added":True}
