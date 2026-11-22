@@ -31,8 +31,8 @@ jobs:
       - name: Get successful 0.1.57 Vulkan renderer
         uses: actions/download-artifact@v4
         with:
-          name: sotc-aot-057-flatbuf-vulkan-arm64
-          run-id: 44987127073
+          name: sotc-aot-057-flatbuf-ahb-vulkan-arm64
+          run-id: 44991906148
           github-token: ${{ github.token }}
           path: out/sotc-057
       - name: Get native ARM64 resume-enabled AOT CPU
@@ -60,6 +60,12 @@ jobs:
           printf '%s  %s\n' "$sha_expected" out/sotc-057/libbbgpu.so | sha256sum -c
           strings out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-gpu-strings.txt"
           grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          # Absolute Android boot gate: never export a desktop-only Vulkan
+          # surface renderer with WindowSDL::Headless in the Android launcher.
+          grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          grep -Fq 'AHardwareBuffer_sendHandleToUnixSocket' "$RUNNER_TEMP/sotc-gpu-strings.txt"
+          readelf -Ws out/sotc-057/libbbgpu.so > "$RUNNER_TEMP/sotc-gpu-symbols.txt"
+          grep -Fq '_ZN11Gow3Present6Client10SendBuffer' "$RUNNER_TEMP/sotc-gpu-symbols.txt"
           strings out/sotc-patched-compiler/libbbrecomp.so > "$RUNNER_TEMP/sotc-compiler-strings.txt"
           grep -Fq 'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2' "$RUNNER_TEMP/sotc-compiler-strings.txt"
           ! readelf -d out/sotc-arm64-aot/libgow3cpu.so | grep -Ei 'FEX|libFEXCore'
@@ -163,6 +169,10 @@ jobs:
           fi
           tar -xOzf out/release/sotc-runtime.tar.gz runtime-manifest.json |
             python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["aot_mode"] == "strict" and not v["fex_runtime_included"] and v["version"] == "0.1.57-aot-flatbuf"'
+          tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libbbgpu.so > "$RUNNER_TEMP/sotc-final-gpu.so"
+          strings "$RUNNER_TEMP/sotc-final-gpu.so" > "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC_PRESENT_SOCKET' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
+          grep -Fq 'SOTC FLATBUF REUSE' "$RUNNER_TEMP/sotc-final-gpu-strings.txt"
           tar -xOzf out/release/sotc-runtime.tar.gz sotcport/arm64/lib/libgow3cpu.so > "$RUNNER_TEMP/sotc-final-cpu.so"
           ! readelf -d "$RUNNER_TEMP/sotc-final-cpu.so" | grep -Ei 'FEX|libFEXCore'
       - name: Assemble and validate the complete 0.1.57 APK
