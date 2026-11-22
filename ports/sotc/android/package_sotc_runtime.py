@@ -43,6 +43,20 @@ def main():
         (stage/'gow3port').rename(base)
         (stage/'home/gow3port').rename(stage/'home/sotcport')
         libs=base/'arm64/lib'
+        original=ROOT/'ports/sotc/android'
+        strict_aot=os.environ.get('SOTC_REQUIRE_ON_DEVICE_AOT')=='1'
+        if strict_aot:
+            # The generic Bionic stage is FEX-backed; never ship its CPU.
+            cpu_dir=Path(os.environ.get('SOTC_AOT_CPU_DIR',str(ROOT/'out/sotc-arm64-aot')))
+            for name in ('libgow3cpu.so','libbbcpu.so'):
+                source=cpu_dir/name
+                if not source.is_file():
+                    raise SystemExit('Strict AOT CPU library missing: '+str(source))
+                shutil.copy2(source,libs/name)
+            (libs/'libSotcAot.so').unlink(missing_ok=True)
+            config=stage/'home/sotcport/.fex-emu'
+            if config.is_dir(): shutil.rmtree(config)
+            print('SotC: FEX CPU replaced with native ARM64 AOT')
         # The AOT CPU engine was linked with a newer Android NDK. Never ship
         # the GoW3/FEX-era libc++_shared.so unchanged: the on-device loader
         # fails before the game even starts (missing std::__hash_memory).
@@ -69,7 +83,6 @@ def main():
         shutil.copy2(renderer,target)
         strip=args.ndk.resolve()/'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
         subprocess.run([str(strip),'--strip-unneeded',str(target)],check=True)
-        original=ROOT/'ports/sotc/android'
         shutil.copy2(original/'run-sotc-bionic.sh',base/'run-sotc-bionic.sh')
         (base/'run-sotc-bionic.sh').chmod(0o755)
         shutil.copy2(original/'prepare_game.py',scripts/'sotc_prepare_game.py')
@@ -109,8 +122,8 @@ def main():
                 +str(ROOT/ARCHIVE_RELATIVE)
             )
         # No GoW3 game patches, cheats, launcher, or resolution config in SotC.
-        # Existing FEX and native ABI libraries remain because the BBPROBE5
-        # executable still links against their shared low-level interfaces.
+        # BBPROBE5 uses guest_cpu_*; strict AOT installs the native ABI engine
+        # and never ships the original FEX CPU implementation.
         if (base/'patches').is_dir(): shutil.rmtree(base/'patches')
         for legacy in ('run-bionic.sh','gow3.ini','gow3.default.ini'):
             (base/legacy).unlink(missing_ok=True)
@@ -165,10 +178,13 @@ android_fullscreen=0
         manifest_path=stage/'runtime-manifest.json'
         identity=json.loads(manifest_path.read_text())
         identity.update(application_id='com.sotc.android.daedalus',
-                        runtime_name='sotc-daedalus-bionic-0.1.53',
-                        version='0.1.53-boot-test',
+                        runtime_name='sotc-daedalus-aot-0.1.56' if strict_aot else 'sotc-daedalus-bionic-0.1.53',
+                        version='0.1.56-aot-no-tso' if strict_aot else '0.1.53-boot-test',
                         game='Shadow of the Colossus',
                         gamehub_dd_turnip_bundled=driver_included)
+        identity.update(aot_mode='strict' if strict_aot else 'not-integrated',
+                        fex_runtime_included=not strict_aot,
+                        on_device_aot_compiler_included=bool(compiler_archive))
         manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
         output=ROOT/'out/release/sotc-runtime.tar.gz'
         with tarfile.open(output,'w:gz',compresslevel=6) as tar:
