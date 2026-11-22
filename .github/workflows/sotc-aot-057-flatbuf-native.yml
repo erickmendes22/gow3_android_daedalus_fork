@@ -1,4 +1,4 @@
-name: SotC 0.1.63 zero-count indirect bind fastpath renderer
+name: SotC 0.1.64 shadow engine-only performance rollback renderer
 on:
   push:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
@@ -9,10 +9,9 @@ on:
       - 'ports/sotc/android/stage_sotc_cp_relax_arm64.py'
       - 'ports/sotc/android/stage_sotc_hot_readback_prune_058.py'
       - 'ports/sotc/android/stage_sotc_sun_shadow_cascades_059.py'
-      - 'ports/sotc/android/stage_sotc_indirect_empty_bind_063.py'
+      - 'tests/test_sotc_sun_shadow_regression_064.py'
       - 'tests/test_sotc_hot_readback_prune_058.py'
       - 'tests/test_sotc_sun_shadow_cascades_059.py'
-      - 'tests/test_sotc_indirect_empty_bind_063.py'
       - 'tests/test_sotc_cp_relax_arm64.py'
       - '.github/workflows/sotc-aot-057-flatbuf-native.yml'
   workflow_dispatch:
@@ -42,7 +41,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_hot_readback_prune_058.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_cascades_059.py' -v
-          python3 -m unittest discover -s tests -p 'test_sotc_indirect_empty_bind_063.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_sun_shadow_regression_064.py' -v
           python3 ports/sotc/android/stage_renderer.py --upstream upstream-sotc --out out/sotc-android/gpu
           # Mandatory Android presentation wiring. Without this, Vulkan attempts
           # desktop CreateSurface(WindowSDL::Headless) and aborts during boot.
@@ -63,8 +62,8 @@ jobs:
           grep -Fq 'SOTC RB HOT PRUNE:' out/sotc-android/gpu/shadps4/core/libraries/videoout/driver.cpp
           grep -Fq 'SOTC SUN CASCADES:' "$r"
           grep -Fq 'clearDepthStencilImage(' "$r"
-          grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$r"
-          grep -Fq 'if (needs_barrier) runtime.FlushBarriers();' "$r"
+          grep -Fq 'SOTC SUN ENGINE ONLY:' "$r"
+          ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' "$r"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -131,7 +130,8 @@ jobs:
           grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC RB HOT PRUNE:' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC SUN CASCADES:' /tmp/sotc-057-strings.txt
-          grep -Fq 'SOTC INDIRECT EMPTY BIND:' /tmp/sotc-057-strings.txt
+          grep -Fq 'SOTC SUN ENGINE ONLY:' /tmp/sotc-057-strings.txt
+          ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' /tmp/sotc-057-strings.txt
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
           sha256sum "$so" > out/sotc-057/sha256.txt
@@ -144,7 +144,7 @@ jobs:
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sotc-aot-063-indirect-zero-ahb-arm64
+          name: sotc-aot-064-engine-sun-only-ahb-arm64
           path: out/sotc-057/
           if-no-files-found: error
           retention-days: 7
