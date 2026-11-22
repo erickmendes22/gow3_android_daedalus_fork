@@ -1,0 +1,111 @@
+name: SotC 0.1.70 FINAL ARM64 + Bloodframe MAKO x2 APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sotc-070-final
+  cancel-in-progress: true
+jobs:
+  final-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified original 0.1.69 native ARM64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-UNSIGNED-INCREMENTAL
+          run-id: 45076980313
+          github-token: ${{ github.token }}
+          path: out/base-069
+      - name: Download Bloodframe Android native presenter
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-aot-070-bloodframe-ahb-arm64
+          run-id: 45084437073
+          github-token: ${{ github.token }}
+          path: out/native-070
+      - name: Download SHA-verified Bloodframe 2.0/MAKO model
+        uses: actions/download-artifact@v4
+        with:
+          name: sotc-070-bloodframe-android-v2.0-mako-verified
+          run-id: 45084406999
+          github-token: ${{ github.token }}
+          path: out/bloodframe-070
+      - name: Source and original artifact preflight
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ports/sotc/android/repack_sotc_070.py ports/sotc/android/inject_bloodframe_070.py
+          python3 -m unittest discover -s tests -p 'test_sotc_ux_070.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_bloodframe_070.py' -v
+          bash -n ports/sotc/android/run-sotc-bionic.sh
+          (cd out/base-069 && sha256sum -c Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk.sha256)
+          sha256sum out/native-070/libbbgpu.so
+          hash="$(cut -d' ' -f1 out/native-070/sha256.txt)"
+          printf '%s  %s\n' "$hash" out/native-070/libbbgpu.so | sha256sum -c -
+      - name: Package working ARM64 host with REAL Bloodframe output and its model
+        run: |
+          set -euo pipefail
+          python3 ports/sotc/android/repack_sotc_070.py \
+            --base-apk out/base-069/Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk \
+            --assets out/android-release/assets --jni out/bionic/apk-jni
+          python3 ports/sotc/android/inject_bloodframe_070.py \
+            --assets out/android-release/assets \
+            --renderer out/native-070/libbbgpu.so \
+            --bloodframe out/bloodframe-070
+          python3 - <<'PY'
+          import io,json,tarfile
+          with tarfile.open('out/android-release/assets/runtime.payload','r:gz') as t:
+              names=t.getnames()
+              assert not any('/drivers/gen8/' in n or '/drivers/adreno7xx/' in n for n in names)
+              m=json.load(t.extractfile('runtime-manifest.json'))
+              assert m['driver']['id']=='gamehub-dd-26.3'
+              assert m['bloodframe']['mode']=='opt-in'
+              assert m['bloodframe']['frames_per_game_frame']==2
+              assert t.extractfile('sotcport/arm64/lib/libbloodframe.so').read(4)==b'\\x7fELF'
+              assert len(t.extractfile('sotcport/mako-fg/model/weights.bin').read())>0
+          print('PASS Bloodframe native, model, manifest and no fallback drivers')
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Build only updated launcher (no FFmpeg/CPU/GPU recompile)
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;35.0.0' 'platforms;android-36'
+          chmod +x android-launcher/gradlew
+          android-launcher/gradlew -p android-launcher :app:assembleRelease -PsotcAndroid=true --no-daemon --max-workers=2
+          src=android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+          test -s "$src"
+          mkdir -p out/release
+          out=out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -P 16 -f 4 "$src" "$out"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$out" > out/release/sotc-070-final-badging.txt
+          grep -Fq "package: name='com.sotc.android.daedalus'" out/release/sotc-070-final-badging.txt
+          grep -Fq "versionCode='10070'" out/release/sotc-070-final-badging.txt
+          python3 - "$out" <<'PY'
+          import zipfile,hashlib,sys
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              assert z.testzip() is None
+              blob=z.read('assets/runtime.payload')
+              assert hashlib.sha256(blob).hexdigest()==z.read('assets/runtime.sha256').decode().strip()
+              assert len(blob)>30000000
+              assert z.getinfo('lib/arm64-v8a/libbbrecomp.so').file_size>70000000
+          print('PASS SotC 0.1.70 Android APK, Bloodframe payload, AOT compiler and CRC')
+          PY
+          (cd out/release && sha256sum Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk > Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-UNSIGNED
+          path: |
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk
+            out/release/Shadow-of-the-Colossus-Daedalus-AOT-0.1.70-BLOODFRAME-unsigned.apk.sha256
+            out/release/sotc-070-final-badging.txt
+          if-no-files-found: error
+          retention-days: 7
