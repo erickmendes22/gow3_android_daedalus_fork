@@ -112,7 +112,7 @@ def main():
             binary=patched.read_bytes()
             if len(binary)<4096 or binary[:4]!=b'\x7fELF' or int.from_bytes(binary[18:20],'little')!=183:
                 raise SystemExit('SotC patched AOT compiler must be AArch64 ELF PIE')
-            marker=b'SOTC_AOT_MASKED_SSE42_NO_TSO_1'
+            marker=b'SOTC_AOT_MASKED_SSE42_JTRODATA_NO_TSO_2'
             if marker not in binary:
                 raise SystemExit('SotC patched compiler lacks native SIMD/SSE4.2 code marker')
             patched_sha=hashlib.sha256(binary).hexdigest()
