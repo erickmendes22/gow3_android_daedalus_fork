@@ -31,7 +31,7 @@ jobs:
             mv /tmp/sotc-cmdline/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
           fi
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37' 'build-tools;35.0.0'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;35.0.0'
       - name: Stage executable native bb-recomp (Android W^X safe)
         run: |
           set -euo pipefail
