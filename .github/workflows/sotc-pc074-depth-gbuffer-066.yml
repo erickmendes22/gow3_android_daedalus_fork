@@ -63,6 +63,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
           grep -Fq 'pc_safe_mask' src/runtime_memory.c
           grep -Fq 'SOTC_DEPTH_FAST' ports/sotc/android/run-sotc-bionic.sh
+          grep -Fq '#endif // !__ANDROID__: PC guest view fault guard' out/sotc-android/gpu/shim/bbgpu.cpp
+          grep -Fq 'static_cast<u64>(std::strtoull(t, nullptr, 10))' out/sotc-android/gpu/shadps4/video_core/texture_cache/image.cpp
           grep -Fq 'src[i] != shadow[i]' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           grep -Fq 'return u32(vk13_props.requiredSubgroupSizeStages & stage)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'MetaEpoch' "$r"
