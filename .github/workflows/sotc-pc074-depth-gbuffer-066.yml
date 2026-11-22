@@ -133,6 +133,7 @@ jobs:
           grep -Fq 'SOTC FLATBUF REUSE' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC RB HOT PRUNE:' /tmp/sotc-057-strings.txt
           grep -Fq 'SOTC_DEPTHFAST_VERIFY' /tmp/sotc-057-strings.txt
+          grep -Fq 'FSR4 unavailable on Android' /tmp/sotc-057-strings.txt
           ! grep -Fq 'SOTC INDIRECT EMPTY BIND:' /tmp/sotc-057-strings.txt
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
