@@ -8,6 +8,8 @@ on:
       - "tests/test_sotc_aot_guest_context.py"
       - "tests/test_sotc_aot_cmdline.py"
       - "tests/test_sotc_aot_integration.py"
+      - "tests/test_sotc_aot_android_mksh.py"
+      - "ports/sotc/android/aot/verify_compiler.py"
       - "tests/test_sotc_bbrecomp_lowering_patch.py"
       - "tests/test_sotc_pcmpistr_x86_oracle.py"
       - "ports/sotc/android/package_sotc_runtime.py"
@@ -40,6 +42,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_aot_guest_context.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_cmdline.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_aot_android_mksh.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_bbrecomp_lowering_patch.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_pcmpistr_x86_oracle.py' -v
           grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
