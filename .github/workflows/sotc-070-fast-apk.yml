@@ -28,7 +28,7 @@ jobs:
       - name: Verify baseline and exact source changes
         run: |
           set -euo pipefail
-          cd out/base-068
+          cd out/base-069
           sha256sum -c Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk.sha256
           cd ../..
           python3 -m unittest discover -s tests -p 'test_sotc_ux_070.py' -v
@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 ports/sotc/android/repack_sotc_070.py \
-            --base-apk out/base-068/Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk \
+            --base-apk out/base-069/Shadow-of-the-Colossus-Daedalus-AOT-0.1.69-unsigned.apk \
             --assets out/android-release/assets \
             --jni out/bionic/apk-jni
           test -s out/android-release/assets/runtime.payload
