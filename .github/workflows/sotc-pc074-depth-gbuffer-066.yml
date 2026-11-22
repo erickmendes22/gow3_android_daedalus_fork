@@ -57,6 +57,10 @@ jobs:
           grep -Fq 'GBufferFastCheck' "$r"
           grep -Fq 'BeginRenderingFast' "$r"
           grep -Fq 'DrawRelSerial' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
+          grep -Fq 'inline uint64_t Ticks();' out/sotc-android/gpu/shadps4/video_core/sotc_stats.h
+          grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_rasterizer.h
+          grep -Fq 'mrs %0, cntvct_el0' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/sotc_dispphase.h
+          python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
           grep -Fq 'src[i] != shadow[i]' out/sotc-android/gpu/shadps4/video_core/amdgpu/liverpool.cpp
           grep -Fq 'return u32(vk13_props.requiredSubgroupSizeStages & stage)' out/sotc-android/gpu/shadps4/video_core/renderer_vulkan/vk_instance.h
           grep -Fq 'MetaEpoch' "$r"
