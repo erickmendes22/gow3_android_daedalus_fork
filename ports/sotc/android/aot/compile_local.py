@@ -23,7 +23,7 @@ from cmdline_image import embed as embed_cmdline
 
 HEADER = struct.Struct("<8s12Q")
 SUPPORTED = {"CUSA08809", "CUSA08034"}
-AOT_COMPILER_VERSIONS = ("1",)  # official bb-recomp 1.3.0 codegen, no --tso
+AOT_COMPILER_VERSIONS = ("2",)  # official bb-recomp 1.3.0 codegen, no --tso
 AOT_FLAGS = ("--resume-entries", "--no-callee-saved")
 MAX_IMAGE = 512 * 1024 * 1024
 MAX_PATCHES = 10000
