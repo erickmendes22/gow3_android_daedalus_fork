@@ -8,6 +8,7 @@ on:
       - "tests/test_sotc_aot_guest_context.py"
       - "tests/test_sotc_aot_cmdline.py"
       - "tests/test_sotc_aot_integration.py"
+      - "tests/test_sotc_bbrecomp_lowering_patch.py"
       - "ports/sotc/android/package_sotc_runtime.py"
       - "src/probe.c"
       - "android-launcher/app/src/main/java/ro/cobrabm/fexdroid/RuntimeInstaller.java"
@@ -29,6 +30,7 @@ jobs:
           python3 -m py_compile ports/sotc/android/aot/cmdline_image.py tests/test_sotc_aot_cmdline.py
           python3 -m py_compile ports/sotc/android/package_sotc_runtime.py ports/sotc/android/aot/select_local_aot.py ports/sotc/android/aot/verify_libcxx_abi.py
           bash -n ports/sotc/android/run-sotc-bionic.sh
+          python3 -m py_compile ports/sotc/android/aot/patch_bbrecomp_lowering.py tests/test_sotc_bbrecomp_lowering_patch.py
           bash -n ports/sotc/android/aot/build_native_cpu.sh
       - name: Guard BBPROBE5 codegen, original game files, patches and NO x86 TSO
         run: |
@@ -37,6 +39,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sotc_aot_guest_context.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_cmdline.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_aot_integration.py' -v
+          python3 -m unittest discover -s tests -p 'test_sotc_bbrecomp_lowering_patch.py' -v
           grep -Fq 'AOT_FLAGS = ("--resume-entries", "--no-callee-saved")' ports/sotc/android/aot/compile_local.py
           ! grep -Fq '"--tso"' ports/sotc/android/aot/compile_local.py
           grep -Fq '"aot_execution_integrated":False' ports/sotc/android/aot/compile_local.py
