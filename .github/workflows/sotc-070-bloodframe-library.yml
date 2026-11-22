@@ -13,6 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Prepare NDK r29 and host shader tools
         run: |
           set -euo pipefail
