@@ -31,6 +31,12 @@ jobs:
           set -euo pipefail
           python3 -m py_compile ports/sotc/android/stage_renderer.py
           python3 -m unittest discover -s tests -p 'test_sotc_pc074_066.py' -v
+          # Fail before cross-compiling if our Android stub omits any PC #308
+          # Dlssg API used by the rasterizer/presenter: 0.1.66 boot regression.
+          for sym in SetHdr NoteHdrCurve HdrCurve CameraLogOnly NoteCamera SuperResolutionUpscaling; do
+            grep -Fq "$sym" ports/sotc/android/vk_dlssg_android.cpp
+            grep -Fq "$sym" upstream-sotc/gpu/shadps4/video_core/renderer_vulkan/vk_dlssg.h
+          done
           python3 -m unittest discover -s tests -p 'test_sotc_pc_staging_065.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_flatbuf_reuse_057.py' -v
           python3 -m unittest discover -s tests -p 'test_sotc_cp_relax_arm64.py' -v
