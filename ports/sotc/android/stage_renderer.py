@@ -561,6 +561,11 @@ bool    ImGui_ImplVulkan_LoadFunctions(''',
     # never sampled as stale last-frame shadows. Disabled in default mode.
     from stage_sotc_sun_shadow_cascades_059 import patch as patch_sun_cascades
     patch_sun_cascades(out)
+    # Draw-thread only, optionally skips shader/resource binds for CPU-backed
+    # zero-count indirect draws. Still begins guest render pass so framebuffer
+    # clear, barriers, ordering and nonzero Vulkan draws remain unchanged.
+    from stage_sotc_indirect_empty_bind_063 import patch as patch_indirect_empty
+    patch_indirect_empty(out)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
