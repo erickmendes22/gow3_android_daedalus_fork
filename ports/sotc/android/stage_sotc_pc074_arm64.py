@@ -122,6 +122,39 @@ def patch(gpu: Path) -> None:
                'PC dedicated image size type parity on ARM64')
     image_path.write_text(image)
 
+    # PC #339 copies from the guest address under a custom Windows fault
+    # recovery guard (bb_setjmp, bb_copy_guard_buf), and explicitly calls
+    # Win32 PrefetchVirtualMemory. On Android that guard's ABI does not exist:
+    # retain only the original mapped backing-view copy (always tracked and
+    # readback-safe), never skip a guest byte or use a mismatched sigjmp_buf.
+    shim_path=gpu/'shim/bbgpu.cpp'
+    shim=shim_path.read_text()
+    shim=once(shim,
+              'extern "C" __thread std::uintptr_t bb_copy_guard_lo, bb_copy_guard_hi;',
+              '#if !defined(__ANDROID__)\\nextern "C" __thread std::uintptr_t bb_copy_guard_lo, bb_copy_guard_hi;',
+              'guard proprietary guest-copy recovery declarations')
+    shim=once(shim,
+              '    return true;\\n}\\nstatic void CopySparseSerial(VAddr source, u8* dest, u64 size) {',
+              '    return true;\\n}\\n#endif // !__ANDROID__: PC guest view fault guard\\nstatic void CopySparseSerial(VAddr source, u8* dest, u64 size) {',
+              'end of PC guest view fault guard')
+    shim=once(shim,
+              '        if (backing && prefetch && n >= 256 * 1024) {',
+              '#if !defined(__ANDROID__)\\n        if (backing && prefetch && n >= 256 * 1024) {',
+              'Win32 prefetch host-only guard')
+    shim=once(shim,
+              '            PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);\\n        }',
+              '            PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);\\n        }\\n#endif',
+              'Win32 prefetch boundary')
+    shim=once(shim,
+              '        } else if (backing && kCopyGuestView) {',
+              '#if !defined(__ANDROID__)\\n        } else if (backing && kCopyGuestView) {',
+              'Windows speculative copy fallback condition')
+    shim=once(shim,
+              '                std::memcpy(dest, backing, n);\\n            }\\n        } else if (backing) std::memcpy(dest, backing, n);',
+              '                std::memcpy(dest, backing, n);\\n            }\\n#endif\\n        } else if (backing) std::memcpy(dest, backing, n);',
+              'Android backing-view copy remains complete')
+    shim_path.write_text(shim)
+
     liverpool.write_text(code)
     print('SotC PC #308 depth/G-buffer fastpaths: ARM64 exact 32-bit register deltas + YIELD preserved')
 
