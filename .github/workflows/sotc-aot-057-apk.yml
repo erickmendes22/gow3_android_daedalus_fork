@@ -142,6 +142,24 @@ jobs:
             .local-deps/android/bionic-prefix
             .local-deps/android/bionic-src
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # The cached Bionic platform contains the compiled orbis-pkg tool, but
+      # not its source checkout. Keep the exact upstream copyright notices.
+      - name: Restore pinned orbis-pkg notices for cached platform
+        run: |
+          set -euo pipefail
+          dir=.local-deps/android/orbis-pkg
+          mkdir -p "$dir"
+          ref=13f1294a87a53d54f82feec56acbfd03f50667a9
+          for name in LICENSE-MIT LICENSE-APACHE; do
+            if [ ! -s "$dir/$name" ]; then
+              curl -fsSL --retry 3 --connect-timeout 15 \
+                "https://raw.githubusercontent.com/videobitva/orbis/$ref/$name" \
+                -o "$dir/$name"
+            fi
+            test -s "$dir/$name"
+          done
+          grep -Fq 'Copyright (c) 2026 videobitva' "$dir/LICENSE-MIT"
+          grep -Fq 'Apache License' "$dir/LICENSE-APACHE"
       - name: Download hash-pinned official helper archive
         run: |
           set -euo pipefail
