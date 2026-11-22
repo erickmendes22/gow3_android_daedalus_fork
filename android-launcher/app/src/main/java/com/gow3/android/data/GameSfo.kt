@@ -127,4 +127,26 @@ internal object GameSfo {
         return preferred.toString()
     }
 
+    /**
+     * SotC obtains the PlayStation system language from sceSystemServiceParamGetInt.
+     * The native HLE implements that from GOW3_LANGUAGE, despite the inherited
+     * variable name; the setting itself belongs to the separate SotC launcher.
+     * This is a runtime setting, not a guest binary patch or AOT input.
+     */
+    @JvmStatic
+    fun sotcLanguage(gameDirectory: String?, updateDirectory: String?, selection: String): String {
+        val explicit=selection.toIntOrNull()
+        if (explicit != null && explicit in 0..22) return explicit.toString()
+        val country=java.util.Locale.getDefault().language
+        return when (country) {
+            "pt" -> portugueseLanguage(gameDirectory,updateDirectory)
+            "es" -> "3"
+            "fr" -> "2"
+            "de" -> "4"
+            "it" -> "5"
+            "ru" -> "8"
+            else -> "1"
+        }
+    }
+
 }
