@@ -93,7 +93,7 @@ public final class RuntimeInstaller {
                 // LLVM toolchain must be present before offering compilation.
                 for (String required : new String[] {
                         "sotcport/arm64/lib/libbbcpu.so",
-                        "sotcport/arm64/aot/bin/libbbrecomp.so",
+                        "sotcport/arm64/aot/sotc-patched-compiler.sha256",
                         "sotcport/arm64/aot/bundle/helpers-aarch64.o",
                         "sotcport/scripts/sotc_aot_compile.py",
                         "sotcport/scripts/cmdline_image.py",
