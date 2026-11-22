@@ -92,6 +92,15 @@ jobs:
             .local-deps/android/bionic-prefix
             .local-deps/android/bionic-src
           key: sotc-apk-native-r29-${{ hashFiles('tools/android/bionic/build_deps.sh', 'ci/environment.yml') }}
+      # Preserve compiled AArch64 objects across source corrections; failed
+      # native jobs must not force every unchanged 400+ source to recompile.
+      - uses: actions/cache/restore@v4
+        id: sotc-arm64-ccache
+        with:
+          path: ~/.cache/ccache
+          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
+          restore-keys: |
+            sotc-pc074-arm64-ccache-
       - name: Prepare Vulkan renderer dependencies
         shell: bash -el {0}
         run: |
@@ -110,10 +119,12 @@ jobs:
           unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
           export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
           export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
+          ccache -M 2G
           cmake -S out/sotc-android/gpu -B out/sotc-android/cmake -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO=off -DBB_LTO=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
             -Dpkgcfg_lib_FFMPEG_atomic:FILEPATH="$atomic" \
@@ -138,6 +149,11 @@ jobs:
           mkdir -p out/sotc-057
           cp "$so" out/sotc-057/libbbgpu.so
           sha256sum "$so" > out/sotc-057/sha256.txt
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/ccache
+          key: sotc-pc074-arm64-ccache-${{ github.run_id }}
       - uses: actions/cache/save@v4
         if: always() && steps.sotc-apk-deps.outputs.cache-hit != 'true'
         with:
