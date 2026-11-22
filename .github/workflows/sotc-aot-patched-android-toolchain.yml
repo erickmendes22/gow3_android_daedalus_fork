@@ -2,7 +2,11 @@ name: SotC patched ARM64 AOT compiler for in-app rebuild (no TSO)
 on:
   push:
     branches: [experiment/sotc-arm64-aot-no-tso-055]
-    paths: ['.github/workflows/sotc-aot-patched-android-toolchain.yml']
+    paths:
+      - '.github/workflows/sotc-aot-patched-android-toolchain.yml'
+      - 'ports/sotc/android/aot/patch_bbrecomp_lowering.py'
+      - 'ports/sotc/android/aot/patch_bbrecomp_jump_tables.py'
+      - 'tests/sotc_jump_table_outside_function.cpp'
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,6 +36,12 @@ jobs:
           compiler=/tmp/sotc-bbrecomp-src
           bash "$compiler/fetch-fex.sh"
           python3 ports/sotc/android/aot/patch_bbrecomp_lowering.py "$compiler"
+          python3 ports/sotc/android/aot/patch_bbrecomp_jump_tables.py "$compiler"
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            -I "$compiler"/src \
+            tests/sotc_jump_table_outside_function.cpp "$compiler"/src/jumptable.cpp \
+            -o /tmp/sotc-switch-test
+          /tmp/sotc-switch-test
           deps="$compiler/.local-deps"
           mkdir -p "$deps/llvm/dl" "$deps/llvm/x" "$deps/llvm/src" "$deps/deps/dl" "$deps/mimalloc"
           curl -fL --retry 3 --connect-timeout 30 --max-time 900 \
