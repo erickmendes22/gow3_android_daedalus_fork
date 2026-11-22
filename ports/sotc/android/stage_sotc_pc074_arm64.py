@@ -86,7 +86,7 @@ def patch(gpu: Path) -> None:
     if prefix.count(old) != 4:
         raise ValueError(f'PC #308 TSC diagnostic call-site drift ({prefix.count(old)})')
     prefix=once(prefix,'inline double TicksPerMs() {',
-                'inline uint64_t Ticks();\\ninline double TicksPerMs() {',
+                'inline uint64_t Ticks();\ninline double TicksPerMs() {',
                 'forward declaration for portable profiling clock')
     prefix=prefix.replace(old,'Ticks()')
     stats_path.write_text(prefix+tick_def+suffix)
@@ -100,14 +100,14 @@ def patch(gpu: Path) -> None:
 #endif'''
     draw_path=root/'renderer_vulkan/vk_rasterizer.h'
     draw=draw_path.read_text()
-    draw=once(draw,'inline u64 Now() {\\n    return __builtin_ia32_rdtsc();\\n}',
-              'inline u64 Now() {\\n'+arm_now+'\\n}',
+    draw=once(draw,'inline u64 Now() {\n    return __builtin_ia32_rdtsc();\n}',
+              'inline u64 Now() {\n'+arm_now+'\n}',
               'ARM64 depth/G-buffer draw profiling clock')
     draw_path.write_text(draw)
     dispatch_path=root/'renderer_vulkan/sotc_dispphase.h'
     dispatch=dispatch_path.read_text()
-    dispatch=once(dispatch,'inline uint64_t Now() {\\n    return __builtin_ia32_rdtsc();\\n}',
-                  'inline uint64_t Now() {\\n'+arm_now.replace('    u64 ticks;', '    uint64_t ticks;')+'\\n}',
+    dispatch=once(dispatch,'inline uint64_t Now() {\n    return __builtin_ia32_rdtsc();\n}',
+                  'inline uint64_t Now() {\n'+arm_now.replace('    u64 ticks;', '    uint64_t ticks;')+'\n}',
                   'ARM64 dispatch phase profiling clock')
     dispatch_path.write_text(dispatch)
 
