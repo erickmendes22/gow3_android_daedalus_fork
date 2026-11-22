@@ -102,6 +102,19 @@ public final class RuntimeInstaller {
                 }) if (!path(root,required).isFile())
                     throw new IllegalStateException("Strict SotC AOT runtime lacks " + required);
             }
+            if (identity.contains("\"bloodframe\"")) {
+                // A visible FG option must be backed by real Vulkan/AHB code
+                // and the MAKO model. No fake toggle or missing library.
+                for (String required : new String[] {
+                        "sotcport/arm64/lib/libbloodframe.so",
+                        "sotcport/mako-fg/model/weights.bin",
+                        "sotcport/mako-fg/model/transport.spv",
+                        "sotcport/mako-fg/model/ops.spv",
+                        "sotcport/mako-fg/model/mixture.spv",
+                        "sotcport/mako-fg/LICENSE"
+                }) if (!path(root,required).isFile())
+                    throw new IllegalStateException("SotC Bloodframe runtime lacks " + required);
+            }
             return;
         }
         if (path(root,"gow3port/run-bionic.sh").isFile()) {
