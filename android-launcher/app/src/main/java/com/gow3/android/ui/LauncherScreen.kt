@@ -129,9 +129,16 @@ private fun BottomNavigation(selectedTab: LauncherTab,isSotc:Boolean, onTabSelec
                 .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME, stringResource(R.string.nav_home), "⌂", isSotc,onTabSelected)
-            NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS, stringResource(R.string.nav_mods), "⚙", isSotc,onTabSelected)
-            NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT, stringResource(R.string.nav_about), "ⓘ", isSotc,onTabSelected)
+            val portuguese = androidx.compose.ui.platform.LocalContext.current.resources.configuration.locales[0].language == "pt"
+            NavItem(LauncherTab.HOME, selectedTab == LauncherTab.HOME,
+                if(isSotc) (if(portuguese) "INÍCIO" else "HOME") else stringResource(R.string.nav_home),
+                "⌂", isSotc,onTabSelected)
+            NavItem(LauncherTab.MODS, selectedTab == LauncherTab.MODS,
+                if(isSotc) "PATCHES" else stringResource(R.string.nav_mods),
+                "⚙", isSotc,onTabSelected)
+            NavItem(LauncherTab.ABOUT, selectedTab == LauncherTab.ABOUT,
+                if(isSotc) (if(portuguese) "SOBRE" else "ABOUT") else stringResource(R.string.nav_about),
+                "ⓘ", isSotc,onTabSelected)
         }
     }
 
