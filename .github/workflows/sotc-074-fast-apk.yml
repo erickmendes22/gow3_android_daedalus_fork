@@ -1,4 +1,5 @@
 name: SotC 0.1.74 Display AOT HUD Icons APK (incremental)
+# Final UI source includes translated controller dialogs and editor controls.
 on:
   push:
     branches: [feature/sotc-074-display-aot-icons-hud]
