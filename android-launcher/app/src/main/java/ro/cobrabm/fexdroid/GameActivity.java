@@ -355,11 +355,12 @@ public final class GameActivity extends Activity {
                 int selected=0;
                 for(int i=0;i<sizes.length;i++)
                     if(Math.abs(saved-sizes[i])<Math.abs(saved-sizes[selected])) selected=i;
-                new AlertDialog.Builder(this).setTitle("On-screen controller size")
+                for(int i=0;i<labels.length;i++)labels[i]=UiText.get(this,labels[i]);
+                new AlertDialog.Builder(this).setTitle(UiText.get(this,"On-screen controller size"))
                     .setSingleChoiceItems(labels,selected,(dialog,which) -> {
                         controllerOverlay.setControlSize(sizes[which]);
                         dialog.dismiss(); closeDrawer();
-                    }).setNegativeButton("Cancel",null).show();
+                    }).setNegativeButton(UiText.get(this,"Cancel"),null).show();
             });
             menuItem("ic_tune","Camera sensitivity","Right analogue stick",() -> {
                 final String[] labels={"Slow (0.85×)","Normal (1.15×)","Fast (1.45×)"};
@@ -369,11 +370,12 @@ public final class GameActivity extends Activity {
                 int selected=0;
                 for(int i=0;i<options.length;i++)
                     if(Math.abs(saved-options[i])<Math.abs(saved-options[selected])) selected=i;
-                new AlertDialog.Builder(this).setTitle("Right-stick camera sensitivity")
+                for(int i=0;i<labels.length;i++)labels[i]=UiText.get(this,labels[i]);
+                new AlertDialog.Builder(this).setTitle(UiText.get(this,"Right-stick camera sensitivity"))
                     .setSingleChoiceItems(labels,selected,(dialog,which) -> {
                         controllerOverlay.setCameraSensitivity(options[which]);
                         dialog.dismiss(); closeDrawer();
-                    }).setNegativeButton("Cancel",null).show();
+                    }).setNegativeButton(UiText.get(this,"Cancel"),null).show();
             });
         }
         menuItem("ic_edit","Edit controller layout","Drag to move buttons; tap DONE to save",() -> {
