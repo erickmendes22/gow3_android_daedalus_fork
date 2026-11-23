@@ -321,7 +321,7 @@ final class TouchControllerOverlay extends View {
             c.drawRoundRect(548,9,732,62,13,13,paint);
             paint.setStyle(Paint.Style.FILL); paint.setTextSize(20);
             paint.setTextAlign(Paint.Align.CENTER);
-            c.drawText("DONE",640,36-(paint.ascent()+paint.descent())/2,paint);
+            c.drawText(UiText.portuguese(getContext()) ? "CONCLUIR" : "DONE",640,36-(paint.ascent()+paint.descent())/2,paint);
         }
         c.restore();
     }
