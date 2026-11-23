@@ -265,10 +265,10 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     Text(if(pt) "VÍDEO E DESEMPENHO" else "VIDEO AND PERFORMANCE",
                         color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     SotcChoice(if(pt) "Resolução interna" else "Internal rendering resolution",
-                        values["sotc_resolution"]?:"1280x720",
-                        listOf("1280x720" to "720p (1280 × 720)",
-                               "960x540" to "540p (960 × 540)",
-                               "640x360" to "360p (640 × 360)"),
+                        values["sotc_resolution"]?:"720p",
+                        listOf("720p" to "720p (1280 × 720)",
+                               "540p" to "540p (960 × 540)",
+                               "360p" to "360p (640 × 360)"),
                         { save("sotc_resolution",it) })
                     Text(if(pt)
                         "A saída permanece em 720p. Alterar a resolução interna exige um novo perfil AOT; voltar a um perfil já compilado permite reutilizá-lo."
