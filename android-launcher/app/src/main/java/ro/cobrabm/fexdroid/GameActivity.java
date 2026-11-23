@@ -62,6 +62,7 @@ public final class GameActivity extends Activity {
     // This HUD measures those frames, never fake patch targets or CPU loop speed.
     private TextView sotcFpsHud;
     private final FpsMeter sotcFpsMeter = new FpsMeter();
+    private final SotcLoadSampler sotcLoads = new SotcLoadSampler();
     private boolean gameLaunchedOnce;
     private boolean framesPollScheduled;
     private View resume;
@@ -646,8 +647,13 @@ public final class GameActivity extends Activity {
                 env.put("SOTC_PRESENT_SOCKET",BASE+"/present.sock");
                 env.put("SOTC_SCREEN_W","1280"); env.put("SOTC_SCREEN_H","720");
                 if (gameDir!=null) env.put("SOTC_GAME_DIR",gameDir);
-                // Fixed, device-tested profile; no risky advanced controls in the launcher.
-                env.put("SOTC_RENDER","1280x720");
+                // Verify, compile and gameplay use the identical guest render size.
+                String guestSize=setting("sotc_resolution");
+                switch (guestSize==null ? "" : guestSize) {
+                    case "960x540": env.put("SOTC_RENDER","960x540"); break;
+                    case "640x360": env.put("SOTC_RENDER","640x360"); break;
+                    default: env.put("SOTC_RENDER","1280x720"); break;
+                }
                 String modes="";
                 if("1".equals(setting("sotc_af16"))) modes+=(modes.isEmpty()?"":",")+"af16";
                 env.put("SOTC_MODES",modes);
@@ -889,10 +895,18 @@ public final class GameActivity extends Activity {
         final long frames=bionicRuntime() ? Gow3Present.framesIfLoaded() : DisplayBridge.directFrames();
         if (!hadError && frames>0) status.setVisibility(View.GONE);
         if (sotcFpsHud!=null) {
-            final boolean visible=true;
-            sotcFpsHud.setVisibility(visible ? View.VISIBLE : View.GONE);
-            final double fps=sotcFpsMeter.sample(frames,now);
-            sotcFpsHud.setText(HudPresentation.text("compact",fps,Double.NaN,Double.NaN,false,false));
+            final String mode=setting("sotc_hud_mode");
+            final boolean off="off".equals(mode);
+            sotcFpsHud.setVisibility(off ? View.GONE : View.VISIBLE);
+            if (!off) {
+                final double fps=sotcFpsMeter.sample(frames,now);
+                if ("fps".equals(mode)) {
+                    sotcFpsHud.setText(HudPresentation.text("fps",fps,Double.NaN,Double.NaN,false,false));
+                } else {
+                    double[] loads=sotcLoads.sample();
+                    sotcFpsHud.setText(HudPresentation.text("full",fps,loads[1],loads[0],true,true));
+                }
+            }
         }
         framesPollScheduled=true;
         main.postDelayed(() -> {
