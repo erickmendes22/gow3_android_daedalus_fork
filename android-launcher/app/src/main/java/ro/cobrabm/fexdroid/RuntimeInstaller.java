@@ -75,8 +75,9 @@ public final class RuntimeInstaller {
                     "sotcport/arm64/lib/libgow3present.so",
                     "sotcport/arm64/lib/libc++_shared.so",
                     "sotcport/arm64/python/lib/libpython3.13.so",
-                    // GameHub Turnip is imported separately and SHA-verified.
-                    // Neither system Vulkan nor Gen8/7xx is a valid SotC fallback.
+                    // GameHub DD 26.3 is the ONLY Turnip in the SotC payload;
+                    // fail before promoting the runtime if it was not extracted.
+                    "sotcport/arm64/drivers/gamehub-dd/libvulkan_freedreno.so",
                     "sotcport/scripts/sotc_prepare_game.py",
                     "sotcport/scripts/sotc-upstream/scripts/prepare.py",
                     "runtime-manifest.json"
