@@ -321,6 +321,13 @@ public final class RuntimeInstaller {
                         new String(log, 0, Math.min(log.length, 2048), StandardCharsets.UTF_8));
             validateRuntime(stage);
             preserveUserData(files, stage);
+            // Preserve on-device AOT across APK updates. The runtime's strict
+            // hash/patch/version checks still govern whether it can be reused.
+            File cachedAot=path(files,"sotcport/user/aot/libSotcAot.so");
+            File stagedAot=path(stage,"sotcport/user/aot/libSotcAot.so");
+            if (cachedAot.isFile() && (!stagedAot.isFile() ||
+                    cachedAot.length()!=stagedAot.length()))
+                throw new IllegalStateException("AOT code cache not preserved on runtime update");
             completeConfig(stage);
             promote(files, stage, expected);
             return true;
