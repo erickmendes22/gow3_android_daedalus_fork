@@ -98,6 +98,18 @@ final class UiText {
         PT.put("Slow (0.85×)", "Lenta (0,85×)");
         PT.put("Normal (1.15×)", "Normal (1,15×)");
         PT.put("Fast (1.45×)", "Rápida (1,45×)");
+        PT.put("Adjust all touch buttons immediately", "Ajusta o tamanho de todos os botões imediatamente");
+        PT.put("Right analogue stick", "Analógico direito");
+        PT.put("Drag to move buttons; tap DONE to save", "Arraste para mover os botões; toque em Concluir para salvar");
+        PT.put("Shadow of the Colossus", "Shadow of the Colossus");
+        PT.put("Starting Shadow of the Colossus…", "Iniciando Shadow of the Colossus…");
+        PT.put("Restart Shadow of the Colossus?", "Reiniciar Shadow of the Colossus?");
+        PT.put("On-screen controller size", "Tamanho dos botões na tela");
+        PT.put("Change game patches in the launcher's Patches tab.", "Altere os patches na aba Patches do launcher.");
+        PT.put("Back to launcher?", "Voltar ao launcher?");
+        PT.put("Recompile AOT", "Recompilar AOT");
+        PT.put("CPU", "CPU");
+        PT.put("GPU", "GPU");
 
     }
     static boolean portuguese(Context context) {
