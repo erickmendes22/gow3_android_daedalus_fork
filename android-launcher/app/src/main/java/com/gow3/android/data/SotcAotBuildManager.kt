@@ -79,7 +79,11 @@ internal class SotcAotBuildManager(
                         File(base, "arm64/python/lib").absolutePath,
                     "SOTC_AOT_COMPILER_BINARY" to tool.absolutePath,
                     "SOTC_GAME_DIR" to selected.absolutePath,
-                    "SOTC_RENDER" to "1280x720",
+                    "SOTC_RENDER" to when(opt("sotc_resolution","1280x720")) {
+                        "960x540" -> "960x540"
+                        "640x360" -> "640x360"
+                        else -> "1280x720"
+                    },
                     "SOTC_MODES" to modes.joinToString(","),
                     // Sun cascade experimentation was removed; original engine profile.
                     "SOTC_SUN_CASCADES" to "5",
