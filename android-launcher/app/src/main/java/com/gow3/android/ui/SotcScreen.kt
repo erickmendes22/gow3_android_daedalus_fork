@@ -305,11 +305,39 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     if(pkgInstallMessage!=null) Text(pkgInstallMessage,color=SotcPalette.secondary,fontSize=12.sp)
                 }
                 SotcPanel {
+                    Text(if(pt) "VÍDEO E DESEMPENHO" else "VIDEO AND PERFORMANCE",
+                        color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    SotcChoice(if(pt) "Resolução interna" else "Internal rendering resolution",
+                        values["sotc_resolution"]?:"1280x720",
+                        listOf("1280x720" to "720p (1280 × 720)",
+                               "960x540" to "540p (960 × 540)",
+                               "640x360" to "360p (640 × 360)"),
+                        { save("sotc_resolution",it) })
+                    Text(if(pt)
+                        "A saída permanece em 720p. Alterar a resolução interna exige um novo perfil AOT; voltar a um perfil já compilado permite reutilizá-lo."
+                        else "The output remains 720p. Internal resolution changes need a matching AOT profile; previously compiled profiles can be reused.",
+                        color=SotcPalette.secondary,fontSize=11.sp)
+                    SotcToggle(if(pt) "Preencher a tela (sem barras pretas)" else "Fill screen (remove black bars)",
+                        (values["android_fullscreen"]?:"0")=="1",
+                        {save("android_fullscreen",if(it)"1" else "0")})
+                    Text(if(pt) "HUD de desempenho" else "Performance HUD",
+                        color=SotcPalette.secondary,fontSize=13.sp)
+                    SotcChoice(if(pt) "Exibição" else "Display",
+                        values["sotc_hud_mode"]?:"full",
+                        listOf("full" to (if(pt) "FPS + GPU + CPU" else "FPS + GPU + CPU"),
+                               "fps" to (if(pt) "Somente FPS" else "FPS only"),
+                               "off" to (if(pt) "Desativada" else "Off")),
+                        {save("sotc_hud_mode",it)})
+                    Text(if(pt) "CPU: uso total do processador; GPU: ocupação KGSL quando disponível. Indicadores indisponíveis aparecem como N/D."
+                         else "CPU: overall system usage; GPU: KGSL busy time when available. Unavailable metrics show N/A.",
+                         color=SotcPalette.secondary,fontSize=11.sp)
+                }
+                SotcPanel {
                     Text(if(pt) "CÓDIGO NATIVO ARM64" else "NATIVE ARM64 CODE",
                         color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Text(if(pt)
-                        "No primeiro início o jogo é compilado obrigatoriamente no aparelho. Ao mudar os patches, o AOT é verificado e recompilado automaticamente somente quando necessário. Perfis já compilados são reutilizados."
-                        else "On first play the game is compiled on the device. Patch changes trigger automatic verification and compilation only if necessary; previously compiled profiles are reused.",
+                        "O jogo só é compilado na primeira execução ou quando a versão do executável, a resolução ou os patches mudam. Atualizar o APK não exige recompilação de um perfil ainda válido."
+                        else "The game is compiled on first launch or when the executable, resolution, or patches change. Updating the APK does not require recompiling a still-valid profile.",
                         color=SotcPalette.secondary,fontSize=12.sp)
                     if(aotBusy) {
                         Text(if(pt) "Preparando jogo (AOT obrigatório)…" else "Preparing game (required AOT)…",
@@ -346,8 +374,8 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                         (values["sotc_af16"]?:"0")=="1",
                         {save("sotc_af16",if(it)"1" else "0")})
                     Text(if(pt)
-                        "Patches de eboot verificados por hash para CUSA08809. A cópia original e os saves permanecem intactos. O teste de sombras solares foi removido."
-                        else "Hash-verified eboot patches for CUSA08809. Original game and saves remain untouched. The ineffective sun-shadow experiment was removed.",
+                        "Patches do executável verificados por hash para CUSA08809 e CUSA08034. O jogo original e os dados salvos permanecem intactos."
+                        else "Hash-verified executable patches for CUSA08809 and CUSA08034. Original game files and saves remain untouched.",
                         color=SotcPalette.secondary,fontSize=11.sp)
                 }
                 if(aotBusy) Text(aotMessage ?: "AOT ARM64…",
@@ -359,7 +387,7 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                 Text(if(pt) "DAEDALUS • ARM64 AOT NATIVO" else "DAEDALUS • NATIVE ARM64 AOT",color=SotcPalette.accent,fontSize=13.sp)
                 SotcPanel {
                     Text(if(pt) "PORT ANDROID" else "ANDROID PORT",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    Text(if(pt) "Port Android com renderizador Vulkan e recompilação ARM64 nativa no celular."
+                    Text(if(pt) "Port para Android com renderização Vulkan e compilação ARM64 nativa no dispositivo."
                          else "Android port with Vulkan rendering and native ARM64 compilation on-device.",
                          color=SotcPalette.secondary,fontSize=13.sp)
                     Text("Original PC port: AjncSystem/ShadowOfTheColossus-PC",color=SotcPalette.text,fontSize=13.sp)
@@ -381,17 +409,10 @@ internal fun SotcScreen(tabIndex:Int,onStartGame:()->Unit,onChooseGameFolder:()-
                     }
                 }
                 SotcPanel {
-                    Text(if(pt) "SAVES" else "SAVE DATA",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
+                    Text(if(pt) "DADOS SALVOS" else "SAVE DATA",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         SotcAction(if(pt) "Exportar" else "Export") { saves.launchExport { } }
                         SotcAction(if(pt) "Importar" else "Import") { saves.launchImport { } }
-                    }
-                }
-                SotcPanel {
-                    Text(if(pt) "IDIOMA" else "LANGUAGE",color=SotcPalette.accent,fontWeight=FontWeight.Bold)
-                    Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                        SotcAction("Português") { onChangeLanguage("pt") }
-                        SotcAction("English") { onChangeLanguage("en") }
                     }
                 }
             }
