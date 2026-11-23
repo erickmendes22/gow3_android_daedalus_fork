@@ -9,6 +9,8 @@ class Sotc074(unittest.TestCase):
         art=(ROOT/"android-launcher/app/src/main/res/drawable-nodpi/sotc_art.webp").read_bytes()
         self.assertEqual(art[:4],b"RIFF")
         self.assertEqual(art[8:12],b"WEBP")
+        import hashlib
+        self.assertEqual(hashlib.sha256(art).hexdigest(),"d4a491aa0ac7c1c0d6c202006ee3d58d9e236df74e73b1558e3513e2ad1afe41")
         manifest=src("android-launcher/app/src/main/AndroidManifest.xml")
         self.assertIn('android:roundIcon="${appIcon}"',manifest)
         gradle=src("android-launcher/app/build.gradle.kts")
