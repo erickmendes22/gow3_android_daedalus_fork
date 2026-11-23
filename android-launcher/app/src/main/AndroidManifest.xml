@@ -13,6 +13,7 @@
     <application
         android:allowBackup="false"
         android:icon="${appIcon}"
+        android:roundIcon="${appIcon}"
         android:isGame="true"
         android:label="${appLabel}"
         android:requestLegacyExternalStorage="true"
