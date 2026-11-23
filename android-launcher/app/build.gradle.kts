@@ -29,7 +29,7 @@ android {
                 applicationId = "com.sotc.android.daedalus"
                 versionCode = 10074
                 versionName = "0.1.74-video-aot-hud-icons"
-                manifestPlaceholders["appIcon"] = "@drawable/sotc_icon"
+                manifestPlaceholders["appIcon"] = "@mipmap/sotc_launcher"
                 manifestPlaceholders["appLabel"] = "Shadow of the Colossus"
             }
         }
