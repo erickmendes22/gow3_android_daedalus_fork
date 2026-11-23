@@ -111,62 +111,19 @@ internal fun SotcBackdrop() {
 }
 
 /**
- * Uses real local artwork from the legally selected PS4 game dump: pic1.png,
- * pic0.png, or icon0.png. No PlayStation game artwork is bundled, scraped or
- * downloaded. Loading happens off the UI thread with a bounded decoder.
+ * Reuses the user's existing artwork bundled as sotc_art.webp.
+ * No newly generated or downloaded images, and no dependency on game files.
  */
 @Composable
 private fun SotcGameArtwork(gameDir: String?) {
-    var bitmap by remember(gameDir) { mutableStateOf<ImageBitmap?>(null) }
-    androidx.compose.runtime.LaunchedEffect(gameDir) {
-        bitmap = withContext(Dispatchers.IO) {
-            if (gameDir.isNullOrBlank()) return@withContext null
-            val base=File(gameDir,"sce_sys")
-            val artwork=listOf("pic1.png","pic0.png","icon0.png")
-                .map { File(base,it) }.firstOrNull { it.isFile && it.canRead() }
-                ?: return@withContext null
-            try {
-                val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
-                BitmapFactory.decodeFile(artwork.absolutePath,bounds)
-                var sample=1
-                while (bounds.outWidth/sample>1536 || bounds.outHeight/sample>1024) sample*=2
-                val options=BitmapFactory.Options().apply {
-                    inSampleSize=sample
-                    inPreferredConfig=android.graphics.Bitmap.Config.RGB_565
-                }
-                BitmapFactory.decodeFile(artwork.absolutePath,options)?.asImageBitmap()
-            } catch (_:Exception) { null }
-        }
-    }
-    Box(Modifier.fillMaxWidth().aspectRatio(1.9f)
-        .clip(RoundedCornerShape(15.dp))
-        .background(Color(0xFF13272A))) {
-        if(bitmap!=null) Image(bitmap=bitmap!!,contentDescription="Shadow of the Colossus",
-            modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
-        else Canvas(Modifier.fillMaxSize()) {
-            val w=size.width;val h=size.height
-            drawRect(Brush.verticalGradient(listOf(Color(0xFF52635C),Color(0xFF243B3F),Color(0xFF121D20))))
-            val hills=Path().apply {
-                moveTo(0f,h*.78f);lineTo(w*.15f,h*.52f);lineTo(w*.33f,h*.72f)
-                lineTo(w*.55f,h*.35f);lineTo(w*.73f,h*.67f)
-                lineTo(w,h*.30f);lineTo(w,h);close()
-            }
-            drawPath(hills,Color(0xC30B1B20))
-            // Two silhouettes make the fallback recognisable without pretending
-            // a generated vector is a screenshot or a game asset.
-            drawRoundRect(Color(0xDD080F11),topLeft=Offset(w*.70f,h*.25f),
-                size=Size(w*.10f,h*.50f),
-                cornerRadius=androidx.compose.ui.geometry.CornerRadius(w*.025f))
-            drawCircle(Color(0xE6081113),w*.075f,Offset(w*.75f,h*.24f))
-            drawLine(Color(0xD80A1013),Offset(w*.70f,h*.65f),
-                Offset(w*.65f,h*.92f),strokeWidth=w*.045f)
-            drawLine(Color(0xD80A1013),Offset(w*.79f,h*.65f),
-                Offset(w*.84f,h*.93f),strokeWidth=w*.045f)
-            drawCircle(Color(0xFC101919),w*.017f,Offset(w*.28f,h*.72f))
-            drawLine(Color(0xF9121C1D),Offset(w*.28f,h*.74f),
-                Offset(w*.28f,h*.88f),strokeWidth=w*.02f)
-        }
-    }
+    Image(
+        painter=androidx.compose.ui.res.painterResource(com.gow3.android.R.drawable.sotc_art),
+        contentDescription="Shadow of the Colossus",
+        modifier=Modifier.fillMaxWidth().aspectRatio(1.9f)
+            .clip(RoundedCornerShape(15.dp)),
+        contentScale=ContentScale.Crop,
+        alignment=Alignment.TopCenter
+    )
 }
 
 private fun localized(context: Context, pt:String, en:String):String =
