@@ -18,6 +18,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ro.cobrabm.fexdroid.GpuDriverManager
+import ro.cobrabm.fexdroid.RuntimeInstaller
 
 @Composable
 internal fun GpuDriverCard() {
@@ -47,10 +49,38 @@ internal fun GpuDriverCard() {
     var selected by remember { mutableStateOf(GpuDriverManager.selected(context)) }
     // The 14 MB imported ELF is checked once, not on every Compose recomposition.
     var hasGameHub by remember { mutableStateOf(GpuDriverManager.hasGameHubDD(context)) }
+    val isSotc = context.packageName == "com.sotc.android.daedalus"
+    var preparingRuntime by remember { mutableStateOf(isSotc) }
+    var runtimeError by remember { mutableStateOf<String?>(null) }
+    // A successful APK update changes the embedded payload, not the already
+    // extracted files. Install and verify it BEFORE reporting a missing driver.
+    // The on-device AOT manager calls the same synchronized installer when Play
+    // is pressed, so concurrent requests do not corrupt an existing runtime.
+    LaunchedEffect(isSotc) {
+        if (isSotc) {
+            preparingRuntime = true
+            runtimeError = null
+            try {
+                withContext(Dispatchers.IO) {
+                    RuntimeInstaller.ensure(context, context.filesDir) { }
+                }
+                hasGameHub = withContext(Dispatchers.IO) {
+                    GpuDriverManager.hasBundledGameHubDD(context)
+                }
+                if (!hasGameHub) {
+                    runtimeError = "GameHub DD Turnip ausente ou SHA-256 inválido após instalar o runtime."
+                }
+            } catch (failure: Exception) {
+                hasGameHub = false
+                runtimeError = failure.message ?: failure.javaClass.simpleName
+            } finally {
+                preparingRuntime = false
+            }
+        }
+    }
     var expanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val isSotc = context.packageName == "com.sotc.android.daedalus"
     // SotC only: the original tested GameHub DD. Do not offer system,
     // generic Turnip or arbitrary imported drivers; those regress geometry.
     val choices = if (isSotc) listOf(
@@ -104,13 +134,23 @@ internal fun GpuDriverCard() {
             }
         }
         if (!isSotc) Text(stringResource(R.string.gpu_driver_hint), color = LauncherColors.textMuted, fontSize = 12.sp)
-        if (context.packageName == "com.sotc.android.daedalus" && !hasGameHub) {
-            Text(
-                if (java.util.Locale.getDefault().language == "pt")
-                    "A Turnip GameHub DD 26.3 integrada ao aplicativo não foi localizada ou está inválida. Reinstale o APK completo."
-                else "The bundled GameHub DD 26.3 Turnip is missing or invalid. Reinstall the complete APK.",
-                color = LauncherColors.textMuted, fontSize = 12.sp
-            )
+        if (isSotc) {
+            val pt = java.util.Locale.getDefault().language == "pt"
+            val driverStatus = when {
+                preparingRuntime -> if (pt)
+                    "Preparando o runtime e instalando a Turnip GameHub DD integrada…"
+                    else "Preparing runtime and installing bundled GameHub DD Turnip…"
+                runtimeError != null -> if (pt)
+                    "Falha ao preparar a Turnip GameHub: $runtimeError"
+                    else "Failed to prepare GameHub DD Turnip: $runtimeError"
+                hasGameHub -> if (pt)
+                    "Turnip GameHub DD 26.3 instalada e verificada."
+                    else "GameHub DD 26.3 Turnip installed and verified."
+                else -> if (pt)
+                    "Turnip GameHub DD indisponível; verifique os logs do runtime."
+                    else "GameHub DD Turnip unavailable; check runtime logs."
+            }
+            Text(driverStatus, color = LauncherColors.textMuted, fontSize = 12.sp)
         }
         if (!isSotc) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy, onClick = {
