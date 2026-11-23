@@ -650,8 +650,8 @@ public final class GameActivity extends Activity {
                 // Verify, compile and gameplay use the identical guest render size.
                 String guestSize=setting("sotc_resolution");
                 switch (guestSize==null ? "" : guestSize) {
-                    case "960x540": env.put("SOTC_RENDER","960x540"); break;
-                    case "640x360": env.put("SOTC_RENDER","640x360"); break;
+                    case "540p": env.put("SOTC_RENDER","960x540"); break;
+                    case "360p": env.put("SOTC_RENDER","640x360"); break;
                     default: env.put("SOTC_RENDER","1280x720"); break;
                 }
                 String modes="";
