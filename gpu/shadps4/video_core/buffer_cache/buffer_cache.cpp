@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <vector>
 #include <magic_enum/magic_enum.hpp>
 #include "gow3_copy.h"
 #include "gow3_toggles.h"
@@ -436,6 +437,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
         // gow3: texture data is copied on the copy threads (streaming: 100+ MB per frame);
         // the upload reads the staging only after submission, which waits for the copies.
         constexpr u64 Chunk = 1_MB;
+        std::vector<Gow3Copy::Item> large_copies;
+        if (staging.size >= Chunk) {
+            large_copies.reserve((staging.size + Chunk - 1) / Chunk);
+        }
         for (u64 offset = 0; offset < staging.size; offset += Chunk) {
             const Gow3Copy::Item item{
                 .run = &RunGuestCopy,
@@ -448,9 +453,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
             if (staging.size < Chunk) {
                 SmallGuestCopy(item);
             } else {
-                Gow3Copy::Async([item] { item.run(item); });
+                large_copies.push_back(item);
             }
         }
+        Gow3Copy::AsyncItems(large_copies);
         return {staging.buffer, staging.offset};
     }
     memory->CopySparseMemory(device_addr, staging.mapped, staging.size);

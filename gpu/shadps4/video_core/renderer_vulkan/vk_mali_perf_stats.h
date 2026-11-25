@@ -97,6 +97,16 @@ public:
         (redundant ? Get().vertex_input_sets_skipped : Get().vertex_input_sets_emitted)
             .fetch_add(1, std::memory_order_relaxed);
     }
+    static void CountVertexBufferBind(bool redundant) {
+        if (!Enabled()) return;
+        (redundant ? Get().vertex_buffer_skipped : Get().vertex_buffer_emitted)
+            .fetch_add(1, std::memory_order_relaxed);
+    }
+    static void CountIndexBufferBind(bool redundant) {
+        if (!Enabled()) return;
+        (redundant ? Get().index_buffer_skipped : Get().index_buffer_emitted)
+            .fetch_add(1, std::memory_order_relaxed);
+    }
     static void CountEmptyDrawCandidate() {
         if (Enabled()) Get().empty_draw_candidates.fetch_add(1, std::memory_order_relaxed);
     }
@@ -311,17 +321,27 @@ public:
             0, std::memory_order_relaxed);
         const auto vertex_skips = state.vertex_input_sets_skipped.exchange(
             0, std::memory_order_relaxed);
-        if (used + 360 < sizeof(line))
+        const auto vb = state.vertex_buffer_emitted.exchange(0, std::memory_order_relaxed);
+        const auto vb_skip = state.vertex_buffer_skipped.exchange(0, std::memory_order_relaxed);
+        const auto ib = state.index_buffer_emitted.exchange(0, std::memory_order_relaxed);
+        const auto ib_skip = state.index_buffer_skipped.exchange(0, std::memory_order_relaxed);
+        if (used + 520 < sizeof(line))
             std::snprintf(line + used, sizeof(line) - used,
                           " vk_draw_commands_recorded=%llu empty_draw_candidates=%llu"
                           " gfx_pipeline_binds=%llu gfx_pipeline_binds_skipped=%llu"
-                          " vertex_input_sets=%llu vertex_input_skipped=%llu",
+                          " vertex_input_sets=%llu vertex_input_skipped=%llu"
+                          " vertex_buffer_binds=%llu vertex_buffer_skipped=%llu"
+                          " index_buffer_binds=%llu index_buffer_skipped=%llu",
                           static_cast<unsigned long long>(recorded),
                           static_cast<unsigned long long>(empty),
                           static_cast<unsigned long long>(binds),
                           static_cast<unsigned long long>(skipped),
                           static_cast<unsigned long long>(vertex_sets),
-                          static_cast<unsigned long long>(vertex_skips));
+                          static_cast<unsigned long long>(vertex_skips),
+                          static_cast<unsigned long long>(vb),
+                          static_cast<unsigned long long>(vb_skip),
+                          static_cast<unsigned long long>(ib),
+                          static_cast<unsigned long long>(ib_skip));
         std::printf("%s\n", line);
         // Independent compact line: these are event COUNTS over the interval,
         // not GPU time or FPS. Report even if a present pass did not complete
@@ -360,6 +380,8 @@ private:
         std::atomic<uint64_t> draw_commands_recorded{0}, empty_draw_candidates{0};
         std::atomic<uint64_t> graphics_pipeline_binds_executed{0}, graphics_pipeline_binds_skipped{0};
         std::atomic<uint64_t> vertex_input_sets_emitted{0}, vertex_input_sets_skipped{0};
+        std::atomic<uint64_t> vertex_buffer_emitted{0}, vertex_buffer_skipped{0};
+        std::atomic<uint64_t> index_buffer_emitted{0}, index_buffer_skipped{0};
         std::atomic<uint64_t> causal_draws{0}, causal_rect{0}, causal_quad{0};
         std::atomic<uint64_t> causal_native_tess{0}, causal_geometry{0};
         std::atomic<uint64_t> causal_barrier_flushes{0}, causal_pass_splits{0};

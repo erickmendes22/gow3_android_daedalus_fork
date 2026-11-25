@@ -72,14 +72,10 @@ class ImageBarrierTests(unittest.TestCase):
         self.assertIn("GOW3_MALI_SHADER_STAGE_BARRIERS", rasterizer)
         self.assertIn("if (!exact) return vk::PipelineStageFlagBits2::eAllCommands;", rasterizer)
         self.assertEqual(rasterizer.count("MaliReadOnlyTextureStage(stage.sw_stage)"), 2)
-        for shader_stage, vk_stage in [
-            ("Fragment", "eFragmentShader"), ("Vertex", "eVertexShader"),
-            ("TessellationControl", "eTessellationControlShader"),
-            ("TessellationEval", "eTessellationEvaluationShader"),
-            ("Geometry", "eGeometryShader"), ("Compute", "eComputeShader")
-        ]:
-            self.assertIn(f"case Shader::SwStage::{shader_stage}:", rasterizer)
-            self.assertIn(f"return vk::PipelineStageFlagBits2::{vk_stage};", rasterizer)
+        # A later read in a different stage can reuse the same layout. The
+        # original write must already be visible to every possible reader.
+        self.assertIn("return vk::PipelineStageFlagBits2::eAllGraphics |", rasterizer)
+        self.assertIn("vk::PipelineStageFlagBits2::eComputeShader;", rasterizer)
         # Storage feedback and image writes are intentionally not narrowed.
         self.assertIn("vk::PipelineStageFlagBits2::eAllGraphics", rasterizer)
         self.assertIn("vk::PipelineStageFlagBits2::eAllCommands,", rasterizer)

@@ -40,7 +40,15 @@ class VertexInputBindCache(unittest.TestCase):
         self.assertIn('scheduler.Record([this, dynamic_input, num_buffers, bindings, attributes', D)
         # The deferred lambda invokes a Rasterizer member; capture must be explicit.
         self.assertIn('scheduler.SetVertexInputCached(cmdbuf, bindings, attributes);', D)
-        self.assertIn('cmdbuf.bindVertexBuffers2(0, num_buffers, buffers.data(), offsets.data()',D)
-        self.assertIn('cmdbuf.bindIndexBuffer(index_handle, index_offset, index_type)',D)
+        self.assertIn('scheduler.BindVertexBuffersCached(cmdbuf, dynamic_input, buffers, offsets,',D)
+        self.assertIn('scheduler.BindIndexBufferCached(cmdbuf, index_handle, index_offset, index_type)',D)
+        self.assertIn('cmdbuf.bindVertexBuffers2(0, count, buffers.data(), offsets.data()',S)
+        self.assertIn('same(offsets, last_vertex_offsets)', S)
+        self.assertIn('same(sizes, last_vertex_sizes)', S)
+        self.assertIn('same(strides, last_vertex_strides)', S)
+        self.assertIn('buffer == last_index_buffer && offset == last_index_offset && type == last_index_type', S)
+        self.assertIn('last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};', H)
+        self.assertIn('last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};', S)
+        self.assertIn('vertex_buffer_skipped=%llu', P)
 
 if __name__=="__main__": unittest.main()

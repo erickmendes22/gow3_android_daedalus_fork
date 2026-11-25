@@ -1731,9 +1731,9 @@ u64 Rasterizer::Flush() {
     return current_tick;
 }
 
-void Rasterizer::Finish() {
+void Rasterizer::Finish(std::source_location caller) {
     DrainDrawPipe();
-    scheduler.Finish();
+    scheduler.Finish(caller);
 }
 
 void Rasterizer::OnSubmit() {
@@ -2050,15 +2050,11 @@ void Rasterizer::EmitVertexBuffers(bool include_index_buffer) {
             scheduler.SetVertexInputCached(cmdbuf, bindings, attributes);
         }
         if (num_buffers) {
-            if (dynamic_input) {
-                cmdbuf.bindVertexBuffers(0, num_buffers, buffers.data(), offsets.data());
-            } else {
-                cmdbuf.bindVertexBuffers2(0, num_buffers, buffers.data(), offsets.data(),
-                                         sizes.data(), strides.data());
-            }
+            scheduler.BindVertexBuffersCached(cmdbuf, dynamic_input, buffers, offsets,
+                                              sizes, strides);
         }
         if (include_index_buffer) {
-            cmdbuf.bindIndexBuffer(index_handle, index_offset, index_type);
+            scheduler.BindIndexBufferCached(cmdbuf, index_handle, index_offset, index_type);
         }
     });
 }
@@ -2202,9 +2198,9 @@ void Rasterizer::BindIndexBuffer(u32 index_offset) {
 }
 
 void Rasterizer::EmitIndexBuffer() {
-    scheduler.Record([handle = index_bind.handle, offset = index_bind.offset,
+    scheduler.Record([this, handle = index_bind.handle, offset = index_bind.offset,
                       type = index_bind.type](vk::CommandBuffer cmdbuf) {
-        cmdbuf.bindIndexBuffer(handle, offset, type);
+        scheduler.BindIndexBufferCached(cmdbuf, handle, offset, type);
     });
 }
 
@@ -2613,25 +2609,20 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     return entry;
 }
 
-// Scope read-only image dependencies to their consumer shader stage.
-// The opt-in affects only sampled images; feedback/storage keep their original
-// conservative ALL_COMMANDS behavior. Multiple readers are unioned by
-// Image::GetBarriers, so later writes still see every reading stage.
+// Scope sampled-image dependencies to all possible shader consumers.
+// A layout may be reused by a different stage without another barrier.
+// Make the preceding write visible to all shader consumers at the first read;
+// unioning subsequent reader stages alone would not establish visibility.
+// Storage and feedback retain the original ALL_COMMANDS behavior.
 static vk::PipelineStageFlags2 MaliReadOnlyTextureStage(Shader::SwStage sw_stage) {
     static const bool exact = [] {
         const char* selected = std::getenv("GOW3_MALI_SHADER_STAGE_BARRIERS");
         return std::getenv("GOW3_MALI_CPU_PRESENT") && selected && selected[0] == '1';
     }();
     if (!exact) return vk::PipelineStageFlagBits2::eAllCommands;
-    switch (sw_stage) {
-    case Shader::SwStage::Vertex: return vk::PipelineStageFlagBits2::eVertexShader;
-    case Shader::SwStage::TessellationControl: return vk::PipelineStageFlagBits2::eTessellationControlShader;
-    case Shader::SwStage::TessellationEval: return vk::PipelineStageFlagBits2::eTessellationEvaluationShader;
-    case Shader::SwStage::Geometry: return vk::PipelineStageFlagBits2::eGeometryShader;
-    case Shader::SwStage::Fragment: return vk::PipelineStageFlagBits2::eFragmentShader;
-    case Shader::SwStage::Compute: return vk::PipelineStageFlagBits2::eComputeShader;
-    default: return vk::PipelineStageFlagBits2::eAllCommands;
-    }
+    (void)sw_stage;
+    return vk::PipelineStageFlagBits2::eAllGraphics |
+           vk::PipelineStageFlagBits2::eComputeShader;
 }
 
 void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* prepared,

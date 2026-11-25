@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 GPU tick priority optimization APK
+name: GoW III Mali 1023daf52 GPU tick priority optimization APK r2
 
 on:
   push:
@@ -59,6 +59,8 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
           # Prevent distributing an APK with silent storage-image writes or
           # merged driver trace lines. Unit tests above check these invariants;

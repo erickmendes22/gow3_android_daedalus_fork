@@ -3,6 +3,7 @@
 #pragma once
 #include <cstddef>
 #include <functional>
+#include <span>
 
 namespace Gow3Copy {
 
@@ -24,6 +25,10 @@ struct Item {
     void* context;
     unsigned long long source, destination, size, extra;
 };
+
+/// Enqueue independently executable copies in a single locked operation.
+/// Copies retain their original epoch and completion semantics.
+void AsyncItems(std::span<const Item> items);
 
 /// Queues a small copy in the calling thread's batch; the batch is started with Async() once it
 /// holds about 512 KiB or 256 items, or by FlushBatch()/WaitAsync(). One wakeup per batch

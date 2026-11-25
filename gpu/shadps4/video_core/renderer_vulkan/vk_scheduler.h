@@ -728,6 +728,15 @@ public:
         std::span<const vk::VertexInputBindingDescription2EXT> bindings,
         std::span<const vk::VertexInputAttributeDescription2EXT> attributes);
 
+    // Exact buffer/offset/size/stride reuse, limited to the same recording scope.
+    void BindVertexBuffersCached(vk::CommandBuffer cmdbuf, bool dynamic_input,
+                                 std::span<const vk::Buffer> buffers,
+                                 std::span<const vk::DeviceSize> offsets,
+                                 std::span<const vk::DeviceSize> sizes,
+                                 std::span<const vk::DeviceSize> strides);
+    void BindIndexBufferCached(vk::CommandBuffer cmdbuf, vk::Buffer buffer,
+                               vk::DeviceSize offset, vk::IndexType type);
+
     /// Returns the current command buffer for recording on the calling thread. With threaded
     /// recording this first waits until all commands passed to Record() are recorded, then
     /// records directly (Record() included, so callers may mix both) until the next
@@ -744,6 +753,7 @@ public:
         last_graphics_bind_cmd = vk::CommandBuffer{};
         last_graphics_bind_pipeline = vk::Pipeline{};
         last_vertex_input_cmd = vk::CommandBuffer{};
+        last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
         return current_cmdbuf;
     }
 
@@ -937,6 +947,14 @@ private:
     std::vector<vk::VertexInputBindingDescription2EXT> last_vertex_input_bindings;
     std::vector<vk::VertexInputAttributeDescription2EXT> last_vertex_input_attributes;
     bool vertex_input_cache_enabled = false;
+    bool buffer_bind_cache_enabled = false;
+    vk::CommandBuffer last_vertex_buffer_cmd{}, last_index_buffer_cmd{};
+    bool last_vertex_buffer_dynamic{};
+    std::vector<vk::Buffer> last_vertex_buffers;
+    std::vector<vk::DeviceSize> last_vertex_offsets, last_vertex_sizes, last_vertex_strides;
+    vk::Buffer last_index_buffer{};
+    vk::DeviceSize last_index_offset{};
+    vk::IndexType last_index_type{};
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;

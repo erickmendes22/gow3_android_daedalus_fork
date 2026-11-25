@@ -61,6 +61,21 @@ public:
         cv.notify_one();
     }
 
+    void AsyncItems(std::span<const Item> items) {
+        if (items.empty()) return;
+        {
+            std::scoped_lock lk{mutex};
+            const u64 epoch = epoch_base + epochs.size() - 1;
+            for (const auto& item : items) {
+                async_tasks.push_back({[item] { item.run(item); }, epoch});
+            }
+            epochs.back().pending += items.size();
+            pending += items.size();
+        }
+        // All chunks are independent; let every existing copy worker help.
+        cv.notify_all();
+    }
+
     void AfterCopies(std::function<void()> callback) {
         {
             std::unique_lock lk{mutex};
@@ -288,6 +303,14 @@ void Async(std::function<void()> task) {
         return;
     }
     GetPool().Async(std::move(task));
+}
+
+void AsyncItems(std::span<const Item> items) {
+    if (!Enabled()) {
+        for (const auto& item : items) item.run(item);
+        return;
+    }
+    GetPool().AsyncItems(items);
 }
 
 void FlushBatch() {

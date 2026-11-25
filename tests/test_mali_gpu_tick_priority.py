@@ -32,4 +32,15 @@ class TickPriority(unittest.TestCase):
         sh=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
         self.assertIn('GOW3_VK_MAX_IN_FLIGHT:-2',sh)
         self.assertIn('GOW3_MALI_SHADER_STAGE_BARRIERS:-1',sh)
+    def test_bulk_upload_keeps_completion_epoch(self):
+        pool=(ROOT/"gpu/shim/gow3_copy.cpp").read_text()
+        code=pool.split("    void AsyncItems(std::span<const Item> items)",1)[1].split("    void AfterCopies(",1)[0]
+        self.assertIn("std::scoped_lock lk{mutex}",code)
+        self.assertIn("epochs.back().pending += items.size();",code)
+        self.assertIn("pending += items.size();",code)
+        self.assertIn("cv.notify_all();",code)
+        buf=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
+        self.assertIn("Gow3Copy::AsyncItems(large_copies);",buf)
+    def test_guest_finish_site_preserved(self):
+        self.assertIn("scheduler.Finish(caller);",(V/"vk_rasterizer.cpp").read_text())
 if __name__=="__main__": unittest.main()

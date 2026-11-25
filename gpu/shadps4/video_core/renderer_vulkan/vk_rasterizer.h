@@ -162,7 +162,7 @@ public:
     void UnmapMemory(VAddr addr, u64 size);
 
     u64 Flush();
-    void Finish();
+    void Finish(std::source_location caller = std::source_location::current());
     void OnSubmit();
 
     PipelineCache& GetPipelineCache() {

@@ -46,6 +46,9 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
         std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         (!vertex_cache || vertex_cache[0] != '0');
+    const char* buffer_cache = std::getenv("GOW3_MALI_BUFFER_BIND_CACHE");
+    buffer_bind_cache_enabled = vertex_input_cache_enabled &&
+        (!buffer_cache || buffer_cache[0] != '0');
     // gow3: GOW3_VK_RECORD_THREAD=0 records on the calling thread.
     const char* env = std::getenv("GOW3_VK_RECORD_THREAD");
     if (threaded_recording && !(env && env[0] == '0')) {
@@ -211,7 +214,11 @@ void Scheduler::EndRendering() {
         return;
     }
     is_rendering = false;
-    Record([](vk::CommandBuffer cmdbuf) { cmdbuf.endRendering(); });
+    Record([this](vk::CommandBuffer cmdbuf) {
+        cmdbuf.endRendering();
+        // Auxiliary render/transfer commands between passes may bind their own buffers.
+        last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
+    });
 }
 
 void Scheduler::TraceDirectRecording(void* caller) {
@@ -530,12 +537,65 @@ void Scheduler::SetVertexInputCached(
         return;
     }
     cmdbuf.setVertexInputEXT(bindings, attributes);
+    last_vertex_buffer_cmd = vk::CommandBuffer{};
     if (vertex_input_cache_enabled) {
         last_vertex_input_bindings.assign(bindings.begin(), bindings.end());
         last_vertex_input_attributes.assign(attributes.begin(), attributes.end());
         last_vertex_input_cmd = cmdbuf;
     }
     MaliPerfStats::CountVertexInputSet(false);
+}
+
+void Scheduler::BindVertexBuffersCached(vk::CommandBuffer cmdbuf, bool dynamic_input,
+                                       std::span<const vk::Buffer> buffers,
+                                       std::span<const vk::DeviceSize> offsets,
+                                       std::span<const vk::DeviceSize> sizes,
+                                       std::span<const vk::DeviceSize> strides) {
+    if (buffers.empty()) return;
+    const auto same = [](auto incoming, const auto& previous) {
+        return incoming.size() == previous.size() &&
+               std::equal(incoming.begin(), incoming.end(), previous.begin());
+    };
+    if (buffer_bind_cache_enabled && cmdbuf == last_vertex_buffer_cmd &&
+        dynamic_input == last_vertex_buffer_dynamic && same(buffers, last_vertex_buffers) &&
+        same(offsets, last_vertex_offsets) && same(sizes, last_vertex_sizes) &&
+        same(strides, last_vertex_strides)) {
+        MaliPerfStats::CountVertexBufferBind(true);
+        return;
+    }
+    const u32 count = static_cast<u32>(buffers.size());
+    if (dynamic_input) {
+        cmdbuf.bindVertexBuffers(0, count, buffers.data(), offsets.data());
+    } else {
+        cmdbuf.bindVertexBuffers2(0, count, buffers.data(), offsets.data(),
+                                 sizes.data(), strides.data());
+    }
+    if (buffer_bind_cache_enabled) {
+        last_vertex_buffers.assign(buffers.begin(), buffers.end());
+        last_vertex_offsets.assign(offsets.begin(), offsets.end());
+        last_vertex_sizes.assign(sizes.begin(), sizes.end());
+        last_vertex_strides.assign(strides.begin(), strides.end());
+        last_vertex_buffer_dynamic = dynamic_input;
+        last_vertex_buffer_cmd = cmdbuf;
+    }
+    MaliPerfStats::CountVertexBufferBind(false);
+}
+
+void Scheduler::BindIndexBufferCached(vk::CommandBuffer cmdbuf, vk::Buffer buffer,
+                                     vk::DeviceSize offset, vk::IndexType type) {
+    if (buffer_bind_cache_enabled && cmdbuf == last_index_buffer_cmd &&
+        buffer == last_index_buffer && offset == last_index_offset && type == last_index_type) {
+        MaliPerfStats::CountIndexBufferBind(true);
+        return;
+    }
+    cmdbuf.bindIndexBuffer(buffer, offset, type);
+    if (buffer_bind_cache_enabled) {
+        last_index_buffer_cmd = cmdbuf;
+        last_index_buffer = buffer;
+        last_index_offset = offset;
+        last_index_type = type;
+    }
+    MaliPerfStats::CountIndexBufferBind(false);
 }
 
 void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipeline pipeline) {
@@ -550,6 +610,7 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
     // pipeline changes. Some pipelines may use static vertex input; Vulkan
     // commands recorded before binding must not be assumed to survive it.
     last_vertex_input_cmd = vk::CommandBuffer{};
+    last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
     if (graphics_pipeline_bind_cache_enabled) {
         last_graphics_bind_cmd = cmdbuf;
         last_graphics_bind_pipeline = pipeline;
@@ -566,6 +627,7 @@ void Scheduler::AllocateWorkerCommandBuffers() {
     last_graphics_bind_cmd = vk::CommandBuffer{};
     last_graphics_bind_pipeline = vk::Pipeline{};
     last_vertex_input_cmd = vk::CommandBuffer{};
+    last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
     Check(current_cmdbuf.begin(begin_info));
 
     // Invalidate dynamic state so it gets applied to the new command buffer.
