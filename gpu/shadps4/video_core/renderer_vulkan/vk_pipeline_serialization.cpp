@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <charconv>
+#include "common/hash.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -1095,8 +1097,93 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
     Storage::DataBase::Instance().FinishPreload();
 }
 
+// Inspired by PistonPort's on-demand shader index (GPL-2.0-or-later).
+// Only use the existing GoW3 serialized metadata/profile. This does not replay
+// title-specific raw GCN shaders, and never imports Cars 3 cache data.
+bool PipelineCache::IndexMaliDiskShaders() {
+    const char* opt = std::getenv("GOW3_MALI_DISK_SHADERS");
+    if ((opt && opt[0] == '0') || !std::getenv("GOW3_ANDROID_PORT") ||
+        instance.GetPhysicalDevice().getProperties().vendorID != 0x13B5 ||
+        EmulatorSettings.IsPatchShaders() || EmulatorSettings.IsShaderCollect()) return false;
+    auto& db = Storage::DataBase::Instance();
+    for (const auto& name : db.ListMaliShaderBlobs()) {
+        const auto sep = name.find('_');
+        if (!name.starts_with("0x") || sep != 18 || name.size() <= sep + 1) continue;
+        u64 hash{};
+        size_t index{};
+        const auto h = std::from_chars(name.data()+2, name.data()+sep, hash, 16);
+        const auto i = std::from_chars(name.data()+sep+1, name.data()+name.size(), index);
+        if (h.ec != std::errc{} || h.ptr != name.data()+sep ||
+            i.ec != std::errc{} || i.ptr != name.data()+name.size() ||
+            index >= Program::MaxPermutations) continue;
+        mali_disk_permutations[hash].push_back(index);
+    }
+    // Base 1023daf52 has no sparse permutation support. Reject any hole rather
+    // than let a default-initialized module be mistaken for a usable shader.
+    for (auto it = mali_disk_permutations.begin(); it != mali_disk_permutations.end();) {
+        auto& indices = it->second;
+        std::ranges::sort(indices);
+        bool valid = !indices.empty();
+        for (size_t n = 0; n < indices.size(); ++n) valid &= indices[n] == n;
+        if (!valid) it = mali_disk_permutations.erase(it);
+        else ++it;
+    }
+    std::printf("GOW3_MALI_DISK_SHADER_INDEX programs=%zu\n", mali_disk_permutations.size());
+    return !mali_disk_permutations.empty();
+}
+
+bool PipelineCache::LoadMaliDiskProgram(u64 hash, Shader::HwStage hw_stage,
+                                       Shader::SwStage sw_stage) {
+    const auto found = mali_disk_permutations.find(hash);
+    if (found == mali_disk_permutations.end()) return false;
+    auto indices = std::move(found->second);
+    mali_disk_permutations.erase(found); // at most one attempt per program
+    auto program = std::make_unique<Program>();
+    auto device = instance.GetDevice();
+    SCOPE_EXIT {
+        if (program) {
+            for (const auto& m : program->modules) {
+                if (m.module) device.destroyShaderModule(m.module);
+            }
+        }
+    };
+    auto& db = Storage::DataBase::Instance();
+    try {
+        for (const size_t idx : indices) {
+            Shader::Info info{};
+            Shader::StageSpecialization spec{};
+            std::optional<Shader::Gcn::FetchShaderData> fetch;
+            size_t saved_idx{};
+            std::vector<u8> meta;
+            db.Load(Storage::BlobType::ShaderMeta, fmt::format("{:#018x}", HashCombine(hash, u64(idx))), meta);
+            if (meta.empty() || meta.size() > 4 * 1024 * 1024) return false;
+            Serialization::Archive ar{std::move(meta)};
+            spec.info = &info;
+            if (!LoadShaderMeta(ar, info, fetch, spec, saved_idx) || saved_idx != idx ||
+                info.pgm_hash != hash || info.hw_stage != hw_stage || info.sw_stage != sw_stage)
+                return false;
+            std::vector<u32> spv;
+            db.Load(Storage::BlobType::ShaderBinary, fmt::format("{:#018x}_{}", hash, idx), spv);
+            if (spv.size() < 5 || spv.size() > 4 * 1024 * 1024 || spv[0] != 0x07230203u)
+                return false;
+            const auto module = CompileSPV(spv, device, true);
+            if (!module) return false;
+            if (idx == 0) program->info = std::move(info);
+            spec.info = &program->info;
+            program->AddPermut(module, std::move(spec));
+        }
+        program->info_template = std::make_unique<Shader::Info>(program->info);
+        std::unique_lock lock{programs_mutex};
+        if (program_cache.find(hash) != program_cache.end()) return false;
+        program_cache.emplace(hash, std::move(program));
+        return true;
+    } catch (const std::exception&) {
+        return false; // normal live compilation remains the fallback
+    }
+}
+
 void PipelineCache::StartOnDemand() {
-    CheckCacheProfile();
+    if (CheckCacheProfile()) IndexMaliDiskShaders();
     Storage::DataBase::Instance().FinishPreload();
     std::printf("Pipeline startup: on demand, no bulk warm-up\n");
 }
@@ -1179,6 +1266,11 @@ bool PipelineCache::StartSafeMaliWarmUp() {
     // the background worker has its own VkPipelineCache and preserves every draw.
     // CheckCacheProfile rejects stale SPIR-V after an emulator/driver change.
     const bool compatible = CheckCacheProfile();
+    if (compatible && IndexMaliDiskShaders()) {
+        Storage::DataBase::Instance().FinishPreload();
+        std::printf("GOW3_MALI_PIPELINE_PREPASS status=disk-on-demand\n");
+        return true;
+    }
     if (!Storage::DataBase::Instance().ConcurrentReads() || !compatible) {
         Storage::DataBase::Instance().FinishPreload();
         std::printf("GOW3_MALI_PIPELINE_PREPASS status=record-only driver_cache=%u profile=%u\n",

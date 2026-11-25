@@ -9,7 +9,7 @@
 
 namespace Vulkan {
 
-vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device) {
+vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device, bool allow_failure) {
     // The renderer routinely loads SPIR-V from the existing shader cache.
     // Apply this safe, optional mobile optimization *after* cache loading so
     // its activation never invalidates the user's 1300+ compiled programs.
@@ -33,6 +33,7 @@ vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device) {
     };
 
     auto [module_result, module] = device.createShaderModule(shader_info);
+    if (allow_failure && module_result != vk::Result::eSuccess) return {};
     ASSERT_MSG(module_result == vk::Result::eSuccess, "Failed to compile SPIR-V shader: {}",
                vk::to_string(module_result));
     return module;

@@ -186,6 +186,9 @@ private:
     void FinishCompilations();
     void SeedWorkerCaches();
     bool CheckCacheProfile();
+    bool IndexMaliDiskShaders();
+    bool LoadMaliDiskProgram(u64 hash, Shader::HwStage hw_stage, Shader::SwStage sw_stage);
+    std::unordered_map<u64, std::vector<size_t>> mali_disk_permutations;
     struct BackgroundWarmup;
     struct WarmStage;
     void ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data);

@@ -316,6 +316,24 @@ size_t DataBase::CountBlobs(BlobType type) {
     return count;
 }
 
+std::vector<std::string> DataBase::ListMaliShaderBlobs() {
+    std::vector<std::string> names;
+    if (!IsOpened() || !ConcurrentReads()) return names;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(cache_path, ec), end; !ec && it != end;
+         it.increment(ec)) {
+        if (it->path().extension() != ".spv") continue;
+        const auto name = it->path().stem().string();
+        if (name.size() > 32) continue;
+        std::error_code entry_error;
+        if (!it->is_regular_file(entry_error) || entry_error) continue;
+        if (names.size() >= 65536) return {};
+        names.push_back(name);
+    }
+    if (ec) return {};
+    return names;
+}
+
 bool DataBase::ConcurrentReads() const {
     return !EmulatorSettings.IsPipelineCacheArchived();
 }

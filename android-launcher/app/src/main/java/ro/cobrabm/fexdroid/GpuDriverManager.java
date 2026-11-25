@@ -155,6 +155,42 @@ public final class GpuDriverManager {
     }
 
 
+    private static final String PANVK_V4_ZIP="Bachata-PanVK-V4-0.2.6.zip";
+    public static boolean hasPanvkV4(Context context) {
+        if (!maliCandidate() || Build.VERSION.SDK_INT<35) return false;
+        try (InputStream in=context.getAssets().open("drivers/"+PANVK_V4_ZIP+".sha256")) {
+            return in.read()>=0;
+        } catch (IOException ignored) { return false; }
+    }
+    private static DriverArchive.Installed bundledPanvkV4(Context context) throws Exception {
+        if (!hasPanvkV4(context)) throw new IOException("PanVK V4 unavailable");
+        final String sha;
+        try (BufferedReader r=new BufferedReader(new InputStreamReader(
+                context.getAssets().open("drivers/"+PANVK_V4_ZIP+".sha256"),StandardCharsets.US_ASCII))) {
+            sha=r.readLine();
+        }
+        if (sha==null || !sha.matches("[0-9a-f]{64}")) throw new IOException("Invalid PanVK V4 checksum");
+        try {
+            DriverArchive.Installed cached=DriverArchive.read(root(context),sha,Build.VERSION.SDK_INT);
+            DriverArchive.validateLibrary(cached.library);
+            return cached;
+        } catch (IOException missing) { DriverArchive.delete(root(context),sha); }
+        try (InputStream in=context.getAssets().open("drivers/"+PANVK_V4_ZIP)) {
+            DriverArchive.Installed installed=DriverArchive.install(root(context),in,Build.VERSION.SDK_INT,file -> {
+                JSONObject json=new JSONObject(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
+                if (json.has("schemaVersion") && json.optInt("schemaVersion")!=1)
+                    throw new IOException("Unsupported PanVK V4 driver schema");
+                return new DriverArchive.Metadata("PanVK V4 (Bachata 0.2.6)",json.getString("libraryName"),
+                                                  Math.max(35,json.optInt("minApi",35)));
+            });
+            if (!sha.equals(installed.id)) {
+                DriverArchive.delete(root(context),installed.id);
+                throw new IOException("PanVK V4 archive checksum mismatch");
+            }
+            return installed;
+        }
+    }
+
     public static boolean supported(Context context) {
         String pkg=context.getPackageName();
         return "com.gow3.android.bionic".equals(pkg) ||
@@ -183,6 +219,7 @@ public final class GpuDriverManager {
     public static void select(Context context,String value) throws IOException {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
+        else if ("panvk-v4".equals(value)) { if (!hasPanvkV4(context)) throw new IOException("PanVK V4 unavailable"); }
         else if ("panvk".equals(value) || "panvk-next".equals(value)) { if (!maliCandidate() || Build.VERSION.SDK_INT<35) throw new IOException("PanVK requires Mali and Android 15+"); }
         else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(value)) throw new IOException("Invalid driver selection");
         // A choice made AFTER this upgrade is deliberate. Never migrate an
@@ -230,6 +267,16 @@ public final class GpuDriverManager {
     public static void configureEnvironment(Context context,Map<String,String> environment) throws IOException {
         String selection=exynosDevice() ? "system" : selected(context);
         environment.remove("GOW3_CUSTOM_VULKAN_DRIVER"); environment.remove("GOW3_VULKAN_DRIVER");
+        if ("panvk-v4".equals(selection)) {
+            try {
+                DriverArchive.Installed drv=bundledPanvkV4(context);
+                DriverArchive.validateLibrary(drv.library);
+                environment.put("GOW3_BIONIC_DRIVER","custom");
+                environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
+                environment.put("GOW3_GPU_AUTO_REASON","PanVK V4 (Bachata 0.2.6 explicit)");
+                return;
+            } catch (Exception ex) { throw new IOException("Selected PanVK V4 failed",ex); }
+        }
         // Automatic Mali selects PanVK only when Android 15+ is available.
         // Manual selections never get silently replaced with a different driver.
         if ("panvk".equals(selection) || "panvk-next".equals(selection) ||

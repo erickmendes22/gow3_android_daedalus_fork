@@ -1,8 +1,8 @@
-name: GoW III Mali G720 SNORM10 + VMA + DirectMemory Bionic Test APK
+name: GoW III Mali 1023daf52 Piston cache + PanVK V4 Test APK
 
 on:
   push:
-    branches: [analysis/gow3-mali-double-fps-evidence-20261118]
+    branches: [perf/gow3-mali-piston-panvk-v4-20261125]
     paths: ['.github/workflows/gow3-mali-double-fps-test-apk.yml']
   workflow_dispatch:
 
@@ -157,13 +157,15 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+          test -s out/android-release/assets/drivers/Bachata-PanVK-V4-0.2.6.zip.sha256
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-G720-SNORM10-Compute-VMA-FEX-DirectMem-v2.1.8-EXPERIMENTAL
+          name: GoW3-Mali-1023daf52-Piston-PanVK-V4-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
+            out/android-release/assets/drivers/Bachata-PanVK-V4-0.2.6.zip.sha256
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4

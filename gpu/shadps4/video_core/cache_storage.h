@@ -54,6 +54,8 @@ public:
     [[nodiscard]] bool ConcurrentReads() const;
     /// gow3: number of blobs ForEachBlob visits (the loading screen's total).
     size_t CountBlobs(BlobType type);
+    // Flat cache only: bounded filenames, no live guest data or archive extraction.
+    std::vector<std::string> ListMaliShaderBlobs();
 
 private:
     std::jthread io_worker{};

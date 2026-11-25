@@ -1406,6 +1406,10 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
 
     auto it_pgm = program_cache.find(params.hash); // this thread is the only writer
+    if (it_pgm == program_cache.end() && !mali_disk_permutations.empty() &&
+        LoadMaliDiskProgram(params.hash, hw_stage, sw_stage)) {
+        it_pgm = program_cache.find(params.hash);
+    }
     const bool compile_async = AsyncCompilation() && hw_stage != HwStage::Compute &&
                                !sel.regs->stage_enable.hs_en &&
                                !EmulatorSettings.IsShaderCollect();
