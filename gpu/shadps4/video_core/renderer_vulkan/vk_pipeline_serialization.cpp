@@ -1254,7 +1254,7 @@ struct PipelineCache::BackgroundWarmup {
     std::unique_ptr<WarmupPool> pool; ///< last: its jobs use the members above
 };
 
-bool PipelineCache::StartSafeMaliWarmUp() {
+bool PipelineCache::StartSafeMaliWarmUp(bool prepare_cached) {
     // When warmup=0 the database was never opened, so RegisterPipelineData
     // silently skipped ALL new shader/pipeline metadata. Even a large Vulkan
     // driver cache could not precompile those pipelines on the next launch.
@@ -1266,7 +1266,7 @@ bool PipelineCache::StartSafeMaliWarmUp() {
     // the background worker has its own VkPipelineCache and preserves every draw.
     // CheckCacheProfile rejects stale SPIR-V after an emulator/driver change.
     const bool compatible = CheckCacheProfile();
-    if (compatible && IndexMaliDiskShaders()) {
+    if (compatible && !prepare_cached && IndexMaliDiskShaders()) {
         Storage::DataBase::Instance().FinishPreload();
         std::printf("GOW3_MALI_PIPELINE_PREPASS status=disk-on-demand\n");
         return true;
@@ -1280,6 +1280,32 @@ bool PipelineCache::StartSafeMaliWarmUp() {
     std::printf("GOW3_MALI_PIPELINE_PREPASS status=background driver_cache=%u profile=1\n",
                 unsigned(mali_driver_cache_restored));
     return StartBackgroundWarmUp();
+}
+
+// Piston-inspired preparation of known pipeline keys before the first frame.
+ // The validated cache, private VkPipelineCache and original asynchronous worker
+ // are reused. Never enter the old synchronous stale-cache loader on Mali.
+void PipelineCache::PrepareCachedMaliPipelines(const std::function<void(u32,u32)>& progress) {
+    StartSafeMaliWarmUp(true);
+    if (!background) return;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+    auto next_report = std::chrono::steady_clock::now();
+    while (background && !background->finished &&
+           std::chrono::steady_clock::now() < deadline) {
+        PumpWarmUp();
+        const auto now = std::chrono::steady_clock::now();
+        if (progress && now >= next_report && background) {
+            const u32 done = background->done + background->pool->failed;
+            progress(done, std::max(background->total.load(), done));
+            next_report = now + std::chrono::milliseconds(250);
+        }
+        if (background && !background->finished)
+            std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+    // Do not join/wait for an expensive driver compile. The existing draw-side
+    // pump will publish any remaining work after the loading screen ends.
+    std::printf("GOW3_MALI_CACHED_PREPARE finished=%u\n",
+                unsigned(!background || background->finished));
 }
 
 bool PipelineCache::StartBackgroundWarmUp() {

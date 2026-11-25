@@ -199,6 +199,23 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
                               EmulatorSettings.IsPipelineCacheEnabled();
     const bool capture_only = EmulatorSettingsImpl::Flag("GOW3_PIPELINE_BINARY_ISOLATED", false) &&
                               EmulatorSettingsImpl::Flag("GOW3_PIPELINE_CAPTURE_ONLY", false);
+    // Only the new explicitly selected Mali profiles request this prepass.
+    // Do not change the established V3/Adreno startup or defeat user warmup=0.
+    const char* prepare_cached = std::getenv("GOW3_MALI_PREPARE_CACHED_PIPELINES");
+    const char* warmup_enabled = std::getenv("GOW3_BACKGROUND_WARMUP");
+    if (prepare_cached && *prepare_cached == '1' &&
+        (!warmup_enabled || *warmup_enabled != '0') &&
+        std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+        Gow3Overlay::SetLoading(true, 0, 0);
+        PresentLoadingFrame();
+        rasterizer->GetPipelineCache().PrepareCachedMaliPipelines([&](u32 done, u32 total) {
+            Gow3Overlay::SetLoading(true, done, total);
+            PresentLoadingFrame();
+        });
+        Gow3Overlay::SetLoading(false, 0, 0);
+        return;
+    }
     if (UseOnDemandPipelines(binary_cache, instance.GetPipelineBinaryGlobalKey().keySize != 0,
                             capture_only)) {
         rasterizer->GetPipelineCache().StartOnDemand();

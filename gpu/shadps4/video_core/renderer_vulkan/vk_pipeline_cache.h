@@ -134,7 +134,8 @@ public:
     /// gow3: the same load on low-priority threads while the game runs; the GPU thread takes
     /// the results a few at a time (PumpWarmUp). False when it cannot (zip archive store).
     bool StartBackgroundWarmUp();
-    bool StartSafeMaliWarmUp(); // metadata writer always opens; validates driver cache before reading
+    bool StartSafeMaliWarmUp(bool prepare_cached = false); // validates the matching driver cache
+    void PrepareCachedMaliPipelines(const std::function<void(u32,u32)>& progress);
     void StartOnDemand();
     void Sync();
     void ReportCompilerStats();

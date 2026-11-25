@@ -23,6 +23,7 @@ python3 tools/android/bionic/package_runtime.py --ndk "$ndk" "${package_args[@]}
 bash tools/android/bionic/fetch_panvk.sh
 if [[ ${GOW3_MALI_TEST_APK:-0} == 1 && ${GOW3_MALI_ONLY_BUILD:-0} == 1 ]]; then
     python3 tools/android/bionic/stage_bachata_panvk_v4.py
+    python3 tools/android/bionic/stage_mali_performance_drivers.py
 fi
 "$root/android-launcher/gradlew" -p "$root/android-launcher" :app:assembleRelease -Pgow3Bionic=true "${gradle_args[@]}" --no-daemon --max-workers=2
 bash tools/android/bionic/sign_apk.sh

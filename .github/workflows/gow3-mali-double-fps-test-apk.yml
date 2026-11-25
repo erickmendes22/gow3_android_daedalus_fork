@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 Piston cache + PanVK V4 Test APK
+name: GoW III Mali 1023daf52 PanVK high priority performance test APK
 
 on:
   push:
@@ -158,14 +158,30 @@ jobs:
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
           test -s out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
           test -s out/android-release/assets/drivers/Bachata-PanVK-V4-0.2.6.zip.sha256
+          test -s out/android-release/assets/drivers/Mesa.26.3.0-panvk.8.zip
+          test -s out/android-release/assets/drivers/mali-panvk-27.0.0-devel-r10.zip
+          test -s out/android-release/assets/drivers/mali-performance-drivers.json
+          python3 -m unittest discover -s tests -p 'test_mali_performance_bundle.py' -v
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          apk=Path('out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk')
+          drivers=json.loads(Path('out/android-release/assets/drivers/mali-performance-drivers.json').read_text())
+          with zipfile.ZipFile(apk) as z:
+              for d in drivers:
+                  asset='assets/drivers/'+d['file']
+                  assert hashlib.sha256(z.read(asset)).hexdigest()==d['sha'], asset
+              assert 'assets/drivers/Bachata-PanVK-V4-0.2.6.zip' in z.namelist()
+          PY
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-1023daf52-Piston-PanVK-V4-EXPERIMENTAL
+          name: GoW3-Mali-1023daf52-PanVK-V4-MineGraph8-JimR10-EXPERIMENTAL
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256
             out/android-release/assets/drivers/Bachata-PanVK-V4-0.2.6.zip.sha256
+            out/android-release/assets/drivers/mali-performance-drivers.json
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4

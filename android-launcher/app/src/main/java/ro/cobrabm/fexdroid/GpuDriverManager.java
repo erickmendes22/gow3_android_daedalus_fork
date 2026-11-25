@@ -155,6 +155,50 @@ public final class GpuDriverManager {
     }
 
 
+    private static final String PERF_0_ID="panvk-minegraph8", PERF_0_ZIP="Mesa.26.3.0-panvk.8.zip",
+        PERF_0_SHA="e71e23cdd2ddf52f72d7c348b5754df323cd56fbe6e0087b4c5c9b116565be4b", PERF_0_LABEL="MineGraph PanVK 26.3.0 panvk.8";
+    private static final String PERF_1_ID="panvk-jim-r10", PERF_1_ZIP="mali-panvk-27.0.0-devel-r10.zip",
+        PERF_1_SHA="7e97db4d79d81ec9461d1e0676b62a865561cb56e21c151693aa25ffbe749f1c", PERF_1_LABEL="JimVulkan PanVK Mesa 27 R10";
+    private static boolean isPerformancePanvk(String id) {
+        return PERF_0_ID.equals(id) || PERF_1_ID.equals(id);
+    }
+    private static String performanceZip(String id) {
+        return PERF_0_ID.equals(id) ? PERF_0_ZIP : PERF_1_ZIP;
+    }
+    public static String performancePanvkLabel(String id) {
+        return PERF_0_ID.equals(id) ? PERF_0_LABEL : PERF_1_LABEL;
+    }
+    public static boolean hasPerformancePanvk(Context context,String id) {
+        if (!isPerformancePanvk(id) || !maliCandidate()) return false;
+        try (InputStream in=context.getAssets().open("drivers/"+performanceZip(id))) {
+            return in.read()>=0;
+        } catch (IOException ignored) { return false; }
+    }
+    private static DriverArchive.Installed bundledPerformancePanvk(Context context,String id) throws Exception {
+        if (!hasPerformancePanvk(context,id)) throw new IOException("Experimental PanVK unavailable");
+        final String sha=PERF_0_ID.equals(id) ? PERF_0_SHA : PERF_1_SHA;
+        try {
+            DriverArchive.Installed cached=DriverArchive.read(root(context),sha,Build.VERSION.SDK_INT);
+            DriverArchive.validateLibrary(cached.library);
+            return cached;
+        } catch (IOException missing) { DriverArchive.delete(root(context),sha); }
+        try (InputStream in=context.getAssets().open("drivers/"+performanceZip(id))) {
+            DriverArchive.Installed installed=DriverArchive.install(root(context),in,Build.VERSION.SDK_INT,file -> {
+                JSONObject json=new JSONObject(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
+                if (json.has("schemaVersion") && json.optInt("schemaVersion")!=1)
+                    throw new IOException("Unsupported PanVK schema");
+                if (!"libvulkan_panfrost.so".equals(json.getString("libraryName")))
+                    throw new IOException("Unexpected PanVK library name");
+                return new DriverArchive.Metadata(performancePanvkLabel(id),json.getString("libraryName"),
+                                                  Math.max(35,json.optInt("minApi",35)));
+            });
+            if (!sha.equals(installed.id)) {
+                DriverArchive.delete(root(context),installed.id);
+                throw new IOException("Experimental PanVK archive checksum mismatch");
+            }
+            return installed;
+        }
+    }
     private static final String PANVK_V4_ZIP="Bachata-PanVK-V4-0.2.6.zip";
     public static boolean hasPanvkV4(Context context) {
         if (!maliCandidate() || Build.VERSION.SDK_INT<35) return false;
@@ -219,6 +263,7 @@ public final class GpuDriverManager {
     public static void select(Context context,String value) throws IOException {
         if (!supported(context)) throw new IOException("Custom drivers require the Bionic runtime");
         if (value.startsWith("custom:")) DriverArchive.read(root(context),value.substring(7),Build.VERSION.SDK_INT);
+        else if (isPerformancePanvk(value)) { if (!hasPerformancePanvk(context,value)) throw new IOException("Experimental PanVK unavailable"); }
         else if ("panvk-v4".equals(value)) { if (!hasPanvkV4(context)) throw new IOException("PanVK V4 unavailable"); }
         else if ("panvk".equals(value) || "panvk-next".equals(value)) { if (!maliCandidate() || Build.VERSION.SDK_INT<35) throw new IOException("PanVK requires Mali and Android 15+"); }
         else if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(value)) throw new IOException("Invalid driver selection");
@@ -267,6 +312,28 @@ public final class GpuDriverManager {
     public static void configureEnvironment(Context context,Map<String,String> environment) throws IOException {
         String selection=exynosDevice() ? "system" : selected(context);
         environment.remove("GOW3_CUSTOM_VULKAN_DRIVER"); environment.remove("GOW3_VULKAN_DRIVER");
+        if (isPerformancePanvk(selection)) {
+            try {
+                DriverArchive.Installed drv=bundledPerformancePanvk(context,selection);
+                DriverArchive.validateLibrary(drv.library);
+                environment.put("GOW3_BIONIC_DRIVER","custom");
+                environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
+                environment.put("GOW3_GPU_AUTO_REASON",performancePanvkLabel(selection)+" (explicit)");
+                environment.put("GOW3_MALI_PREPARE_CACHED_PIPELINES","1");
+                if (PERF_0_ID.equals(selection)) {
+                    // Keep real BC texture caching and the upstream compatible-draw batching,
+                    // but do not opt into lossy modes or speculative framebuffer elision.
+                    environment.put("PANVK_UPLOAD_CACHE","1");
+                    environment.put("PANVK_TEXTURE_CACHE","1");
+                    environment.put("PANVK_DEAD_DRAW","0");
+                    environment.put("PANVK_LOAD_DONTCARE","0");
+                    environment.put("PANVK_CLEAR_ELIDE","0");
+                    environment.put("PANVK_CULL_EMPTY_DRAW","0");
+                    environment.put("PANVK_LOW_QUALITY","0");
+                }
+                return;
+            } catch (Exception ex) { throw new IOException("Selected performance PanVK failed",ex); }
+        }
         if ("panvk-v4".equals(selection)) {
             try {
                 DriverArchive.Installed drv=bundledPanvkV4(context);
@@ -274,6 +341,7 @@ public final class GpuDriverManager {
                 environment.put("GOW3_BIONIC_DRIVER","custom");
                 environment.put("GOW3_CUSTOM_VULKAN_DRIVER",drv.library.getAbsolutePath());
                 environment.put("GOW3_GPU_AUTO_REASON","PanVK V4 (Bachata 0.2.6 explicit)");
+                environment.put("GOW3_MALI_PREPARE_CACHED_PIPELINES","1");
                 return;
             } catch (Exception ex) { throw new IOException("Selected PanVK V4 failed",ex); }
         }
