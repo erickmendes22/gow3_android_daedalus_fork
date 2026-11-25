@@ -349,6 +349,16 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # all read stage/access scopes and merge contiguous identical image
       # subresource barriers. =0 restores the original barrier path.
       export GOW3_MALI_IMAGE_RAR_ELIDE=${GOW3_MALI_IMAGE_RAR_ELIDE:-1}
+      # GPU-tick priority: use actual semaphore completion and exact read stages.
+      export GOW3_MALI_DIRECT_TIMELINE_WAIT=${GOW3_MALI_DIRECT_TIMELINE_WAIT:-1}
+      export GOW3_MALI_GPU_TICK_PROFILE=${GOW3_MALI_GPU_TICK_PROFILE:-1}
+      export GOW3_MALI_SHADER_STAGE_BARRIERS=${GOW3_MALI_SHADER_STAGE_BARRIERS:-1}
+      export GOW3_MALI_MERGE_LOAD_PASSES=${GOW3_MALI_MERGE_LOAD_PASSES:-1}
+      # Keep the previous freeze-safe queue bound. Helper and transcode
+      # prewarm are independently reversible; use existing guarded paths.
+      export GOW3_TEXTURE_HELPER=${GOW3_TEXTURE_HELPER:-1}
+      export GOW3_MALI_PREWARM_TRANSCODE=${GOW3_MALI_PREWARM_TRANSCODE:-1}
+      echo "Mali GPU tick priority: direct=$GOW3_MALI_DIRECT_TIMELINE_WAIT profile=$GOW3_MALI_GPU_TICK_PROFILE exact_stages=$GOW3_MALI_SHADER_STAGE_BARRIERS merge_load=$GOW3_MALI_MERGE_LOAD_PASSES tex_helper=$GOW3_TEXTURE_HELPER prewarm_transcode=$GOW3_MALI_PREWARM_TRANSCODE"
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
       # Bachata S4 completes Present() before publishing a guest flip event.
       # Do not acknowledge a Mali guest framebuffer while swap work is queued

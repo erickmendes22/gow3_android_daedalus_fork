@@ -862,6 +862,9 @@ public:
         if (work_semaphore.IsFree(tick)) {
             return true;
         }
+        // The current recording tick has not been submitted. Querying the driver
+        // cannot make it complete, and stalls resource-pool scans on PanVK.
+        if (tick >= work_semaphore.CurrentTick()) return false;
         work_semaphore.Refresh();
         return work_semaphore.IsFree(tick);
     }

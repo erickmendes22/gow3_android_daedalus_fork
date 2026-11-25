@@ -46,12 +46,20 @@ public:
         }();
         return enabled;
     }
+    // Independent of expensive image/readback traces in GOW3_PERF_DIAG.
+    static bool TickProfileEnabled() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("GOW3_MALI_GPU_TICK_PROFILE");
+            return value && value[0] == '1';
+        }();
+        return enabled || Enabled();
+    }
     static WaitDiagnostics& Get() {
         static WaitDiagnostics stats;
         return stats;
     }
     static void Report() {
-        if (!Enabled()) return;
+        if (!TickProfileEnabled()) return;
         auto rows = Get().Take();
         std::sort(rows.begin(), rows.end(), [](const Entry& a, const Entry& b) {
             return a.submit_ns + a.wait_ns > b.submit_ns + b.wait_ns;

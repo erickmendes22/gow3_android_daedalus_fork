@@ -684,6 +684,15 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
     // the original global memory barrier (no weakened dependencies).
     const char* local = std::getenv("GOW3_MALI_LOCAL_BUFFER_BARRIERS");
     mali_local_buffer_barriers = split_image_buffer_barriers && local && local[0] == '1';
+    // These pipelines are already required by the exact PanVK BC/ETC2
+    // and SNORM10 fallback paths. Compile before the first streamed scene.
+    const char* warm = std::getenv("GOW3_MALI_PREWARM_TRANSCODE");
+    if (split_image_buffer_barriers && warm && warm[0] == '1') {
+        const char* etc2 = std::getenv("GOW3_MALI_BCN_TO_ETC2");
+        if (!etc2 || etc2[0] != '0')
+            bcn_transcode = std::make_unique<BcnTranscodeState>(instance, scheduler);
+        // SNORM is retained on demand: its storage format is not universal.
+    }
 #endif
 }
 

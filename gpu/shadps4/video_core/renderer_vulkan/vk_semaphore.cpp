@@ -20,7 +20,7 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     const char* opt = std::getenv("GOW3_MALI_DIRECT_TIMELINE_WAIT");
     direct_timeline_wait = std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
-                           (opt && opt[0] == '1');
+                           (!opt || opt[0] != '0');
 #endif
     const vk::StructureChain semaphore_chain = {
         vk::SemaphoreCreateInfo{},
@@ -76,8 +76,8 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
-    }
+    const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    ASSERT_MSG(result == vk::Result::eSuccess, "Timeline wait failed: {}", vk::to_string(result));
     if (direct_timeline_wait) {
         // Only publish ticks actually confirmed by Vulkan. Other threads may
         // complete newer submissions meanwhile; never move the cache backward.

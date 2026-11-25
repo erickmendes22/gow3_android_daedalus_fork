@@ -81,7 +81,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     // even though the guest's dynamic scissors cover only a small rectangle.
     // A render area larger than the union of active scissors cannot produce
     // additional fragments. Keep attachment-backed passes completely intact.
-    const bool mali = std::getenv("GOW3_ANDROID_PORT") &&
+    static const bool mali = std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     const char* disable = std::getenv("GOW3_MALI_ATTACHMENTLESS_SCISSOR_AREA");
     if (mali && (!disable || disable[0] != '0') &&
@@ -103,6 +103,35 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
             }
             effective_state.width = u16(std::min<u32>(effective_state.width, right));
             effective_state.height = u16(std::min<u32>(effective_state.height, bottom));
+        }
+    }
+#endif
+#ifdef __ANDROID__
+    // The old comparison includes clear values even for LOAD, and ends a pass
+    // when the initial clear has been consumed. On tile GPUs this costs a
+    // needless store/load of the exact same attachments. Never ignore an
+    // incoming clear, a changed view/layout/extent, or an explicit EndRendering.
+    static const bool merge_load = [] {
+        const char* value = std::getenv("GOW3_MALI_MERGE_LOAD_PASSES");
+        return !value || value[0] != '0';
+    }();
+    if (mali && merge_load && is_rendering) {
+        auto previous = render_state;
+        auto incoming = effective_state;
+        for (u32 i = 0; i < incoming.num_color_attachments && i < previous.num_color_attachments; ++i) {
+            if (!incoming.color_attachments[i].is_clear) {
+                previous.color_attachments[i].is_clear = 0;
+                previous.color_attachments[i].clear_value = {};
+                incoming.color_attachments[i].clear_value = {};
+            }
+        }
+        auto& a = previous.depth_stencil_attachment;
+        auto& b = incoming.depth_stencil_attachment;
+        if (!b.depth_clear) { a.depth_clear = false; a.clear_value[0] = b.clear_value[0] = 0; }
+        if (!b.stencil_clear) { a.stencil_clear = false; a.clear_value[1] = b.clear_value[1] = 0; }
+        if (previous == incoming) {
+            render_state = effective_state;
+            return;
         }
     }
 #endif
@@ -383,7 +412,7 @@ void Scheduler::Flush() {
 void Scheduler::Finish(std::source_location caller) {
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
-    const bool diagnose = WaitDiagnostics::Enabled();
+    const bool diagnose = WaitDiagnostics::TickProfileEnabled();
     const auto start = diagnose ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     SubmitInfo info{};
     SubmitExecution(info);
@@ -400,7 +429,8 @@ void Scheduler::WaitSubmitted(std::source_location caller) {
 }
 
 void Scheduler::Wait(u64 tick, std::source_location caller, u64 submit_ns) {
-    const bool diagnose = WaitDiagnostics::Enabled();
+    if (work_semaphore.IsFree(tick)) return;
+    const bool diagnose = WaitDiagnostics::TickProfileEnabled();
     auto start = diagnose ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (tick >= work_semaphore.CurrentTick()) {
         // Make sure we are not waiting for the current tick without signalling

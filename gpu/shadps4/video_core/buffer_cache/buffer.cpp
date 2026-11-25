@@ -313,14 +313,22 @@ bool StreamBuffer::WaitPendingOperations(u64 requested_upper_bound, bool allow_w
     if (!invalidation_mark) {
         return true;
     }
-    while (requested_upper_bound > wait_bound && wait_cursor < *invalidation_mark) {
-        auto& watch = previous_watches[wait_cursor];
-        if (!scheduler.IsFree(watch.tick) && !allow_wait) {
-            return false;
-        }
-        scheduler.Wait(watch.tick);
-        wait_bound = watch.upper_bound;
-        ++wait_cursor;
+    // A timeline completion covers all earlier ticks. Resolve a contiguous
+    // overwritten range with one wait instead of draining each watch in turn.
+    // Do not advance the cursors until the required maximum tick is confirmed.
+    auto next_cursor = wait_cursor;
+    auto next_bound = wait_bound;
+    u64 required_tick = 0;
+    while (requested_upper_bound > next_bound && next_cursor < *invalidation_mark) {
+        const auto& watch = previous_watches[next_cursor++];
+        required_tick = std::max(required_tick, watch.tick);
+        next_bound = watch.upper_bound;
+    }
+    if (required_tick) {
+        if (!allow_wait && !scheduler.IsFree(required_tick)) return false;
+        if (allow_wait) scheduler.Wait(required_tick);
+        wait_bound = next_bound;
+        wait_cursor = next_cursor;
     }
     return true;
 }

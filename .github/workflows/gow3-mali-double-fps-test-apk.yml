@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 PanVK high priority performance test APK
+name: GoW III Mali 1023daf52 GPU tick priority optimization APK
 
 on:
   push:
@@ -58,6 +58,7 @@ jobs:
           /tmp/gow3-mali-early-z
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
           # Prevent distributing an APK with silent storage-image writes or
           # merged driver trace lines. Unit tests above check these invariants;
@@ -176,7 +177,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-1023daf52-PanVK-V4-MineGraph8-JimR10-EXPERIMENTAL
+          name: GoW3-Mali-1023daf52-GPU-TICK-PRIORITY
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256

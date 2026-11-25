@@ -835,7 +835,13 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
         const char* v = std::getenv("GOW3_MALI_RGBA128_IMAGE_POOL");
         return !v || v[0] != '0';
     }();
-    for (const auto& ci : {etc2, rgba}) {
+    // The 2026-11-26 G720 log identifies 4096x208 RGBA128 as a 191.24ms
+    // allocation. Keep the previous 248 shape and add the measured hot shape.
+    auto rgba208 = rgba;
+    rgba208.extent.height = 208;
+    auto rgba232 = rgba;
+    rgba232.extent.height = 232;
+    for (const auto& ci : {etc2, rgba208, rgba, rgba232}) {
         if ((ci.format == etc2.format && !bc_enabled) ||
             (ci.format == rgba.format && !rgba_enabled)) continue;
         // Never allocate extra memory once VMA's shared heap is pressured.

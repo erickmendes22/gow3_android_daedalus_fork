@@ -3391,7 +3391,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         auto& attachment = state.color_attachments[cb];
         attachment.image_view = *image_view.image_view;
         attachment.image_layout = image->backing->state.layout;
-        attachment.clear_value = clear_value.color.uint32;
+        attachment.clear_value = is_clear ? clear_value.color.uint32 : std::array<u32, 4>{};
         attachment.is_clear = is_clear;
 
         if (reduced) {
