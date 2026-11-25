@@ -43,4 +43,9 @@ class TickPriority(unittest.TestCase):
         self.assertIn("Gow3Copy::AsyncItems(large_copies);",buf)
     def test_guest_finish_site_preserved(self):
         self.assertIn("scheduler.Finish(caller);",(V/"vk_rasterizer.cpp").read_text())
+    def test_clear_value_uses_compatible_array_assignment(self):
+        r=(V/"vk_rasterizer.cpp").read_text()
+        self.assertIn("is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{}",r)
+        self.assertIn("attachment.clear_value = clear_value.color.uint32;",r)
+        self.assertNotIn("is_clear ? clear_value.color.uint32 :",r)
 if __name__=="__main__": unittest.main()
