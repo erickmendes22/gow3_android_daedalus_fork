@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <vk_mem_alloc.h>
 
 #include "common/alignment.h"
 #include "common/assert.h"
