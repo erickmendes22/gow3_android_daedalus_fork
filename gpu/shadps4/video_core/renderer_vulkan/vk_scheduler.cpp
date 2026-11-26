@@ -31,6 +31,11 @@ std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
+    const char* unlocked_throttle = std::getenv("GOW3_MALI_UNLOCKED_SUBMIT_THROTTLE");
+    mali_unlocked_submit_throttle =
+        std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        unlocked_throttle && unlocked_throttle[0] == '1';
     // Per-renderer bind cache (never global across Vulkan command buffers).
     // GOW3_MALI_PIPELINE_BIND_CACHE=0 restores all legacy vkCmdBindPipeline calls.
     const char* bind_cache = std::getenv("GOW3_MALI_PIPELINE_BIND_CACHE");
@@ -650,12 +655,18 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     // Compare Bachata's deeper timeline queue with GoW3's old PanVK cap=2.
     // Only one out of 32 lock/record/submit operations are timed.
     const bool mali_submit_sample = MaliPerfStats::SampleSubmit();
+    std::unique_lock order{mali_submission_order_mutex, std::defer_lock};
+    if (mali_unlocked_submit_throttle) order.lock();
     const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                : MaliPerfStats::TimePoint{};
-    std::scoped_lock lk{submit_mutex};
+    std::unique_lock lk{submit_mutex};
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
-    const u64 signal_value = work_semaphore.NextTick();
+    // Do not advertise a new logical tick while this scheduler is merely
+    // waiting for queue capacity. The per-scheduler lock holds the reservation
+    // stable if the global queue mutex is released below.
+    const u64 signal_value = mali_unlocked_submit_throttle
+        ? work_semaphore.CurrentTick() : work_semaphore.NextTick();
 
     // BACHATA ARM64's bounded timeline policy: do not issue
     // vkGetSemaphoreCounterValue on every submit (a costly Turnip ioctl).
@@ -690,9 +701,29 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         const bool mali_timing = MaliPerfStats::Enabled();
         const auto throttle_start = mali_timing ? MaliPerfStats::Clock::now()
                                                 : MaliPerfStats::TimePoint{};
-        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+        const bool profile = WaitDiagnostics::TickProfileEnabled();
+        const auto wait_start = profile ? std::chrono::steady_clock::now()
+                                        : std::chrono::steady_clock::time_point{};
+        if (mali_unlocked_submit_throttle) lk.unlock();
+        {
+            // This cost was absent from Frame stats: GPU ticks in R5 even
+            // when submit_throttle measured more than five seconds/window.
+            Gow3Stats::WaitTimer timer{Gow3Stats::tick_wait_ns};
+            work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+        }
+        if (profile) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - wait_start).count();
+            WaitDiagnostics::Get().Add("submit_throttle", 0, 0, elapsed);
+        }
         if (mali_timing)
             MaliPerfStats::Record(MaliPerfStats::Stage::SubmitThrottle, throttle_start);
+        if (mali_unlocked_submit_throttle) lk.lock();
+    }
+    if (mali_unlocked_submit_throttle) {
+        // One reservation, one increment. No loop can chase a stale tick.
+        const auto reserved = work_semaphore.NextTick();
+        ASSERT_MSG(reserved == signal_value, "Scheduler submission tick changed during throttle");
     }
 
 #if TRACY_GPU_ENABLED

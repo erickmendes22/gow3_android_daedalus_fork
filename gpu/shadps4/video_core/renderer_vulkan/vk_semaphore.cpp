@@ -55,7 +55,7 @@ void Semaphore::Refresh() {
                                              std::memory_order_relaxed));
 }
 
-void Semaphore::Wait(u64 tick) {
+void Semaphore::Wait(u64 tick, std::source_location caller) {
     // No need to wait if the GPU is ahead of the tick
     if (IsFree(tick)) {
         return;
@@ -79,10 +79,12 @@ void Semaphore::Wait(u64 tick) {
 
     const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
     if (result != vk::Result::eSuccess) {
-        std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu\n",
+        std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
                      int(result), static_cast<unsigned long long>(tick),
                      static_cast<unsigned long long>(KnownGpuTick()),
-                     static_cast<unsigned long long>(CurrentTick()));
+                     static_cast<unsigned long long>(CurrentTick()),
+                     caller.file_name(), caller.line(), caller.function_name(),
+                     static_cast<const void*>(this));
     }
     ASSERT_MSG(result == vk::Result::eSuccess, "Timeline wait failed: {}", vk::to_string(result));
     if (direct_timeline_wait) {

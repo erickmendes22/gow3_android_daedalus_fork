@@ -152,8 +152,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_ASYNC_PRESENT=${GOW3_MALI_ASYNC_PRESENT:-1}
       # Exact PanVK V3 Mali CSF defaults from Bachata 0.2.5.
       # The Kbase driver itself implements these, not the GoW3 Vulkan backend.
-      # Same-queue waits are executed by the GPU instead of an ioctl/CPU roundtrip.
-      export PANVK_KBASE_GPU_SEMAPHORE_WAITS=${PANVK_KBASE_GPU_SEMAPHORE_WAITS:-1}
+      # R5 still returns VK_ERROR_DEVICE_LOST after readback wait elimination.
+      # Test the original driver synchronization path rather than GPU-side CSF
+      # semaphore waits. This is a conservative A/B choice, not a proven cause.
+      export PANVK_KBASE_GPU_SEMAPHORE_WAITS=${PANVK_KBASE_GPU_SEMAPHORE_WAITS:-0}
+      export GOW3_MALI_UNLOCKED_SUBMIT_THROTTLE=${GOW3_MALI_UNLOCKED_SUBMIT_THROTTLE:-1}
+      echo "Mali submit safety: gpu_waits=$PANVK_KBASE_GPU_SEMAPHORE_WAITS unlocked_throttle=$GOW3_MALI_UNLOCKED_SUBMIT_THROTTLE"
       # Recycle tiler chunks on GPU via FINISH_FRAGMENT/FRAGMENT_COMPLETED;
       # =1 uses the older queue-draining heap-renewal fallback.
       export PANVK_KBASE_SKIP_HEAP_OPS=${PANVK_KBASE_SKIP_HEAP_OPS:-0}

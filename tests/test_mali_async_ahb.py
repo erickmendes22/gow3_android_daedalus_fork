@@ -88,7 +88,7 @@ printf 'MALI_FLAGS=%s:%s:%s:%s' \\
 
     def test_bachata_v3_defaults_apply_only_to_panvk(self):
         self.assertEqual(
-            self.launch_profile("/data/app/libvulkan_panfrost.so"), "1:1:0:0")
+            self.launch_profile("/data/app/libvulkan_panfrost.so"), "1:0:0:0")
         self.assertEqual(
             self.launch_profile("/data/app/libvulkan_freedreno.so"),
             "unset:unset:unset:unset")
@@ -104,10 +104,10 @@ printf 'MALI_FLAGS=%s:%s:%s:%s' \\
         self.assertEqual(
             self.launch_profile("/data/app/libvulkan_panfrost.so",
                                 {"GOW3_MALI_ASYNC_PRESENT": "0",
-                                 "PANVK_KBASE_GPU_SEMAPHORE_WAITS": "0",
+                                 "PANVK_KBASE_GPU_SEMAPHORE_WAITS": "1",
                                  "PANVK_KBASE_SKIP_HEAP_OPS": "1",
                                  "PANVK_ZS_PRELOAD_ALWAYS": "1"}),
-            "0:0:1:1")
+            "0:1:1:1")
 
 
 if __name__ == "__main__":

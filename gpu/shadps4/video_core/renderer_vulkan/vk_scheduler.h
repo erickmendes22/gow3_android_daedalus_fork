@@ -936,6 +936,10 @@ private:
 private:
     const Instance& instance;
     Semaphore work_semaphore;
+    // Serialize this scheduler's tick reservation and submission independently
+    // of other schedulers sharing the Vulkan queue.
+    std::mutex mali_submission_order_mutex;
+    bool mali_unlocked_submit_throttle = false;
     CommandPool command_pool;
     DynamicState dynamic_state;
     SubmitFunc on_submit{};

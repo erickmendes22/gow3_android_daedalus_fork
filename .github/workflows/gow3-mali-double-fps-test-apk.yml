@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 texture cache stability APK r5
+name: GoW III Mali 1023daf52 submit throttle and driver sync stability APK r6
 
 on:
   push:
@@ -60,6 +60,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_texture_cache_crash.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_submit_throttle_r6.py' -v
+          python3 -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_readback_queue.cpp -o /tmp/gow3-readback-queue
           /tmp/gow3-readback-queue
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_index_bind_policy.cpp -o /tmp/gow3-index-bind
