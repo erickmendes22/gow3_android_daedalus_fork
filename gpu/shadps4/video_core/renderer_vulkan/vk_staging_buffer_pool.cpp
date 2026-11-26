@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
-#include <vk_mem_alloc.h>
 
 #include "common/alignment.h"
 #include "common/assert.h"
@@ -16,6 +15,10 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
+
+// vk_common.h (via vk_instance.h) must define the Vulkan/VMA configuration
+// before VMA includes vulkan.h. Match image.cpp and buffer.cpp.
+#include <vk_mem_alloc.h>
 
 namespace Vulkan {
 

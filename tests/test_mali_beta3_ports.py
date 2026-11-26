@@ -6,6 +6,10 @@ class Beta3Ports(unittest.TestCase):
     def test_vma_budget_api_header(self):
         s=(V/"renderer_vulkan/vk_staging_buffer_pool.cpp").read_text()
         self.assertIn("#include <vk_mem_alloc.h>",s)
+        self.assertLess(s.index('#include "video_core/renderer_vulkan/vk_instance.h"'),
+                        s.index("#include <vk_mem_alloc.h>"))
+        self.assertLess(s.index('#include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"'),
+                        s.index("#include <vk_mem_alloc.h>"))
         self.assertIn("VmaBudget budgets[VK_MAX_MEMORY_HEAPS]",s)
         self.assertIn("vmaGetHeapBudgets(instance.GetAllocator(), budgets)",s)
     def test_reclaim_never_touches_live_or_same_frame(self):

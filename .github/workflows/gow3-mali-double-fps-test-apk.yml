@@ -1,9 +1,17 @@
-name: GoW III Mali 1023daf52 Beta3 readback and staging performance APK r8.1
+name: GoW III Mali 1023daf52 Beta3 readback and staging performance APK r8.2
 
 on:
   push:
     branches: [perf/gow3-mali-piston-panvk-v4-20261125]
-    paths: ['.github/workflows/gow3-mali-double-fps-test-apk.yml']
+    paths:
+      - '.github/workflows/gow3-mali-double-fps-test-apk.yml'
+      - 'gpu/**'
+      - 'cpu/**'
+      - 'src/**'
+      - 'tools/android/**'
+      - 'android-launcher/**'
+      - 'tests/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -156,6 +164,11 @@ jobs:
       - name: Build pinned Android dependencies
         shell: bash -el {0}
         run: bash tools/android/bionic/build_deps.sh
+      - name: Compile staging pressure-reclaim translation unit first (real Android NDK)
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_gpu.sh --configure-only
+          cmake --build out/bionic/gpu --parallel "$GOW3_JOBS" --target CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp.o
       - name: Build Vulkan C++ runtime and CPU runtime (NOT reuse old binaries)
         shell: bash -el {0}
         run: |
