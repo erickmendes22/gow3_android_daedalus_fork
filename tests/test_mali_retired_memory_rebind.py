@@ -101,7 +101,7 @@ int main() { return 0; }
 
     def test_default_enabled_for_mali_with_opt_out_and_old_path_fallback(self):
         self.assertIn("GOW3_MALI_REBIND_RETIRED_MEMORY", IMAGE)
-        self.assertIn("GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-1}", RUN)
+        self.assertIn("GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-0}", RUN)
         self.assertIn("memory_rebind=$GOW3_MALI_REBIND_RETIRED_MEMORY", RUN)
         self.assertIn("if (recycle_bc && RebindRetiredImageMemory(", IMAGE)
         self.assertIn("if (recycle_bc && TakeBcImage(", IMAGE)

@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 strict readback and index bind optimization APK r4
+name: GoW III Mali 1023daf52 texture cache stability APK r5
 
 on:
   push:
@@ -59,6 +59,7 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_texture_cache_crash.py' -v
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_readback_queue.cpp -o /tmp/gow3-readback-queue
           /tmp/gow3-readback-queue
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_index_bind_policy.cpp -o /tmp/gow3-index-bind

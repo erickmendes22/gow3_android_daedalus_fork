@@ -148,27 +148,37 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     }
     const auto resolve = [this, address, size, source, exact] {
         const bool diag = Vulkan::WaitDiagnostics::TickProfileEnabled();
-        std::scoped_lock lock{readback_mutex};
+        std::unique_lock lock{readback_mutex};
         bool waited = false;
         u64 wait_ns = 0;
         if (diag && (source == ReadbackSource::CpuRead || source == ReadbackSource::CpuWrite)) {
             // Which copied image the CPU touched while its copy was pending.
             for (auto& image : readback_images) {
-                if (image.copies && address < image.address + image.Bytes() && image.address < address + size) {
+                // CPU faults report a small access on a protected PAGE, not
+                // necessarily the exact bytes of the copied image.
+                if (image.copies && address < ((image.address + image.Bytes() + 4095) & ~u64{4095}) &&
+                    (image.address & ~u64{4095}) < address + size) {
                     ++image.cpu_accesses;
                 }
             }
         }
         Gow3Stats::Timer readback_timer{Gow3Stats::t_readback_wait};
-        if (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
+        // Keep publication/page watchers serialized, but NEVER hold this
+        // mutex while a GPU wait may flush commands or join host copy workers.
+        // Recheck the required range after reacquiring: Unmap/Cancel can run
+        // concurrently. The GPU command thread still owns scheduler recording.
+        RetireReadbacks();
+        while (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
             ++readbacks_waited;
-            waited = !scheduler.IsFree(tick);
+            waited = true;
             const auto start = diag ? std::chrono::steady_clock::now()
                                     : std::chrono::steady_clock::time_point{};
+            lock.unlock();
             scheduler.Wait(tick);
+            lock.lock();
             if (diag) {
-                wait_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              std::chrono::steady_clock::now() - start).count();
+                wait_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - start).count();
             }
             RetireReadbacks();
         }
@@ -312,7 +322,7 @@ void TextureCache::ProcessDownloadImages() {
                         scheduler.CurrentTick(), copy->staging);
                     has_pending_readbacks.store(true, std::memory_order_release);
                     WatchReadback<true>(copy->guest_address, copy->size);
-                    if (Vulkan::WaitDiagnostics::Enabled()) {
+                    if (Vulkan::WaitDiagnostics::TickProfileEnabled()) {
                         // Which images go back to RAM each frame (the report lists the busiest).
                         auto* slot = std::ranges::find(readback_images, image.info.guest_address,
                                                        &ReadbackImageStat::address);
@@ -380,6 +390,24 @@ void TextureCache::ProcessDownloadImages() {
                                                   download.staging.mapped, download.size);
         runtime.GetStagingPool().FreeDeferred(download.staging);
     }
+}
+
+void TextureCache::SubmitPendingReadbacks() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("GOW3_MALI_EARLY_READBACK_SUBMIT");
+        return value && value[0] == '1';
+    }();
+    if (!enabled || !deferred_readbacks ||
+        !has_pending_readbacks.load(std::memory_order_acquire)) return;
+    bool needs_submit = false;
+    {
+        std::scoped_lock lock{readback_mutex};
+        needs_submit = pending_readbacks.NewestTick() == scheduler.CurrentTick();
+    }
+    // At an EOP/release event, start the GPU copy before the guest observes
+    // its fence. This is a submission, not Finish; the data stays watched.
+    // Normal OnSubmit already flushes and does not need an extra submission.
+    if (needs_submit) scheduler.Flush();
 }
 
 std::optional<TextureCache::PendingDownload> TextureCache::RecordImageDownload(ImageId image_id) {
@@ -1581,7 +1609,7 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
-    Gow3Stats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
+    u64 recorded_upload_bytes = 0;
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
         const u32 width = std::max(image.info.size.width >> m, 1u);
@@ -1602,6 +1630,7 @@ void TextureCache::RefreshImage(Image& image) {
 
         const u32 extent_width = mip_pitch ? std::min(mip_pitch, width) : width;
         const u32 extent_height = mip_height ? std::min(mip_height, height) : height;
+        recorded_upload_bytes += mip_size;
         image_copies.push_back({
             .bufferOffset = mip_offset,
             .bufferRowLength = mip_pitch,
@@ -1632,6 +1661,34 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     runtime.UploadImage(&image, buffer, image_copies);
+    Gow3Stats::image_upload_bytes.fetch_add(recorded_upload_bytes, std::memory_order_relaxed);
+    if (texture_upload_batch_tick != scheduler.CurrentTick()) {
+        texture_upload_batch_tick = scheduler.CurrentTick();
+        texture_upload_batch_bytes = 0;
+    }
+    texture_upload_batch_bytes += recorded_upload_bytes;
+}
+
+void TextureCache::MaybeSubmitTextureBatch() {
+    static const u64 budget = [] {
+        const char* value = std::getenv("GOW3_MALI_TEXTURE_BATCH_MIB");
+        const char* pipe = std::getenv("GOW3_DRAW_PIPE");
+        if (!value || (pipe && pipe[0] == '1')) return u64{0};
+        const auto mib = std::strtoull(value, nullptr, 10);
+        return mib >= 8 && mib <= 128 ? u64{mib} * 1024 * 1024 : u64{0};
+    }();
+    if (!budget || texture_upload_batch_tick != scheduler.CurrentTick() ||
+        texture_upload_batch_bytes < budget) return;
+    // Only at a completed guest draw/dispatch, with bindings reset and
+    // predication/query recording closed. Preserve order and all uploads.
+    // The existing bounded-submit throttle prevents an unbounded GPU queue.
+    static u64 batches = 0;
+    if (++batches <= 8 || (batches & 63u) == 0)
+        std::printf("GOW3_MALI_TEXTURE_BATCH submit=%llu tick=%llu upload_mib=%.2f\n",
+                    (unsigned long long)batches, (unsigned long long)texture_upload_batch_tick,
+                    texture_upload_batch_bytes / 1048576.0);
+    texture_upload_batch_bytes = 0;
+    scheduler.Flush();
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,

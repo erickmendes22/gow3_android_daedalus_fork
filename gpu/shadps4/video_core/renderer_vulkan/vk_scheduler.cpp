@@ -724,9 +724,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
-    static constexpr std::array<vk::PipelineStageFlags, 2> wait_stage_masks = {
+    static constexpr std::array<vk::PipelineStageFlags, 4> wait_stage_masks = {
         vk::PipelineStageFlagBits::eAllCommands,
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eAllCommands,
     };
 
     const vk::TimelineSemaphoreSubmitInfo timeline_si = {
@@ -753,7 +755,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitQueueDriver, queue_start);
-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    ASSERT_MSG(submit_result == vk::Result::eSuccess, "Queue submit failed: {}",
+               vk::to_string(submit_result));
 
     // On Android, completion is cached and advanced by the bounded wait
     // above, explicit guest readback waits, or the deferred-ops poller (which

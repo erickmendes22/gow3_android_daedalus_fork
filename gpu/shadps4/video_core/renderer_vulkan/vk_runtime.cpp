@@ -787,6 +787,10 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
                       vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
                       std::optional<VideoCore::SubresourceRange> subres_range) {
     BeforeImageAccess();
+    // A transfer or layout use is just as live as a FindImage/MarkFound lookup.
+    // Without this stamp a clean alias could be destroyed using an older,
+    // already-completed tick while this command still references its VkImage.
+    image->tick_accessed_last = scheduler.CurrentTick();
     if (scene_targets) scene_targets->NativeAccess(*image, dst_access);
     const size_t prev_num_barriers = static_cast<size_t>(image_barriers.size());
     image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
@@ -1421,6 +1425,7 @@ void Runtime::ClearImage(VideoCore::Image* dst, const VideoCore::SubresourceRang
 
 void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool copy_backing) {
     BeforeImageAccess();
+    image->tick_accessed_last = scheduler.CurrentTick();
     auto& backing = image->backing;
     auto& backing_images = image->backing_images;
     const auto& info = image->info;

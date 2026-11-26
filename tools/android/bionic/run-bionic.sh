@@ -282,7 +282,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # reuse the old VkImage, its layout, image view or GPU pixels.
       # Hardware benefit is not measured yet: default remains 0.
       # =1 enables the independently rollbackable PanVK experiment.
-      export GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-1}
+      export GOW3_MALI_REBIND_RETIRED_MEMORY=${GOW3_MALI_REBIND_RETIRED_MEMORY:-0}
       # Experimental G720 cold-scene retention: BC 128->192 MiB / 24->48 images,
       # RGBA128 64->96 MiB / 24->48; only *retired exact-matched* VkImages.
       # Actual VMA device-local 90% budget guard still flushes on pressure.
@@ -291,12 +291,12 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # Retire only clean, unbound BC<->RGBA aliases when their GPU tick has
       # actually completed; always preserve the layout/format reuse guard.
       # =0 restores the 32-tick lifetime without early retirement.
-      export GOW3_MALI_BC_ALIAS_RETIRE=${GOW3_MALI_BC_ALIAS_RETIRE:-1}
+      export GOW3_MALI_BC_ALIAS_RETIRE=${GOW3_MALI_BC_ALIAS_RETIRE:-0}
       # The G720 log has clean BC3->RGBA128 aliases whose GPU completion
       # tick is already retired. Release those images at the verified tick
       # rather than deferring clean BC handles to an unrelated future tick.
       # =0 preserves the previous deferred-release policy for rollback.
-      export GOW3_MALI_EAGER_COMPLETED_RETIRE=${GOW3_MALI_EAGER_COMPLETED_RETIRE:-1}
+      export GOW3_MALI_EAGER_COMPLETED_RETIRE=${GOW3_MALI_EAGER_COMPLETED_RETIRE:-0}
       # G720 logs isolate repeated 88-232 ms vkAllocateMemory stalls when VMA
       # requests 128/256 MiB. Prefer 32 MiB for ordinary heap blocks, retaining
       # VMA budget/dedicated-allocation checks; set =0 for the original policy.
@@ -356,7 +356,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_MERGE_LOAD_PASSES=${GOW3_MALI_MERGE_LOAD_PASSES:-1}
       # Keep the previous freeze-safe queue bound. Helper and transcode
       # prewarm are independently reversible; use existing guarded paths.
-      export GOW3_TEXTURE_HELPER=${GOW3_TEXTURE_HELPER:-1}
+      export GOW3_TEXTURE_HELPER=${GOW3_TEXTURE_HELPER:-0}
       export GOW3_MALI_PREWARM_TRANSCODE=${GOW3_MALI_PREWARM_TRANSCODE:-1}
       echo "Mali GPU tick priority: direct=$GOW3_MALI_DIRECT_TIMELINE_WAIT profile=$GOW3_MALI_GPU_TICK_PROFILE exact_stages=$GOW3_MALI_SHADER_STAGE_BARRIERS merge_load=$GOW3_MALI_MERGE_LOAD_PASSES tex_helper=$GOW3_TEXTURE_HELPER prewarm_transcode=$GOW3_MALI_PREWARM_TRANSCODE"
       export GOW3_VIDEOOUT_LABEL_RETIRE=1
@@ -370,6 +370,9 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # strictly watched readback queue; stale guest reads remain forbidden.
       export GOW3_DEFERRED_READBACK=${GOW3_DEFERRED_READBACK:-1}
       export GOW3_STALE_READBACK=0
+      export GOW3_MALI_EARLY_READBACK_SUBMIT=${GOW3_MALI_EARLY_READBACK_SUBMIT:-1}
+      export GOW3_MALI_TEXTURE_BATCH_MIB=${GOW3_MALI_TEXTURE_BATCH_MIB:-16}
+      echo "Mali texture-cache safety: early_readback_submit=$GOW3_MALI_EARLY_READBACK_SUBMIT texture_batch_mib=$GOW3_MALI_TEXTURE_BATCH_MIB exact_pool_only=$([ "$GOW3_MALI_REBIND_RETIRED_MEMORY" = 0 ] && echo yes || echo no)"
       export GOW3_MALI_CANONICAL_INDEX_BIND=${GOW3_MALI_CANONICAL_INDEX_BIND:-1}
       export GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES=${GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES:-1}
       # The GoW3-specific partial-height cache shortcut is not in the

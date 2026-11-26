@@ -76,7 +76,7 @@ class MaliSceneRetentionTests(unittest.TestCase):
         self.assertIn("runtime.CopyImage(&src_image, &new_image);", expand)
         self.assertIn("FreeImage(image_id);", expand)
         self.assertNotIn("FreeImage(image_id, true)", expand)
-        self.assertIn('GOW3_MALI_EAGER_COMPLETED_RETIRE:-1', RUN)
+        self.assertIn('GOW3_MALI_EAGER_COMPLETED_RETIRE:-0', RUN)
         self.assertIn('eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE', RUN)
         self.assertLess(body.index("reclaim();"), body.index("scheduler.DeferOperation(std::move(reclaim))"))
         # Do not introduce blocking waits or GPU-wide drains in image cleanup.

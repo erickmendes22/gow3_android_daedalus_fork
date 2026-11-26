@@ -21,6 +21,7 @@ public:
         return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
     }
     std::uint64_t OldestTick() const { return entries.empty() ? 0 : entries.front().tick; }
+    std::uint64_t NewestTick() const { return entries.empty() ? 0 : entries.back().tick; }
     // Smallest in-order prefix that makes room. Oversized copies use the
     // explicit synchronous fallback; never return an unrelated future tick.
     std::uint64_t RequiredTickForSpace(std::uint64_t size) const {

@@ -10,10 +10,12 @@ int main() {
         if (entry.valid) published.push_back(entry.payload);
     };
     assert(queue.OldestTick() == 0);
+    assert(queue.NewestTick() == 0);
     assert(queue.RequiredTickForSpace(1) == 0);
     queue.Push(0x1000, 4096, 3, 1);
     assert(queue.OldestTick() == 3);
     queue.Push(0x1000, 4096, 4, 2);
+    assert(queue.NewestTick() == 4);
     assert(queue.RequiredTick(0x1fff, 8) == 4);
     assert(queue.RequiredTick(0x2000, 8) == 0);
     queue.Retire([](auto tick) { return tick <= 2; }, complete);

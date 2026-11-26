@@ -1434,6 +1434,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             ps ? ps->pgm_hash : 0, state.width, state.height);
     }
     ResetBindings(false);
+    texture_cache.MaybeSubmitTextureBatch();
     scheduler.KickRecording();
 }
 
@@ -1605,6 +1606,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
             ps ? ps->pgm_hash : 0, state.width, state.height);
     }
     ResetBindings(false);
+    texture_cache.MaybeSubmitTextureBatch();
     scheduler.KickRecording();
 }
 
@@ -1680,6 +1682,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline, const DrawPredi
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    texture_cache.MaybeSubmitTextureBatch();
     scheduler.KickRecording();
 }
 
@@ -1735,6 +1738,7 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    texture_cache.MaybeSubmitTextureBatch();
     scheduler.KickRecording();
 }
 
@@ -3730,6 +3734,7 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
 void Rasterizer::ProcessDownloadImages() {
     DrainDrawPipe();
     texture_cache.ProcessDownloadImages();
+    texture_cache.SubmitPendingReadbacks();
 }
 
 bool Rasterizer::IsMapped(VAddr addr, u64 size) {

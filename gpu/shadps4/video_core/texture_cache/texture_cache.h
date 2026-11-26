@@ -135,6 +135,8 @@ public:
 
     /// Schedules a copy of pending images for download back to CPU memory.
     void ProcessDownloadImages();
+    void SubmitPendingReadbacks();
+    void MaybeSubmitTextureBatch();
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,
                           ReadbackSource source = ReadbackSource::Unknown);
     void CancelReadbacks(VAddr address, u64 size, bool exact = false);
@@ -512,6 +514,8 @@ private:
     bool ExactReadbackWaits() const {
         return stale_readbacks && !Gow3Toggle::Disabled(Gow3Toggle::ExactReadbackWaits);
     }
+    u64 texture_upload_batch_tick = 0;
+    u64 texture_upload_batch_bytes = 0;
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;
     std::atomic<bool> has_pending_readbacks{false};
