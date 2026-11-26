@@ -945,7 +945,7 @@ void Instance::CreateAllocator() {
     // allocations can still bypass this preference.
     VkDeviceSize preferred_block_size = 0;
     if (std::getenv("GOW3_ANDROID_PORT") && properties.vendorID == 0x13B5) {
-        unsigned long mib = 32;
+        unsigned long mib = 64;
         if (const char* selected = std::getenv("GOW3_MALI_VMA_BLOCK_MIB")) {
             char* end = nullptr;
             const auto parsed = std::strtoul(selected, &end, 10);
@@ -955,7 +955,7 @@ void Instance::CreateAllocator() {
                 mib = parsed;
             } else {
                 LOG_WARNING(Render_Vulkan,
-                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using 32 MiB Mali default",
+                            "Invalid GOW3_MALI_VMA_BLOCK_MIB='{}'; using 64 MiB Mali default",
                             selected);
             }
         }

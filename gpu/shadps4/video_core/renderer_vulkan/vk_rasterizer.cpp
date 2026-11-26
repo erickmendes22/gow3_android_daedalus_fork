@@ -27,6 +27,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/renderer_vulkan/mali_index_bind_policy.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "gow3_threads.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -1199,6 +1200,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         return BeginRendering(pipeline);
     }();
 
+    u32 first_index = 0;
     {
         const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawInputs, draw_phase_sample};
         if (!inputs_resolved) {
@@ -1206,6 +1208,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             if (is_indexed) {
                 ResolveIndexBuffer(index_offset);
             }
+        }
+        // Direct draws alone can move the byte offset into firstIndex.
+        // Indirect guest commands retain their original base binding.
+        static const bool canonical_index = [] {
+            const char* value = std::getenv("GOW3_MALI_CANONICAL_INDEX_BIND");
+            return std::getenv("GOW3_MALI_CPU_PRESENT") && value && value[0] == '1';
+        }();
+        if (is_indexed) {
+            const u32 element_size = index_bind.type == vk::IndexType::eUint16 ? 2u : 4u;
+            const auto canonical = CanonicalMaliDirectIndexBind(index_bind.offset, element_size,
+                                                                regs.num_indices, canonical_index);
+            index_bind.offset = canonical.offset;
+            first_index = canonical.first_index;
         }
         // Same Vulkan bind order, one recording closure for vertex input,
         // vertex buffers, and the index buffer of an indexed draw.
@@ -1345,7 +1360,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         const auto draw = [&] {
             if (is_indexed) {
-                cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),
+                cmdbuf.drawIndexed(num_indices, num_instances, first_index, s32(first_vertex),
                                    first_instance);
             } else {
                 cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);

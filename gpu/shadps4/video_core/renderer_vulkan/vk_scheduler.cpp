@@ -610,7 +610,10 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
     // pipeline changes. Some pipelines may use static vertex input; Vulkan
     // commands recorded before binding must not be assumed to survive it.
     last_vertex_input_cmd = vk::CommandBuffer{};
-    last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
+    last_vertex_buffer_cmd = vk::CommandBuffer{};
+    // A graphics pipeline bind does not alter the bound index VkBuffer.
+    // Raw commands, rendering scope ends and command buffer resets still
+    // invalidate the index cache before reuse.
     if (graphics_pipeline_bind_cache_enabled) {
         last_graphics_bind_cmd = cmdbuf;
         last_graphics_bind_pipeline = pipeline;

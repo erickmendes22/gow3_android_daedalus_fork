@@ -508,7 +508,12 @@ bool RebindRetiredImageMemory(vk::Device device, VmaAllocator allocator,
     const auto reserved_shape = [&](const BcPool& pool, const RetiredBcImage& candidate) {
         const bool etc2 = IsEtc2Image(candidate.create);
         const bool transient_image = protect_transient && IsTransientImage(candidate.create);
-        if (!etc2 && !transient_image) return false;
+        static const bool protect_hot_shapes = [] {
+            const char* opt = std::getenv("GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES");
+            return !opt || opt[0] != '0';
+        }();
+        const bool hot_shape = protect_hot_shapes && (&pool == &bc || &pool == &rgba);
+        if (!etc2 && !transient_image && !hot_shape) return false;
         size_t identical = 0;
         for (const auto& other : pool.images) {
             if (other.allocator == allocator &&
@@ -841,7 +846,23 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     rgba208.extent.height = 208;
     auto rgba232 = rgba;
     rgba232.extent.height = 232;
-    for (const auto& ci : {etc2, rgba208, rgba, rgba232}) {
+    // Cold allocations measured in the newest G720 trace. Keep exact
+    // format/usage/extent keys, retain only within the original budgets.
+    auto etc2_1024 = etc2;
+    etc2_1024.extent = vk::Extent3D{1024, 2048, 1};
+    etc2_1024.mipLevels = 10;
+    auto etc2_256 = etc2;
+    etc2_256.extent = vk::Extent3D{1024, 256, 1};
+    etc2_256.mipLevels = 8;
+    auto etc2_512 = etc2;
+    etc2_512.extent = vk::Extent3D{512, 512, 1};
+    etc2_512.mipLevels = 9;
+    auto etc2_512x1024 = etc2_512;
+    etc2_512x1024.extent.height = 1024;
+    auto rgba168 = rgba;
+    rgba168.extent.height = 168;
+    for (const auto& ci : {etc2, etc2_1024, etc2_256, etc2_512, etc2_512x1024,
+                           rgba208, rgba, rgba232, rgba168, rgba208}) {
         if ((ci.format == etc2.format && !bc_enabled) ||
             (ci.format == rgba.format && !rgba_enabled)) continue;
         // Never allocate extra memory once VMA's shared heap is pressured.

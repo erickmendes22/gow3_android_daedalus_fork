@@ -48,4 +48,20 @@ class TickPriority(unittest.TestCase):
         self.assertIn("is_clear ? LiverpoolToVK::ColorBufferClearValue(col_buf) : vk::ClearValue{}",r)
         self.assertIn("attachment.clear_value = clear_value.color.uint32;",r)
         self.assertNotIn("is_clear ? clear_value.color.uint32 :",r)
+    def test_deferred_readback_strict_and_bounded(self):
+        c=(V.parent/"texture_cache/texture_cache.cpp").read_text()
+        s=c.split("void TextureCache::ProcessDownloadImages()",1)[1].split("std::optional<TextureCache::PendingDownload>",1)[0]
+        self.assertIn("pending_readbacks.RequiredTickForSpace(size)",s)
+        self.assertIn("scheduler.Wait(required);",s)
+        self.assertLess(s.index("pending_readbacks.Push("),s.index("WatchReadback<true>"))
+        self.assertLess(s.index("scheduler.WaitHostCopies();"),s.index("WatchReadback<true>"))
+        self.assertIn("FreeDeferred(entry.payload, entry.tick)",c)
+        sh=(ROOT/"tools/android/bionic/run-bionic.sh").read_text()
+        self.assertIn("GOW3_DEFERRED_READBACK:-1",sh)
+        self.assertIn("export GOW3_STALE_READBACK=0",sh)
+    def test_canonical_direct_index_not_indirect(self):
+        r=(V/"vk_rasterizer.cpp").read_text()
+        self.assertIn("CanonicalMaliDirectIndexBind(index_bind.offset",r)
+        self.assertIn("drawIndexed(num_indices, num_instances, first_index",r)
+        self.assertEqual(r.count("CanonicalMaliDirectIndexBind("),1)
 if __name__=="__main__": unittest.main()

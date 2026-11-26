@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 GPU tick priority optimization APK r3
+name: GoW III Mali 1023daf52 strict readback and index bind optimization APK r4
 
 on:
   push:
@@ -59,6 +59,11 @@ jobs:
           test -x tools/android/bionic/run-bionic.sh
           python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_readback_queue.cpp -o /tmp/gow3-readback-queue
+          /tmp/gow3-readback-queue
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_index_bind_policy.cpp -o /tmp/gow3-index-bind
+          /tmp/gow3-index-bind
+          python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v

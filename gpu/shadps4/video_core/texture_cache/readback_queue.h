@@ -20,6 +20,21 @@ public:
     bool CanFit(std::uint64_t size) const {
         return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
     }
+    std::uint64_t OldestTick() const { return entries.empty() ? 0 : entries.front().tick; }
+    // Smallest in-order prefix that makes room. Oversized copies use the
+    // explicit synchronous fallback; never return an unrelated future tick.
+    std::uint64_t RequiredTickForSpace(std::uint64_t size) const {
+        if (CanFit(size) || size > MaxBytes) return 0;
+        auto remaining_bytes = bytes;
+        auto remaining_count = entries.size();
+        for (const auto& entry : entries) {
+            remaining_bytes -= entry.size;
+            --remaining_count;
+            if (remaining_count < 64 && remaining_bytes <= MaxBytes - size)
+                return entry.tick;
+        }
+        return 0;
+    }
     void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload) {
         assert(CanFit(size));
         entries.push_back({address, size, tick, std::move(payload)});

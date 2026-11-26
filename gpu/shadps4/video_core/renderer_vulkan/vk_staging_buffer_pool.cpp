@@ -149,13 +149,16 @@ StagingBufferRef StagingBufferPool::RequestLarge(u64 size, MemoryType type, bool
     return ref;
 }
 
-void StagingBufferPool::FreeDeferred(const StagingBufferRef& ref) {
+void StagingBufferPool::FreeDeferred(const StagingBufferRef& ref, u64 completed_tick) {
     auto& cache = large_caches[u32(ref.type)];
     const auto it = std::ranges::find_if(
         cache, [&](const LargeBuffer& entry) { return entry.buffer.get() == ref.buffer; });
     ASSERT_MSG(it != cache.end() && it->held, "FreeDeferred on an allocation that is not held");
+    // Only callers that have already consumed a completed GPU copy pass
+    // a nonzero tick. Other callers retain the original conservative policy.
+    ASSERT(!completed_tick || scheduler.GetWorkSemaphore()->IsFree(completed_tick));
     it->held = false;
-    it->tick = scheduler.CurrentTick();
+    it->tick = completed_tick ? completed_tick : scheduler.CurrentTick();
     it->last_used_frame = frame;
 }
 

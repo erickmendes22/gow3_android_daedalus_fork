@@ -44,7 +44,7 @@ public:
                                            bool deferred = false);
 
     /// Releases a deferred allocation. It becomes reusable once the current tick completes.
-    void FreeDeferred(const StagingBufferRef& ref);
+    void FreeDeferred(const StagingBufferRef& ref, u64 completed_tick = 0);
 
     /// Releases idle memory.
     void TickFrame();

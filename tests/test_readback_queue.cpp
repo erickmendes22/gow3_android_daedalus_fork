@@ -9,7 +9,10 @@ int main() {
     auto complete = [&](auto& entry) {
         if (entry.valid) published.push_back(entry.payload);
     };
+    assert(queue.OldestTick() == 0);
+    assert(queue.RequiredTickForSpace(1) == 0);
     queue.Push(0x1000, 4096, 3, 1);
+    assert(queue.OldestTick() == 3);
     queue.Push(0x1000, 4096, 4, 2);
     assert(queue.RequiredTick(0x1fff, 8) == 4);
     assert(queue.RequiredTick(0x2000, 8) == 0);
@@ -28,6 +31,7 @@ int main() {
     assert(!queue.CanFit(65ull << 20));
     for (int i = 0; i < 64; ++i) queue.Push(0x1000, 1, 6, i);
     assert(!queue.CanFit(1));
+    assert(queue.RequiredTickForSpace(1) == 6);
     assert(queue.RequiredTick(0x1ff0, 1) == 6);
     assert(queue.RequiredTick(0x3000, 1) == 0);
     queue.Retire([](auto) { return true; }, [](auto&) {});
@@ -36,6 +40,14 @@ int main() {
     assert(queue.RequiredTick(0x1000, 0) == 0);
     queue.Retire([](auto) { return true; }, [](auto&) {});
     assert(queue.CanFit(64ull << 20));
+    queue.Push(0x1000, 16ull << 20, 21, 1);
+    queue.Push(0x2000000, 16ull << 20, 22, 2);
+    queue.Push(0x4000000, 32ull << 20, 23, 3);
+    assert(queue.RequiredTickForSpace(8ull << 20) == 21);
+    assert(queue.RequiredTickForSpace(24ull << 20) == 22);
+    assert(queue.RequiredTickForSpace(64ull << 20) == 23);
+    assert(queue.RequiredTickForSpace(65ull << 20) == 0);
+    queue.Retire([](auto) { return true; }, [](auto&) {});
 
     // Byte rule: a CPU write next to a small pending copy, on the same page but outside its
     // bytes, releases that copy's page protection instead of waiting for the GPU.

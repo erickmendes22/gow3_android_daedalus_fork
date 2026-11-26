@@ -300,7 +300,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # G720 logs isolate repeated 88-232 ms vkAllocateMemory stalls when VMA
       # requests 128/256 MiB. Prefer 32 MiB for ordinary heap blocks, retaining
       # VMA budget/dedicated-allocation checks; set =0 for the original policy.
-      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-32}
+      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-64}
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
@@ -365,8 +365,13 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # on a different thread; this could recycle a not-yet-presented image.
       export GOW3_PRESENT_THREAD=0
       export GOW3_FRAMES_AHEAD=1
-      export GOW3_DEFERRED_READBACK=0
+      # The latest log attributes >3 s per interval to synchronous
+      # ProcessDownloadImages -> Finish, not to uploads. Use the bounded,
+      # strictly watched readback queue; stale guest reads remain forbidden.
+      export GOW3_DEFERRED_READBACK=${GOW3_DEFERRED_READBACK:-1}
       export GOW3_STALE_READBACK=0
+      export GOW3_MALI_CANONICAL_INDEX_BIND=${GOW3_MALI_CANONICAL_INDEX_BIND:-1}
+      export GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES=${GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES:-1}
       # The GoW3-specific partial-height cache shortcut is not in the
       # Bachata renderer. It may alias an earlier target after a layout or
       # sample-count change. Prefer correct full image reconstruction on Mali.
@@ -406,7 +411,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           printf '%s\n' 'Previews at most 960x540 BMP; stage metadata and MALI_VIDEOOUT_SKIP recorded in android-game.log.'
         } > "$GOW3_MALI_CAPTURE_DIR/README.txt"
       fi
-      echo "PanVK Mali safety: compile=$GOW3_GPU_COMPILER_WORKERS async_worker_wait=$GOW3_MALI_ASYNC_DRAW_WAIT warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT local_buffer_barriers=$GOW3_MALI_LOCAL_BUFFER_BARRIERS image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=off stale=off partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS fex_l2=$GOW3_FEX_L2_CACHE pm4_idle_us=$GOW3_MALI_PM4_IDLE_BACKOFF_US pm4_yield_batch=$GOW3_MALI_PM4_YIELD_BATCH inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS ubo=$GOW3_UBO afbc_color_rt=$GOW3_MALI_AFBC_COLOR_RT bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL transient_rebind_last=$GOW3_MALI_TRANSIENT_REBIND_LAST memory_rebind=$GOW3_MALI_REBIND_RETIRED_MEMORY scene_retention=$GOW3_MALI_SCENE_IMAGE_RETENTION bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE vma_block_mib=$GOW3_MALI_VMA_BLOCK_MIB async_ahb=$GOW3_MALI_ASYNC_PRESENT panvk_gpu_waits=$PANVK_KBASE_GPU_SEMAPHORE_WAITS panvk_tiler_recycle=$PANVK_KBASE_SKIP_HEAP_OPS panvk_zs_preload=$PANVK_ZS_PRELOAD_ALWAYS perf_stats=$GOW3_MALI_PERF_STATS frame_stats=$GOW3_FRAME_STATS videodec_nv12_direct=$GOW3_VIDEODEC_NV12_DIRECT sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
+      echo "PanVK Mali safety: compile=$GOW3_GPU_COMPILER_WORKERS async_worker_wait=$GOW3_MALI_ASYNC_DRAW_WAIT warmup=$([ "$GOW3_BACKGROUND_WARMUP" = 0 ] && echo off || echo safe) gpu_submits=$GOW3_VK_MAX_IN_FLIGHT pending_tick_cache=$GOW3_MALI_CACHED_PENDING_TICKS image_barrier_split=$GOW3_MALI_IMAGE_BARRIER_SPLIT local_buffer_barriers=$GOW3_MALI_LOCAL_BUFFER_BARRIERS image_rar_elide=$GOW3_MALI_IMAGE_RAR_ELIDE frames_ahead=1 deferred=$GOW3_DEFERRED_READBACK stale=off canonical_index=$GOW3_MALI_CANONICAL_INDEX_BIND hot_shape_protect=$GOW3_MALI_PROTECT_HOT_IMAGE_SHAPES partial_views=off capture=$GOW3_MALI_AUTOCAPTURE cpu_snapshots=$GOW3_MALI_CPU_SNAPSHOTS trace=$GOW3_MALI_VISUAL_TRACE probe=$GOW3_MALI_PRESENT_PROBE app_trace=$GOW3_MALI_PRESENT_TRACE present_reduce=$GOW3_MALI_PRESENT_REDUCE gc_clean_first=$GOW3_MALI_GC_CLEAN_FIRST gc_pressure_pct=$GOW3_MALI_GC_PRESSURE_PCT gc_trigger_pct=$GOW3_MALI_GC_TRIGGER_PCT prep_workers=$GOW3_PREP_WORKERS pm4_checksum_always=$GOW3_PM4_CHECKSUM_ALWAYS pm4_dirty_always=$GOW3_PM4_DIRTY_ALWAYS fex_l2=$GOW3_FEX_L2_CACHE pm4_idle_us=$GOW3_MALI_PM4_IDLE_BACKOFF_US pm4_yield_batch=$GOW3_MALI_PM4_YIELD_BATCH inline_texture_sets=$GOW3_MALI_INLINE_TEXTURE_SETS ubo=$GOW3_UBO afbc_color_rt=$GOW3_MALI_AFBC_COLOR_RT bc_pool=$GOW3_MALI_BC_IMAGE_POOL rgba128_pool=$GOW3_MALI_RGBA128_IMAGE_POOL transient_pool=$GOW3_MALI_TRANSIENT_IMAGE_POOL transient_rebind_last=$GOW3_MALI_TRANSIENT_REBIND_LAST memory_rebind=$GOW3_MALI_REBIND_RETIRED_MEMORY scene_retention=$GOW3_MALI_SCENE_IMAGE_RETENTION bc_alias_retire=$GOW3_MALI_BC_ALIAS_RETIRE eager_completed_retire=$GOW3_MALI_EAGER_COMPLETED_RETIRE vma_block_mib=$GOW3_MALI_VMA_BLOCK_MIB async_ahb=$GOW3_MALI_ASYNC_PRESENT panvk_gpu_waits=$PANVK_KBASE_GPU_SEMAPHORE_WAITS panvk_tiler_recycle=$PANVK_KBASE_SKIP_HEAP_OPS panvk_zs_preload=$PANVK_ZS_PRELOAD_ALWAYS perf_stats=$GOW3_MALI_PERF_STATS frame_stats=$GOW3_FRAME_STATS videodec_nv12_direct=$GOW3_VIDEODEC_NV12_DIRECT sampling=1/32 report=5s native_ahb=$GOW3_MALI_NATIVE_AHB ahb_output=${GOW3_SCREEN_W:-0}x${GOW3_SCREEN_H:-0} buffers=$GOW3_PRESENT_BUFFERS fast_copy=$GOW3_MALI_AHB_FAST_COPY"
     fi
     ;;
 esac

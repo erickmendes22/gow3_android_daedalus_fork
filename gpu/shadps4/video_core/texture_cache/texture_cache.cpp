@@ -108,7 +108,12 @@ void TextureCache::WatchReadback(VAddr address, u64 size) {
 }
 
 void TextureCache::RetireReadbacks() {
-    pending_readbacks.Retire([this](u64 tick) { return scheduler.IsFree(tick); },
+    // One timeline query for the entire retired prefix; its completion also
+    // proves all earlier entries. Do not query a not-yet-submitted tick.
+    if (const auto oldest = pending_readbacks.OldestTick(); oldest)
+        (void)scheduler.IsFree(oldest);
+    const auto completed = scheduler.GetWorkSemaphore()->KnownGpuTick();
+    pending_readbacks.Retire([completed](u64 tick) { return tick <= completed; },
         [this](auto& entry) {
             if (entry.valid) {
                 entry.payload.Invalidate();
@@ -117,7 +122,7 @@ void TextureCache::RetireReadbacks() {
                 if (entry.watched) WatchReadback<false>(entry.address, entry.size);
                 ++readbacks_completed;
             }
-            runtime.GetStagingPool().FreeDeferred(entry.payload);
+            runtime.GetStagingPool().FreeDeferred(entry.payload, entry.tick);
         });
     has_pending_readbacks.store(pending_readbacks.Bytes() != 0, std::memory_order_release);
 }
@@ -142,7 +147,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
         if (!pending_readbacks.RequiredTick(address, size, exact)) return false;
     }
     const auto resolve = [this, address, size, source, exact] {
-        const bool diag = Vulkan::WaitDiagnostics::Enabled();
+        const bool diag = Vulkan::WaitDiagnostics::TickProfileEnabled();
         std::scoped_lock lock{readback_mutex};
         bool waited = false;
         u64 wait_ns = 0;
@@ -284,19 +289,28 @@ void TextureCache::ProcessDownloadImages() {
             if (False(image.flags & ImageFlagBits::GpuModified)) continue;
             const u64 size = u64{image.info.pitch} * image.info.size.height *
                 image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
-            if (!pending_readbacks.CanFit(size)) {
+            if (const auto required = pending_readbacks.RequiredTickForSpace(size); required) {
                 ++readbacks_waited;
-                scheduler.Finish();
+                scheduler.Wait(required);
                 RetireReadbacks();
             }
             if (auto copy = RecordImageDownload(image_id)) {
                 if (!pending_readbacks.CanFit(copy->size)) {
+                    ++readbacks_waited;
                     scheduler.Finish();
+                    // Publish earlier overlapping downloads before the newer
+                    // oversized copy. Its completed staging is safe to reuse.
+                    RetireReadbacks();
                     copy->staging.Invalidate();
                     Core::Memory::Instance()->TryWriteBacking(
                         std::bit_cast<u8*>(copy->guest_address), copy->staging.mapped, copy->size);
-                    runtime.GetStagingPool().FreeDeferred(copy->staging);
+                    runtime.GetStagingPool().FreeDeferred(copy->staging, scheduler.CurrentTick() - 1);
                 } else {
+                    // Publish the queue entry before installing the watcher:
+                    // a fault raised while protecting a page must find its tick.
+                    pending_readbacks.Push(copy->guest_address, copy->size,
+                        scheduler.CurrentTick(), copy->staging);
+                    has_pending_readbacks.store(true, std::memory_order_release);
                     WatchReadback<true>(copy->guest_address, copy->size);
                     if (Vulkan::WaitDiagnostics::Enabled()) {
                         // Which images go back to RAM each frame (the report lists the busiest).
@@ -311,16 +325,13 @@ void TextureCache::ProcessDownloadImages() {
                                      slot->cpu_accesses, image.info.pixel_format};
                         }
                     }
-                    pending_readbacks.Push(copy->guest_address, copy->size,
-                        scheduler.CurrentTick(), copy->staging);
-                    has_pending_readbacks.store(true, std::memory_order_release);
                     ++readbacks_queued;
                     readbacks_peak_bytes = std::max(readbacks_peak_bytes, pending_readbacks.Bytes());
                 }
             }
         }
         download_images.clear();
-        if (Vulkan::WaitDiagnostics::Enabled()) {
+        if (Vulkan::WaitDiagnostics::TickProfileEnabled()) {
             const auto now = std::chrono::steady_clock::now();
             if (now - readback_report >= std::chrono::seconds(5)) {
                 std::printf("Readback profile: queued %llu, completed %llu, demand/budget waits %llu, canceled %llu, pending %.2f MiB, peak %.2f MiB\n",

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <limits>
+#include <cstdio>
 #include <cstdlib>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
@@ -77,6 +78,12 @@ void Semaphore::Wait(u64 tick) {
     };
 
     const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    if (result != vk::Result::eSuccess) {
+        std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu\n",
+                     int(result), static_cast<unsigned long long>(tick),
+                     static_cast<unsigned long long>(KnownGpuTick()),
+                     static_cast<unsigned long long>(CurrentTick()));
+    }
     ASSERT_MSG(result == vk::Result::eSuccess, "Timeline wait failed: {}", vk::to_string(result));
     if (direct_timeline_wait) {
         // Only publish ticks actually confirmed by Vulkan. Other threads may
