@@ -374,6 +374,9 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # strictly watched readback queue; stale guest reads remain forbidden.
       export GOW3_DEFERRED_READBACK=${GOW3_DEFERRED_READBACK:-1}
       export GOW3_STALE_READBACK=0
+      export GOW3_MALI_COALESCE_DOWNLOADS=${GOW3_MALI_COALESCE_DOWNLOADS:-1}
+      export GOW3_MALI_STAGING_PRESSURE_RECLAIM=${GOW3_MALI_STAGING_PRESSURE_RECLAIM:-1}
+      echo "Mali Beta3 ports: coalesce_downloads=$GOW3_MALI_COALESCE_DOWNLOADS staging_pressure_reclaim=$GOW3_MALI_STAGING_PRESSURE_RECLAIM"
       export GOW3_MALI_EARLY_READBACK_SUBMIT=${GOW3_MALI_EARLY_READBACK_SUBMIT:-1}
       export GOW3_MALI_TEXTURE_BATCH_MIB=${GOW3_MALI_TEXTURE_BATCH_MIB:-16}
       echo "Mali texture-cache safety: early_readback_submit=$GOW3_MALI_EARLY_READBACK_SUBMIT texture_batch_mib=$GOW3_MALI_TEXTURE_BATCH_MIB exact_pool_only=$([ "$GOW3_MALI_REBIND_RETIRED_MEMORY" = 0 ] && echo yes || echo no)"

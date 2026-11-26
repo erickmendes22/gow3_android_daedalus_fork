@@ -17,6 +17,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/mali_copy_coalescing.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -248,6 +249,22 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     });
     if (total_size_bytes == 0) {
         return;
+    }
+    // Beta 3's readback lab merges only physically contiguous source and
+    // destination intervals. Keep the 64-byte padding and all guest bytes.
+    static const bool coalesce_downloads = [this] {
+        const char* opt = std::getenv("GOW3_MALI_COALESCE_DOWNLOADS");
+        return instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+               opt && opt[0] == '1';
+    }();
+    if (coalesce_downloads && copies.size() > 1) {
+        static u64 saved_regions = 0;
+        const auto saved = CoalesceAdjacentCopies(copies);
+        const auto previous = saved_regions;
+        saved_regions += saved;
+        if (saved && (!previous || previous / 4096 != saved_regions / 4096))
+            std::printf("GOW3_MALI_COALESCED_DOWNLOAD regions_saved=%llu\n",
+                        static_cast<unsigned long long>(saved_regions));
     }
     const auto download = staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached);
     for (auto& copy : copies) {

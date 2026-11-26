@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 GPU fault arena stability APK r7
+name: GoW III Mali 1023daf52 Beta3 readback and staging performance APK r8
 
 on:
   push:
@@ -62,6 +62,9 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_texture_cache_crash.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_submit_throttle_r6.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_fault_drain.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_beta3_ports.py' -v
+          c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_beta3_copy_policy.cpp -o /tmp/gow3-beta3-copy-policy
+          /tmp/gow3-beta3-copy-policy
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_gpu_fault_drain.cpp -o /tmp/gow3-gpu-fault-drain
           /tmp/gow3-gpu-fault-drain
           python3 -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v

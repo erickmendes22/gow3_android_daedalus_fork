@@ -6,6 +6,7 @@
 #include <bit>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 #include "common/alignment.h"
 #include "common/assert.h"
@@ -82,6 +83,7 @@ StagingBufferRef StagingBufferPool::RequestFromRing(Ring& ring, u64 size, u64 al
     }
 
     if (!best) {
+        ReclaimForAllocation(BLOCK_SIZE);
         best = &ring.blocks.emplace_back(Block{
             .buffer =
                 std::make_unique<VideoCore::StreamBuffer>(instance, scheduler, type, BLOCK_SIZE),
@@ -123,6 +125,7 @@ StagingBufferRef StagingBufferPool::RequestLarge(u64 size, MemoryType type, bool
     }
 
     if (!best) {
+        ReclaimForAllocation(RoundAllocationSize(size));
         best = &cache.emplace_back(LargeBuffer{
             .buffer = std::make_unique<VideoCore::Buffer>(instance, 0, RoundAllocationSize(size),
                                                           type, "StagingBufferPool:Dedicated"),
@@ -160,6 +163,72 @@ void StagingBufferPool::FreeDeferred(const StagingBufferRef& ref, u64 completed_
     it->held = false;
     it->tick = completed_tick ? completed_tick : scheduler.CurrentTick();
     it->last_used_frame = frame;
+}
+
+void StagingBufferPool::ReclaimForAllocation(u64 requested) {
+    // Beta 3 contains a G77-specific VMA pressure-reclaim path. Adapt its
+    // safe subset to PanVK UMA: only completed, unheld, previous-frame
+    // staging allocations. Never flush, wait or run a retirement callback
+    // from inside allocation. VMA bytes freed != actual driver headroom.
+    static const bool enabled = [this] {
+        const char* opt = std::getenv("GOW3_MALI_STAGING_PRESSURE_RECLAIM");
+        return opt && opt[0] == '1' && instance.IsIntegrated() &&
+               instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    }();
+    if (!enabled) return;
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(instance.GetAllocator(), budgets);
+    const auto& mem = instance.GetMemoryProperties();
+    u64 headroom = 0;
+    bool found = false;
+    // UMA can expose multiple heaps. Take the least free device-local heap
+    // (conservative), never mistake host-only space for GPU headroom.
+    for (u32 n=0; n<mem.memoryHeapCount; ++n) {
+        if (!(mem.memoryHeaps[n].flags & vk::MemoryHeapFlagBits::eDeviceLocal) ||
+            !budgets[n].budget) continue;
+        const u64 free = budgets[n].usage < budgets[n].budget
+            ? budgets[n].budget-budgets[n].usage : 0;
+        headroom = found ? std::min(headroom, free) : free;
+        found = true;
+    }
+    if (!found) return;
+    constexpr u64 reserve = 64_MB;
+    const u64 target = requested + reserve;
+    if (headroom >= target) return;
+    const u64 need = std::min<u64>(target-headroom, 128_MB);
+    // One poll, then use only confirmed ticks. Do not touch any allocation
+    // used in the current frame, even when the GPU tick already completed.
+    scheduler.GetWorkSemaphore()->Refresh();
+    const auto completed = scheduler.GetWorkSemaphore()->KnownGpuTick();
+    const auto current = scheduler.CurrentTick();
+    u64 freed = 0;
+    for (auto& cache : large_caches) {
+        for (size_t n=cache.size(); n-- > 0 && freed < need;) {
+            const auto& e = cache[n];
+            if (e.held || e.last_used_frame == frame ||
+                e.tick >= current || e.tick > completed) continue;
+            freed += e.buffer->SizeBytes();
+            cache.erase(cache.begin()+n);
+        }
+    }
+    for (auto& ring : rings) {
+        for (size_t n=ring.blocks.size(); n-- > 0 && freed < need;) {
+            // Keep a warm block per ring. Unlike periodic TrimRing, this
+            // pressure path can retire otherwise retained cold blocks.
+            if (ring.blocks.size() <= 1) break;
+            const auto& e = ring.blocks[n];
+            const auto tick = e.buffer->LastTick();
+            if (e.last_used_frame == frame || tick >= current || tick > completed) continue;
+            freed += e.buffer->SizeBytes();
+            ring.blocks.erase(ring.blocks.begin()+n);
+            if (n < ring.current) --ring.current;
+            else if (n == ring.current) ring.current = 0;
+        }
+        if (ring.current >= ring.blocks.size()) ring.current = 0;
+    }
+    if (freed)
+        std::printf("GOW3_MALI_STAGING_PRESSURE requested_mib=%.2f headroom_mib=%.2f retired_mib=%.2f\n",
+                    requested/1048576.0, headroom/1048576.0, freed/1048576.0);
 }
 
 void StagingBufferPool::TickFrame() {
