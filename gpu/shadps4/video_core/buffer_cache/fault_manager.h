@@ -22,11 +22,16 @@ public:
     }
 
     void ProcessFaultBuffer();
+    void DrainCompletedFaults();
 
 private:
     Vulkan::Scheduler& scheduler;
     BufferCache& buffer_cache;
+    void ResolveFaultArea(u32 area);
     RangeSet fault_ranges;
+    bool mali_safe_fault_drain = false;
+    bool draining_faults = false;
+    u32 next_completed_area = 0;
     u64 sparse_pagesize;
     u64 sparse_num_pages;
     u64 fault_buffer_size;

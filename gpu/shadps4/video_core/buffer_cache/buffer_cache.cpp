@@ -119,6 +119,12 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
     fault_manager = std::make_unique<FaultManager>(instance, scheduler, *this, block_shift,
                                                    blocks_per_arena_page * num_arena_pages);
+    // Device-local memory has undefined initial contents. A random bit in
+    // the GPU fault bitmap is interpreted as a guest address.
+    if (non_sparse_arenas) {
+        auto* fault_buffer = fault_manager->GetFaultBuffer();
+        runtime.FillBuffer(fault_buffer, 0, fault_buffer->SizeBytes(), 0u);
+    }
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
@@ -474,6 +480,10 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 
 void BufferCache::ProcessFaultBuffer() {
     fault_manager->ProcessFaultBuffer();
+}
+
+void BufferCache::DrainCompletedFaults() {
+    fault_manager->DrainCompletedFaults();
 }
 
 void BufferCache::SynchronizeDmaBuffers() {

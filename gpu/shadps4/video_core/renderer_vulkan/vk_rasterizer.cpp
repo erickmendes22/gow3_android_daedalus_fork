@@ -1757,6 +1757,7 @@ void Rasterizer::Finish(std::source_location caller) {
 
 void Rasterizer::OnSubmit() {
     DrainDrawPipe();
+    buffer_cache.DrainCompletedFaults();
     if (fault_process_pending) {
         fault_process_pending = false;
         buffer_cache.ProcessFaultBuffer();
@@ -1880,6 +1881,7 @@ void Rasterizer::JoinBindHelper(void* context) {
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
+    buffer_cache.DrainCompletedFaults();
     if (IsComputeImageCopy(pipeline) || IsComputeMetaClear(pipeline) ||
         IsComputeImageClear(pipeline)) {
         return false;
@@ -2010,6 +2012,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
 
     if (uses_dma) {
         buffer_cache.SynchronizeDmaBuffers();
+        // Physical-address accesses are not represented by individual
+        // descriptor ranges. Publish arena and BDA page-table writes
+        // with the global dependency before the DMA shader executes.
+        if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5)
+            runtime.FlushBarriers(true);
         fault_process_pending = true;
     }
 

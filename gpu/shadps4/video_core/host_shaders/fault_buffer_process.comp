@@ -28,6 +28,9 @@ void main() {
     while (word != 0u) {
         const uint store_index = atomicAdd(download_buffer32[0], 1u) + 1u;
         if (store_index >= MAX_PAGE_FAULTS) {
+            // This result area is full. Preserve unreported bits for the
+            // next scan rather than dropping guest faults.
+            atomicOr(fault_buffer[id], word);
             return;
         }
         const uint bit = findLSB(word);

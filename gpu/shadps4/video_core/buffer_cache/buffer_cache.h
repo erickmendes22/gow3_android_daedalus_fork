@@ -111,6 +111,7 @@ public:
 
     /// Processes the fault buffer.
     void ProcessFaultBuffer();
+    void DrainCompletedFaults();
 
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();

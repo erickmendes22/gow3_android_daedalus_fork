@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdio>
+#include <cstdlib>
 #include "common/div_ceil.h"
+#include "video_core/buffer_cache/fault_result_policy.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -22,6 +25,10 @@ FaultManager::FaultManager(const Vulkan::Instance& instance, Vulkan::Scheduler& 
       sparse_num_pages{sparse_num_pages_}, fault_buffer_size{sparse_num_pages_ / 8},
       fault_buffer{instance, 0, fault_buffer_size, MemoryType::DeviceLocal},
       download_buffer{instance, 0, MaxPendingFaults * PageFaultAreaSize, MemoryType::HostCached} {
+    const char* safe = std::getenv("GOW3_MALI_SAFE_FAULT_DRAIN");
+    mali_safe_fault_drain = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!safe || safe[0] != '0');
     const auto device = instance.GetDevice();
     Vulkan::SetObjectName(device, fault_buffer.Handle(), "Fault Buffer");
 
@@ -84,21 +91,70 @@ FaultManager::FaultManager(const Vulkan::Instance& instance, Vulkan::Scheduler& 
     device.destroyShaderModule(module);
 }
 
+void FaultManager::DrainCompletedFaults() {
+    if (!mali_safe_fault_drain || draining_faults) return;
+    draining_faults = true;
+    // Only the producer invokes this at a guest command boundary, never
+    // from Scheduler::PopPendingOperations or while submitting the queue.
+    // No new GPU wait: consume a strictly ordered prefix of completed areas.
+    while (const u64 tick = fault_areas[next_completed_area]) {
+        if (!scheduler.GetWorkSemaphore()->IsFree(tick)) break;
+        ResolveFaultArea(next_completed_area);
+        next_completed_area = (next_completed_area + 1) % MaxPendingFaults;
+    }
+    draining_faults = false;
+}
+
+void FaultManager::ResolveFaultArea(u32 area) {
+    const u64 offset = area * PageFaultAreaSize;
+    download_buffer.Invalidate(offset, PageFaultAreaSize);
+    const auto* mapped = download_buffer.mapped_data.data() + offset;
+    const auto* fault_buf = std::bit_cast<const u64*>(mapped);
+    // The shader counter is uint32_t, stored in the low half of slot zero.
+    const u32 reported = static_cast<u32>(fault_buf[0]);
+    const u32 fault_count = FaultResultCount(reported, MaxPageFaults);
+    if (reported >= MaxPageFaults)
+        std::fprintf(stderr, "GOW3_GPU_FAULT_OVERFLOW reported=%u stored=%u area=%u\n",
+                     reported, fault_count, area);
+    fault_ranges.Clear();
+    for (u32 i = 1; i <= fault_count; ++i) {
+        fault_ranges.Add(fault_buf[i], sparse_pagesize);
+        LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
+    }
+    fault_ranges.ForEach([&](VAddr start, VAddr end) {
+        ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
+                   "Buffer size is too large");
+        (void)buffer_cache.ObtainBuffer(start, end - start, false);
+    });
+    fault_areas[area] = 0;
+}
+
 void FaultManager::ProcessFaultBuffer() {
+    DrainCompletedFaults();
     if (u64 wait_tick = fault_areas[current_area]) {
         scheduler.Wait(wait_tick);
-        scheduler.PopPendingOperations();
+        if (mali_safe_fault_drain) {
+            DrainCompletedFaults();
+        } else {
+            scheduler.PopPendingOperations();
+        }
+        ASSERT_MSG(!fault_areas[current_area], "GPU fault result area still in use");
     }
 
     const u32 offset = current_area * PageFaultAreaSize;
     u8* mapped = download_buffer.mapped_data.data() + offset;
     std::memset(mapped, 0, PageFaultAreaSize);
+    download_buffer.Flush(offset, PageFaultAreaSize);
 
     const vk::BufferMemoryBarrier2 pre_barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite |
+                         vk::AccessFlagBits2::eTransferWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead |
+                         vk::AccessFlagBits2::eShaderWrite,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
@@ -107,7 +163,10 @@ void FaultManager::ProcessFaultBuffer() {
         .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
         .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead |
+                         vk::AccessFlagBits2::eShaderWrite,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
@@ -161,21 +220,12 @@ void FaultManager::ProcessFaultBuffer() {
         .pBufferMemoryBarriers = &post_barrier,
     });
 
-    scheduler.DeferOperation([this, mapped, area = current_area] {
-        fault_ranges.Clear();
-        const u64* fault_buf = std::bit_cast<const u64*>(mapped);
-        const u32 fault_count = fault_buf[0];
-        for (u32 i = 1; i <= fault_count; ++i) {
-            fault_ranges.Add(fault_buf[i], sparse_pagesize);
-            LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
-        }
-        fault_ranges.ForEach([&](VAddr start, VAddr end) {
-            ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
-                       "Buffer size is too large");
-            (void)buffer_cache.ObtainBuffer(start, end - start, false);
-        });
-        fault_areas[area] = 0;
-    });
+    // On Mali, do not invoke ObtainBuffer inside a retirement callback:
+    // it can allocate an arena, resolve readbacks, or submit recursively
+    // while the global queue and submission-order locks are held.
+    if (!mali_safe_fault_drain) {
+        scheduler.DeferOperation([this, area = current_area] { ResolveFaultArea(area); });
+    }
 
     fault_areas[current_area++] = scheduler.CurrentTick();
     current_area %= MaxPendingFaults;

@@ -77,7 +77,22 @@ void Semaphore::Wait(u64 tick, std::source_location caller) {
         .pValues = &tick,
     };
 
-    const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    // Long-stall evidence is emitted before an indefinite wait can hide it.
+    // A timeout is not success: never publish a tick or skip a dependency.
+    const char* trace = std::getenv("GOW3_MALI_GPU_TICK_PROFILE");
+    const bool report_stall = trace && trace[0] == '1' &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    auto result = instance.GetDevice().waitSemaphores(&wait_info,
+        report_stall ? u64{500000000} : WAIT_TIMEOUT);
+    if (report_stall && result == vk::Result::eTimeout) {
+        std::fprintf(stderr, "GOW3_TIMELINE_STALL requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
+                     static_cast<unsigned long long>(tick),
+                     static_cast<unsigned long long>(KnownGpuTick()),
+                     static_cast<unsigned long long>(CurrentTick()),
+                     caller.file_name(), caller.line(), caller.function_name(),
+                     static_cast<const void*>(this));
+        result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    }
     if (result != vk::Result::eSuccess) {
         std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
                      int(result), static_cast<unsigned long long>(tick),
