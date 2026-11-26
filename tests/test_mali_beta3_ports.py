@@ -3,6 +3,11 @@ import unittest
 R=Path(__file__).resolve().parents[1]
 V=R/"gpu/shadps4/video_core"
 class Beta3Ports(unittest.TestCase):
+    def test_vma_budget_api_header(self):
+        s=(V/"renderer_vulkan/vk_staging_buffer_pool.cpp").read_text()
+        self.assertIn("#include <vk_mem_alloc.h>",s)
+        self.assertIn("VmaBudget budgets[VK_MAX_MEMORY_HEAPS]",s)
+        self.assertIn("vmaGetHeapBudgets(instance.GetAllocator(), budgets)",s)
     def test_reclaim_never_touches_live_or_same_frame(self):
         s=(V/"renderer_vulkan/vk_staging_buffer_pool.cpp").read_text()
         p=s.split("void StagingBufferPool::ReclaimForAllocation(",1)[1].split("void StagingBufferPool::TickFrame",1)[0]
