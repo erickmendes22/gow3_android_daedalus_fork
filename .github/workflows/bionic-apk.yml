@@ -1,9 +1,29 @@
-name: Daedalus Snapdragon UBO Test APK
+name: Daedalus Fork Bionic APK
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
+    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
+    paths:
+      - '.github/gsr2-atomic-depth-build-trigger.txt'
+  push:
+    branches: [perf/gow3-adreno-8gb, fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030, fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029, fix/2.1.7-gsr2-native-frame-motion-20261029]
+    paths:
+      # First consolidated build triggered by this workflow edit, not by every code edit.
+      - '.github/workflows/bionic-apk.yml'
+      - '.github/gow3-spatial-build-trigger.txt'
+      - '.github/r14-build-trigger.txt'
+      - '.github/r15-build-trigger.txt'
+      - '.github/r16-build-trigger.txt'
+      - '.github/r17-build-trigger.txt'
+      - '.github/r18-build-trigger.txt'
+      - '.github/r19-build-trigger.txt'
+      - '.github/release-2.1.7-build-trigger.txt'
+      - '.github/gsr2-diagnostic-build-trigger.txt'
+      - '.github/gsr2-recovery-build-trigger.txt'
+      - '.github/gsr2-atomic-depth-build-trigger.txt'
+      - '.github/gsr2-capture-build-trigger.txt'
+      - '.github/gsr2-native-compile-trigger.txt'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +34,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.head_ref == 'ci/gow3-snapdragon-ubo-apk' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.ref == 'refs/heads/perf/gow3-adreno-8gb' || github.ref == 'refs/heads/fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030' || github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || github.ref == 'refs/heads/fix/2.1.7-gsr2-capture-history-20261029' || github.ref == 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022' || github.head_ref == 'fix/2.1.7-gsr2-capture-history-20261029'))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -23,7 +43,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           submodules: recursive
       - uses: actions/setup-python@v5
         with:
@@ -35,13 +54,13 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
-      - name: Prepare isolated UBO test signing identity
-        run: |
-          keytool -genkeypair -keystore "$RUNNER_TEMP/gow3-ubo-test.jks" -storepass android \
-            -keypass android -alias bionic -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Daedalus GoW III UBO Test"
-          echo "GOW3_BIONIC_UBO_TEST=1" >> "$GITHUB_ENV"
-          echo "GOW3_UBO_TEST_KEYSTORE=$RUNNER_TEMP/gow3-ubo-test.jks" >> "$GITHUB_ENV"
+      - name: Restore established APK upgrade signing key
+        uses: actions/cache@v4
+        with:
+          path: .local-deps/android/bionic-development.keystore
+          key: bionic-development-signing-v1
+      - name: Require the established signing key (never replace the installed identity)
+        run: test -s .local-deps/android/bionic-development.keystore
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: aarch64-linux-android
@@ -92,10 +111,10 @@ jobs:
           bash tools/android/bionic/build_apk.sh --package-only
       - uses: actions/upload-artifact@v4
         with:
-          name: God-of-War-III-Daedalus-Snapdragon-UBO-Test
+          name: God-of-War-III-Daedalus-2.1.8-arm64
           path: |
-            out/release/God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk
-            out/release/God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk.sha256
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk
+            out/release/God-of-War-III-Daedalus-Fork-v*-bionic-arm64.apk.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
