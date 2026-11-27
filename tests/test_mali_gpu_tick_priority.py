@@ -50,7 +50,7 @@ class TickPriority(unittest.TestCase):
         self.assertNotIn("is_clear ? clear_value.color.uint32 :",r)
     def test_deferred_readback_strict_and_bounded(self):
         c=(V.parent/"texture_cache/texture_cache.cpp").read_text()
-        s=c.split("void TextureCache::ProcessDownloadImages()",1)[1].split("std::optional<TextureCache::PendingDownload>",1)[0]
+        s=c.split("void TextureCache::ProcessDownloadImages(bool tiny_only)",1)[1].split("std::optional<TextureCache::PendingDownload>",1)[0]
         self.assertIn("pending_readbacks.RequiredTickForSpace(size)",s)
         self.assertIn("scheduler.Wait(required);",s)
         self.assertLess(s.index("pending_readbacks.Push("),s.index("WatchReadback<true>"))

@@ -135,7 +135,7 @@ public:
 
     /// Schedules a copy of pending images for download back to CPU memory.
     void ProcessDownloadImages(bool tiny_only = false);
-    void SubmitPendingReadbacks();
+    void SubmitPendingReadbacks(bool tiny_only = false);
     void MaybeSubmitTextureBatch();
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,
                           ReadbackSource source = ReadbackSource::Unknown);

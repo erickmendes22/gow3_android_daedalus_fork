@@ -3788,7 +3788,7 @@ void Rasterizer::ProcessDownloadImages() {
     }();
     if (tiny_first) {
         texture_cache.ProcessDownloadImages(true);
-        texture_cache.SubmitPendingReadbacks();
+        texture_cache.SubmitPendingReadbacks(true);
     }
     texture_cache.ProcessDownloadImages();
     texture_cache.SubmitPendingReadbacks();

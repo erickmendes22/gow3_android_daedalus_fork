@@ -16,6 +16,7 @@ public:
         Payload payload;
         bool valid = true;
         bool watched = true; ///< still protects its pages (see ReleaseOutside)
+        std::uint64_t image_uid = 0, version = 0, write_epoch = 0;
     };
     bool CanFit(std::uint64_t size) const {
         return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
@@ -41,10 +42,25 @@ public:
         }
         return 0;
     }
-    void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload) {
+    void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload,
+              std::uint64_t uid = 0, std::uint64_t version = 0, std::uint64_t write_epoch = 0) {
         assert(CanFit(size));
-        entries.push_back({address, size, tick, std::move(payload)});
+        entries.push_back({address, size, tick, std::move(payload), true, true, uid, version, write_epoch});
         bytes += size;
+    }
+    // Last overlapping snapshot must be this exact version. Never skip after
+    // unwatch/cancel, an overlapping newer image, or any actual GPU write.
+    bool HasExactVersion(std::uint64_t address, std::uint64_t size, std::uint64_t tick,
+                         std::uint64_t uid, std::uint64_t version, std::uint64_t write_epoch) const {
+        if (!size || !uid || !version || !write_epoch) return false;
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+            const auto& e = *it;
+            if (!Overlaps(e, address, size, true)) continue;
+            return e.valid && e.watched && e.address == address && e.size == size &&
+                   e.tick == tick && e.image_uid == uid && e.version == version &&
+                   e.write_epoch == write_epoch;
+        }
+        return false;
     }
     /// `exact`: only copies sharing bytes with the range, not just a page (spartanport: for consumers
     /// that read or drop exactly those bytes, e.g. an image upload).

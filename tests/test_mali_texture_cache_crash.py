@@ -21,7 +21,7 @@ class TextureCacheCrash(unittest.TestCase):
         self.assertIn("RetireReadbacks();",b)
         self.assertIn("export GOW3_STALE_READBACK=0",RUN)
     def test_early_readback_only_submits_current_pending_tick(self):
-        b=C.split("void TextureCache::SubmitPendingReadbacks()",1)[1].split("std::optional<TextureCache::PendingDownload>",1)[0]
+        b=C.split("void TextureCache::SubmitPendingReadbacks(bool tiny_only)",1)[1].split("std::optional<TextureCache::PendingDownload>",1)[0]
         self.assertIn("pending_readbacks.NewestTick() == scheduler.CurrentTick()",b)
         self.assertIn("if (needs_submit) scheduler.Flush();",b)
         self.assertNotIn("scheduler.Finish()",b)

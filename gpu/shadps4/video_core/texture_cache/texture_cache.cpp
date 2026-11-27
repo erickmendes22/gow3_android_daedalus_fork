@@ -307,15 +307,19 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
         // New page watchers must only be installed after all host workers
         // have stopped reading the affected guest RAM: keep this wait.
         scheduler.WaitHostCopies();
-        std::scoped_lock readback_lock{readback_mutex};
+        std::unique_lock readback_lock{readback_mutex};
         RetireReadbacks();
         std::unique_lock lock{download_images_mutex};
         for (auto it = download_images.begin(); it != download_images.end();) {
             const ImageId image_id = *it;
             if (tiny_only && !tiny(image_id)) { ++it; continue; }
-            it = download_images.erase(it);
             const auto& image = slot_images[image_id];
-            if (False(image.flags & ImageFlagBits::GpuModified)) continue;
+            if (False(image.flags & ImageFlagBits::GpuModified)) {
+                it = download_images.erase(it);
+                continue;
+            }
+            const u64 size = u64{image.info.pitch} * image.info.size.height *
+                image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
             // Strict duplicate suppression only when the GPU producer version,
             // physical image, and pending copy are all identical. A new GPU
             // write gets a new alias_generation; zero means unknown.
@@ -326,20 +330,31 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
             if (dedup && image.alias_generation &&
                 False(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) &&
                 image.last_readback_generation == image.alias_generation &&
+                image.last_readback_write_epoch == image.gpu_write_epoch &&
                 image.last_readback_backing == std::bit_cast<u64>(image.GetImage()) &&
-                image.last_readback_tick == scheduler.CurrentTick()) {
+                image.last_readback_tick == scheduler.CurrentTick() &&
+                pending_readbacks.HasExactVersion(image.info.guest_address, size,
+                    scheduler.CurrentTick(), image.image_uid, image.alias_generation, image.gpu_write_epoch)) {
                 static u64 skipped = 0;
                 if (++skipped <= 4 || (skipped & 255u) == 0)
                     std::printf("GOW3_MALI_READBACK_VERSION_DEDUP count=%llu\n", (unsigned long long)skipped);
+                it = download_images.erase(it);
                 continue;
             }
-            const u64 size = u64{image.info.pitch} * image.info.size.height *
-                image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
             if (const auto required = pending_readbacks.RequiredTickForSpace(size); required) {
                 ++readbacks_waited;
+                // Never wait/submit while holding either cache lock. A guest
+                // unmap may erase the image meanwhile; reselect from the set.
+                lock.unlock();
+                readback_lock.unlock();
                 scheduler.Wait(required);
+                readback_lock.lock();
                 RetireReadbacks();
+                lock.lock();
+                it = download_images.begin();
+                continue;
             }
+            it = download_images.erase(it);
             if (auto copy = RecordImageDownload(image_id)) {
                 if (!pending_readbacks.CanFit(copy->size)) {
                     ++readbacks_waited;
@@ -355,7 +370,8 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     // Publish the queue entry before installing the watcher:
                     // a fault raised while protecting a page must find its tick.
                     pending_readbacks.Push(copy->guest_address, copy->size,
-                        scheduler.CurrentTick(), copy->staging);
+                        scheduler.CurrentTick(), copy->staging,
+                        image.image_uid, image.alias_generation, image.gpu_write_epoch);
                     has_pending_readbacks.store(true, std::memory_order_release);
                     WatchReadback<true>(copy->guest_address, copy->size);
                     if (Vulkan::WaitDiagnostics::TickProfileEnabled()) {
@@ -373,6 +389,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     }
                     auto& tracked_image = slot_images[image_id];
                     tracked_image.last_readback_generation = tracked_image.alias_generation;
+                    tracked_image.last_readback_write_epoch = tracked_image.gpu_write_epoch;
                     tracked_image.last_readback_backing = std::bit_cast<u64>(tracked_image.GetImage());
                     tracked_image.last_readback_tick = scheduler.CurrentTick();
                     ++readbacks_queued;
@@ -431,7 +448,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
     }
 }
 
-void TextureCache::SubmitPendingReadbacks() {
+void TextureCache::SubmitPendingReadbacks(bool tiny_only) {
     static const bool enabled = [] {
         const char* value = std::getenv("GOW3_MALI_EARLY_READBACK_SUBMIT");
         return value && value[0] == '1';
@@ -442,6 +459,7 @@ void TextureCache::SubmitPendingReadbacks() {
     {
         std::scoped_lock lock{readback_mutex};
         needs_submit = pending_readbacks.NewestTick() == scheduler.CurrentTick();
+        if (tiny_only && !pending_readbacks.HasSmallReadback(scheduler.CurrentTick(), 64)) return;
         static const bool coalesce = [] {
             const char* opt = std::getenv("GOW3_MALI_COALESCE_EOP_READBACK");
             return opt && opt[0] == '1';

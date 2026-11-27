@@ -1497,6 +1497,7 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
     if (!backing || backing->num_samples == num_samples) {
         return;
     }
+    ++image->gpu_write_epoch;
     ASSERT_MSG(!image->info.props.is_depth, "Swapping samples is only valid for color images");
     VideoCore::Image::BackingImage* new_backing;
     auto it = std::ranges::find(backing_images, num_samples,

@@ -1371,6 +1371,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         vk::AccessFlagBits2::eHostWrite |
         vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
     const bool upcoming_writes = static_cast<bool>(dst_mask & write_flags);
+    if (upcoming_writes) ++gpu_write_epoch;
     // Keep the ORIGINAL attachment-write ordering policy unchanged. Same
     // attachment writes already run within a Vulkan render pass: adding an
     // explicit barrier on every draw would be a major G720 regression.

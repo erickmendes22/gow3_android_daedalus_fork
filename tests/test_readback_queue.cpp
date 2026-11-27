@@ -88,4 +88,15 @@ int main() {
     published.clear();
     queue.Retire([](auto) { return true; }, complete);
     assert((published == std::vector<int>{8}));
+
+    // Only the newest exact overlapping live version can be deduplicated.
+    queue.Push(0x40000000, 256, 30, 1, 7, 8, 9);
+    assert(queue.HasExactVersion(0x40000000, 256, 30, 7, 8, 9));
+    assert(!queue.HasExactVersion(0x40000000, 256, 30, 7, 8, 10));
+    assert(!queue.HasExactVersion(0x40000000, 256, 30, 8, 8, 9));
+    assert(!queue.HasExactVersion(0x40000000, 256, 31, 7, 8, 9));
+    queue.Push(0x40000080, 16, 30, 2, 8, 9, 10);
+    assert(!queue.HasExactVersion(0x40000000, 256, 30, 7, 8, 9));
+    queue.Cancel(0x40000000, 256, [](auto&) {}, true);
+    assert(!queue.HasExactVersion(0x40000000, 256, 30, 7, 8, 9));
 }
