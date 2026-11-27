@@ -42,9 +42,6 @@ jobs:
             -dname "CN=Daedalus GoW III UBO Test"
           echo "GOW3_BIONIC_UBO_TEST=1" >> "$GITHUB_ENV"
           echo "GOW3_UBO_TEST_KEYSTORE=$RUNNER_TEMP/gow3-ubo-test.jks" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@1.90.0
-        with:
-          targets: aarch64-linux-android
       - name: Source and native preparation tests
         run: |
           python -m pip install unicorn==2.1.4
@@ -55,8 +52,13 @@ jobs:
           "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
       - name: Check launcher compilation before building native runtime
         run: bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2
-      - name: Build Android Python for existing patch validators
-        run: GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865" bash tools/android/bionic/build_python.sh
+      - name: Fetch the verified 2.1.8 public baseline
+        run: |
+          mkdir -p out/baseline
+          curl -fLsS --retry 4 --retry-all-errors --connect-timeout 25 --max-time 180 \
+            "https://github.com/erickmendes22/gow3_android_daedalus_fork/releases/download/v2.1.8-daedalus-bionic/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk" \
+            -o out/baseline/gow3-2.1.8.apk
+          echo 'bffc0edf6e70738423963ede8a76a2a0274320f6e18671302a0a589a6dcc879f  out/baseline/gow3-2.1.8.apk' | sha256sum -c -
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ci/environment.yml
@@ -73,23 +75,24 @@ jobs:
         run: |
           bash tools/android/bionic/build_deps.sh
           bash tools/android/bionic/build_gpu.sh --configure-only
-      - name: Build and validate CPU, GPU and native runtime
+      - name: Build the ARM64 Vulkan renderer
         shell: bash -el {0}
-        run: bash tools/android/bionic/build_runtime.sh
-      - name: Build pinned MIT Bloodframe 2x/3x/4x engine
-        shell: bash
+        run: bash tools/android/bionic/build_gpu.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snapdragon-UBO-native-checkpoint
+          path: out/bionic/lib/libgow3gpu.so
+          retention-days: 2
+          if-no-files-found: error
+      - name: Stage the verified baseline with the new Vulkan renderer
         run: |
-          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
-          bash tools/android/build_framegen.sh
-          test -s out/bionic/lib/libbloodframe.so
-      - name: Build Android PKG extractor
+          python tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3-2.1.8.apk \
+            out/bionic/lib/libgow3gpu.so "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+      - name: Package, sign and validate the isolated UBO APK
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          bash tools/android/bionic/build_pkg.sh
-      - name: Package, sign and validate GoW3 2.1.8 APK
-        run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          bash tools/android/bionic/build_apk.sh --package-only
+          bash android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+          bash tools/android/bionic/sign_apk.sh
       - uses: actions/upload-artifact@v4
         with:
           name: God-of-War-III-Daedalus-Snapdragon-UBO-Test
