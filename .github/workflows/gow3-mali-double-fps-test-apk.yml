@@ -1,4 +1,4 @@
-name: GoW3 Mali R10.1 - bulk download regression gate fix
+name: GoW3 Mali R10.2 - consolidated regression diagnostics
 
 on:
   push:
@@ -65,44 +65,45 @@ jobs:
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 -Igpu/third_party/sirit/externals/SPIRV-Headers/include tests/test_mali_gpu_early_z.cpp -o /tmp/gow3-mali-early-z
           /tmp/gow3-mali-early-z
           test -x tools/android/bionic/run-bionic.sh
-          python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_texture_cache_crash.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_submit_throttle_r6.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_gpu_fault_drain.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_beta3_ports.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_r9_native_batch.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_r10_priorities.py' -v
+          regression_failures=0
+          python3 -m unittest discover -s tests -p 'test_mali_gc_batch_download.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_gpu_tick_priority.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_texture_cache_crash.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_submit_throttle_r6.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_gpu_fault_drain.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_beta3_ports.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_r9_native_batch.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_r10_priorities.py' -v || regression_failures=$((regression_failures + 1))
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_beta3_copy_policy.cpp -o /tmp/gow3-beta3-copy-policy
           /tmp/gow3-beta3-copy-policy
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_gpu_fault_drain.cpp -o /tmp/gow3-gpu-fault-drain
           /tmp/gow3-gpu-fault-drain
-          python3 -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v
+          python3 -m unittest discover -s tests -p 'test_android_readback_affinity.py' -v || regression_failures=$((regression_failures + 1))
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_readback_queue.cpp -o /tmp/gow3-readback-queue
           /tmp/gow3-readback-queue
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_index_bind_policy.cpp -o /tmp/gow3-index-bind
           /tmp/gow3-index-bind
-          python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_vma_block_policy.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_read_only_image_barriers.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_vertex_input_bind_cache.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_uniform_buffer_port.py' -v || regression_failures=$((regression_failures + 1))
           # Prevent distributing an APK with silent storage-image writes or
           # merged driver trace lines. Unit tests above check these invariants;
           # keep independent preflight assertions in the release packaging job.
           grep -q 'feature_flags |= vk::FormatFeatureFlagBits2::eStorageImage;' gpu/shadps4/video_core/texture_cache/image.cpp
           grep -q '!info.props.needs_storage' gpu/shadps4/video_core/texture_cache/image.cpp
           grep -q 'GOW3_MALI_VMA_DRIVER_CALL' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
-          python3 -m unittest discover -s tests -p 'test_mali_afbc_color_rt.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_format_capabilities_vs_runtime.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_snorm10_vma_prewarm.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_directmem_scalar_fex.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_async_ahb.py' -v
-          python3 -m unittest discover -s tests -p 'test_g720_driver_2631_isolated.py' -v
-          python3 -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_afbc_color_rt.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_causal_counts.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_scene_image_retention.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_background_warmup.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_format_capabilities_vs_runtime.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_snorm10_vma_prewarm.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_directmem_scalar_fex.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_async_ahb.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_g720_driver_2631_isolated.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_panvk_safe_mode.py' -v || regression_failures=$((regression_failures + 1))
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -Igpu/shadps4 \
             tests/test_mali_buffer_barrier_regions.cpp -o /tmp/gow3-mali-barrier-regions
           /tmp/gow3-mali-barrier-regions
@@ -135,8 +136,8 @@ jobs:
           grep -q 'guest_cpu_mark_direct_memory_scalar_return' cpu/guest_cpu_fex.cpp
           grep -q 'GOW3_UBO_DEVICE' gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp
           grep -q 'uniform_buffer_masks' gpu/shadps4/video_core/renderer_vulkan/vk_graphics_pipeline.h
-          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v
-          python3 -m unittest discover -s tests -p 'test_android_*.py'
+          python3 -m unittest discover -s tests -p 'test_mali_bcn_to_etc2.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_android_*.py' || regression_failures=$((regression_failures + 1))
           python3 -m compileall -q tools/android/bionic scripts
           "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
       - name: Verify launcher compilation
@@ -202,7 +203,8 @@ jobs:
           test -s out/android-release/assets/drivers/Mesa.26.3.0-panvk.8.zip
           test -s out/android-release/assets/drivers/mali-panvk-27.0.0-devel-r10.zip
           test -s out/android-release/assets/drivers/mali-performance-drivers.json
-          python3 -m unittest discover -s tests -p 'test_mali_performance_bundle.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_performance_bundle.py' -v || regression_failures=$((regression_failures + 1))
+          if [ "$regression_failures" -ne 0 ]; then echo "::error::$regression_failures regression suites failed"; exit 1; fi
           python3 - <<'PY'
           import hashlib, json, zipfile
           from pathlib import Path
