@@ -1481,7 +1481,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     ResetBindings(false);
     texture_cache.MaybeSubmitTextureBatch();
-    if (cb_descs[0].first) texture_cache.PrefetchTinyReadback(cb_descs[0].first);
+    if (state.width <= 8 && state.height <= 8 && cb_descs[0].first)
+        texture_cache.PrefetchTinyReadback(cb_descs[0].first);
     scheduler.KickRecording();
 }
 
@@ -1658,7 +1659,8 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     }
     ResetBindings(false);
     texture_cache.MaybeSubmitTextureBatch();
-    if (cb_descs[0].first) texture_cache.PrefetchTinyReadback(cb_descs[0].first);
+    if (state.width <= 8 && state.height <= 8 && cb_descs[0].first)
+        texture_cache.PrefetchTinyReadback(cb_descs[0].first);
     scheduler.KickRecording();
 }
 
