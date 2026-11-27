@@ -119,6 +119,9 @@ export GOW3_UPSCALER=none
 export GOW3_FSR1=0
 export GOW3_RCAS=0
 eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)"
+if [ "${GOW3_ANDROID_8GB_MEMORY:-0}" = 1 ]; then
+    echo "GPU memory policy: 8gb-low-memory (physical=${GOW3_DEVICE_MEM_MB:-unknown} MiB, stream=128 MiB, staging-retain=${GOW3_STAGING_KEEP_MB:-32} MiB per host ring)"
+fi
 # Do not force the desktop 1080p GSR2 output when the verified game patch uses
 # another native target: the temporal targets must match the actual guest frame.
 if [ "${GOW3_UPSCALER:-none}" = gsr2 ]; then
