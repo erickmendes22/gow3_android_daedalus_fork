@@ -101,11 +101,6 @@ public:
         return sparse_queue;
     }
 
-    // Only buffers with sparse binding AND sparse residency may be bound sparsely.
-    bool HasSparseBuffers() const noexcept {
-        return features.sparseBinding && features.sparseResidencyBuffer;
-    }
-
     vk::Queue GetPresentQueue() const {
         return present_queue;
     }
@@ -378,6 +373,19 @@ public:
     /// Returns the minimum required alignment for uniforms
     vk::DeviceSize UniformMinAlignment() const {
         return properties.limits.minUniformBufferOffsetAlignment;
+    }
+
+    bool HasStandardUniformBufferLayout() const {
+        return vk12_features.uniformBufferStandardLayout;
+    }
+
+    u32 MaxUniformBufferRange() const {
+        return properties.limits.maxUniformBufferRange;
+    }
+
+    u32 MaxGraphicsUniformBufferSlots() const {
+        return std::min({12u, properties.limits.maxPerStageDescriptorUniformBuffers,
+                         properties.limits.maxDescriptorSetUniformBuffers / 2});
     }
 
     /// Returns the minimum required alignment for storage buffers

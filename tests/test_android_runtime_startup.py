@@ -28,6 +28,8 @@ class RuntimeStartupTests(unittest.TestCase):
         # These are the production startup methods, not a second implementation of their logic.
         production = '\n'.join(method(source, signature) for signature in [
             'private boolean bionicRuntime()', 'private void startRuntime(SurfaceHolder holder)'])
+        drivers = (ROOT/'android-launcher/app/src/main/java/ro/cobrabm/fexdroid/GpuDriverManager.java').read_text()
+        supported = method(drivers, 'public static boolean supported(Context context)')
         harness = '''import java.io.File;
 import java.util.ArrayDeque;
 class Queue {
@@ -44,6 +46,8 @@ class SurfaceHolder {
 }
 class Text { void setText(String text) {} }
 class UiText { static String get(GameActivity activity,String value) { return value; } }
+abstract class Context { abstract String getPackageName(); }
+class GpuDriverManager { ''' + supported + ''' }
 class RuntimeInstaller {
  static boolean fail;
  static int calls;
@@ -52,7 +56,7 @@ class RuntimeInstaller {
   a.installed=true; return true;
  }
 }
-class GameActivity {
+class GameActivity extends Context {
  boolean destroyed,startingX,runtimeReady,installed;
  int shmid=-1,bionicStarts,xStarts,attachments,errors;
  final String FILES="unused-fixture-path";
@@ -75,6 +79,9 @@ class GameActivity {
   assert a.bionicStarts==1 && a.xStarts==0 && RuntimeInstaller.calls==1;
   a.startRuntime(a.surface); // recreating the display must reattach the Bionic bridge
   assert a.bionicStarts==2 && RuntimeInstaller.calls==1;
+  GameActivity ubo=new GameActivity(); ubo.packageName="com.gow3.android.bionic.ubo";
+  ubo.startRuntime(ubo.surface); ubo.drain();
+  assert ubo.bionicStarts==1 && ubo.xStarts==0;
   GameActivity linux=new GameActivity(); linux.packageName="com.gow3.android";
   linux.startRuntime(linux.surface); linux.drain();
   assert linux.xStarts==1 && linux.bionicStarts==0;

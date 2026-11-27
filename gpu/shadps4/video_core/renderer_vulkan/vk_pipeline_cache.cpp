@@ -429,6 +429,18 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     sel.regs = &liverpool->regs;
     const auto& vk12_props = instance.GetVk12Properties();
+    u8 uniform_buffer_level = 0;
+#ifdef __ANDROID__
+    if (instance.GetDriverID() == vk::DriverId::eMesaTurnip &&
+        instance.HasStandardUniformBufferLayout()) {
+        const char* level = std::getenv("GOW3_UBO");
+        if (level && level[0] >= '0' && level[0] <= '2' && level[1] == '\0') {
+            uniform_buffer_level = static_cast<u8>(level[0] - '0');
+        }
+    }
+    std::printf("GoW III Turnip uniform buffers: level=%u (0=off, 1=vertex, 2=vertex+fragment)\n",
+                unsigned(uniform_buffer_level));
+#endif
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
         .max_viewport_height = instance.GetMaxViewportHeight(),
@@ -436,6 +448,15 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+        .uniform_buffer_max_range = uniform_buffer_level
+                                        ? std::min(instance.MaxUniformBufferRange(), 65536u)
+                                        : 0,
+        .uniform_buffer_alignment = uniform_buffer_level
+                                        ? static_cast<u32>(std::max(instance.UniformMinAlignment(),
+                                                                    instance.StorageMinAlignment()))
+                                        : 0,
+        .uniform_buffer_slots = uniform_buffer_level ? instance.MaxGraphicsUniformBufferSlots() : 0,
+        .uniform_buffer_level = uniform_buffer_level,
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),

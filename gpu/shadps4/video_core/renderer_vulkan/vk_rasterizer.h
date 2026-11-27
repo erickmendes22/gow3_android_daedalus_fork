@@ -265,7 +265,7 @@ private:
     AmdGpu::CbDbExtent CbExtent(u32 index) const;
     AmdGpu::CbDbExtent DbExtent() const;
 
-    void BindBuffers(const Shader::Info& stage, const PreparedStage* prepared,
+    void BindBuffers(const Shader::Info& stage, const PreparedStage* prepared, u16 uniform_mask,
                      Shader::Backend::Bindings& binding,
                      Shader::PushData& push_data, u32& write_index);
     /// `on_helper`: run by the texture binding helper; out-of-date images are not refreshed.

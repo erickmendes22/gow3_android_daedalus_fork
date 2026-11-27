@@ -43,8 +43,7 @@ class BufferCache {
     // Windows driver: 2 GiB); an arena spans up to two pages, so they shrink to half the limit.
     static constexpr u64 MAX_ARENA_PAGE_BITS = 32;
     static constexpr u64 MIN_ARENA_PAGE_BITS = 30;
-    static constexpr u64 MIN_BACKED_ARENA_PAGE_BITS = 24;
-    static constexpr u64 MAX_ARENA_PAGES = u64{1} << (ADDRESS_SPACE_BITS - MIN_BACKED_ARENA_PAGE_BITS);
+    static constexpr u64 MAX_ARENA_PAGES = u64{1} << (ADDRESS_SPACE_BITS - MIN_ARENA_PAGE_BITS);
     static constexpr u64 MIN_BLOCK_SIZE = 16_KB;
 
 public:
@@ -132,9 +131,6 @@ private:
         return &pending_binds.emplace_back(arena);
     }
 
-    // Non-sparse Mali/PanVK arenas must be zeroed and accounted for before use.
-    const Buffer* AllocateArena(VAddr base, u64 bytes);
-
     const Buffer* GetArena(u64 first_block, u64 last_block);
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
@@ -181,9 +177,6 @@ private:
     u64 arena_page_size{u64{1} << MAX_ARENA_PAGE_BITS};
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
     std::deque<Buffer> arenas;
-    bool non_sparse_arenas{false};
-    // Track dedicated GPU allocation pressure including old merged buffers still in flight.
-    u64 backed_arena_bytes{};
     std::vector<ArenaBinds> pending_binds;
     Vulkan::Semaphore memory_semaphore;
 

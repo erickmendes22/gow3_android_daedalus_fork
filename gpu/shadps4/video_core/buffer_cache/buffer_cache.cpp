@@ -60,25 +60,9 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
       stream_buffer{instance, scheduler, MemoryType::Stream, STREAM_BUFFER_SIZE},
       gds_buffer{instance, 0, GDS_BUFFER_SIZE, MemoryType::Stream, "GDS Buffer"},
       memory_semaphore{instance} {
-    non_sparse_arenas = !instance.HasSparseBuffers();
-    if (non_sparse_arenas) {
-        // PanVK has no sparse residency; full-buffer allocations cost device RAM.
-        // 32 MiB pages reduce waste when the game touches many scattered VA ranges.
-        // Maximum merged arena is 64 MiB, keeping both copies within budget.
-        arena_page_bits = 25;
-        while (arena_page_bits > MIN_BACKED_ARENA_PAGE_BITS &&
-               (u64{2} << arena_page_bits) > instance.GetMaxBufferSize()) {
-            --arena_page_bits;
-        }
-        ASSERT_MSG((u64{2} << arena_page_bits) <= instance.GetMaxBufferSize(),
-                   "Mali non-sparse arenas exceed maxBufferSize");
-        LOG_WARNING(Render_Vulkan, "Mali/PanVK: non-sparse arenas {} MiB, max buffer {} MiB",
-                    (u64{1} << arena_page_bits) >> 20, instance.GetMaxBufferSize() >> 20);
-    } else {
-        while (arena_page_bits > MIN_ARENA_PAGE_BITS &&
-               (u64{2} << arena_page_bits) > instance.GetMaxBufferSize()) {
-            --arena_page_bits;
-        }
+    while (arena_page_bits > MIN_ARENA_PAGE_BITS &&
+           (u64{2} << arena_page_bits) > instance.GetMaxBufferSize()) {
+        --arena_page_bits;
     }
     arena_page_size = u64{1} << arena_page_bits;
     num_arena_pages = u64{1} << (ADDRESS_SPACE_BITS - arena_page_bits);
@@ -87,9 +71,8 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
                  arena_page_size >> 20, instance.GetMaxBufferSize() >> 20);
     }
     const vk::BufferCreateInfo probe_ci = {
-        .flags = non_sparse_arenas ? vk::BufferCreateFlags{}
-            : vk::BufferCreateFlagBits::eSparseBinding |
-                  vk::BufferCreateFlagBits::eSparseResidency,
+        .flags =
+            vk::BufferCreateFlagBits::eSparseBinding | vk::BufferCreateFlagBits::eSparseResidency,
         .size = arena_page_size,
         .usage = ARENA_USAGE,
         .sharingMode = vk::SharingMode::eExclusive,
@@ -99,11 +82,7 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     };
     const auto device = instance.GetDevice();
     const auto reqs = device.getBufferMemoryRequirements(req_info).memoryRequirements;
-    ASSERT_MSG(reqs.memoryTypeBits != 0, "Driver has no supported buffer memory type");
-    // 64 KiB BDA granularity shrinks the full guest address table from 512 to 128 MiB.
-    block_size = Common::AlignUp(
-        std::max<u64>(reqs.alignment, non_sparse_arenas ? 64_KB : MIN_BLOCK_SIZE),
-        reqs.alignment);
+    block_size = Common::AlignUp(std::max<u64>(reqs.alignment, MIN_BLOCK_SIZE), reqs.alignment);
     ASSERT_MSG(std::popcount(block_size) == 1, "Sparse block size {} is not a power of 2",
                block_size);
     block_shift = std::bit_width(block_size) - 1;
@@ -112,7 +91,7 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     arena_memory_type_index =
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
-            .value_or(static_cast<u32>(std::countr_zero(reqs.memoryTypeBits)));
+            .value();
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -124,31 +103,6 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 }
 
 BufferCache::~BufferCache() = default;
-
-const Buffer* BufferCache::AllocateArena(VAddr base, u64 bytes) {
-    if (!non_sparse_arenas) {
-        return &arenas.emplace_back(instance, base, bytes, MemoryType::Sparse);
-    }
-
-    // Full, dedicated VkBuffer allocations stay alive until shutdown, including
-    // superseded arenas still referenced by GPU commands. Bound that pressure
-    // before risking a device-wide Mali GPU/LMK stall.
-    constexpr u64 MaxBackedArenaBytes = 1536_MB;
-    ASSERT_MSG(bytes <= MaxBackedArenaBytes - backed_arena_bytes,
-               "Non-sparse arena memory budget exceeded: current={} MiB new={} MiB cap={} MiB",
-               backed_arena_bytes >> 20, bytes >> 20, MaxBackedArenaBytes >> 20);
-
-    const auto* arena = &arenas.emplace_back(instance, base, bytes, MemoryType::DeviceLocal);
-    backed_arena_bytes += bytes;
-    // A sparse arena returns zeros for unbound blocks. An ordinary VkBuffer does
-    // not: leaving untouched shader inputs uninitialized risks invalid guest data
-    // and non-deterministic GPU behavior. Zero before any uploads or migration.
-    runtime.FillBuffer(arena, 0, bytes, 0u);
-    LOG_WARNING(Render_Vulkan, "PanVK backed arena: reserved={} MiB, cumulative={} MiB "
-                               "(cap={} MiB), base={:#x}",
-                bytes >> 20, backed_arena_bytes >> 20, MaxBackedArenaBytes >> 20, base);
-    return arena;
-}
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
@@ -492,7 +446,8 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
             const u64 base_block = Common::AlignDownPow2<u64>(first_block, blocks_per_arena_page);
             const u64 num_pages = last_page - first_page + 1;
             const auto* new_arena =
-                AllocateArena(base_block << block_shift, num_pages << arena_page_bits);
+                &arenas.emplace_back(instance, base_block << block_shift,
+                                     num_pages << arena_page_bits, MemoryType::Sparse);
             address_space[first_page] = new_arena;
             address_space[last_page] = new_arena;
         }
@@ -508,60 +463,18 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     const u64 base_block = first_addr >> block_shift;
     const u64 total_size = first_size + last_size;
     const u64 end_block = (first_addr + total_size) >> block_shift;
-    const auto* new_arena = AllocateArena(first_addr, total_size);
-    if (non_sparse_arenas) {
-        // Preserve data written by the GPU before rebasing an arena, then update BDA.
-        const auto move_old = [&](const Buffer* old) {
-            if (!old) return;
-            const u64 old_begin = old->cpu_addr >> block_shift;
-            const u64 old_end = (old->cpu_addr + old->size_bytes) >> block_shift;
-            resident_ranges.ForEachInRange(old_begin, old_end, [&](const Backing& backing) {
-                const u64 start = std::max(old_begin, backing.start);
-                const u64 end = std::min(old_end, backing.end);
-                if (end <= start) return;
-                const std::array copies{vk::BufferCopy{
-                    .srcOffset = (start << block_shift) - old->cpu_addr,
-                    .dstOffset = (start << block_shift) - new_arena->cpu_addr,
-                    .size = (end - start) << block_shift,
-                }};
-                runtime.CopyBuffer(old, new_arena, copies);
-            });
-        };
-        move_old(first_arena);
-        move_old(last_arena);
-        resident_ranges.ForEachInRange(base_block, end_block, [&](const Backing& backing) {
-            const u64 start = std::max(base_block, backing.start);
-            const u64 end = std::min(end_block, backing.end);
-            const u64 count = end - start;
-            if (!count) return;
-            const auto staging = staging_pool.Request(
-                count * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
-            auto* addresses = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
-            for (u64 block = start; block < end; ++block) {
-                *(addresses++) = new_arena->BufferDeviceAddress() +
-                                  ((block << block_shift) - new_arena->cpu_addr);
-            }
-            staging.Flush();
-            const std::array copies{vk::BufferCopy{
-                .srcOffset = staging.offset,
-                .dstOffset = start * sizeof(vk::DeviceAddress),
-                .size = count * sizeof(vk::DeviceAddress),
-            }};
-            runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), copies);
+    auto* new_arena = &arenas.emplace_back(instance, first_addr, total_size, MemoryType::Sparse);
+    auto* bind = BindsForArena(new_arena);
+    resident_ranges.ForEachInRange(base_block, end_block, [&](const Backing& backing) {
+        const u64 start = std::max(base_block, backing.start);
+        const u64 end = std::min(end_block, backing.end);
+        bind->binds.push_back(vk::SparseMemoryBind{
+            .resourceOffset = (start - base_block) << block_shift,
+            .size = (end - start) << block_shift,
+            .memory = backing.memory,
+            .memoryOffset = backing.offset + ((start - backing.start) << block_shift),
         });
-    } else {
-        auto* bind = BindsForArena(new_arena);
-        resident_ranges.ForEachInRange(base_block, end_block, [&](const Backing& backing) {
-            const u64 start = std::max(base_block, backing.start);
-            const u64 end = std::min(end_block, backing.end);
-            bind->binds.push_back(vk::SparseMemoryBind{
-                .resourceOffset = (start - base_block) << block_shift,
-                .size = (end - start) << block_shift,
-                .memory = backing.memory,
-                .memoryOffset = backing.offset + ((start - backing.start) << block_shift),
-            });
-        });
-    }
+    });
 
     u64 base_page = first_addr >> arena_page_bits;
     for (u32 page = 0; page < (first_size >> arena_page_bits); ++page) {
@@ -587,21 +500,18 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     }
     Gow3Stats::Timer timer{Gow3Stats::t_resident};
 
-    vk::DeviceMemory device_memory{};
-    if (!non_sparse_arenas) {
-        const vk::MemoryAllocateInfo alloc_info = {
-            .allocationSize = resident_blocks << block_shift,
-            .memoryTypeIndex = arena_memory_type_index,
-        };
-        device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
-    }
+    const vk::MemoryAllocateInfo alloc_info = {
+        .allocationSize = resident_blocks << block_shift,
+        .memoryTypeIndex = arena_memory_type_index,
+    };
+    const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
     u64 memory_offset{};
-    ArenaBinds* binds = non_sparse_arenas ? nullptr : BindsForArena(arena);
+    ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
     u64 offset = staging.offset;
     for (const auto& range : bind_ranges) {
@@ -609,24 +519,21 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         backing.start = range.start;
         backing.end = range.end;
         backing.memory = device_memory;
-        backing.offset = non_sparse_arenas ? range.start : memory_offset;
+        backing.offset = memory_offset;
         resident_ranges.Add(backing);
 
         LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
 
-        const u64 resource_offset = (range.start << block_shift) - arena->cpu_addr;
-        const u64 bind_size = (range.end - range.start) << block_shift;
-        if (!non_sparse_arenas) {
-            binds->binds.emplace_back(vk::SparseMemoryBind{
-                .resourceOffset = resource_offset,
-                .size = bind_size,
-                .memory = device_memory,
-                .memoryOffset = memory_offset,
-            });
-            memory_offset += bind_size;
-        }
-        for (u64 block = 0; block < bind_size; block += block_size) {
-            *(bda_addrs++) = arena->BufferDeviceAddress() + resource_offset + block;
+        const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
+            .resourceOffset = (range.start << block_shift) - arena->cpu_addr,
+            .size = (range.end - range.start) << block_shift,
+            .memory = device_memory,
+            .memoryOffset = memory_offset,
+        });
+        memory_offset += bind.size;
+
+        for (u32 block = 0; block < bind.size; block += block_size) {
+            *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
         }
         const u64 copy_size = (backing.end - backing.start) * sizeof(vk::DeviceAddress);
         copies.emplace_back(offset, backing.start * sizeof(vk::DeviceAddress), copy_size);
@@ -806,7 +713,6 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
     if (pending_binds.empty()) {
         return;
     }
-    ASSERT_MSG(!non_sparse_arenas, "Unexpected sparse bind on non-sparse driver");
 
     std::vector<vk::SparseBufferMemoryBindInfo> buffer_binds;
     buffer_binds.reserve(pending_binds.size());

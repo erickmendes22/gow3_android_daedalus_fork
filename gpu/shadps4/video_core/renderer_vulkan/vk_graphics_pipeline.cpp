@@ -54,7 +54,23 @@ GraphicsPipeline::GraphicsPipeline(
     const auto started = Clock::now();
     const vk::Device device = instance.GetDevice();
     std::ranges::copy(infos, stages.begin());
-    BuildDescSetLayout(preloading);
+    if (!preloading && profile.uniform_buffer_level) {
+        for (const auto* stage : stages) {
+            if (!stage) {
+                continue;
+            }
+            auto& mask = sdata.uniform_buffer_masks[u32(stage->sw_stage)];
+            const u32 slots = std::min<u32>(profile.uniform_buffer_slots, stage->buffers.size());
+            for (u32 i = 0; i < slots; ++i) {
+                const auto& desc = stage->buffers[i];
+                if (Shader::UniformBufferSizeLog2(profile, *stage, desc, desc.GetSharp(*stage), i)) {
+                    mask |= u16{1} << i;
+                }
+            }
+        }
+    }
+    uniform_buffer_masks = sdata.uniform_buffer_masks;
+    BuildDescSetLayout();
     const auto debug_str = GetDebugString();
 
     const vk::PushConstantRange push_constants = {
@@ -510,7 +526,7 @@ template void GraphicsPipeline::GetVertexInputs(
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
     VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) const;
 
-void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
+void GraphicsPipeline::BuildDescSetLayout() {
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
     u32 binding{};
 
@@ -519,13 +535,13 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
             continue;
         }
         const auto stage_bit = LogicalStageToStageBit[u32(stage->sw_stage)];
-        for (const auto& buffer : stage->buffers) {
-            const auto sharp =
-                preloading ? AmdGpu::Buffer{}
-                           : buffer.GetSharp(*stage); // See for the comment in compute PL creation
+        const auto uniform_mask = UniformBufferMask(stage->sw_stage);
+        for (size_t i = 0; i < stage->buffers.size(); ++i) {
+            const bool uniform = i < 16 && ((uniform_mask >> i) & 1);
             bindings.push_back({
                 .binding = binding++,
-                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .descriptorType = uniform ? vk::DescriptorType::eUniformBuffer
+                                          : vk::DescriptorType::eStorageBuffer,
                 .descriptorCount = 1,
                 .stageFlags = stage_bit,
             });

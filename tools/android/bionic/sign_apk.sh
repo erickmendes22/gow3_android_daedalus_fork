@@ -8,6 +8,12 @@ bt="$sdk/build-tools/${GOW3_BUILD_TOOLS:-35.0.0}"
 unsigned="$root/android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk"
 apk="$root/out/release/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk"
 key="$root/.local-deps/android/bionic-development.keystore"
+validate_args=()
+if [[ ${GOW3_BIONIC_UBO_TEST:-0} == 1 ]]; then
+    key=${GOW3_UBO_TEST_KEYSTORE:?Set the separate UBO test signing key}
+    apk="$root/out/release/God-of-War-III-Daedalus-UBO-Test-v2.1.8-bionic-arm64.apk"
+    validate_args=(--ubo-test)
+fi
 mkdir -p "$(dirname "$key")" "$(dirname "$apk")"
 # Preserve the signing identity already installed on user devices.
 # A missing cache/key must fail, never create an unrelated replacement key.
@@ -19,6 +25,6 @@ fi
 "$bt/apksigner" sign --ks "$key" --ks-key-alias bionic --ks-pass pass:android --key-pass pass:android \
     --out "$apk" "$root/out/release/bionic-aligned.apk"
 "$bt/apksigner" verify --verbose "$apk"
-python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt"
+python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt" "${validate_args[@]}"
 (cd out/release; sha256sum "$(basename "$apk")" > "$(basename "$apk").sha256")
 echo "Daedalus Fork Bionic APK: $apk"

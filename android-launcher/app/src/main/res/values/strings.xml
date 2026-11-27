@@ -61,6 +61,10 @@
     <string name="param_engine_fps">Engine FPS</string>
     <string name="param_vsync">VSync</string>
     <string name="param_frames_queued">Frames queued</string>
+    <string name="param_turnip_uniform_buffers">Turnip shader buffers</string>
+    <string name="param_desc_turnip_uniform_buffers">Uses uniform buffers for compatible read-only shader data on Turnip. Restart the game to apply.</string>
+    <string name="param_option_ubo_vertex">Vertex only</string>
+    <string name="param_option_ubo_vertex_fragment">Vertex and fragment</string>
     <string name="param_offline_start">Offline start</string>
     <string name="param_skip_intros">Skip intros</string>
     <string name="param_free_camera">Free camera</string>

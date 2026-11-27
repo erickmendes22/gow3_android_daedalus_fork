@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cstdlib>
+#include <cstring>
 #include <xxhash.h>
 #include "video_core/amdgpu/liverpool.h"
 
@@ -1690,6 +1691,10 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
 
 void TextureCache::GarbageCollectImages() {
     Gow3Stats::Timer gc_timer{Gow3Stats::t_gc};
+    static const bool low_memory = [] {
+        const char* profile = std::getenv("GOW3_ANDROID_8GB_MEMORY");
+        return profile && std::strcmp(profile, "1") == 0;
+    }();
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
         // gow3: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
@@ -1702,8 +1707,12 @@ void TextureCache::GarbageCollectImages() {
             const char* env = std::getenv("GOW3_GC_BUDGET_MB");
             return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
         }();
-        if (instance.IsIntegrated() || forced_budget) {
-            const u64 budget = forced_budget ? forced_budget : instance.GetDeviceMemoryBudgetNow();
+        if (instance.IsIntegrated() || forced_budget || low_memory) {
+            u64 budget = forced_budget ? forced_budget : instance.GetDeviceMemoryBudgetNow();
+            constexpr u64 low_memory_headroom = 384_MB;
+            if (low_memory && !forced_budget && budget > low_memory_headroom + 512_MB) {
+                budget -= low_memory_headroom;
+            }
             if (budget != 0) {
                 trigger_gc_memory = budget / 10 * 7;
                 pressure_gc_memory = budget / 100 * 85;
@@ -1717,6 +1726,7 @@ void TextureCache::GarbageCollectImages() {
     std::scoped_lock lock{mutex};
     bool pressured = false;
     bool aggresive = false;
+    bool clean_only = false;
     u64 ticks_to_destroy = 0;
     size_t num_deletions = 0;
 
@@ -1731,8 +1741,11 @@ void TextureCache::GarbageCollectImages() {
         if (num_deletions == 0) {
             return true;
         }
-        --num_deletions;
         auto& image = slot_images[image_id];
+        if (clean_only && True(image.flags & ImageFlagBits::GpuModified)) {
+            return false;
+        }
+        --num_deletions;
         ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                          ReadbackSource::CacheCleanup);
         const bool download = image.SafeToDownload();
@@ -1766,6 +1779,22 @@ void TextureCache::GarbageCollectImages() {
         }
         return false;
     };
+
+    if (low_memory && total_used_memory >= pressure_gc_memory) {
+        // Reclaim more recently unused clean images before forcing synchronous writebacks.
+        // The ordinary pass still handles older GPU-written images with its original ages.
+        configure(true);
+        clean_only = true;
+        const u64 min_age = aggresive ? 4 : 12;
+        num_deletions = aggresive ? 96 : 32;
+        if (gc_tick >= min_age) {
+            lru_cache.ForEachItemBelow(gc_tick - min_age, clean_up);
+        }
+        clean_only = false;
+        if (total_used_memory < trigger_gc_memory) {
+            return;
+        }
+    }
 
     // Try to remove anything old enough and not high priority.
     configure(false);

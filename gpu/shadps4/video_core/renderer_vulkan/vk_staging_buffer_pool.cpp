@@ -30,6 +30,9 @@ constexpr u64 LARGE_IDLE_FRAMES = 3000;
 constexpr u64 PREWARM_BLOCKS = 8;
 constexpr u64 LARGE_MIN_GRANULARITY = 64_KB;
 constexpr u64 BLOCK_SIZE = 16_MB;
+constexpr u64 LOW_MEMORY_IDLE_FRAMES = 90;
+constexpr u64 LOW_MEMORY_STAGING_LIMIT = 32_MB;
+constexpr u64 LOW_MEMORY_PRESSURE_IDLE_FRAMES = 16;
 
 u64 RoundAllocationSize(u64 size) {
     const u64 step = std::max(std::bit_floor(size) / 4, LARGE_MIN_GRANULARITY);
@@ -40,10 +43,14 @@ u64 RoundAllocationSize(u64 size) {
 
 StagingBufferPool::StagingBufferPool(const Instance& instance_, Scheduler& scheduler_)
     : instance{instance_}, scheduler{scheduler_} {
+    const char* memory_profile = std::getenv("GOW3_ANDROID_8GB_MEMORY");
+    low_memory = memory_profile && std::strcmp(memory_profile, "1") == 0;
     const char* env = std::getenv("GOW3_STAGING_KEEP_MB");
-    keep_blocks = (env ? std::strtoull(env, nullptr, 10) : 512) * 1_MB / BLOCK_SIZE;
+    const u64 default_retention = low_memory ? LOW_MEMORY_STAGING_LIMIT : 512_MB;
+    keep_blocks = (env ? std::strtoull(env, nullptr, 10) * 1_MB : default_retention) / BLOCK_SIZE;
     Ring& ring = rings[u32(MemoryType::HostUncached)];
-    for (u64 i = 0; i < PREWARM_BLOCKS; ++i) {
+    const u64 prewarm_blocks = low_memory ? 1 : PREWARM_BLOCKS;
+    for (u64 i = 0; i < prewarm_blocks; ++i) {
         auto& block = ring.blocks.emplace_back(Block{
             .buffer = std::make_unique<VideoCore::StreamBuffer>(
                 instance, scheduler, MemoryType::HostUncached, BLOCK_SIZE),
@@ -161,8 +168,9 @@ void StagingBufferPool::FreeDeferred(const StagingBufferRef& ref) {
 
 void StagingBufferPool::TickFrame() {
     ++frame;
-    for (Ring& ring : rings) {
-        TrimRing(ring);
+    for (size_t i = 0; i < rings.size(); ++i) {
+        const u64 retained_blocks = low_memory && i == u32(MemoryType::DeviceLocal) ? 0 : keep_blocks;
+        TrimRing(rings[i], retained_blocks);
     }
     for (auto& cache : large_caches) {
         TrimLarge(cache);
@@ -170,11 +178,12 @@ void StagingBufferPool::TickFrame() {
     PublishStats();
 }
 
-void StagingBufferPool::TrimRing(Ring& ring) {
+void StagingBufferPool::TrimRing(Ring& ring, u64 retained_blocks) {
     auto& blocks = ring.blocks;
+    const u64 idle_frames = low_memory ? LOW_MEMORY_IDLE_FRAMES : RING_IDLE_FRAMES;
     for (size_t i = blocks.size(); i-- > 0;) {
         const Block& block = blocks[i];
-        if (blocks.size() <= keep_blocks || frame - block.last_used_frame < RING_IDLE_FRAMES ||
+        if (blocks.size() <= retained_blocks || frame - block.last_used_frame < idle_frames ||
             !scheduler.IsFree(block.buffer->LastTick())) {
             continue;
         }
@@ -191,9 +200,26 @@ void StagingBufferPool::TrimRing(Ring& ring) {
 }
 
 void StagingBufferPool::TrimLarge(std::vector<LargeBuffer>& cache) {
-    std::erase_if(cache, [this](const LargeBuffer& entry) {
-        return !entry.held && frame - entry.last_used_frame >= LARGE_IDLE_FRAMES &&
-               scheduler.IsFree(entry.tick);
+    u64 cache_bytes = 0;
+    if (low_memory) {
+        for (const auto& entry : cache) {
+            cache_bytes += entry.buffer->SizeBytes();
+        }
+    }
+    std::erase_if(cache, [this, &cache_bytes](const LargeBuffer& entry) {
+        u64 idle_frames = LARGE_IDLE_FRAMES;
+        if (low_memory) {
+            idle_frames = cache_bytes > LOW_MEMORY_STAGING_LIMIT
+                              ? LOW_MEMORY_PRESSURE_IDLE_FRAMES
+                              : LOW_MEMORY_IDLE_FRAMES;
+        }
+        if (entry.held || frame - entry.last_used_frame < idle_frames || !scheduler.IsFree(entry.tick)) {
+            return false;
+        }
+        if (low_memory) {
+            cache_bytes -= entry.buffer->SizeBytes();
+        }
+        return true;
     });
 }
 

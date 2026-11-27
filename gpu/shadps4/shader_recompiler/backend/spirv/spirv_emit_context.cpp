@@ -810,9 +810,13 @@ void EmitContext::DefinePushDataBlock() {
 }
 
 EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_coherent, u32 elem_shift,
-                                                 BufferType buffer_type, Id data_type) {
-    // Define array type.
-    const Id record_array_type{TypeRuntimeArray(data_type)};
+                                                 BufferType buffer_type, Id data_type,
+                                                 u32 uniform_bytes) {
+    // Uniform buffers use fixed-length arrays with standard uniform-buffer layout.
+    const bool uniform = uniform_bytes != 0;
+    const Id record_array_type{
+        uniform ? TypeArray(data_type, ConstU32(uniform_bytes >> elem_shift))
+                : TypeRuntimeArray(data_type)};
     // Define block struct type. Don't perform decorations twice on the same Id.
     const Id struct_type{TypeStruct(record_array_type)};
     if (std::ranges::find(buf_type_ids, record_array_type.value, &Id::value) ==
@@ -824,15 +828,16 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
         buf_type_ids.push_back(record_array_type);
     }
     // Define buffer binding interface.
-    constexpr auto storage_class = spv::StorageClass::StorageBuffer;
+    const auto storage_class =
+        uniform ? spv::StorageClass::Uniform : spv::StorageClass::StorageBuffer;
     const Id struct_pointer_type{TypePointer(storage_class, struct_type)};
     const Id pointer_type = TypePointer(storage_class, data_type);
     const Id id{AddGlobalVariable(struct_pointer_type, storage_class)};
     Decorate(id, spv::Decoration::Binding, binding.unified);
     Decorate(id, spv::Decoration::DescriptorSet, 0U);
-    if (!is_written) {
+    if (!uniform && !is_written) {
         Decorate(id, spv::Decoration::NonWritable);
-    } else if (is_coherent) {
+    } else if (is_written && is_coherent) {
         // The guest V# MTYPE marks this buffer as shared between invocations;
         // Coherent forbids caching its accesses in registers across barriers.
         Decorate(id, spv::Decoration::Coherent);
@@ -857,7 +862,8 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
         Name(id, "ssbo_shmem");
         break;
     default:
-        Name(id, fmt::format("ssbo_{}", binding.buffer));
+        Name(id, uniform ? fmt::format("ubo_{}", binding.buffer)
+                         : fmt::format("ssbo_{}", binding.buffer));
         break;
     }
     interfaces.push_back(id);
@@ -882,6 +888,9 @@ void EmitContext::DefineBuffers() {
         }
 
         // Define aliases depending on the shader usage.
+        const u8 uniform_log2 = UniformBufferSizeLog2(
+            profile, info, desc, buf_sharp, static_cast<u32>(buffers.size()));
+        const u32 uniform = uniform_log2 ? 1u << uniform_log2 : 0;
         auto& spv_buffer = buffers.emplace_back(binding.buffer++, desc.buffer_type);
         if (True(desc.used_types & IR::Type::U64)) {
             spv_buffer.Alias(PointerType::U64) =
@@ -889,11 +898,13 @@ void EmitContext::DefineBuffers() {
         }
         if (True(desc.used_types & IR::Type::U32)) {
             spv_buffer.Alias(PointerType::U32) =
-                DefineBuffer(desc.is_written, is_coherent, 2, desc.buffer_type, U32[1]);
+                DefineBuffer(desc.is_written, is_coherent, 2, desc.buffer_type, U32[1],
+                             uniform);
         }
         if (True(desc.used_types & IR::Type::F32)) {
             spv_buffer.Alias(PointerType::F32) =
-                DefineBuffer(desc.is_written, is_coherent, 2, desc.buffer_type, F32[1]);
+                DefineBuffer(desc.is_written, is_coherent, 2, desc.buffer_type, F32[1],
+                             uniform);
         }
         if (True(desc.used_types & IR::Type::U16)) {
             spv_buffer.Alias(PointerType::U16) =
