@@ -737,6 +737,11 @@ public:
     void BindIndexBufferCached(vk::CommandBuffer cmdbuf, vk::Buffer buffer,
                                vk::DeviceSize offset, vk::IndexType type);
 
+    // Called only by the active Vulkan recorder. Kind: 1 draw (VS,PS,count),
+    // 2 image upload, 3 image download (guest address, UID, bytes).
+    void TraceWork(u64 kind, u64 a, u64 b, u64 c);
+    bool SubmitHistoryEnabled() const noexcept { return work_semaphore.TraceEnabled(); }
+
     bool NativeDrawBatchEnabled() const noexcept { return native_draw_batch_limit > 1; }
     void FlushNativeDrawBatch(vk::CommandBuffer cmdbuf);
     void QueueNativeDraw(vk::CommandBuffer cmdbuf, bool indexed, u32 count,
@@ -984,6 +989,7 @@ private:
     std::array<VkMultiDrawInfoEXT, 32> native_draws{};
     std::array<VkMultiDrawIndexedInfoEXT, 32> native_indexed_draws{};
     u64 native_draws_saved = 0, native_batches = 0;
+    Semaphore::SubmitRecord submit_history{};
     vk::PipelineLayout last_graphics_resource_layout{};
     vk::ShaderStageFlags last_graphics_resource_stages{};
     std::vector<u8> last_graphics_resource_key, graphics_resource_scratch;

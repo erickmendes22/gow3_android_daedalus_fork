@@ -18,6 +18,9 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     // The Mali bounded-submit scheduler calls Wait frequently. A completed
     // vkWaitSemaphores(tick) already proves ALL <=tick GPU submissions retired;
     // no extra vkGetSemaphoreCounterValue ioctl is needed.
+    const char* trace = std::getenv("GOW3_MALI_SUBMIT_HISTORY");
+    trace_enabled = trace && trace[0] == '1' &&
+                    instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     const char* opt = std::getenv("GOW3_MALI_DIRECT_TIMELINE_WAIT");
     direct_timeline_wait = std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
@@ -39,12 +42,46 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
 
 Semaphore::~Semaphore() = default;
 
+void Semaphore::TraceSubmission(const SubmitRecord& record) {
+    if (!trace_enabled) return;
+    std::scoped_lock lock{trace_mutex};
+    trace_records[record.tick % trace_records.size()] = record;
+}
+
+void Semaphore::DumpSubmissionHistory(u64 requested) {
+    if (!trace_enabled) return;
+    std::scoped_lock lock{trace_mutex};
+    std::fprintf(stderr, "GOW3_SUBMIT_HISTORY requested=%llu known=%llu current=%llu semaphore=%p\n",
+        (unsigned long long)requested, (unsigned long long)KnownGpuTick(),
+        (unsigned long long)CurrentTick(), static_cast<const void*>(this));
+    for (const auto& rec : trace_records) {
+        if (!rec.tick || (rec.tick < requested && requested - rec.tick > 3)) continue;
+        std::fprintf(stderr, "GOW3_SUBMIT_RECORD tick=%llu waits=%llu signals=%llu draws=%llu uploads=%llu downloads=%llu items=%llu\n",
+            (unsigned long long)rec.tick, (unsigned long long)rec.wait_count,
+            (unsigned long long)rec.signal_count, (unsigned long long)rec.draw_count,
+            (unsigned long long)rec.upload_bytes, (unsigned long long)rec.download_bytes,
+            (unsigned long long)rec.item_count);
+        for (u64 i=0; i<rec.wait_count && i<rec.wait_values.size(); ++i)
+            std::fprintf(stderr, "GOW3_SUBMIT_WAIT tick=%llu sem=%llx value=%llu\n",
+                (unsigned long long)rec.tick, (unsigned long long)rec.wait_handles[i],
+                (unsigned long long)rec.wait_values[i]);
+        const u64 begin = rec.item_count > rec.items.size() ? rec.item_count - rec.items.size() : 0;
+        for (u64 i=begin; i<rec.item_count; ++i) {
+            const auto& e = rec.items[i % rec.items.size()];
+            std::fprintf(stderr, "GOW3_SUBMIT_WORK tick=%llu seq=%llu kind=%llu a=%llx b=%llx c=%llx\n",
+                (unsigned long long)rec.tick, (unsigned long long)i, (unsigned long long)e.kind,
+                (unsigned long long)e.a, (unsigned long long)e.b, (unsigned long long)e.c);
+        }
+    }
+}
+
 void Semaphore::Refresh() {
     u64 this_tick{};
     u64 counter{};
     do {
         this_tick = gpu_tick.load(std::memory_order_acquire);
         auto [counter_result, cntr] = instance.GetDevice().getSemaphoreCounterValue(*semaphore);
+        if (counter_result != vk::Result::eSuccess) DumpSubmissionHistory(KnownGpuTick() + 1);
         ASSERT_MSG(counter_result == vk::Result::eSuccess,
                    "Failed to get master semaphore value: {}", vk::to_string(counter_result));
         counter = cntr;
@@ -101,6 +138,7 @@ void Semaphore::Wait(u64 tick, std::source_location caller) {
             report_stall ? u64{500000000} : WAIT_TIMEOUT);
     }
     if (result != vk::Result::eSuccess) {
+        DumpSubmissionHistory(tick);
         std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
                      int(result), static_cast<unsigned long long>(tick),
                      static_cast<unsigned long long>(KnownGpuTick()),

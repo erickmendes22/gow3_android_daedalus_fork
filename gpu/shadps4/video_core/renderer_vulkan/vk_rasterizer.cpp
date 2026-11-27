@@ -1354,6 +1354,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
+    const auto* trace_ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    const u64 trace_vs_hash = vs_info.pgm_hash;
+    const u64 trace_ps_hash = trace_ps ? trace_ps->pgm_hash : 0;
     // Shader IR has no DrawIndex. Exclude storage writes, DMA, GS/tess,
     // queries, predication, square workaround and capture.
     bool native_batch = scheduler.NativeDrawBatchEnabled() && !square && !zpass_query &&
@@ -1377,11 +1380,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         if (native_batch) {
             scheduler.RecordBatchState([=, this](vk::CommandBuffer cmdbuf) {
                 scheduler.BindGraphicsPipelineCached(cmdbuf, handle);
+                scheduler.TraceWork(1, trace_vs_hash, trace_ps_hash, num_indices);
                 scheduler.QueueNativeDraw(cmdbuf, is_indexed, num_indices, num_instances,
                                           first_index, s32(first_vertex), first_instance);
             });
         } else {
         scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(1, trace_vs_hash, trace_ps_hash, num_indices);
         const auto draw = [&] {
             if (is_indexed) {
                 cmdbuf.drawIndexed(num_indices, num_instances, first_index, s32(first_vertex),
@@ -1404,6 +1409,18 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // Vulkan command records, not guest PM4 packets. The MIN/MAX square
     // workaround emits two draws; no operation is deduplicated here.
     if (!native_batch) MaliPerfStats::CountDrawRecorded(square ? 2u : 1u);
+    if (scheduler.SubmitHistoryEnabled() && state.width <= 8 && state.height <= 8 &&
+        cb_descs[0].first) {
+        auto& image = texture_cache.GetImage(cb_descs[0].first);
+        if (image.info.size.width == 1 && image.info.size.height == 1) {
+            static u64 producers = 0;
+            if (++producers <= 8 || (producers & 511u) == 0)
+                std::printf("GOW3_TINY_PRODUCER addr=%llx uid=%llu vs=%llx ps=%llx tick=%llu count=%llu\n",
+                    (unsigned long long)image.info.guest_address, (unsigned long long)image.image_uid,
+                    (unsigned long long)trace_vs_hash, (unsigned long long)trace_ps_hash,
+                    (unsigned long long)scheduler.CurrentTick(), (unsigned long long)producers);
+        }
+    }
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);
@@ -3765,6 +3782,14 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
 
 void Rasterizer::ProcessDownloadImages() {
     DrainDrawPipe();
+    static const bool tiny_first = [] {
+        const char* opt = std::getenv("GOW3_MALI_TINY_READBACK_FIRST");
+        return opt && opt[0] == '1';
+    }();
+    if (tiny_first) {
+        texture_cache.ProcessDownloadImages(true);
+        texture_cache.SubmitPendingReadbacks();
+    }
     texture_cache.ProcessDownloadImages();
     texture_cache.SubmitPendingReadbacks();
 }

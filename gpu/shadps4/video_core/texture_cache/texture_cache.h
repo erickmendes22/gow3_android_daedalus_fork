@@ -134,7 +134,7 @@ public:
     void UnmapMemory(VAddr cpu_addr, size_t size);
 
     /// Schedules a copy of pending images for download back to CPU memory.
-    void ProcessDownloadImages();
+    void ProcessDownloadImages(bool tiny_only = false);
     void SubmitPendingReadbacks();
     void MaybeSubmitTextureBatch();
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,

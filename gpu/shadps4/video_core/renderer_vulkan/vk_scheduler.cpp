@@ -458,6 +458,7 @@ void Scheduler::Wait(u64 tick, std::source_location caller, u64 submit_ns) {
     if (work_semaphore.IsFree(tick)) return;
     const bool diagnose = WaitDiagnostics::TickProfileEnabled();
     auto start = diagnose ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    ASSERT_MSG(tick <= work_semaphore.CurrentTick(), "Wait for unreserved scheduler tick");
     if (tick >= work_semaphore.CurrentTick()) {
         // Make sure we are not waiting for the current tick without signalling
         SubmitInfo info{};
@@ -465,7 +466,7 @@ void Scheduler::Wait(u64 tick, std::source_location caller, u64 submit_ns) {
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::tick_wait_ns};
     const auto submitted = diagnose ? std::chrono::steady_clock::now() : start;
-    work_semaphore.Wait(tick);
+    work_semaphore.Wait(tick, caller);
     if (diagnose) {
         const auto completed = std::chrono::steady_clock::now();
         WaitDiagnostics::Get().Add(caller.file_name(), caller.line(),
@@ -642,6 +643,15 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
         last_graphics_bind_pipeline = pipeline;
     }
     MaliPerfStats::CountGraphicsPipelineBind(false);
+}
+
+void Scheduler::TraceWork(u64 kind, u64 a, u64 b, u64 c) {
+    if (!work_semaphore.TraceEnabled()) return;
+    auto& rec = submit_history;
+    rec.items[rec.item_count++ % rec.items.size()] = {kind, a, b, c};
+    if (kind == 1) ++rec.draw_count;
+    else if (kind == 2) rec.upload_bytes += c;
+    else if (kind == 3) rec.download_bytes += c;
 }
 
 void Scheduler::FlushNativeDrawBatch(vk::CommandBuffer cmdbuf) {
@@ -888,7 +898,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
 
     static constexpr std::array<vk::PipelineStageFlags, 4> wait_stage_masks = {
         vk::PipelineStageFlagBits::eAllCommands,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        // The second wait may be a sparse/BDA dependency, not a swapchain
+        // acquisition. Vertex/compute/transfer consumers must also wait.
+        vk::PipelineStageFlagBits::eAllCommands,
         vk::PipelineStageFlagBits::eAllCommands,
         vk::PipelineStageFlagBits::eAllCommands,
     };
@@ -914,7 +926,19 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     ImGui::Core::TextureManager::Submit();
     const auto queue_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                 : MaliPerfStats::TimePoint{};
+    if (work_semaphore.TraceEnabled()) {
+        submit_history.tick = signal_value;
+        submit_history.wait_count = info.num_wait_semas;
+        submit_history.signal_count = info.num_signal_semas;
+        for (u32 i=0; i<info.num_wait_semas && i<submit_history.wait_values.size(); ++i) {
+            submit_history.wait_values[i] = info.wait_ticks[i];
+            submit_history.wait_handles[i] = std::bit_cast<u64>(info.wait_semas[i]);
+        }
+        work_semaphore.TraceSubmission(submit_history);
+        submit_history = {};
+    }
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    if (submit_result != vk::Result::eSuccess) work_semaphore.DumpSubmissionHistory(signal_value);
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitQueueDriver, queue_start);
     ASSERT_MSG(submit_result == vk::Result::eSuccess, "Queue submit failed: {}",

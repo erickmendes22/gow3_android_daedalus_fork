@@ -880,8 +880,12 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
         return;
     }
 
-    scheduler.Record([src_handle = src->Handle(), image = dst->GetImage(),
+    u64 trace_bytes = 0;
+    for (const auto& copy : upload_copies) trace_bytes += BufferImageCopySize(copy, dst->info.pixel_format);
+    scheduler.Record([this, src_handle = src->Handle(), image = dst->GetImage(),
+                      addr = dst->info.guest_address, uid = dst->image_uid, trace_bytes,
                       regions = scheduler.RecordData(upload_copies)](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(2, addr, uid, trace_bytes);
         cmdbuf.copyBufferToImage(src_handle, image, vk::ImageLayout::eTransferDstOptimal,
                                  regions.size(), regions.data());
     });
@@ -980,8 +984,12 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
         return;
     }
 
-    scheduler.Record([image = src->GetImage(), buffer = dst->Handle(),
+    u64 trace_bytes = 0;
+    for (const auto& copy : download_copies) trace_bytes += BufferImageCopySize(copy, src->info.pixel_format);
+    scheduler.Record([this, image = src->GetImage(), buffer = dst->Handle(),
+                      addr = src->info.guest_address, uid = src->image_uid, trace_bytes,
                       regions = scheduler.RecordData(download_copies)](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(3, addr, uid, trace_bytes);
         cmdbuf.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer,
                                  regions.size(), regions.data());
     });

@@ -4,6 +4,8 @@
 #pragma once
 
 #include <atomic>
+#include <array>
+#include <mutex>
 #include <source_location>
 #include <condition_variable>
 #include <thread>
@@ -41,6 +43,18 @@ public:
         return semaphore.get();
     }
 
+    // Bounded CPU-side submission history. No GPU queries or extra fences.
+    struct WorkItem { u64 kind, a, b, c; };
+    struct SubmitRecord {
+        u64 tick{}, wait_count{}, signal_count{}, draw_count{}, upload_bytes{}, download_bytes{}, item_count{};
+        std::array<WorkItem, 16> items{};
+        std::array<u64, 4> wait_values{};
+        std::array<u64, 4> wait_handles{};
+    };
+    void TraceSubmission(const SubmitRecord& record);
+    void DumpSubmissionHistory(u64 requested);
+    bool TraceEnabled() const noexcept { return trace_enabled; }
+
     /// Refresh the known GPU tick
     void Refresh();
 
@@ -52,6 +66,9 @@ protected:
     vk::UniqueSemaphore semaphore;    ///< Timeline semaphore.
     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
     std::atomic<u64> current_tick{1}; ///< Current logical tick.
+    bool trace_enabled = false;
+    std::mutex trace_mutex;
+    std::array<SubmitRecord, 16> trace_records{};
     bool direct_timeline_wait = false; ///< Mali: a successful timeline wait proves tick completion.
 };
 

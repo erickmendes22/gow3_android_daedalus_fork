@@ -159,6 +159,15 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                 if (image.copies && address < ((image.address + image.Bytes() + 4095) & ~u64{4095}) &&
                     (image.address & ~u64{4095}) < address + size) {
                     ++image.cpu_accesses;
+                    if (image.width == 1 && image.height == 1) {
+                        static u64 samples = 0;
+                        if (++samples <= 8 || (samples & 511u) == 0)
+                            std::printf("GOW3_TINY_CONSUMER image=%llx access=%llx size=%llu exact_overlap=%d source=%u\n",
+                                (unsigned long long)image.address, (unsigned long long)address,
+                                (unsigned long long)size,
+                                int(address < image.address + image.Bytes() &&
+                                    image.address < address + size), unsigned(source));
+                    }
                 }
             }
         }
@@ -262,8 +271,14 @@ void TextureCache::ReportImageCreates() {
 
 // gow3: every copy is recorded first and the GPU is waited for once. A wait per image (as
 // before) left the GPU mostly idle in God of War III's gameplay, at about 2 FPS.
-void TextureCache::ProcessDownloadImages() {
-    if (Vulkan::WaitDiagnostics::Enabled()) {
+void TextureCache::ProcessDownloadImages(bool tiny_only) {
+    if (tiny_only && !deferred_readbacks) return;
+    const auto tiny = [&](ImageId id) {
+        const auto& i = slot_images[id].info;
+        return i.size.width == 1 && i.size.height == 1 && i.size.depth == 1 &&
+               i.resources.layers == 1 && u64(i.pitch) * (i.num_bits / 8) <= 64;
+    };
+    if (!tiny_only && Vulkan::WaitDiagnostics::Enabled()) {
         ReportImageCreates();
     }
     if (deferred_readbacks) {
@@ -279,7 +294,8 @@ void TextureCache::ProcessDownloadImages() {
         bool has_new_downloads = false;
         {
             std::scoped_lock download_lock{download_images_mutex};
-            has_new_downloads = !download_images.empty();
+            has_new_downloads = !download_images.empty() &&
+                (!tiny_only || std::ranges::any_of(download_images, tiny));
         }
         if (!has_new_downloads) {
             if (has_pending_readbacks.load(std::memory_order_acquire)) {
@@ -294,7 +310,10 @@ void TextureCache::ProcessDownloadImages() {
         std::scoped_lock readback_lock{readback_mutex};
         RetireReadbacks();
         std::unique_lock lock{download_images_mutex};
-        for (const ImageId image_id : download_images) {
+        for (auto it = download_images.begin(); it != download_images.end();) {
+            const ImageId image_id = *it;
+            if (tiny_only && !tiny(image_id)) { ++it; continue; }
+            it = download_images.erase(it);
             const auto& image = slot_images[image_id];
             if (False(image.flags & ImageFlagBits::GpuModified)) continue;
             const u64 size = u64{image.info.pitch} * image.info.size.height *
@@ -340,8 +359,7 @@ void TextureCache::ProcessDownloadImages() {
                 }
             }
         }
-        download_images.clear();
-        if (Vulkan::WaitDiagnostics::TickProfileEnabled()) {
+        if (!tiny_only && Vulkan::WaitDiagnostics::TickProfileEnabled()) {
             const auto now = std::chrono::steady_clock::now();
             if (now - readback_report >= std::chrono::seconds(5)) {
                 std::printf("Readback profile: queued %llu, completed %llu, demand/budget waits %llu, canceled %llu, pending %.2f MiB, peak %.2f MiB\n",
