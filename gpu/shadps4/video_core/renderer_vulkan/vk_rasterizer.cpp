@@ -1754,6 +1754,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     // Bind resource buffers and textures.
     Shader::Backend::Bindings binding{};
     push_data = MakeUserData(Regs());
+    const auto uniform_mask = [pipeline](const Shader::Info& stage) -> u16 {
+        return pipeline->IsCompute()
+                   ? 0
+                   : static_cast<const GraphicsPipeline*>(pipeline)->UniformBufferMask(stage.sw_stage);
+    };
     if (!HelperEligible(pipeline)) {
         ++helper_serial;
         for (const auto* stage : pipeline->GetStages()) {
@@ -1764,7 +1769,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
                               stage->samplers.size());
             stage->PushUd(binding, push_data);
             const PreparedStage* prepared = FindPreparedStage(*stage);
-            BindBuffers(*stage, prepared, binding, push_data, set_write_index);
+            BindBuffers(*stage, prepared, uniform_mask(*stage), binding, push_data, set_write_index);
             BindTextures(*stage, prepared, binding, set_write_index, needs_barrier);
             uses_dma |= stage->uses_dma;
         }
@@ -1808,7 +1813,8 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         bind_helper.Fork(&RunTextureTask, this);
         for (u32 i = 0; i < task.count; ++i) {
             auto& stage = buffer_stages[i];
-            BindBuffers(*stage.info, stage.prepared, stage.binding, push_data, stage.write_index);
+            BindBuffers(*stage.info, stage.prepared, uniform_mask(*stage.info),
+                        stage.binding, push_data, stage.write_index);
         }
         if (draw_inputs.pending && !Gow3Toggle::Disabled(Gow3Toggle::EarlyDrawInputs)) {
             ResolveVertexBuffers(draw_inputs.pipeline, draw_inputs.prepared);
@@ -2051,7 +2057,8 @@ void Rasterizer::ResetBindings(bool is_compute) {
         const auto write_flag =
             is_written ? vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eNone;
         runtime.AccessBuffer(buffer, offset, size, dst_stage,
-                             vk::AccessFlagBits2::eShaderRead | write_flag);
+                             vk::AccessFlagBits2::eShaderRead |
+                                 vk::AccessFlagBits2::eUniformRead | write_flag);
     }
     bound_images.clear();
     bound_buffers.clear();
@@ -2206,7 +2213,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
     return true;
 }
 
-void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* prepared,
+void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* prepared, u16 uniform_mask,
                              Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data, u32& write_index) {
     const u64 alignment = instance.StorageMinAlignment();
@@ -2221,6 +2228,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         camera_motion->Depth();
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
+        const bool uniform = buffer_index < 16 && ((uniform_mask >> buffer_index) & 1);
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
@@ -2337,7 +2345,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
-                const u64 offset_aligned = Common::AlignDown(offset, alignment);
+                const u64 descriptor_alignment =
+                    uniform ? std::max(alignment, instance.UniformMinAlignment()) : alignment;
+                const u64 offset_aligned = Common::AlignDown(offset, descriptor_alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
                     LOG_WARNING(Render_Vulkan, "Buffer binding in shader {:#x} isn't dword aligned",
@@ -2359,7 +2369,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
         set_write.descriptorCount = 1;
-        set_write.descriptorType = vk::DescriptorType::eStorageBuffer;
+        set_write.descriptorType = uniform ? vk::DescriptorType::eUniformBuffer
+                                           : vk::DescriptorType::eStorageBuffer;
         set_write.pBufferInfo = &buffer_infos.back();
         ++binding.buffer;
     }

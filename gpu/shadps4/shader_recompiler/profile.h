@@ -14,6 +14,10 @@ struct Profile {
     u32 supported_spirv{0x00010000};
     u32 subgroup_size{};
     u32 sparse_page_shift{};
+    u32 uniform_buffer_max_range{};
+    u32 uniform_buffer_alignment{};
+    u32 uniform_buffer_slots{};
+    u8 uniform_buffer_level{};
     bool support_int8{};
     bool support_int16{};
     bool support_int64{};

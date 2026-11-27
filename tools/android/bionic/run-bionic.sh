@@ -23,6 +23,11 @@ export GOW3_DUMP_FRAMES=6
 mkdir -p "$GOW3_DUMP_DIR"
 [ -f "$GOW3_CONFIG" ] || cp "$base/gow3.default.ini" "$GOW3_CONFIG"
 setting() { sed -n "s/^$1=//p" "$GOW3_CONFIG" | tail -n 1; }
+ubo_level=$(setting turnip_uniform_buffers)
+case "$ubo_level" in
+    0|1|2) export GOW3_UBO="$ubo_level" ;;
+    *) export GOW3_UBO=2 ;;
+esac
 chip=$("$runtime/bin/kgsl-chip-id" 2>/dev/null || true)
 turnip=${GOW3_BIONIC_DRIVER:-auto}
 case "$turnip" in

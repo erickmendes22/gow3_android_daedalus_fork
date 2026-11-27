@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <bit>
 #include <span>
 #include <vector>
 #include <boost/container/static_vector.hpp>
@@ -16,6 +18,7 @@
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/type.h"
 #include "shader_recompiler/params.h"
+#include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 
@@ -260,5 +263,27 @@ struct Info : InfoPersistent {
     bool Deserialize(Serialization::Archive& ar);
 };
 DECLARE_ENUM_FLAG_OPERATORS(Info::ReadConstType);
+
+// Based on Alpish08's read-only buffer optimization. Use the same classification in
+// shader emission, permutation lookup, and graphics descriptor layout creation.
+inline u8 UniformBufferSizeLog2(const Profile& profile, const Info& info,
+                               const BufferResource& desc, AmdGpu::Buffer sharp, u32 index) {
+    const bool stage_enabled = (profile.uniform_buffer_level >= 1 && info.sw_stage == SwStage::Vertex) ||
+                               (profile.uniform_buffer_level >= 2 && info.sw_stage == SwStage::Fragment);
+    constexpr auto allowed = IR::Type::U32 | IR::Type::F32;
+    if (!stage_enabled || index >= profile.uniform_buffer_slots || !sharp.base_address ||
+        desc.buffer_type != BufferType::Guest || desc.is_written || desc.is_formatted ||
+        desc.used_types == IR::Type::Void || True(desc.used_types & ~allowed)) {
+        return 0;
+    }
+    const u64 size = sharp.GetSize();
+    // The descriptor offset may round down when binding a subrange of a GPU arena.
+    const u64 required = size + profile.uniform_buffer_alignment - 1;
+    if (size == 0 || required > profile.uniform_buffer_max_range) {
+        return 0;
+    }
+    const u64 declared = std::bit_ceil(std::max<u64>(required, 256));
+    return declared <= profile.uniform_buffer_max_range ? std::bit_width(declared) - 1 : 0;
+}
 
 } // namespace Shader

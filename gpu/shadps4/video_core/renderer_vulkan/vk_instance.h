@@ -375,6 +375,19 @@ public:
         return properties.limits.minUniformBufferOffsetAlignment;
     }
 
+    bool HasStandardUniformBufferLayout() const {
+        return vk12_features.uniformBufferStandardLayout;
+    }
+
+    u32 MaxUniformBufferRange() const {
+        return properties.limits.maxUniformBufferRange;
+    }
+
+    u32 MaxGraphicsUniformBufferSlots() const {
+        return std::min({12u, properties.limits.maxPerStageDescriptorUniformBuffers,
+                         properties.limits.maxDescriptorSetUniformBuffers / 2});
+    }
+
     /// Returns the minimum required alignment for storage buffers
     vk::DeviceSize StorageMinAlignment() const {
         return properties.limits.minStorageBufferOffsetAlignment;

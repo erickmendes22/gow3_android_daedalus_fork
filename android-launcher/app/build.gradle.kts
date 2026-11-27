@@ -21,6 +21,7 @@ android {
         if (bionicRuntime) {
             applicationId = "com.gow3.android.bionic"
             minSdk = 30
+            versionCode = 2010801
             versionName = "2.1.8-bionic"
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
         }

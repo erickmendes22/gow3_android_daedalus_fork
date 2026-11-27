@@ -26,7 +26,7 @@ public:
         return *Common::Singleton<DataBase>::Instance();
     }
 
-    void Open();
+    void Open(u8 uniform_buffer_level = 0);
     void Close();
     [[nodiscard]] bool IsOpened() const {
         return opened;
