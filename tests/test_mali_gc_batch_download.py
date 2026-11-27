@@ -58,8 +58,10 @@ class TestMaliGcBatchDownload(unittest.TestCase):
         self.assertIn("flush_gc_writebacks();",after2.split("// gow3: evictions under memory pressure",1)[0])
 
     def test_already_validated_bulk_downloads_are_preserved(self):
-        original=SOURCE.split("void TextureCache::ProcessDownloadImages()",1)[1].split(
-            "std::optional<TextureCache::PendingDownload>",1)[0]
+        original=SOURCE.split("void TextureCache::ProcessDownloadImages(bool tiny_only)",1)[1].split(
+            "void TextureCache::SubmitPendingReadbacks(",1)[0]
+        original=original.split("boost::container::small_vector<PendingDownload, 16> pending;",1)[1]
+        original="boost::container::small_vector<PendingDownload, 16> pending;" + original
         self.assertIn("boost::container::small_vector<PendingDownload, 16> pending;",original)
         self.assertIn("RecordImageDownload(image_id)",original)
         self.assertIn("scheduler.Finish();",original)
