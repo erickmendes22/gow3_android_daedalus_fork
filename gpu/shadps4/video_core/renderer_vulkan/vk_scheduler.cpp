@@ -128,6 +128,10 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         auto previous = render_state;
         auto incoming = effective_state;
         // Ignore metadata of attachments absent in both states only.
+        if (previous.num_color_attachments == incoming.num_color_attachments) {
+            for (u32 i = incoming.num_color_attachments; i < incoming.color_attachments.size(); ++i)
+                previous.color_attachments[i] = incoming.color_attachments[i] = RenderAttachment{};
+        }
         for (u32 i = 0; i < incoming.num_color_attachments && i < previous.num_color_attachments; ++i) {
             if (!incoming.color_attachments[i].image_view && !previous.color_attachments[i].image_view)
                 previous.color_attachments[i] = incoming.color_attachments[i] = RenderAttachment{};
@@ -214,7 +218,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         return;
     }
     // The attachment infos live on this stack frame: the recorded closure keeps copies.
-    Record([info = rendering_info, color_attachments, depth_attachment,
+    RecordGraphicsOrdered([info = rendering_info, color_attachments, depth_attachment,
             stencil_attachment](vk::CommandBuffer cmdbuf) mutable {
         info.pColorAttachments = color_attachments.data();
         if (info.pDepthAttachment) {
@@ -232,7 +236,7 @@ void Scheduler::EndRendering() {
         return;
     }
     is_rendering = false;
-    Record([this](vk::CommandBuffer cmdbuf) {
+    RecordGraphicsOrdered([this](vk::CommandBuffer cmdbuf) {
         cmdbuf.endRendering();
         // Auxiliary render/transfer commands between passes may bind their own buffers.
         last_vertex_buffer_cmd = last_index_buffer_cmd = vk::CommandBuffer{};
@@ -558,7 +562,7 @@ void Scheduler::SetVertexInputCached(
     }
     FlushNativeDrawBatch(cmdbuf);
     cmdbuf.setVertexInputEXT(bindings, attributes);
-    last_vertex_buffer_cmd = vk::CommandBuffer{};
+    if (!last_vertex_buffer_dynamic) last_vertex_buffer_cmd = vk::CommandBuffer{};
     if (vertex_input_cache_enabled) {
         last_vertex_input_bindings.assign(bindings.begin(), bindings.end());
         last_vertex_input_attributes.assign(attributes.begin(), attributes.end());
@@ -586,8 +590,19 @@ void Scheduler::BindVertexBuffersCached(vk::CommandBuffer cmdbuf, bool dynamic_i
     }
     FlushNativeDrawBatch(cmdbuf);
     const u32 count = static_cast<u32>(buffers.size());
+    u32 first = 0, end = count;
+    if (buffer_bind_cache_enabled && cmdbuf == last_vertex_buffer_cmd &&
+        dynamic_input && last_vertex_buffer_dynamic &&
+        last_vertex_buffers.size() == count && last_vertex_offsets.size() == count) {
+        const auto unchanged = [&](u32 i) {
+            return buffers[i] == last_vertex_buffers[i] && offsets[i] == last_vertex_offsets[i];
+        };
+        while (first < end && unchanged(first)) ++first;
+        while (end > first && unchanged(end - 1)) --end;
+    }
     if (dynamic_input) {
-        cmdbuf.bindVertexBuffers(0, count, buffers.data(), offsets.data());
+        if (end > first) cmdbuf.bindVertexBuffers(first, end - first,
+                                                 buffers.data() + first, offsets.data() + first);
     } else {
         cmdbuf.bindVertexBuffers2(0, count, buffers.data(), offsets.data(),
                                  sizes.data(), strides.data());
@@ -634,7 +649,9 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
     // pipeline changes. Some pipelines may use static vertex input; Vulkan
     // commands recorded before binding must not be assumed to survive it.
     last_vertex_input_cmd = vk::CommandBuffer{};
-    last_vertex_buffer_cmd = vk::CommandBuffer{};
+    // Dynamic vertex buffer handles/offsets survive a graphics pipeline bind.
+    // Static/stride-aware bindings retain the conservative invalidation.
+    if (!last_vertex_buffer_dynamic) last_vertex_buffer_cmd = vk::CommandBuffer{};
     // A graphics pipeline bind does not alter the bound index VkBuffer.
     // Raw commands, rendering scope ends and command buffer resets still
     // invalidate the index cache before reuse.
@@ -718,7 +735,7 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
         std::memcpy(key.data() + old, data, size);
     };
     bool cacheable = NativeDrawBatchEnabled();
-    append(push_data, push_size);
+    const auto* push_bytes = static_cast<const u8*>(push_data);
     const auto write_count = writes.size();
     append(&write_count, sizeof(write_count));
     for (const auto& w : writes) {
@@ -749,14 +766,28 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
         }
         if (!cacheable) break;
     }
-    if (cacheable && last_graphics_resource_layout == layout &&
-        last_graphics_resource_stages == stages && last_graphics_resource_key == key) return;
+    const bool same_layout = cacheable && last_graphics_resource_layout == layout &&
+                             last_graphics_resource_stages == stages;
+    const bool same_push = same_layout && last_graphics_push_key.size() == push_size &&
+                           std::equal(last_graphics_push_key.begin(), last_graphics_push_key.end(), push_bytes);
+    const bool same_descriptors = same_layout && last_graphics_resource_key == key;
+    graphics_push_skips += same_push;
+    graphics_descriptor_skips += same_descriptors;
+    if ((++graphics_state_calls & 65535u) == 0)
+        std::printf("GOW3_MALI_GRAPHICS_STATE calls=%llu push_skips=%llu descriptor_skips=%llu\n",
+            (unsigned long long)graphics_state_calls, (unsigned long long)graphics_push_skips,
+            (unsigned long long)graphics_descriptor_skips);
+    if (same_push && same_descriptors) return;
     FlushNativeDrawBatch(cmdbuf);
-    cmdbuf.pushConstants(layout, stages, 0u, static_cast<u32>(push_size), push_data);
-    if (!writes.empty()) cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+    if (!same_push) cmdbuf.pushConstants(layout, stages, 0u, static_cast<u32>(push_size), push_data);
+    if (!same_descriptors && !writes.empty())
+        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
     last_graphics_resource_layout = cacheable ? layout : vk::PipelineLayout{};
     last_graphics_resource_stages = stages;
-    if (cacheable) last_graphics_resource_key.swap(key);
+    if (cacheable) {
+        if (!same_descriptors) last_graphics_resource_key.swap(key);
+        if (!same_push) last_graphics_push_key.assign(push_bytes, push_bytes + push_size);
+    }
 }
 
 void Scheduler::AllocateWorkerCommandBuffers() {

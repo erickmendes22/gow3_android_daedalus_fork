@@ -792,6 +792,18 @@ public:
         });
     }
 
+    template <typename Func>
+    void RecordGraphicsOrdered(Func&& func) {
+        if (!NativeDrawBatchEnabled()) {
+            Record(std::forward<Func>(func));
+            return;
+        }
+        RecordBatchState([this, fn = std::forward<Func>(func)](vk::CommandBuffer cmdbuf) mutable {
+            FlushNativeDrawBatch(cmdbuf);
+            fn(cmdbuf);
+        });
+    }
+
     // Only audited graphics state commands and eligible direct draws.
     template <typename Func>
     void RecordBatchState(Func&& func) {
@@ -993,6 +1005,8 @@ private:
     vk::PipelineLayout last_graphics_resource_layout{};
     vk::ShaderStageFlags last_graphics_resource_stages{};
     std::vector<u8> last_graphics_resource_key, graphics_resource_scratch;
+    std::vector<u8> last_graphics_push_key;
+    u64 graphics_descriptor_skips = 0, graphics_push_skips = 0, graphics_state_calls = 0;
     vk::CommandBuffer last_vertex_buffer_cmd{}, last_index_buffer_cmd{};
     bool last_vertex_buffer_dynamic{};
     std::vector<vk::Buffer> last_vertex_buffers;

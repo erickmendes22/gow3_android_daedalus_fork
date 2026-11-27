@@ -189,6 +189,9 @@ public:
     u64 image_uid{};
     /// gow3: order of the last GPU write, to sync images sharing memory (texture_cache.h).
     u64 alias_generation{};
+    u64 last_readback_generation{};
+    u64 last_readback_backing{};
+    u64 last_readback_tick{};
 
     ImageInfo info;
     Vulkan::Runtime* runtime;

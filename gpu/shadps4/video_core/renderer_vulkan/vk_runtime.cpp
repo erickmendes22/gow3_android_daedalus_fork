@@ -880,15 +880,59 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
         return;
     }
 
-    u64 trace_bytes = 0;
-    for (const auto& copy : upload_copies) trace_bytes += BufferImageCopySize(copy, dst->info.pixel_format);
-    scheduler.Record([this, src_handle = src->Handle(), image = dst->GetImage(),
-                      addr = dst->info.guest_address, uid = dst->image_uid, trace_bytes,
-                      regions = scheduler.RecordData(upload_copies)](vk::CommandBuffer cmdbuf) {
-        scheduler.TraceWork(2, addr, uid, trace_bytes);
-        cmdbuf.copyBufferToImage(src_handle, image, vk::ImageLayout::eTransferDstOptimal,
-                                 regions.size(), regions.data());
-    });
+    const auto record_upload = [&](std::span<const vk::BufferImageCopy> regions) {
+        u64 trace_bytes = 0;
+        for (const auto& copy : regions) trace_bytes += BufferImageCopySize(copy, dst->info.pixel_format);
+        scheduler.Record([this, src_handle = src->Handle(), image = dst->GetImage(),
+                          addr = dst->info.guest_address, uid = dst->image_uid, trace_bytes,
+                          copies = scheduler.RecordData(regions)](vk::CommandBuffer cmdbuf) {
+            scheduler.TraceWork(2, addr, uid, trace_bytes);
+            cmdbuf.copyBufferToImage(src_handle, image, vk::ImageLayout::eTransferDstOptimal,
+                                     copies.size(), copies.data());
+        });
+    };
+    static const bool stripes = [] {
+        const char* value = std::getenv("GOW3_MALI_UPLOAD_STRIPES");
+        return value && value[0] == '1';
+    }();
+    constexpr u64 stripe_budget = 16_MB;
+    const auto block = vk::blockExtent(dst->info.pixel_format);
+    const u64 texel_size = vk::blockSize(dst->info.pixel_format);
+    bool needs_stripes = false;
+    if (stripes && block[0] == 1 && block[1] == 1 && block[2] == 1 && texel_size)
+        for (const auto& copy : upload_copies)
+            needs_stripes |= copy.imageSubresource.aspectMask == vk::ImageAspectFlagBits::eColor &&
+                copy.imageSubresource.layerCount == 1 && copy.imageExtent.depth == 1 &&
+                copy.imageExtent.height > 1 && BufferImageCopySize(copy, dst->info.pixel_format) > stripe_budget;
+    if (!needs_stripes) {
+        record_upload(upload_copies);
+    } else {
+        for (const auto& copy : upload_copies) {
+            const u64 row_texels = copy.bufferRowLength ? copy.bufferRowLength : copy.imageExtent.width;
+            const u64 row_bytes = row_texels * texel_size;
+            if (copy.imageSubresource.aspectMask != vk::ImageAspectFlagBits::eColor ||
+                copy.imageSubresource.layerCount != 1 || copy.imageExtent.depth != 1 ||
+                !row_bytes || row_bytes > stripe_budget || row_bytes % 4 ||
+                BufferImageCopySize(copy, dst->info.pixel_format) <= stripe_budget) {
+                record_upload(std::span{&copy, 1});
+                continue;
+            }
+            const u32 rows_per_stripe = static_cast<u32>(stripe_budget / row_bytes);
+            for (u32 y = 0; y < copy.imageExtent.height; ) {
+                auto stripe = copy;
+                stripe.bufferOffset += u64(y) * row_bytes;
+                stripe.imageOffset.y += static_cast<s32>(y);
+                stripe.imageExtent.height = std::min(rows_per_stripe, copy.imageExtent.height - y);
+                // Single layer/depth only, so no layer stride is changed.
+                record_upload(std::span<const vk::BufferImageCopy>{&stripe, 1});
+                y += stripe.imageExtent.height;
+            }
+            static u64 split_uploads = 0;
+            if (++split_uploads <= 8 || (split_uploads & 255u) == 0)
+                std::printf("GOW3_MALI_UPLOAD_STRIPES count=%llu bytes=%u\n",
+                    (unsigned long long)split_uploads, BufferImageCopySize(copy, dst->info.pixel_format));
+        }
+    }
 
     for (const auto& copy : upload_copies) {
         const auto copy_size = BufferImageCopySize(copy, dst->info.pixel_format);

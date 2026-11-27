@@ -35,7 +35,8 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
     // ordered command instead of two RecordChunk virtual commands per draw.
     // This retains every descriptor update and every constant write; only
     // the host-side command/queue allocation is removed.
-    if (uses_push_descriptors && !set_writes.empty()) {
+    if (uses_push_descriptors && (!set_writes.empty() ||
+        (!IsCompute() && scheduler.NativeDrawBatchEnabled()))) {
         if (!scheduler.IsRecordingDeferred()) {
             // The nondeferred Record() executes immediately; set_writes remains valid.
             if (!IsCompute() && scheduler.NativeDrawBatchEnabled()) {

@@ -328,6 +328,18 @@ void TrimBcPool(BcPool& pool, VkDeviceSize need, const VkImageCreateInfo& ci) {
                 break;
             }
         }
+        if (!surplus_duplicate && &pool == &GetRgba128Pool()) {
+            const auto hot = [](const RetiredBcImage& e) {
+                const auto& x = e.create.extent;
+                return x.width == 4096 && (x.height == 168 || x.height == 184 ||
+                    x.height == 208 || x.height == 232 || x.height == 248);
+            };
+            if (hot(pool.images[victim])) {
+                for (size_t i = 0; i < pool.images.size(); ++i) {
+                    if (!hot(pool.images[i])) { victim = i; break; }
+                }
+            }
+        }
         auto e = pool.images[victim];
         pool.images.erase(pool.images.begin() + victim);
         pool.bytes -= e.bytes;
@@ -861,8 +873,10 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     etc2_512x1024.extent.height = 1024;
     auto rgba168 = rgba;
     rgba168.extent.height = 168;
+    auto rgba184 = rgba;
+    rgba184.extent.height = 184;
     for (const auto& ci : {etc2, etc2_1024, etc2_256, etc2_512, etc2_512x1024,
-                           rgba208, rgba, rgba232, rgba168, rgba208}) {
+                           rgba208, rgba, rgba232, rgba168, rgba184, rgba208}) {
         if ((ci.format == etc2.format && !bc_enabled) ||
             (ci.format == rgba.format && !rgba_enabled)) continue;
         // Never allocate extra memory once VMA's shared heap is pressured.

@@ -3841,7 +3841,7 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
     dynamic_state.CommitWith(instance.IsDepthBoundsSupported(),
                              instance.IsDynamicColorWriteMaskSupported(),
                              instance.IsAttachmentFeedbackLoopLayoutSupported(),
-                             [&](auto&& command) { scheduler.Record(std::move(command)); });
+                             [&](auto&& command) { scheduler.RecordGraphicsOrdered(std::move(command)); });
 }
 
 void Rasterizer::UpdateViewportScissorState() const {

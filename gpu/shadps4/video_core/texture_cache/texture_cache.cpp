@@ -316,6 +316,23 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
             it = download_images.erase(it);
             const auto& image = slot_images[image_id];
             if (False(image.flags & ImageFlagBits::GpuModified)) continue;
+            // Strict duplicate suppression only when the GPU producer version,
+            // physical image, and pending copy are all identical. A new GPU
+            // write gets a new alias_generation; zero means unknown.
+            static const bool dedup = [] {
+                const char* value = std::getenv("GOW3_MALI_READBACK_VERSION_DEDUP");
+                return value && value[0] == '1';
+            }();
+            if (dedup && image.alias_generation &&
+                False(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) &&
+                image.last_readback_generation == image.alias_generation &&
+                image.last_readback_backing == std::bit_cast<u64>(image.GetImage()) &&
+                image.last_readback_tick == scheduler.CurrentTick()) {
+                static u64 skipped = 0;
+                if (++skipped <= 4 || (skipped & 255u) == 0)
+                    std::printf("GOW3_MALI_READBACK_VERSION_DEDUP count=%llu\n", (unsigned long long)skipped);
+                continue;
+            }
             const u64 size = u64{image.info.pitch} * image.info.size.height *
                 image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
             if (const auto required = pending_readbacks.RequiredTickForSpace(size); required) {
@@ -354,6 +371,10 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                                      slot->cpu_accesses, image.info.pixel_format};
                         }
                     }
+                    auto& tracked_image = slot_images[image_id];
+                    tracked_image.last_readback_generation = tracked_image.alias_generation;
+                    tracked_image.last_readback_backing = std::bit_cast<u64>(tracked_image.GetImage());
+                    tracked_image.last_readback_tick = scheduler.CurrentTick();
                     ++readbacks_queued;
                     readbacks_peak_bytes = std::max(readbacks_peak_bytes, pending_readbacks.Bytes());
                 }
