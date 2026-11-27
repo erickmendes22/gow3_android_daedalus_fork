@@ -26,7 +26,7 @@ class ReadbackAffinityTests(unittest.TestCase):
         scheduler = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp").read_text()
         buffer_cache = (ROOT / "gpu/shadps4/video_core/buffer_cache/buffer_cache.cpp").read_text()
         texture_cache = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
-        self.assertIn("work_semaphore.Wait(tick);", scheduler)
+        self.assertIn("work_semaphore.Wait(tick, caller);", scheduler)
         self.assertIn("scheduler.Finish();", buffer_cache)
         self.assertIn("scheduler.Finish();", texture_cache)
         self.assertIn("ResolveReadbacks(", texture_cache)
@@ -35,8 +35,8 @@ class ReadbackAffinityTests(unittest.TestCase):
 
     def test_empty_download_queue_skips_host_copy_barrier(self):
         code = (ROOT / "gpu/shadps4/video_core/texture_cache/texture_cache.cpp").read_text()
-        begin = code.index("void TextureCache::ProcessDownloadImages()")
-        end = code.index("std::optional<TextureCache::PendingDownload>", begin)
+        begin = code.index("void TextureCache::ProcessDownloadImages(bool tiny_only)")
+        end = code.index("void TextureCache::SubmitPendingReadbacks(", begin)
         method = code[begin:end]
         empty = method.index("if (!has_new_downloads)")
         wait = method.index("scheduler.WaitHostCopies();")
