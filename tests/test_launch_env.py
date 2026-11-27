@@ -61,6 +61,21 @@ class LaunchEnvReasonTests(unittest.TestCase):
         self.assertEqual(plan['updates']['GOW3_PATCH_STATUS'], 'validated')
         self.assertIsNotNone(plan['dmem'])
 
+    def test_bionic_8gib_policy_uses_physical_memory_and_preserves_guest_budget(self):
+        bionic = {'GOW3_ANDROID_PORT': '1', 'GOW3_BIONIC_RUNNER': '/app/run-bionic.sh'}
+        for mib, expected in [('6144', False), ('7167', False), ('7168', True),
+                              ('7297', True), ('8192', True), ('9216', True),
+                              ('9217', False), ('11000', False), ('invalid', False)]:
+            with self.subTest(mib=mib):
+                plan = self._plan(dict(bionic, GOW3_DEVICE_MEM_MB=mib))
+                normal = self._plan({'GOW3_ANDROID_PORT': '1', 'GOW3_DEVICE_MEM_MB': mib})
+                self.assertEqual('GOW3_ANDROID_8GB_MEMORY' in plan['updates'], expected)
+                self.assertEqual(plan['dmem'], normal['dmem'])
+        desktop = self._plan({'GOW3_DEVICE_MEM_MB': '8192'})
+        self.assertNotIn('GOW3_ANDROID_8GB_MEMORY', desktop['updates'])
+        glibc = self._plan({'GOW3_ANDROID_PORT': '1', 'GOW3_DEVICE_MEM_MB': '8192'})
+        self.assertNotIn('GOW3_ANDROID_8GB_MEMORY', glibc['updates'])
+
     def test_android_effect_toggles_preserve_home_resolution_and_mandatory_fixes(self):
         self.config.write_text('render_resolution=720p\nengine_fps=120\npatch_disable_ssao=1\npatch_skip_video=0\n')
         plan = self._plan({'GOW3_ANDROID_PORT': '1'})

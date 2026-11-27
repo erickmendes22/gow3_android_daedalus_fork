@@ -81,6 +81,7 @@ public:
         std::vector<u32> tcs{};
         std::vector<u32> tes{};
         std::vector<u32> fragment{};
+        std::array<u16, MaxShaderStages> uniform_buffer_masks{};
 
         void Serialize(Serialization::Archive& ar) const;
         bool Deserialize(Serialization::Archive& ar);
@@ -109,6 +110,10 @@ public:
         return key;
     }
 
+    u16 UniformBufferMask(Shader::SwStage stage) const {
+        return uniform_buffer_masks[u32(stage)];
+    }
+
     /// gow3: second draw squaring a self-scaled MIN/MAX blend, or null (vk_blend_rewrite.h).
     vk::Pipeline SquarePassHandle() const noexcept {
         return *square_pipeline;
@@ -122,10 +127,11 @@ public:
                          u32 step_rate_1) const;
 
 private:
-    void BuildDescSetLayout(bool preloading);
+    void BuildDescSetLayout();
 
 private:
     GraphicsPipelineKey key;
+    std::array<u16, MaxShaderStages> uniform_buffer_masks{};
     std::optional<const Shader::Gcn::FetchShaderData> fetch_shader{};
     vk::UniquePipeline square_pipeline;
 };

@@ -139,6 +139,18 @@ internal object LaunchParams {
             descriptionRes = R.string.param_desc_vsync,
         ),
         LaunchParam(
+            key = "turnip_uniform_buffers",
+            labelRes = R.string.param_turnip_uniform_buffers,
+            groupRes = R.string.param_group_performance,
+            options = listOf(
+                LaunchOption("0", R.string.param_option_off),
+                LaunchOption("1", R.string.param_option_ubo_vertex),
+                LaunchOption("2", R.string.param_option_ubo_vertex_fragment),
+            ),
+            defaultValue = "2",
+            descriptionRes = R.string.param_desc_turnip_uniform_buffers,
+        ),
+        LaunchParam(
             key = "frames_queued", labelRes = R.string.param_frames_queued, groupRes = R.string.param_group_performance,
             options = listOf(
                 LaunchOption("1", R.string.param_option_frames_1),

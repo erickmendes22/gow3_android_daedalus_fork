@@ -46,6 +46,10 @@
     <string name="param_engine_fps">FPS do motor do jogo</string>
     <string name="param_vsync">VSync</string>
     <string name="param_frames_queued">Quadros na fila</string>
+    <string name="param_turnip_uniform_buffers">Buffers de shaders do Turnip</string>
+    <string name="param_desc_turnip_uniform_buffers">Usa uniform buffers para dados de shaders compatíveis de somente leitura no Turnip. Reinicie o jogo para aplicar.</string>
+    <string name="param_option_ubo_vertex">Só vértice</string>
+    <string name="param_option_ubo_vertex_fragment">Vértice e fragmento</string>
     <string name="param_offline_start">Iniciar offline</string>
     <string name="param_skip_intros">Pular introduções</string>
     <string name="param_free_camera">Câmera livre</string>

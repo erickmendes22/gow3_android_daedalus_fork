@@ -73,6 +73,14 @@ def derive(game, config, state_path, env):
                                              'fsr1': '0', 'rcas': '0'})
         ini = graphics_options.read_ini(config)
     updates = dict(graphics_options.environment(graphics))
+    if android_port and env.get('GOW3_BIONIC_RUNNER'):
+        try:
+            physical_mib = int(env.get('GOW3_DEVICE_MEM_MB', '0'))
+        except ValueError:
+            physical_mib = 0
+        # An 8 GiB phone reports less than its nominal RAM after hardware reservations.
+        if 7 * 1024 <= physical_mib <= 9 * 1024:
+            updates['GOW3_ANDROID_8GB_MEMORY'] = '1'
     if android_port:
         updates['GOW3_UPSCALER'] = 'gsr2' if gsr2_requested else 'none'
         updates['GOW3_FSR1'] = '0'

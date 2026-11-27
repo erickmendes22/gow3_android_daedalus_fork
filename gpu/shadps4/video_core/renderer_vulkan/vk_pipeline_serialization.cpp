@@ -32,9 +32,9 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // gow3: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 7u; // gow3: ImageResource::needs_native
-static constexpr u32 PipelineKeyVersion = 5u; // gow3: Info layout (ImageResource::needs_native)
+static constexpr u32 ShaderBinaryVersion = 8u; // Uniform buffer SPIR-V
+static constexpr u32 ShaderMetaVersion = 8u; // BufferSpecialization uniform extent
+static constexpr u32 PipelineKeyVersion = 6u; // Uniform descriptor masks
 } // namespace Serialization
 
 namespace Vulkan {
@@ -740,6 +740,7 @@ void GraphicsPipeline::SerializationSupport::Serialize(Serialization::Archive& a
     sdata.Write(multisampling);
     sdata.Write(tcs);
     sdata.Write(tes);
+    sdata.Write(uniform_buffer_masks.data(), sizeof(uniform_buffer_masks));
 }
 
 bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive& ar) {
@@ -751,6 +752,7 @@ bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive&
     sdata.Read(multisampling);
     sdata.Read(tcs);
     sdata.Read(tes);
+    sdata.Read(uniform_buffer_masks.data(), sizeof(uniform_buffer_masks));
     return true;
 }
 
@@ -865,7 +867,7 @@ bool PipelineCache::CheckCacheProfile() {
         return false;
     }
 
-    Storage::DataBase::Instance().Open();
+    Storage::DataBase::Instance().Open(profile.uniform_buffer_level);
 
     // Check if cache is compatible
     std::vector<u8> profile_data{};

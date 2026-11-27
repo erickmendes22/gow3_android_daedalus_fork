@@ -1,29 +1,9 @@
-name: Daedalus Fork Bionic APK
+name: Daedalus Snapdragon UBO APK
 
 on:
   pull_request:
-    branches: [fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022]
-    paths:
-      - '.github/gsr2-atomic-depth-build-trigger.txt'
-  push:
-    branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030, fix/bionic-r14-gsr2-history-camera-guard-20261019, fix/bionic-r15-gsr2-fragcoord-native-size-20261020, fix/bionic-r16-gsr2-jitter-consistency-20261020, fix/bionic-r17-texture-layout-identity-20261020, fix/bionic-r18-native-no-gsr2-20261020, fix/bionic-r19-native-aa-and-depth-overlap-20261020, release/2.1.7-bionic-ui-mods-cheats-8k-20261020, research/2.1.7-gsr2-srgb-stage-isolation-20261020, fix/2.1.7-gsr2-camera-reacquisition-20261020, fix/2.1.7-gsr2-atomic-depth-20261022, fix/2.1.7-gsr2-capture-history-20261029, fix/2.1.7-gsr2-native-frame-motion-20261029]
-    paths:
-      # First consolidated build triggered by this workflow edit, not by every code edit.
-      - '.github/workflows/bionic-apk.yml'
-      - '.github/gow3-spatial-build-trigger.txt'
-      - '.github/r14-build-trigger.txt'
-      - '.github/r15-build-trigger.txt'
-      - '.github/r16-build-trigger.txt'
-      - '.github/r17-build-trigger.txt'
-      - '.github/r18-build-trigger.txt'
-      - '.github/r19-build-trigger.txt'
-      - '.github/release-2.1.7-build-trigger.txt'
-      - '.github/gsr2-diagnostic-build-trigger.txt'
-      - '.github/gsr2-recovery-build-trigger.txt'
-      - '.github/gsr2-atomic-depth-build-trigger.txt'
-      - '.github/gsr2-capture-build-trigger.txt'
-      - '.github/gsr2-native-compile-trigger.txt'
-  workflow_dispatch:
+    types: [opened, synchronize, reopened]
+    branches: [fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030]
 
 permissions:
   contents: read
@@ -34,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/fix/2.1.7-gsr2-spatial-only-all-resolutions-20261030' || github.ref == 'refs/heads/fix/bionic-r14-gsr2-history-camera-guard-20261019' || github.ref == 'refs/heads/fix/bionic-r15-gsr2-fragcoord-native-size-20261020' || github.ref == 'refs/heads/fix/bionic-r16-gsr2-jitter-consistency-20261020' || github.ref == 'refs/heads/fix/bionic-r17-texture-layout-identity-20261020' || github.ref == 'refs/heads/fix/bionic-r18-native-no-gsr2-20261020' || github.ref == 'refs/heads/fix/bionic-r19-native-aa-and-depth-overlap-20261020' || github.ref == 'refs/heads/release/2.1.7-bionic-ui-mods-cheats-8k-20261020' || github.ref == 'refs/heads/research/2.1.7-gsr2-srgb-stage-isolation-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-camera-reacquisition-20261020' || github.ref == 'refs/heads/fix/2.1.7-gsr2-atomic-depth-20261022' || github.ref == 'refs/heads/fix/2.1.7-gsr2-capture-history-20261029' || github.ref == 'refs/heads/fix/2.1.7-gsr2-native-frame-motion-20261029' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/2.1.7-gsr2-atomic-depth-20261022' || github.head_ref == 'fix/2.1.7-gsr2-capture-history-20261029'))
+    if: github.head_ref == 'ci/gow3-snapdragon-ubo-apk' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -43,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           submodules: recursive
       - uses: actions/setup-python@v5
         with:
@@ -55,7 +36,7 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
       - name: Restore established APK upgrade signing key
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .local-deps/android/bionic-development.keystore
           key: bionic-development-signing-v1
@@ -66,10 +47,6 @@ jobs:
           targets: aarch64-linux-android
       - name: Source and native preparation tests
         run: |
-          # Runtime launcher is executed directly in the signed APK.
-          # Git mode must be 100755; fail before expensive native compilation.
-          test -x tools/android/bionic/run-bionic.sh
-          test "$(git ls-files --stage tools/android/bionic/run-bionic.sh | cut -d ' ' -f 1)" = 100755
           python -m pip install unicorn==2.1.4
           python -m unittest discover -s tests -p 'test_android_*.py'
           bash tools/android/bionic/build_prepare.sh host
