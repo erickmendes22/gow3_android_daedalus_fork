@@ -49,4 +49,20 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("scheduler.RecordGraphicsOrdered([memory = memory_barrier",RT)
         self.assertIn("mali_batch_commands >= command_budget",C)
         self.assertIn("mali_batch_tick != tick",C)
+    def test_r11_tiny_prefetch_publication_and_dma_dependency(self):
+        pre=C.split("void TextureCache::PrefetchTinyReadback",1)[1].split("TextureCache::TakeTinyPrefetch",1)[0]
+        self.assertIn("scheduler.Flush();",pre)
+        self.assertNotIn("WatchReadback<true>",pre)
+        self.assertNotIn("TryWriteBacking",pre)
+        self.assertNotIn("download_images.erase",pre)
+        self.assertIn("pending_readbacks.NewestTick() > pre.tick",C)
+        self.assertIn("pre.epoch != image.gpu_write_epoch",C)
+        self.assertIn("copy_tick, copy->staging",C)
+        self.assertIn("tracked_image.last_readback_tick = copy_tick",C)
+        self.assertEqual(D.count("texture_cache.PrefetchTinyReadback(cb_descs[0].first)"),2)
+        reset=D.split("void Rasterizer::ResetBindings",1)[1].split("bool Rasterizer::IsComputeMetaClear",1)[0]
+        self.assertIn("runtime.CompleteUntrackedShaderAccess(is_compute)",reset)
+        dependency=RT.split("void Runtime::CompleteUntrackedShaderAccess",1)[1].split("void Runtime::FlushBarriers",1)[0]
+        self.assertIn("eShaderWrite",dependency)
+        self.assertIn("FlushBarriers(true);",dependency)
 if __name__=="__main__": unittest.main()

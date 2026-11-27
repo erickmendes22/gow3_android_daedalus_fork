@@ -1227,7 +1227,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         EmitVertexBuffers(is_indexed);
     }
 
-    if (needs_barrier) {
+    if (mali_dma_access_pending) {
+        // Vertex/index/indirect inputs may upload after BindResources().
+        // Physical-address shaders can access those arenas too.
+        runtime.FlushBarriers(true);
+    } else if (needs_barrier) {
         runtime.FlushBarriers();
     }
 
@@ -1477,6 +1481,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     ResetBindings(false);
     texture_cache.MaybeSubmitTextureBatch();
+    if (cb_descs[0].first) texture_cache.PrefetchTinyReadback(cb_descs[0].first);
     scheduler.KickRecording();
 }
 
@@ -1570,7 +1575,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         needs_barrier |= runtime.IsBufferAccessed(count_buffer, count_offset, 4);
     }
 
-    if (needs_barrier) {
+    if (mali_dma_access_pending) {
+        // Vertex/index/indirect inputs may upload after BindResources().
+        // Physical-address shaders can access those arenas too.
+        runtime.FlushBarriers(true);
+    } else if (needs_barrier) {
         runtime.FlushBarriers();
     }
 
@@ -1649,6 +1658,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     }
     ResetBindings(false);
     texture_cache.MaybeSubmitTextureBatch();
+    if (cb_descs[0].first) texture_cache.PrefetchTinyReadback(cb_descs[0].first);
     scheduler.KickRecording();
 }
 
@@ -1701,7 +1711,11 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline, const DrawPredi
         return;
     }
 
-    if (needs_barrier) {
+    if (mali_dma_access_pending) {
+        // Vertex/index/indirect inputs may upload after BindResources().
+        // Physical-address shaders can access those arenas too.
+        runtime.FlushBarriers(true);
+    } else if (needs_barrier) {
         runtime.FlushBarriers();
     }
 
@@ -1760,7 +1774,11 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false);
     needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
 
-    if (needs_barrier) {
+    if (mali_dma_access_pending) {
+        // Vertex/index/indirect inputs may upload after BindResources().
+        // Physical-address shaders can access those arenas too.
+        runtime.FlushBarriers(true);
+    } else if (needs_barrier) {
         runtime.FlushBarriers();
     }
 
@@ -1923,6 +1941,7 @@ void Rasterizer::JoinBindHelper(void* context) {
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
+    mali_dma_access_pending = false;
     buffer_cache.DrainCompletedFaults();
     if (IsComputeImageCopy(pipeline) || IsComputeMetaClear(pipeline) ||
         IsComputeImageClear(pipeline)) {
@@ -2057,8 +2076,10 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         // Physical-address accesses are not represented by individual
         // descriptor ranges. Publish arena and BDA page-table writes
         // with the global dependency before the DMA shader executes.
-        if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5)
+        if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+            mali_dma_access_pending = true;
             runtime.FlushBarriers(true);
+        }
         fault_process_pending = true;
     }
 
@@ -2301,6 +2322,13 @@ void Rasterizer::ResetBindings(bool is_compute) {
             is_written ? vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eNone;
         runtime.AccessBuffer(buffer, offset, size, dst_stage,
                              vk::AccessFlagBits2::eShaderRead | write_flag);
+    }
+    // Raw physical-address reads/writes and fault bitmap atomics are not
+    // represented by bound_buffers. Close their actual execution dependency
+    // before any subsequent upload, readback, arena rebase or submission.
+    if (mali_dma_access_pending) {
+        runtime.CompleteUntrackedShaderAccess(is_compute);
+        mali_dma_access_pending = false;
     }
     bound_images.clear();
     bound_buffers.clear();

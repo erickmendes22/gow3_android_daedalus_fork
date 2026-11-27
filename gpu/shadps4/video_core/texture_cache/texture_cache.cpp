@@ -100,6 +100,10 @@ TextureCache::~TextureCache() {
         scheduler.Finish();
         std::scoped_lock lock{readback_mutex};
         RetireReadbacks();
+        if (tiny_prefetch) {
+            runtime.GetStagingPool().FreeDeferred(tiny_prefetch->copy.staging, tiny_prefetch->tick);
+            tiny_prefetch.reset();
+        }
     }
 }
 
@@ -206,6 +210,15 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
 void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     if (!deferred_readbacks) return;
     std::scoped_lock lock{readback_mutex};
+    // Unmap/cancel may run on a guest thread: invalidate here, release GPU
+    // staging on the GPU owner thread. Do not publish a canceled snapshot.
+    if (tiny_prefetch) {
+        const u64 start = tiny_prefetch->copy.guest_address;
+        const u64 end = start + tiny_prefetch->copy.size;
+        const u64 begin = exact ? start : (start & ~u64{4095});
+        const u64 limit = exact ? end : ((end + 4095) & ~u64{4095});
+        if (size && address < limit && begin < address + size) tiny_prefetch->valid = false;
+    }
     pending_readbacks.Cancel(address, size, [this](auto& entry) {
         if (entry.watched) WatchReadback<false>(entry.address, entry.size);
         ++readbacks_canceled;
@@ -272,6 +285,76 @@ void TextureCache::ReportImageCreates() {
     }
     partial_view_stats = {};
     partial_views = 0;
+}
+
+void TextureCache::PrefetchTinyReadback(ImageId image_id) {
+    static const bool enabled = [] {
+        const char* opt = std::getenv("GOW3_MALI_TINY_PRODUCER_PREFETCH");
+        const char* pipe = std::getenv("GOW3_DRAW_PIPE");
+        return (!opt || opt[0] != '0') && !(pipe && pipe[0] == '1');
+    }();
+    if (!enabled || !mali_exact_readback_ranges || !deferred_readbacks ||
+        !readback_linear_images || !image_id) return;
+    // Same lock order as ProcessDownloadImages. This runs only after a
+    // complete draw and ResetBindings, never in a resource binding callback.
+    bool submit = false;
+    {
+        std::scoped_lock readback_lock{readback_mutex};
+        std::scoped_lock download_lock{download_images_mutex};
+        if (!download_images.contains(image_id)) return;
+        const auto& image = slot_images[image_id];
+        const auto& i = image.info;
+        // Only the observed RG16F exposure class, not arbitrary render targets.
+        if (i.size.width != 1 || i.size.height != 1 || i.size.depth != 1 ||
+            i.resources.layers != 1 || i.resources.levels != 1 || i.num_samples != 1 ||
+            i.pixel_format != vk::Format::eR16G16Sfloat || i.pitch != 1 || !i.guest_address ||
+            !image.alias_generation || !image.gpu_write_epoch ||
+            True(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) ||
+            False(image.flags & ImageFlagBits::GpuModified)) return;
+        const u64 backing = std::bit_cast<u64>(image.GetImage());
+        if (tiny_prefetch && tiny_prefetch->valid &&
+            tiny_prefetch->uid == image.image_uid && tiny_prefetch->generation == image.alias_generation &&
+            tiny_prefetch->epoch == image.gpu_write_epoch && tiny_prefetch->backing == backing) return;
+        if (tiny_prefetch) {
+            runtime.GetStagingPool().FreeDeferred(tiny_prefetch->copy.staging);
+            tiny_prefetch.reset();
+        }
+        if (auto copy = RecordImageDownload(image_id)) {
+            tiny_prefetch = TinyPrefetch{*copy, scheduler.CurrentTick(), image.image_uid,
+                image.alias_generation, image.gpu_write_epoch, backing, true};
+            submit = true;
+        }
+    }
+    if (submit) {
+        // Submit at the producer, not at the later EOP; no CPU wait or guest
+        // write. The original download_images entry remains pending until EOP.
+        scheduler.Flush();
+    }
+}
+
+std::optional<TextureCache::PendingDownload> TextureCache::TakeTinyPrefetch(
+    const Image& image, u64 size, u64& tick) {
+    if (!tiny_prefetch || tiny_prefetch->copy.guest_address != image.info.guest_address)
+        return std::nullopt;
+    auto pre = *tiny_prefetch;
+    tiny_prefetch.reset();
+    if (!pre.valid || pre.copy.size != size || pre.uid != image.image_uid ||
+        pre.generation != image.alias_generation || pre.epoch != image.gpu_write_epoch ||
+        pre.backing != std::bit_cast<u64>(image.GetImage()) ||
+        True(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) ||
+        pending_readbacks.NewestTick() > pre.tick) {
+        // Keep the old allocation GPU-live until a later confirmed tick.
+        // Fall back to the ordinary, current-version EOP copy.
+        runtime.GetStagingPool().FreeDeferred(pre.copy.staging);
+        return std::nullopt;
+    }
+    tick = pre.tick;
+    static u64 reused = 0;
+    if (++reused <= 8 || (reused & 255u) == 0)
+        std::printf("GOW3_MALI_TINY_PREFETCH_REUSED count=%llu producer_tick=%llu eop_tick=%llu\n",
+                    (unsigned long long)reused, (unsigned long long)tick,
+                    (unsigned long long)scheduler.CurrentTick());
+    return pre.copy;
 }
 
 // gow3: every copy is recorded first and the GPU is waited for once. A wait per image (as
@@ -360,7 +443,13 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                 continue;
             }
             it = download_images.erase(it);
-            if (auto copy = RecordImageDownload(image_id)) {
+            u64 copy_tick = scheduler.CurrentTick();
+            if (auto copy = [&]() -> std::optional<PendingDownload> {
+                    if (auto prefetched = TakeTinyPrefetch(image, size, copy_tick)) return prefetched;
+                    auto result = RecordImageDownload(image_id);
+                    copy_tick = scheduler.CurrentTick();
+                    return result;
+                }()) {
                 if (!pending_readbacks.CanFit(copy->size)) {
                     ++readbacks_waited;
                     scheduler.Finish();
@@ -375,7 +464,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     // Publish the queue entry before installing the watcher:
                     // a fault raised while protecting a page must find its tick.
                     pending_readbacks.Push(copy->guest_address, copy->size,
-                        scheduler.CurrentTick(), copy->staging,
+                        copy_tick, copy->staging,
                         image.image_uid, image.alias_generation, image.gpu_write_epoch);
                     has_pending_readbacks.store(true, std::memory_order_release);
                     WatchReadback<true>(copy->guest_address, copy->size);
@@ -396,7 +485,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     tracked_image.last_readback_generation = tracked_image.alias_generation;
                     tracked_image.last_readback_write_epoch = tracked_image.gpu_write_epoch;
                     tracked_image.last_readback_backing = std::bit_cast<u64>(tracked_image.GetImage());
-                    tracked_image.last_readback_tick = scheduler.CurrentTick();
+                    tracked_image.last_readback_tick = copy_tick;
                     ++readbacks_queued;
                     readbacks_peak_bytes = std::max(readbacks_peak_bytes, pending_readbacks.Bytes());
                 }

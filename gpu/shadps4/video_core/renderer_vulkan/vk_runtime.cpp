@@ -1656,6 +1656,16 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
     memory_barrier.srcAccessMask |= src_access & WRITE_MASK;
 }
 
+void Runtime::CompleteUntrackedShaderAccess(bool is_compute) {
+    // BDA may touch any resident VkBuffer, and atomic fault writes are not
+    // tracked by descriptor ranges. No local-buffer barrier can prove their
+    // completion. Include WAR execution ordering and RAW/WAW availability.
+    memory_barrier.srcStageMask |= is_compute ? vk::PipelineStageFlagBits2::eComputeShader
+                                             : vk::PipelineStageFlagBits2::eAllGraphics;
+    memory_barrier.srcAccessMask |= vk::AccessFlagBits2::eShaderWrite;
+    FlushBarriers(true);
+}
+
 void Runtime::FlushBarriers(bool force_buffer_barrier) {
     BeforeImageAccess();
     const auto decision = DecideBarrierFlush(

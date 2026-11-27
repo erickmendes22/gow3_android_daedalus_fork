@@ -504,6 +504,7 @@ private:
     /// The memoized cache entry of each image binding (FindImage memo taken), else null.
     boost::container::static_vector<ImageDescCacheEntry*, Shader::NUM_IMAGES> image_binding_entries;
     bool fault_process_pending{};
+    bool mali_dma_access_pending{};
     bool attachment_feedback_loop{};
     bool needs_barrier{};
     // gow3: two-stage draw pipeline (stage B state; the thread is the last member so it

@@ -105,6 +105,7 @@ public:
 
     // force_buffer_barrier is used at queue submission to retire accumulated ranges.
     void FlushBarriers(bool force_buffer_barrier = false);
+    void CompleteUntrackedShaderAccess(bool is_compute);
 
     /// gow3: runs before this thread changes image state (layouts, pending image
     /// barriers): the rasterizer joins its texture binding helper there (BindHelper).

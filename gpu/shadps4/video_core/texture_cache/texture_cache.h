@@ -136,6 +136,7 @@ public:
     /// Schedules a copy of pending images for download back to CPU memory.
     void ProcessDownloadImages(bool tiny_only = false);
     void SubmitPendingReadbacks(bool tiny_only = false);
+    void PrefetchTinyReadback(ImageId image_id);
     void MaybeSubmitTextureBatch();
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,
                           ReadbackSource source = ReadbackSource::Unknown);
@@ -392,6 +393,15 @@ private:
     };
     /// Records the copy of a GPU-modified image into a deferred staging allocation.
     std::optional<PendingDownload> RecordImageDownload(ImageId image_id);
+    // A speculative GPU copy, NOT a guest writeback: keep the original EOP
+    // publication rule and validate identity/version before consuming it.
+    struct TinyPrefetch {
+        PendingDownload copy;
+        u64 tick, uid, generation, epoch, backing;
+        bool valid;
+    };
+    std::optional<TinyPrefetch> tiny_prefetch; // guarded by readback_mutex
+    std::optional<PendingDownload> TakeTinyPrefetch(const Image& image, u64 size, u64& tick);
 
     /// Thread function for copying downloaded images out to CPU memory.
     void DownloadedImagesThread(const std::stop_token& token);
