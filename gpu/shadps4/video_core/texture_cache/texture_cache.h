@@ -534,7 +534,7 @@ private:
     u64 readbacks_canceled = 0, readbacks_peak_bytes = 0;
     std::chrono::steady_clock::time_point readback_report = std::chrono::steady_clock::now();
     ReadbackSourceStats readback_sources;
-    void RetireReadbacks();
+    void RetireReadbacks(bool refresh = true);
     PageTable page_table;
     std::mutex mutex;
     /// gow3 (#138): under `mutex`. GPU-modified images hold the written data themselves.

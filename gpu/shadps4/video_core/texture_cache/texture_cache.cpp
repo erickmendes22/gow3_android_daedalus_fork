@@ -116,10 +116,10 @@ void TextureCache::WatchReadback(VAddr address, u64 size) {
     }
 }
 
-void TextureCache::RetireReadbacks() {
+void TextureCache::RetireReadbacks(bool refresh) {
     // One timeline query for the entire retired prefix; its completion also
     // proves all earlier entries. Do not query a not-yet-submitted tick.
-    if (const auto oldest = pending_readbacks.OldestTick(); oldest)
+    if (const auto oldest = pending_readbacks.OldestTick(); refresh && oldest)
         (void)scheduler.IsFree(oldest);
     const auto completed = scheduler.GetWorkSemaphore()->KnownGpuTick();
     pending_readbacks.Retire([completed](u64 tick) { return tick <= completed; },
@@ -191,8 +191,18 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
             waited = true;
             const auto start = diag ? std::chrono::steady_clock::now()
                                     : std::chrono::steady_clock::time_point{};
+            // Snapshot the exact blocking entry while protected. Only scalar
+            // values cross the unlock; no queue pointer survives the wait.
+            const auto* blocking = pending_readbacks.RequiredEntry(address, size, exact);
+            const Vulkan::Semaphore::ReadbackWaitContext context{
+                address, size, static_cast<u64>(source), tick,
+                blocking ? blocking->address : 0, blocking ? blocking->size : 0,
+                blocking ? blocking->image_uid : 0};
             lock.unlock();
-            scheduler.Wait(tick);
+            {
+                const Vulkan::Semaphore::ReadbackWaitScope wait_context{context};
+                scheduler.Wait(tick);
+            }
             lock.lock();
             if (diag) {
                 wait_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -488,6 +498,9 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     tracked_image.last_readback_tick = copy_tick;
                     ++readbacks_queued;
                     readbacks_peak_bytes = std::max(readbacks_peak_bytes, pending_readbacks.Bytes());
+                    if (copy_tick < scheduler.CurrentTick() &&
+                        scheduler.GetWorkSemaphore()->KnownGpuTick() >= copy_tick)
+                        RetireReadbacks(false);
                 }
             }
         }

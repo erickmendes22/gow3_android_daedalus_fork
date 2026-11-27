@@ -46,7 +46,7 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("append(&info.range, sizeof(info.range))",S)
         self.assertIn("append(&info.imageLayout, sizeof(info.imageLayout))",S)
         self.assertNotIn("append(w.pImageInfo,",S)
-        self.assertIn("scheduler.RecordGraphicsOrdered([memory = memory_barrier",RT)
+        self.assertIn("scheduler.RecordGraphicsOrdered([this, memory = memory_barrier",RT)
         self.assertIn("mali_batch_commands >= command_budget",C)
         self.assertIn("mali_batch_tick != tick",C)
     def test_r11_tiny_prefetch_publication_and_dma_dependency(self):
@@ -65,4 +65,19 @@ class R10Priorities(unittest.TestCase):
         dependency=RT.split("void Runtime::CompleteUntrackedShaderAccess",1)[1].split("void Runtime::FlushBarriers",1)[0]
         self.assertIn("eShaderWrite",dependency)
         self.assertIn("FlushBarriers(true);",dependency)
+    def test_r11_crash_breadcrumbs_without_gpu_waits(self):
+        sem=(V/"vk_semaphore.cpp").read_text()
+        sem_h=(V/"vk_semaphore.h").read_text()
+        trace=S.split("void Scheduler::TraceWork",1)[1].split("void Scheduler::FlushNativeDrawBatch",1)[0]
+        self.assertIn("summary.first_seq = seq",trace)
+        self.assertIn("summary.last_seq = seq",trace)
+        self.assertIn("std::array<WorkSummary, WorkKinds> categories",sem_h)
+        self.assertIn("GOW3_SUBMIT_CATEGORY",sem)
+        self.assertIn("GOW3_READBACK_FAILURE",sem)
+        self.assertNotIn("waitSemaphores",trace)
+        self.assertNotIn("printf",trace)
+        self.assertIn("ReadbackWaitScope wait_context",C)
+        self.assertIn("TraceWork(5, guest_base",RT)
+        self.assertIn("TraceWork(10, dispatch_hash",D)
+        self.assertIn("RetireReadbacks(false)",C)
 if __name__=="__main__": unittest.main()

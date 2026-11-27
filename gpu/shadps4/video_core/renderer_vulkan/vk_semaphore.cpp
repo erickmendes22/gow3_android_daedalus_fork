@@ -12,6 +12,7 @@
 namespace Vulkan {
 
 constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
+thread_local const Semaphore::ReadbackWaitContext* Semaphore::readback_wait_context = nullptr;
 
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
 #ifdef __ANDROID__
@@ -65,6 +66,16 @@ void Semaphore::DumpSubmissionHistory(u64 requested) {
             std::fprintf(stderr, "GOW3_SUBMIT_WAIT tick=%llu sem=%llx value=%llu\n",
                 (unsigned long long)rec.tick, (unsigned long long)rec.wait_handles[i],
                 (unsigned long long)rec.wait_values[i]);
+        for (size_t kind = 1; kind < rec.categories.size(); ++kind) {
+            const auto& s = rec.categories[kind];
+            if (!s.count) continue;
+            std::fprintf(stderr, "GOW3_SUBMIT_CATEGORY tick=%llu kind=%zu count=%llu hash=%016llx first_seq=%llu first=%llx:%llx:%llx last_seq=%llu last=%llx:%llx:%llx\n",
+                (unsigned long long)rec.tick, kind, (unsigned long long)s.count,
+                (unsigned long long)s.signature, (unsigned long long)s.first_seq,
+                (unsigned long long)s.first.a, (unsigned long long)s.first.b, (unsigned long long)s.first.c,
+                (unsigned long long)s.last_seq, (unsigned long long)s.last.a,
+                (unsigned long long)s.last.b, (unsigned long long)s.last.c);
+        }
         const u64 begin = rec.item_count > rec.items.size() ? rec.item_count - rec.items.size() : 0;
         for (u64 i=begin; i<rec.item_count; ++i) {
             const auto& e = rec.items[i % rec.items.size()];
@@ -139,6 +150,13 @@ void Semaphore::Wait(u64 tick, std::source_location caller) {
     }
     if (result != vk::Result::eSuccess) {
         DumpSubmissionHistory(tick);
+        if (const auto* ctx = readback_wait_context) {
+            std::fprintf(stderr, "GOW3_READBACK_FAILURE access=%llx size=%llu source=%llu target_tick=%llu image=%llx image_bytes=%llu uid=%llu\n",
+                (unsigned long long)ctx->address, (unsigned long long)ctx->size,
+                (unsigned long long)ctx->source, (unsigned long long)ctx->tick,
+                (unsigned long long)ctx->image_address, (unsigned long long)ctx->image_size,
+                (unsigned long long)ctx->image_uid);
+        }
         std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
                      int(result), static_cast<unsigned long long>(tick),
                      static_cast<unsigned long long>(KnownGpuTick()),

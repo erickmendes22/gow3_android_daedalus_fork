@@ -665,7 +665,20 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
 void Scheduler::TraceWork(u64 kind, u64 a, u64 b, u64 c) {
     if (!work_semaphore.TraceEnabled()) return;
     auto& rec = submit_history;
-    rec.items[rec.item_count++ % rec.items.size()] = {kind, a, b, c};
+    const u64 seq = rec.item_count++;
+    const Semaphore::WorkItem item{kind, a, b, c};
+    rec.items[seq % rec.items.size()] = item;
+    if (kind < rec.categories.size()) {
+        auto& summary = rec.categories[kind];
+        if (!summary.count++) {
+            summary.first = item;
+            summary.first_seq = seq;
+        }
+        summary.last = item;
+        summary.last_seq = seq;
+        summary.signature = (summary.signature ^ a ^ (b * 0x9e3779b97f4a7c15ULL) ^
+                             (c * 0xbf58476d1ce4e5b9ULL)) * 0x100000001b3ULL;
+    }
     if (kind == 1) ++rec.draw_count;
     else if (kind == 2) rec.upload_bytes += c;
     else if (kind == 3) rec.download_bytes += c;
@@ -694,6 +707,7 @@ void Scheduler::FlushNativeDrawBatch(vk::CommandBuffer cmdbuf) {
             dispatch.vkCmdDrawMultiEXT(static_cast<VkCommandBuffer>(cmdbuf), n,
                 native_draws.data(), native_instances, native_first_instance,
                 sizeof(VkMultiDrawInfoEXT));
+        TraceWork(9, n, native_indexed, native_instances);
         native_draws_saved += n - 1;
         ++native_batches;
         if (native_batches <= 4 || (native_batches & 4095u) == 0)

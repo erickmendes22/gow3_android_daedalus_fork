@@ -1612,7 +1612,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const u64 args_offset = base;
     const vk::Buffer counts = count_address != 0 ? count_buffer->Handle() : vk::Buffer{};
     const u64 counts_offset = count_address != 0 ? count_offset : 0;
+    const u64 indirect_vs = pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash;
+    const auto* indirect_ps_info = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    const u64 indirect_ps = indirect_ps_info ? indirect_ps_info->pgm_hash : 0;
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(11, indirect_vs, indirect_ps, max_count);
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         for (const vk::Pipeline bound : {handle, square}) {
             if (!bound) {
@@ -1731,7 +1735,9 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline, const DrawPredi
         FrameCapture::Dispatch(cs.pgm_hash, dim_x, dim_y, dim_z);
     }
     const auto predicate_state = predication.CapturePredicate();
+    const u64 dispatch_hash = cs.pgm_hash;
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(10, dispatch_hash, (u64(dim_x) << 32) | dim_y, dim_z);
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
         predication.BeginDraw(cmdbuf, std::nullopt, pred.predicated, predicate_state);
         cmdbuf.dispatch(dim_x, dim_y, dim_z);
@@ -1791,7 +1797,9 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
     const vk::Buffer args = buffer->Handle();
     const u64 args_offset = base;
     const auto predicate_state = predication.CapturePredicate();
+    const u64 dispatch_hash = pipeline->GetStage(Shader::SwStage::Compute).pgm_hash;
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(10, dispatch_hash, std::bit_cast<u64>(args), args_offset);
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
         predication.BeginDraw(cmdbuf, std::nullopt, pred.predicated, predicate_state);
         cmdbuf.dispatchIndirect(args, args_offset);

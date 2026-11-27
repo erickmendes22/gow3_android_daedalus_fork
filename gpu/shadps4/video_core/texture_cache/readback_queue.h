@@ -64,12 +64,14 @@ public:
     }
     /// `exact`: only copies sharing bytes with the range, not just a page (spartanport: for consumers
     /// that read or drop exactly those bytes, e.g. an image upload).
+    const Entry* RequiredEntry(std::uint64_t address, std::uint64_t size, bool exact = false) const {
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it)
+            if (it->valid && it->watched && Overlaps(*it, address, size, exact)) return &*it;
+        return nullptr;
+    }
     std::uint64_t RequiredTick(std::uint64_t address, std::uint64_t size, bool exact = false) const {
-        std::uint64_t tick = 0;
-        for (const auto& entry : entries) {
-            if (entry.valid && entry.watched && Overlaps(entry, address, size, exact)) tick = entry.tick;
-        }
-        return tick;
+        const auto* entry = RequiredEntry(address, size, exact);
+        return entry ? entry->tick : 0;
     }
     template <typename Callback>
     void Cancel(std::uint64_t address, std::uint64_t size, Callback&& cancel, bool exact = false) {

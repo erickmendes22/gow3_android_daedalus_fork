@@ -733,8 +733,12 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
         FlushBarriers();
     }
 
-    scheduler.Record([src_handle = src->Handle(), dst_handle = dst->Handle(),
+    scheduler.Record([this, src_handle = src->Handle(), dst_handle = dst->Handle(),
                       regions = scheduler.RecordData(copies)](vk::CommandBuffer cmdbuf) {
+        if (scheduler.SubmitHistoryEnabled()) {
+            for (const auto& region : regions)
+                scheduler.TraceWork(4, std::bit_cast<u64>(dst_handle), region.dstOffset, region.size);
+        }
         cmdbuf.copyBuffer(src_handle, dst_handle, regions.size(), regions.data());
     });
 
@@ -760,7 +764,9 @@ void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32
         FlushBarriers();
     }
 
-    scheduler.Record([handle = dst->Handle(), offset, size, value](vk::CommandBuffer cmdbuf) {
+    scheduler.Record([this, handle = dst->Handle(), offset, size, value,
+                      guest_base = dst->cpu_addr](vk::CommandBuffer cmdbuf) {
+        scheduler.TraceWork(5, guest_base, std::bit_cast<u64>(handle), size);
         cmdbuf.fillBuffer(handle, offset, size, value);
     });
 
@@ -1708,7 +1714,7 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
     scheduler.EndRendering();
     // A barrier orders memory but does not mutate graphics descriptors or
     // push constants. Flush pending draws, without invalidating their state.
-    scheduler.RecordGraphicsOrdered([memory = memory_barrier,
+    scheduler.RecordGraphicsOrdered([this, memory = memory_barrier,
                       has_memory = decision.emit_memory && !local_buffers,
                       buffers = local_buffer_info,
                       buffer_count = local_buffer_count,
@@ -1722,6 +1728,18 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
             .imageMemoryBarrierCount = static_cast<u32>(images.size()),
             .pImageMemoryBarriers = images.data(),
         };
+        if (scheduler.SubmitHistoryEnabled()) {
+            scheduler.TraceWork(6, static_cast<u64>(static_cast<VkPipelineStageFlags2>(memory.srcStageMask)),
+                static_cast<u64>(static_cast<VkAccessFlags2>(memory.srcAccessMask)),
+                (u64(has_memory) << 63) | (u64(buffer_count) << 32) | images.size());
+            for (u32 i = 0; i < buffer_count; ++i)
+                scheduler.TraceWork(7, std::bit_cast<u64>(buffers[i].buffer),
+                                    buffers[i].offset, buffers[i].size);
+            for (const auto& image : images)
+                scheduler.TraceWork(8, std::bit_cast<u64>(image.image),
+                    (u64(static_cast<u32>(image.oldLayout)) << 32) | static_cast<u32>(image.newLayout),
+                    (u64(image.subresourceRange.baseMipLevel) << 32) | image.subresourceRange.baseArrayLayer);
+        }
         cmdbuf.pipelineBarrier2(info);
     });
 
