@@ -304,7 +304,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # G720 logs isolate repeated 88-232 ms vkAllocateMemory stalls when VMA
       # requests 128/256 MiB. Prefer 32 MiB for ordinary heap blocks, retaining
       # VMA budget/dedicated-allocation checks; set =0 for the original policy.
-      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-64}
+      export GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-128}
       # Lightweight stage timings ON by default for PanVK CPU-present.
       # Samples one frame in 32, logs one aggregate per ~5 s, no captures.
       # Set 0 to measure baseline without the counters.
@@ -378,6 +378,9 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_STAGING_PRESSURE_RECLAIM=${GOW3_MALI_STAGING_PRESSURE_RECLAIM:-1}
       echo "Mali Beta3 ports: coalesce_downloads=$GOW3_MALI_COALESCE_DOWNLOADS staging_pressure_reclaim=$GOW3_MALI_STAGING_PRESSURE_RECLAIM"
       export GOW3_MALI_EARLY_READBACK_SUBMIT=${GOW3_MALI_EARLY_READBACK_SUBMIT:-1}
+      export GOW3_MALI_COALESCE_EOP_READBACK=${GOW3_MALI_COALESCE_EOP_READBACK:-1}
+      export GOW3_MALI_NATIVE_DRAW_BATCH=${GOW3_MALI_NATIVE_DRAW_BATCH:-1}
+      echo "Mali R9: native_draw_batch=$GOW3_MALI_NATIVE_DRAW_BATCH coalesce_eop=$GOW3_MALI_COALESCE_EOP_READBACK"
       export GOW3_MALI_TEXTURE_BATCH_MIB=${GOW3_MALI_TEXTURE_BATCH_MIB:-16}
       echo "Mali texture-cache safety: early_readback_submit=$GOW3_MALI_EARLY_READBACK_SUBMIT texture_batch_mib=$GOW3_MALI_TEXTURE_BATCH_MIB exact_pool_only=$([ "$GOW3_MALI_REBIND_RETIRED_MEMORY" = 0 ] && echo yes || echo no)"
       export GOW3_MALI_CANONICAL_INDEX_BIND=${GOW3_MALI_CANONICAL_INDEX_BIND:-1}

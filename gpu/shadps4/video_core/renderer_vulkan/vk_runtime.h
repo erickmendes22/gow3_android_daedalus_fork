@@ -72,6 +72,8 @@ public:
     };
     void UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
                      std::span<const vk::BufferImageCopy> upload_copies);
+    u64 CurrentUploadBatchBytes() const;
+    void ResetUploadBatchBytes() { texture_upload_batch_bytes = 0; }
     void DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
                        std::span<const vk::BufferImageCopy> download_copies);
 
@@ -121,6 +123,8 @@ private:
     void* image_access_context = nullptr;
     const Instance& instance;
     Scheduler& scheduler;
+    u64 texture_upload_batch_tick = 0;
+    u64 texture_upload_batch_bytes = 0;
     std::unique_ptr<VideoCore::BlitHelper> blit_helper;
     StagingBufferPool staging_pool;
     std::unique_ptr<BcnTranscodeState> bcn_transcode;

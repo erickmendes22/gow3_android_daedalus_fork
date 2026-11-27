@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 Beta3 readback and staging performance APK r8.2
+name: GoW III Mali 1023daf52 native multi-draw and late throttle APK r9
 
 on:
   push:
@@ -71,6 +71,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_submit_throttle_r6.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_gpu_fault_drain.py' -v
           python3 -m unittest discover -s tests -p 'test_mali_beta3_ports.py' -v
+          python3 -m unittest discover -s tests -p 'test_mali_r9_native_batch.py' -v
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_beta3_copy_policy.cpp -o /tmp/gow3-beta3-copy-policy
           /tmp/gow3-beta3-copy-policy
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_gpu_fault_drain.cpp -o /tmp/gow3-gpu-fault-drain
@@ -168,7 +169,15 @@ jobs:
         shell: bash -el {0}
         run: |
           bash tools/android/bionic/build_gpu.sh --configure-only
-          cmake --build out/bionic/gpu --parallel "$GOW3_JOBS" --target CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp.o
+          cmake --build out/bionic/gpu --parallel "$GOW3_JOBS" --target \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_instance.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_scheduler.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_pipeline_common.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_runtime.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/texture_cache/texture_cache.cpp.o \
+            CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_semaphore.cpp.o
       - name: Build Vulkan C++ runtime and CPU runtime (NOT reuse old binaries)
         shell: bash -el {0}
         run: |

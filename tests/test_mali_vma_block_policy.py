@@ -20,13 +20,13 @@ class MaliVkAllocationPolicy(unittest.TestCase):
         self.assertIn('preferred_block_size = 0;', INSTANCE)
         self.assertIn('properties.vendorID == 0x13B5', INSTANCE)
         self.assertIn('std::getenv("GOW3_ANDROID_PORT")', INSTANCE)
-        self.assertIn('unsigned long mib = 64;', INSTANCE)
+        self.assertIn('unsigned long mib = 128;', INSTANCE)
         self.assertIn('std::getenv("GOW3_MALI_VMA_BLOCK_MIB")', INSTANCE)
         self.assertIn('parsed == 0 || parsed == 16 || parsed == 32', INSTANCE)
         self.assertIn('.preferredLargeHeapBlockSize = preferred_block_size', INSTANCE)
         self.assertIn('GOW3_MALI_VMA_CALL_TRACE', INSTANCE)
         self.assertIn("trace_opt && trace_opt[0] == '1'", INSTANCE)
-        self.assertIn('GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-64}', RUN)
+        self.assertIn('GOW3_MALI_VMA_BLOCK_MIB=${GOW3_MALI_VMA_BLOCK_MIB:-128}', RUN)
         self.assertIn('VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT', INSTANCE)
 
     def test_rgba_budget_reclaim_not_gated_by_exact_shape_pool(self):

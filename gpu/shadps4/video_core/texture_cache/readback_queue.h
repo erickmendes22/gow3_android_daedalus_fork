@@ -22,6 +22,11 @@ public:
     }
     std::uint64_t OldestTick() const { return entries.empty() ? 0 : entries.front().tick; }
     std::uint64_t NewestTick() const { return entries.empty() ? 0 : entries.back().tick; }
+    bool HasSmallReadback(std::uint64_t tick, std::uint64_t limit) const {
+        for (const auto& e : entries)
+            if (e.valid && e.watched && e.tick == tick && e.size <= limit) return true;
+        return false;
+    }
     // Smallest in-order prefix that makes room. Oversized copies use the
     // explicit synchronous fallback; never return an unrelated future tick.
     std::uint64_t RequiredTickForSpace(std::uint64_t size) const {

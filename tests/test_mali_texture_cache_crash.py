@@ -28,16 +28,18 @@ class TextureCacheCrash(unittest.TestCase):
         self.assertIn("texture_cache.SubmitPendingReadbacks();",R)
     def test_upload_batch_not_across_guest_draws_or_stale_frames(self):
         self.assertIn("recorded_upload_bytes += mip_size;",C)
-        self.assertIn("texture_upload_batch_bytes += recorded_upload_bytes;",C)
+        runtime=(V/"vk_runtime.cpp").read_text()
+        self.assertIn("texture_upload_batch_bytes += BufferImageCopySize(copy, dst->info.pixel_format);",runtime)
+        self.assertIn("runtime.CurrentUploadBatchBytes()",C)
         self.assertEqual(R.count("texture_cache.MaybeSubmitTextureBatch();"),4)
         for b in ("true","false"):
             self.assertIn("ResetBindings("+b+");\n    texture_cache.MaybeSubmitTextureBatch();",R)
-        self.assertIn("texture_upload_batch_tick != scheduler.CurrentTick()",C)
+        self.assertIn("texture_upload_batch_tick == scheduler.CurrentTick()",runtime)
         self.assertIn("GOW3_MALI_TEXTURE_BATCH_MIB:-16",RUN)
     def test_cache_stability_defaults_preserve_exact_pools(self):
         for flag in ("GOW3_MALI_REBIND_RETIRED_MEMORY","GOW3_MALI_BC_ALIAS_RETIRE","GOW3_MALI_EAGER_COMPLETED_RETIRE","GOW3_TEXTURE_HELPER"):
             self.assertIn(flag+":-0",RUN)
         for flag in ("GOW3_MALI_BC_IMAGE_POOL","GOW3_MALI_RGBA128_IMAGE_POOL"):
             self.assertIn(flag+":-1",RUN)
-        self.assertIn("GOW3_MALI_VMA_BLOCK_MIB:-64",RUN)
+        self.assertIn("GOW3_MALI_VMA_BLOCK_MIB:-128",RUN)
 if __name__ == "__main__": unittest.main()

@@ -13,6 +13,8 @@ class SubmitThrottleR6(unittest.TestCase):
         self.assertLess(S.index("lk.unlock();"),S.index("work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions)"))
         self.assertLess(S.index("work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions)"),S.index("lk.lock();"))
         self.assertLess(S.index("lk.lock();"),S.index("const auto reserved = work_semaphore.NextTick();"))
+        self.assertLess(S.index("WaitHostCopies();"),S.index("const auto reserved = work_semaphore.NextTick();"))
+        self.assertIn("if (!mali_unlocked_submit_throttle) wait_for_capacity();",S)
         self.assertLess(S.index("const auto reserved = work_semaphore.NextTick();"),S.index("GetGraphicsQueue().submit"))
         self.assertNotIn("while (",S)
         self.assertIn("reserved == signal_value",S)

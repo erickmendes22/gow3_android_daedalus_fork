@@ -403,6 +403,20 @@ void TextureCache::SubmitPendingReadbacks() {
     {
         std::scoped_lock lock{readback_mutex};
         needs_submit = pending_readbacks.NewestTick() == scheduler.CurrentTick();
+        static const bool coalesce = [] {
+            const char* opt = std::getenv("GOW3_MALI_COALESCE_EOP_READBACK");
+            return opt && opt[0] == '1';
+        }();
+        if (needs_submit && coalesce && pending_readbacks.Bytes() < 8_MB &&
+            !pending_readbacks.HasSmallReadback(scheduler.CurrentTick(), 64)) {
+            // Ordinary submission or actual CPU demand flushes these copies.
+            // Keep every GPU copy, watched page and required guest value.
+            needs_submit = false;
+            static u64 avoided = 0;
+            if (++avoided <= 4 || (avoided & 255u) == 0)
+                std::printf("GOW3_MALI_READBACK_EOP_COALESCED count=%llu\n",
+                    static_cast<unsigned long long>(avoided));
+        }
     }
     // At an EOP/release event, start the GPU copy before the guest observes
     // its fence. This is a submission, not Finish; the data stays watched.
@@ -1662,11 +1676,7 @@ void TextureCache::RefreshImage(Image& image) {
 
     runtime.UploadImage(&image, buffer, image_copies);
     Gow3Stats::image_upload_bytes.fetch_add(recorded_upload_bytes, std::memory_order_relaxed);
-    if (texture_upload_batch_tick != scheduler.CurrentTick()) {
-        texture_upload_batch_tick = scheduler.CurrentTick();
-        texture_upload_batch_bytes = 0;
-    }
-    texture_upload_batch_bytes += recorded_upload_bytes;
+
 }
 
 void TextureCache::MaybeSubmitTextureBatch() {
@@ -1677,17 +1687,17 @@ void TextureCache::MaybeSubmitTextureBatch() {
         const auto mib = std::strtoull(value, nullptr, 10);
         return mib >= 8 && mib <= 128 ? u64{mib} * 1024 * 1024 : u64{0};
     }();
-    if (!budget || texture_upload_batch_tick != scheduler.CurrentTick() ||
-        texture_upload_batch_bytes < budget) return;
+    const u64 upload_bytes = runtime.CurrentUploadBatchBytes();
+    if (!budget || upload_bytes < budget) return;
     // Only at a completed guest draw/dispatch, with bindings reset and
     // predication/query recording closed. Preserve order and all uploads.
     // The existing bounded-submit throttle prevents an unbounded GPU queue.
     static u64 batches = 0;
     if (++batches <= 8 || (batches & 63u) == 0)
         std::printf("GOW3_MALI_TEXTURE_BATCH submit=%llu tick=%llu upload_mib=%.2f\n",
-                    (unsigned long long)batches, (unsigned long long)texture_upload_batch_tick,
-                    texture_upload_batch_bytes / 1048576.0);
-    texture_upload_batch_bytes = 0;
+                    (unsigned long long)batches, (unsigned long long)scheduler.CurrentTick(),
+                    upload_bytes / 1048576.0);
+    runtime.ResetUploadBatchBytes();
     scheduler.Flush();
 }
 

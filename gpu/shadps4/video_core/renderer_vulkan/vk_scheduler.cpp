@@ -819,6 +819,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                !(opt_out && opt_out[0] == '1');
     }();
+    const auto wait_for_capacity = [&] {
     if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
         // Every forced wait is measured: this is precisely the suspected
         // 60->5 FPS menu bottleneck, unlike AHB copy timing. The readback,
@@ -845,11 +846,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
             MaliPerfStats::Record(MaliPerfStats::Stage::SubmitThrottle, throttle_start);
         if (mali_unlocked_submit_throttle) lk.lock();
     }
-    if (mali_unlocked_submit_throttle) {
-        // One reservation, one increment. No loop can chase a stale tick.
-        const auto reserved = work_semaphore.NextTick();
-        ASSERT_MSG(reserved == signal_value, "Scheduler submission tick changed during throttle");
-    }
+    };
+    if (!mali_unlocked_submit_throttle) wait_for_capacity();
 
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
@@ -878,6 +876,13 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitHostCopies, recording_start);
     Check(current_cmdbuf.end());
 
+    if (mali_unlocked_submit_throttle) {
+        // Overlap command recording and host copies with the older GPU work.
+        // Keep the capacity limit; reserve the tick only after preparation.
+        wait_for_capacity();
+        const auto reserved = work_semaphore.NextTick();
+        ASSERT_MSG(reserved == signal_value, "Scheduler submission tick changed during throttle");
+    }
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 

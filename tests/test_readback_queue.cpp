@@ -14,6 +14,9 @@ int main() {
     assert(queue.RequiredTickForSpace(1) == 0);
     queue.Push(0x1000, 4096, 3, 1);
     assert(queue.OldestTick() == 3);
+    assert(queue.HasSmallReadback(3, 4096));
+    assert(!queue.HasSmallReadback(3, 64));
+    assert(!queue.HasSmallReadback(4, 4096));
     queue.Push(0x1000, 4096, 4, 2);
     assert(queue.NewestTick() == 4);
     assert(queue.RequiredTick(0x1fff, 8) == 4);

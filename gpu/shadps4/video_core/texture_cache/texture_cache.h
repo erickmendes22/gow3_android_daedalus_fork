@@ -514,8 +514,6 @@ private:
     bool ExactReadbackWaits() const {
         return stale_readbacks && !Gow3Toggle::Disabled(Gow3Toggle::ExactReadbackWaits);
     }
-    u64 texture_upload_batch_tick = 0;
-    u64 texture_upload_batch_bytes = 0;
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;
     std::atomic<bool> has_pending_readbacks{false};

@@ -84,14 +84,21 @@ void Semaphore::Wait(u64 tick, std::source_location caller) {
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     auto result = instance.GetDevice().waitSemaphores(&wait_info,
         report_stall ? u64{500000000} : WAIT_TIMEOUT);
-    if (report_stall && result == vk::Result::eTimeout) {
+    u32 timeout_count = 0;
+    while (result == vk::Result::eTimeout) {
+        ++timeout_count;
+        if (timeout_count == 1 || (timeout_count % 20) == 0) {
         std::fprintf(stderr, "GOW3_TIMELINE_STALL requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
                      static_cast<unsigned long long>(tick),
                      static_cast<unsigned long long>(KnownGpuTick()),
                      static_cast<unsigned long long>(CurrentTick()),
                      caller.file_name(), caller.line(), caller.function_name(),
                      static_cast<const void*>(this));
-        result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+        }
+        // Timeout is incomplete, not lost. Retry an actual driver wait;
+        // never publish a completion or retry after VK_ERROR_DEVICE_LOST.
+        result = instance.GetDevice().waitSemaphores(&wait_info,
+            report_stall ? u64{500000000} : WAIT_TIMEOUT);
     }
     if (result != vk::Result::eSuccess) {
         std::fprintf(stderr, "GOW3_TIMELINE_FAILURE result=%d requested=%llu known=%llu current=%llu caller=%s:%u function=%s semaphore=%p\n",
