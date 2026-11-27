@@ -120,7 +120,7 @@ internal fun HomePopup(
     var vsync by remember(kind) { mutableStateOf(ini["vsync"] != "0") }
     var resolution by remember(kind) { mutableStateOf(ini["render_resolution"] ?: "720p") }
     var fullscreen by remember(kind) { mutableStateOf(ini["android_fullscreen"] == "1") }
-    val isBionic = LocalContext.current.packageName == "com.gow3.android.bionic"
+    val isBionic = ro.cobrabm.fexdroid.GpuDriverManager.supported(LocalContext.current)
     var gsr2 by remember(kind) { mutableStateOf(ini["upscaler"] == "gsr2") }
     var gsrPreset by remember(kind) {
         mutableStateOf((ini["preset"] ?: "0").takeIf { it in listOf("0", "1", "2", "3", "4") } ?: "0")

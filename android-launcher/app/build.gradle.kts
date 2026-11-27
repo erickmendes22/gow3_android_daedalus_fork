@@ -4,6 +4,7 @@ plugins {
 }
 
 val bionicRuntime = providers.gradleProperty("gow3Bionic").orNull == "true"
+val bionicUboTest = providers.gradleProperty("gow3BionicUboTest").orNull == "true"
 
 android {
     namespace = "com.gow3.android"
@@ -24,6 +25,10 @@ android {
             versionCode = 2010801
             versionName = "2.1.8-bionic"
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
+            if (bionicUboTest) {
+                applicationId = "com.gow3.android.bionic.ubo"
+                manifestPlaceholders["appLabel"] = "God of War III — Daedalus UBO Test"
+            }
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

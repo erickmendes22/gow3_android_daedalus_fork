@@ -14,5 +14,9 @@ python3 tools/android/bionic/verify_bionic.py --ndk "$ndk" --api "${GOW3_BIONIC_
 python3 tools/android/bionic/package_runtime.py --ndk "$ndk"
 # Mali-only experimental option: include SHA-pinned PanVK, never auto-select on Adreno.
 bash tools/android/bionic/fetch_panvk.sh
-"$root/android-launcher/gradlew" -p "$root/android-launcher" :app:assembleRelease -Pgow3Bionic=true --no-daemon --max-workers=2
+test_args=()
+if [[ ${GOW3_BIONIC_UBO_TEST:-0} == 1 ]]; then
+    test_args=(-Pgow3BionicUboTest=true)
+fi
+"$root/android-launcher/gradlew" -p "$root/android-launcher" :app:assembleRelease -Pgow3Bionic=true "${test_args[@]}" --no-daemon --max-workers=2
 bash tools/android/bionic/sign_apk.sh

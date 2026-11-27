@@ -116,7 +116,7 @@ public final class GameActivity extends Activity {
         if (bionicRuntime()) main.post(hudConfigPoll);
     }
 
-    private boolean bionicRuntime() { return "com.gow3.android.bionic".equals(getPackageName()); }
+    private boolean bionicRuntime() { return GpuDriverManager.supported(this); }
 
     private boolean runtimeReady;
 
