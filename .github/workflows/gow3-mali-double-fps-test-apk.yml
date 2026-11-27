@@ -1,4 +1,4 @@
-name: GoW3 Mali R10.2 - consolidated regression diagnostics
+name: GoW3 Mali R11 - producer readback and DeviceLost evidence
 
 on:
   push:
@@ -23,8 +23,6 @@ concurrency:
 
 jobs:
   build:
-    # Temporary hold requested: cancel the prior run through workflow concurrency.
-    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:

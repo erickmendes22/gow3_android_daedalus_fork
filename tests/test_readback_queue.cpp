@@ -89,6 +89,19 @@ int main() {
     queue.Retire([](auto) { return true; }, complete);
     assert((published == std::vector<int>{8}));
 
+    // Strict CPU-page overlap must retain its newest pending copy, while
+    // known exact image consumers can skip unrelated bytes.
+    queue.Push(0x35000c00, 4, 25, 1, 77, 4, 3);
+    assert(queue.RequiredEntry(0x35000800, 8, true) == nullptr);
+    auto* blocking = queue.RequiredEntry(0x35000800, 8);
+    assert(blocking && blocking->tick == 25 && blocking->image_uid == 77);
+    queue.Push(0x35000c00, 4, 26, 2, 78, 5, 4);
+    blocking = queue.RequiredEntry(0x35000c00, 4, true);
+    assert(blocking && blocking->tick == 26 && blocking->image_uid == 78);
+    queue.Cancel(0x35000c00, 4, [](auto&) {}, true);
+    assert(queue.RequiredEntry(0x35000c00, 4) == nullptr);
+    queue.Retire([](auto) { return true; }, [](auto&) {});
+
     // Only the newest exact overlapping live version can be deduplicated.
     queue.Push(0x40000000, 256, 30, 1, 7, 8, 9);
     assert(queue.HasExactVersion(0x40000000, 256, 30, 7, 8, 9));

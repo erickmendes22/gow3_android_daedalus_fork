@@ -312,6 +312,7 @@ void TextureCache::PrefetchTinyReadback(ImageId image_id) {
         std::scoped_lock readback_lock{readback_mutex};
         std::scoped_lock download_lock{download_images_mutex};
         if (!download_images.contains(image_id)) return;
+        ++tiny_prefetch_attempts;
         const auto& image = slot_images[image_id];
         const auto& i = image.info;
         // Only the observed RG16F exposure class, not arbitrary render targets.
@@ -332,6 +333,7 @@ void TextureCache::PrefetchTinyReadback(ImageId image_id) {
         if (auto copy = RecordImageDownload(image_id)) {
             tiny_prefetch = TinyPrefetch{*copy, scheduler.CurrentTick(), image.image_uid,
                 image.alias_generation, image.gpu_write_epoch, backing, true};
+            ++tiny_prefetch_submits;
             submit = true;
         }
     }
@@ -355,10 +357,12 @@ std::optional<TextureCache::PendingDownload> TextureCache::TakeTinyPrefetch(
         pending_readbacks.NewestTick() > pre.tick) {
         // Keep the old allocation GPU-live until a later confirmed tick.
         // Fall back to the ordinary, current-version EOP copy.
+        ++tiny_prefetch_rejects;
         runtime.GetStagingPool().FreeDeferred(pre.copy.staging);
         return std::nullopt;
     }
     tick = pre.tick;
+    ++tiny_prefetch_reuses;
     static u64 reused = 0;
     if (++reused <= 8 || (reused & 255u) == 0)
         std::printf("GOW3_MALI_TINY_PREFETCH_REUSED count=%llu producer_tick=%llu eop_tick=%llu\n",
@@ -408,6 +412,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
         std::unique_lock readback_lock{readback_mutex};
         RetireReadbacks();
         std::unique_lock lock{download_images_mutex};
+        bool retire_prefetched = false;
         for (auto it = download_images.begin(); it != download_images.end();) {
             const ImageId image_id = *it;
             if (tiny_only && !tiny(image_id)) { ++it; continue; }
@@ -498,12 +503,13 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     tracked_image.last_readback_tick = copy_tick;
                     ++readbacks_queued;
                     readbacks_peak_bytes = std::max(readbacks_peak_bytes, pending_readbacks.Bytes());
-                    if (copy_tick < scheduler.CurrentTick() &&
-                        scheduler.GetWorkSemaphore()->KnownGpuTick() >= copy_tick)
-                        RetireReadbacks(false);
+                    retire_prefetched |= copy_tick < scheduler.CurrentTick() &&
+                        scheduler.GetWorkSemaphore()->KnownGpuTick() >= copy_tick;
                 }
             }
         }
+        lock.unlock();
+        if (retire_prefetched) RetireReadbacks(false);
         if (!tiny_only && Vulkan::WaitDiagnostics::TickProfileEnabled()) {
             const auto now = std::chrono::steady_clock::now();
             if (now - readback_report >= std::chrono::seconds(5)) {
@@ -515,6 +521,12 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     pending_readbacks.Bytes() / 1048576.0, readbacks_peak_bytes / 1048576.0);
                 readbacks_queued = readbacks_completed = readbacks_waited = readbacks_canceled = 0;
                 readbacks_peak_bytes = pending_readbacks.Bytes();
+                if (mali_exact_readback_ranges) {
+                    std::printf("GOW3_MALI_TINY_PREFETCH attempts=%llu submits=%llu reused=%llu rejected=%llu\n",
+                        (unsigned long long)tiny_prefetch_attempts, (unsigned long long)tiny_prefetch_submits,
+                        (unsigned long long)tiny_prefetch_reuses, (unsigned long long)tiny_prefetch_rejects);
+                    tiny_prefetch_attempts = tiny_prefetch_submits = tiny_prefetch_reuses = tiny_prefetch_rejects = 0;
+                }
                 readback_sources.Report(stdout);
                 if (stale_readbacks) {
                     std::printf("Readback byte rule: %llu CPU writes went on without waiting\n",
