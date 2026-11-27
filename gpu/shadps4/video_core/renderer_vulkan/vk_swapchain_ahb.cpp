@@ -530,7 +530,7 @@ bool SaveMaliAhbBmp(const char* path, const u8* rgba, u32 w, u32 h, u32 stride) 
 }
 
 bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
-                                  u32 capture_frame, bool perf_sample) {
+                                  u32 capture_frame, bool perf_sample, u64 visual_sample) {
     ASSERT_MSG(cpu_present && image_index < buffers.size(), "Invalid CPU present");
     const auto ahb_lock_start = perf_sample ? MaliPerfStats::Clock::now()
                                            : MaliPerfStats::TimePoint{};
@@ -646,6 +646,22 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
             }
         }
     }
+    // Correlate the same game frame with the existing CPU readback probe.
+    // AHB is already mapped and written; inspect only 64 points before unlock.
+    if (visual_sample && dst_w && dst_h) {
+        u32 rgb = 0, alpha = 0;
+        u64 hash = 14695981039346656037ull;
+        for (u32 y = 0; y < 8; ++y) for (u32 x = 0; x < 8; ++x) {
+            const auto* p = dst + 4 * (u64((2*y+1)*dst_h/16) * desc.stride +
+                                        (2*x+1)*dst_w/16);
+            rgb += (p[0] | p[1] | p[2]) != 0;
+            alpha += p[3] != 0;
+            for (u32 k=0; k<3; ++k) { hash ^= p[k]; hash *= 1099511628211ull; }
+        }
+        std::printf("GOW3_MALI_BLACK_AHB frame=%llu buffer=%u size=%ux%u stride=%u rgb=%u/64 alpha=%u/64 hash=%016llx\n",
+            (unsigned long long)visual_sample, image_index, dst_w, dst_h, desc.stride,
+            rgb, alpha, (unsigned long long)hash);
+    }
     // Sample final AHB pixels independently of the GPU readback. A nonzero
     // source with an all-black AHB localizes the loss to CPU scaling/copy.
     if (MaliVisualTrace::Requested()) {
@@ -720,6 +736,9 @@ bool Swapchain::PresentCpuPixels(const u8* rgba, u32 src_width, u32 src_height,
                         (unsigned long long)frame_counter, generation, image_index,
                         int(delivered), capture_frame);
     }
+    if (visual_sample)
+        std::printf("GOW3_MALI_BLACK_DELIVERY frame=%llu delivered=%d recreation=%d\n",
+            (unsigned long long)visual_sample, int(delivered), int(needs_recreation));
     buffer.acquire_imported = false;
     return delivered && !needs_recreation;
 }

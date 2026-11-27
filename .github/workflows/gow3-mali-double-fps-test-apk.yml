@@ -1,4 +1,4 @@
-name: GoW3 Mali R11.1 - image lifetime and process-exit diagnostics
+name: GoW3 Mali R11.2 - attachment ordering and black-screen localization
 
 on:
   push:

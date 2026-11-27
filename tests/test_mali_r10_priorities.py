@@ -80,4 +80,16 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("TraceWork(5, guest_base",RT)
         self.assertIn("TraceWork(10, dispatch_hash",D)
         self.assertIn("RetireReadbacks(false)",C)
+    def test_r11_forced_split_and_bounded_black_probe(self):
+        p=(V/"vk_presenter.cpp").read_text()
+        a=(V/"vk_swapchain_ahb.cpp").read_text()
+        b=RT.split("void Runtime::FlushBarriers",1)[1]
+        self.assertIn("force_buffer_barrier && scheduler.IsRendering()",b)
+        self.assertIn("eColorAttachmentWrite",b)
+        self.assertIn("eDepthStencilAttachmentWrite",b)
+        self.assertIn("visual_frame % 120 == 0",p)
+        self.assertIn("GOW3_MALI_BLACK_SOURCE",p)
+        self.assertIn("GOW3_MALI_BLACK_AHB",a)
+        self.assertIn("GOW3_MALI_BLACK_DELIVERY",a)
+        self.assertIn("mali_perf_sample, visual_sample",p)
 if __name__=="__main__": unittest.main()

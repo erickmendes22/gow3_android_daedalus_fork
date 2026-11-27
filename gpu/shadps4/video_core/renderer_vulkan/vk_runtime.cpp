@@ -1674,6 +1674,26 @@ void Runtime::CompleteUntrackedShaderAccess(bool is_compute) {
 
 void Runtime::FlushBarriers(bool force_buffer_barrier) {
     BeforeImageAccess();
+    // R11 can split a render scope at a DMA or bounded-submit boundary.
+    // The same-layout attachment fast path assumes ordered attachment
+    // writes inside one scope. A forced split must publish STORE before
+    // the next LOAD even when no ordinary buffer write is tracked.
+    if (force_buffer_barrier && scheduler.IsRendering() &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
+        const auto& state = scheduler.GetRenderState();
+        for (u32 i=0; i<state.num_color_attachments; ++i) {
+            if (state.color_attachments[i].image_view) {
+                memory_barrier.srcStageMask |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+                memory_barrier.srcAccessMask |= vk::AccessFlagBits2::eColorAttachmentWrite;
+                break;
+            }
+        }
+        if (state.depth_stencil_attachment.has_depth || state.depth_stencil_attachment.has_stencil) {
+            memory_barrier.srcStageMask |= vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                                           vk::PipelineStageFlagBits2::eLateFragmentTests;
+            memory_barrier.srcAccessMask |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+        }
+    }
     const auto decision = DecideBarrierFlush(
         split_image_buffer_barriers, buffer_hazard_pending, force_buffer_barrier,
         bool(memory_barrier.srcStageMask), !image_barriers.empty());

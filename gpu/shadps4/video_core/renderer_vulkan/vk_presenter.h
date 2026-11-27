@@ -48,6 +48,8 @@ struct Frame {
     u64 mali_trace_flip{}; ///< Accepted guest flip sequence; 0 for blank/UI-only frames.
     u64 mali_trace_guest_address{};
     u64 mali_trace_source_uid{}; ///< 0 means post/upscaled image, not direct texture cache.
+    u64 mali_black_guest_address{}, mali_black_source_uid{};
+    u32 mali_black_input_width{}, mali_black_input_height{};
 #ifdef __ANDROID__
     // Per-frame staging: independent GPU readbacks can overlap CPU AHB display.
     VkBuffer mali_cpu_readback{VK_NULL_HANDLE};
