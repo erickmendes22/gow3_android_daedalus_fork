@@ -511,9 +511,12 @@ private:
     u64 partial_views = 0;
     void NotePartialView(const ImageInfo& request, const ImageInfo& used, BindingType binding);
     u64 readbacks_released = 0;
+    u64 mali_batch_tick = 0, mali_batch_commands = 0;
     bool ExactReadbackWaits() const {
-        return stale_readbacks && !Gow3Toggle::Disabled(Gow3Toggle::ExactReadbackWaits);
+        return (stale_readbacks || mali_exact_readback_ranges) &&
+               !Gow3Toggle::Disabled(Gow3Toggle::ExactReadbackWaits);
     }
+    bool mali_exact_readback_ranges = false;
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;
     std::atomic<bool> has_pending_readbacks{false};

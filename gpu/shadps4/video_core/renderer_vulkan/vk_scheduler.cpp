@@ -748,14 +748,28 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
         case vk::DescriptorType::eUniformBuffer:
         case vk::DescriptorType::eStorageBuffer:
             if (!w.pBufferInfo) { cacheable = false; break; }
-            append(w.pBufferInfo, w.descriptorCount * sizeof(vk::DescriptorBufferInfo));
+            for (u32 i = 0; i < w.descriptorCount; ++i) {
+                const auto& info = w.pBufferInfo[i];
+                append(&info.buffer, sizeof(info.buffer));
+                append(&info.offset, sizeof(info.offset));
+                append(&info.range, sizeof(info.range));
+            }
             break;
         case vk::DescriptorType::eSampler:
         case vk::DescriptorType::eCombinedImageSampler:
         case vk::DescriptorType::eSampledImage:
         case vk::DescriptorType::eStorageImage:
             if (!w.pImageInfo) { cacheable = false; break; }
-            append(w.pImageInfo, w.descriptorCount * sizeof(vk::DescriptorImageInfo));
+            for (u32 i = 0; i < w.descriptorCount; ++i) {
+                const auto& info = w.pImageInfo[i];
+                if (w.descriptorType == vk::DescriptorType::eSampler ||
+                    w.descriptorType == vk::DescriptorType::eCombinedImageSampler)
+                    append(&info.sampler, sizeof(info.sampler));
+                if (w.descriptorType != vk::DescriptorType::eSampler) {
+                    append(&info.imageView, sizeof(info.imageView));
+                    append(&info.imageLayout, sizeof(info.imageLayout));
+                }
+            }
             break;
         case vk::DescriptorType::eUniformTexelBuffer:
         case vk::DescriptorType::eStorageTexelBuffer:

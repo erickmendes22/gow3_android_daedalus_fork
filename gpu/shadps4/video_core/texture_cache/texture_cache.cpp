@@ -43,6 +43,11 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
                 deferred_readbacks ? "enabled" : "disabled",
                 stale_readbacks ? "; CPU reads use the previous frame's copy" : "");
 
+    // Explicit image consumers supply the full byte range. CPU fault ranges
+    // remain page-granular in strict mode, so never unwatch them early.
+    mali_exact_readback_ranges = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+
     // The PanVK Android packages differ substantially in BCn support:
     // some advertise none, others transcode BC1-7. The guest image alias
     // rejection is NOT evidence of decompression. Query the selected Vulkan
@@ -1744,8 +1749,32 @@ void TextureCache::MaybeSubmitTextureBatch() {
         const auto mib = std::strtoull(value, nullptr, 10);
         return mib >= 8 && mib <= 128 ? u64{mib} * 1024 * 1024 : u64{0};
     }();
+    if (!budget) return;
+    const u64 tick = scheduler.CurrentTick();
+    if (mali_batch_tick != tick) {
+        mali_batch_tick = tick;
+        mali_batch_commands = 0;
+    }
+    ++mali_batch_commands;
     const u64 upload_bytes = runtime.CurrentUploadBatchBytes();
-    if (!budget || upload_bytes < budget) return;
+    // Bound long command buffers at the same safe boundary as upload batches.
+    // Opt out with 0; this is a workload cap, not a timeout or a GPU wait.
+    static const u64 command_budget = [] {
+        const char* value = std::getenv("GOW3_MALI_COMMAND_BATCH_LIMIT");
+        if (!value) return u64{1024};
+        const auto n = std::strtoull(value, nullptr, 10);
+        return n >= 128 && n <= 4096 ? u64{n} : u64{0};
+    }();
+    const bool command_limit = mali_exact_readback_ranges && command_budget &&
+        mali_batch_commands >= command_budget;
+    if (upload_bytes < budget && !command_limit) return;
+    if (command_limit) {
+        static u64 command_batches = 0;
+        if (++command_batches <= 8 || (command_batches & 63u) == 0)
+            std::printf("GOW3_MALI_COMMAND_BATCH submit=%llu tick=%llu commands=%llu\n",
+                        (unsigned long long)command_batches, (unsigned long long)tick,
+                        (unsigned long long)mali_batch_commands);
+    }
     // Only at a completed guest draw/dispatch, with bindings reset and
     // predication/query recording closed. Preserve order and all uploads.
     // The existing bounded-submit throttle prevents an unbounded GPU queue.
@@ -1755,6 +1784,7 @@ void TextureCache::MaybeSubmitTextureBatch() {
                     (unsigned long long)batches, (unsigned long long)scheduler.CurrentTick(),
                     upload_bytes / 1048576.0);
     runtime.ResetUploadBatchBytes();
+    mali_batch_commands = 0;
     scheduler.Flush();
 }
 

@@ -1696,7 +1696,9 @@ void Runtime::FlushBarriers(bool force_buffer_barrier) {
                                     decision.emit_memory && !local_buffers,
                                     local_buffers, static_cast<unsigned>(image_barriers.size()));
     scheduler.EndRendering();
-    scheduler.Record([memory = memory_barrier,
+    // A barrier orders memory but does not mutate graphics descriptors or
+    // push constants. Flush pending draws, without invalidating their state.
+    scheduler.RecordGraphicsOrdered([memory = memory_barrier,
                       has_memory = decision.emit_memory && !local_buffers,
                       buffers = local_buffer_info,
                       buffer_count = local_buffer_count,
