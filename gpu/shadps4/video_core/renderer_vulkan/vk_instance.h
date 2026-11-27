@@ -206,6 +206,8 @@ public:
     }
 
     /// Returns true when VK_EXT_vertex_input_dynamic_state is supported.
+    u32 NativeDrawBatchLimit() const noexcept { return native_draw_batch_limit; }
+
     bool IsVertexInputDynamicState() const {
         return vertex_input_dynamic_state;
     }
@@ -582,6 +584,7 @@ private:
     bool amd_shader_explicit_vertex_parameter{};
     bool depth_clip_control{};
     bool depth_clip_enable{};
+    u32 native_draw_batch_limit = 0;
     bool dynamic_state_3{};
     bool depth_range_unrestricted{};
     bool vertex_input_dynamic_state{};

@@ -36,6 +36,7 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
         std::getenv("GOW3_ANDROID_PORT") &&
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         unlocked_throttle && unlocked_throttle[0] == '1';
+    native_draw_batch_limit = instance.NativeDrawBatchLimit();
     // Per-renderer bind cache (never global across Vulkan command buffers).
     // GOW3_MALI_PIPELINE_BIND_CACHE=0 restores all legacy vkCmdBindPipeline calls.
     const char* bind_cache = std::getenv("GOW3_MALI_PIPELINE_BIND_CACHE");
@@ -126,6 +127,16 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     if (mali && merge_load && is_rendering) {
         auto previous = render_state;
         auto incoming = effective_state;
+        // Ignore metadata of attachments absent in both states only.
+        for (u32 i = 0; i < incoming.num_color_attachments && i < previous.num_color_attachments; ++i) {
+            if (!incoming.color_attachments[i].image_view && !previous.color_attachments[i].image_view)
+                previous.color_attachments[i] = incoming.color_attachments[i] = RenderAttachment{};
+        }
+        if (!previous.depth_stencil_attachment.has_depth &&
+            !previous.depth_stencil_attachment.has_stencil &&
+            !incoming.depth_stencil_attachment.has_depth &&
+            !incoming.depth_stencil_attachment.has_stencil)
+            previous.depth_stencil_attachment = incoming.depth_stencil_attachment = RenderAttachment{};
         for (u32 i = 0; i < incoming.num_color_attachments && i < previous.num_color_attachments; ++i) {
             if (!incoming.color_attachments[i].is_clear) {
                 previous.color_attachments[i].is_clear = 0;
@@ -197,6 +208,8 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     };
 
     if (!recording_threaded) {
+        FlushNativeDrawBatch(current_cmdbuf);
+        last_graphics_resource_layout = vk::PipelineLayout{};
         current_cmdbuf.beginRendering(rendering_info);
         return;
     }
@@ -400,6 +413,7 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
         }
         // current_cmdbuf only changes after SyncRecording(), which waits for this thread.
         chunk->Execute(current_cmdbuf);
+        FlushNativeDrawBatch(current_cmdbuf);
         {
             std::scoped_lock lk{recorder_mutex};
             free_chunks.push_back(std::move(chunk));
@@ -541,6 +555,7 @@ void Scheduler::SetVertexInputCached(
         MaliPerfStats::CountVertexInputSet(true);
         return;
     }
+    FlushNativeDrawBatch(cmdbuf);
     cmdbuf.setVertexInputEXT(bindings, attributes);
     last_vertex_buffer_cmd = vk::CommandBuffer{};
     if (vertex_input_cache_enabled) {
@@ -568,6 +583,7 @@ void Scheduler::BindVertexBuffersCached(vk::CommandBuffer cmdbuf, bool dynamic_i
         MaliPerfStats::CountVertexBufferBind(true);
         return;
     }
+    FlushNativeDrawBatch(cmdbuf);
     const u32 count = static_cast<u32>(buffers.size());
     if (dynamic_input) {
         cmdbuf.bindVertexBuffers(0, count, buffers.data(), offsets.data());
@@ -593,6 +609,7 @@ void Scheduler::BindIndexBufferCached(vk::CommandBuffer cmdbuf, vk::Buffer buffe
         MaliPerfStats::CountIndexBufferBind(true);
         return;
     }
+    FlushNativeDrawBatch(cmdbuf);
     cmdbuf.bindIndexBuffer(buffer, offset, type);
     if (buffer_bind_cache_enabled) {
         last_index_buffer_cmd = cmdbuf;
@@ -610,6 +627,7 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
         MaliPerfStats::CountGraphicsPipelineBind(true);
         return;
     }
+    FlushNativeDrawBatch(cmdbuf);
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     // Conservatively invalidate dynamic vertex input whenever a graphics
     // pipeline changes. Some pipelines may use static vertex input; Vulkan
@@ -626,12 +644,119 @@ void Scheduler::BindGraphicsPipelineCached(vk::CommandBuffer cmdbuf, vk::Pipelin
     MaliPerfStats::CountGraphicsPipelineBind(false);
 }
 
+void Scheduler::FlushNativeDrawBatch(vk::CommandBuffer cmdbuf) {
+    if (!native_draw_count) return;
+    const u32 n = native_draw_count;
+    native_draw_count = 0;
+    if (n == 1) {
+        if (native_indexed) {
+            const auto& a = native_indexed_draws[0];
+            cmdbuf.drawIndexed(a.indexCount, native_instances, a.firstIndex,
+                               a.vertexOffset, native_first_instance);
+        } else {
+            const auto& a = native_draws[0];
+            cmdbuf.draw(a.vertexCount, native_instances, a.firstVertex, native_first_instance);
+        }
+    } else {
+        const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
+        if (native_indexed)
+            dispatch.vkCmdDrawMultiIndexedEXT(static_cast<VkCommandBuffer>(cmdbuf), n,
+                native_indexed_draws.data(), native_instances, native_first_instance,
+                sizeof(VkMultiDrawIndexedInfoEXT), nullptr);
+        else
+            dispatch.vkCmdDrawMultiEXT(static_cast<VkCommandBuffer>(cmdbuf), n,
+                native_draws.data(), native_instances, native_first_instance,
+                sizeof(VkMultiDrawInfoEXT));
+        native_draws_saved += n - 1;
+        ++native_batches;
+        if (native_batches <= 4 || (native_batches & 4095u) == 0)
+            std::printf("GOW3_MALI_NATIVE_DRAW_BATCH batches=%llu saved_commands=%llu last=%u\n",
+                static_cast<unsigned long long>(native_batches),
+                static_cast<unsigned long long>(native_draws_saved), n);
+    }
+    MaliPerfStats::CountDrawRecorded(1);
+}
+
+void Scheduler::QueueNativeDraw(vk::CommandBuffer cmdbuf, bool indexed, u32 count,
+                               u32 instances, u32 first_index, s32 first_vertex,
+                               u32 first_instance) {
+    ASSERT(NativeDrawBatchEnabled());
+    if (native_draw_count &&
+        (native_indexed != indexed || native_instances != instances ||
+         native_first_instance != first_instance ||
+         native_draw_count >= native_draw_batch_limit))
+        FlushNativeDrawBatch(cmdbuf);
+    native_indexed = indexed;
+    native_instances = instances;
+    native_first_instance = first_instance;
+    if (indexed)
+        native_indexed_draws[native_draw_count] = {first_index, count, first_vertex};
+    else
+        native_draws[native_draw_count] = {static_cast<u32>(first_vertex), count};
+    ++native_draw_count;
+}
+
+void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
+    vk::PipelineLayout layout, vk::ShaderStageFlags stages,
+    std::span<const vk::WriteDescriptorSet> writes, const void* push_data, size_t push_size) {
+    auto& key = graphics_resource_scratch;
+    key.clear();
+    const auto append = [&](const void* data, size_t size) {
+        if (!size) return;
+        const size_t old = key.size();
+        key.resize(old + size);
+        std::memcpy(key.data() + old, data, size);
+    };
+    bool cacheable = NativeDrawBatchEnabled();
+    append(push_data, push_size);
+    const auto write_count = writes.size();
+    append(&write_count, sizeof(write_count));
+    for (const auto& w : writes) {
+        if (w.pNext) { cacheable = false; break; }
+        append(&w.dstBinding, sizeof(w.dstBinding));
+        append(&w.dstArrayElement, sizeof(w.dstArrayElement));
+        append(&w.descriptorCount, sizeof(w.descriptorCount));
+        append(&w.descriptorType, sizeof(w.descriptorType));
+        switch (w.descriptorType) {
+        case vk::DescriptorType::eUniformBuffer:
+        case vk::DescriptorType::eStorageBuffer:
+            if (!w.pBufferInfo) { cacheable = false; break; }
+            append(w.pBufferInfo, w.descriptorCount * sizeof(vk::DescriptorBufferInfo));
+            break;
+        case vk::DescriptorType::eSampler:
+        case vk::DescriptorType::eCombinedImageSampler:
+        case vk::DescriptorType::eSampledImage:
+        case vk::DescriptorType::eStorageImage:
+            if (!w.pImageInfo) { cacheable = false; break; }
+            append(w.pImageInfo, w.descriptorCount * sizeof(vk::DescriptorImageInfo));
+            break;
+        case vk::DescriptorType::eUniformTexelBuffer:
+        case vk::DescriptorType::eStorageTexelBuffer:
+            if (!w.pTexelBufferView) { cacheable = false; break; }
+            append(w.pTexelBufferView, w.descriptorCount * sizeof(vk::BufferView));
+            break;
+        default: cacheable = false; break;
+        }
+        if (!cacheable) break;
+    }
+    if (cacheable && last_graphics_resource_layout == layout &&
+        last_graphics_resource_stages == stages && last_graphics_resource_key == key) return;
+    FlushNativeDrawBatch(cmdbuf);
+    cmdbuf.pushConstants(layout, stages, 0u, static_cast<u32>(push_size), push_data);
+    if (!writes.empty()) cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+    last_graphics_resource_layout = cacheable ? layout : vk::PipelineLayout{};
+    last_graphics_resource_stages = stages;
+    if (cacheable) last_graphics_resource_key.swap(key);
+}
+
 void Scheduler::AllocateWorkerCommandBuffers() {
     const vk::CommandBufferBeginInfo begin_info = {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
     };
 
+    ASSERT(native_draw_count == 0);
     current_cmdbuf = command_pool.Commit();
+    last_graphics_resource_layout = vk::PipelineLayout{};
     last_graphics_bind_cmd = vk::CommandBuffer{};
     last_graphics_bind_pipeline = vk::Pipeline{};
     last_vertex_input_cmd = vk::CommandBuffer{};
@@ -746,6 +871,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     const auto recording_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                     : MaliPerfStats::TimePoint{};
     SyncRecording();
+    FlushNativeDrawBatch(current_cmdbuf);
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
     if (mali_submit_sample)

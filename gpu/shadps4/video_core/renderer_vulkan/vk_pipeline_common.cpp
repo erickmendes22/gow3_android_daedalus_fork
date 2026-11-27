@@ -38,10 +38,17 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
     if (uses_push_descriptors && !set_writes.empty()) {
         if (!scheduler.IsRecordingDeferred()) {
             // The nondeferred Record() executes immediately; set_writes remains valid.
-            scheduler.Record([&](vk::CommandBuffer cmdbuf) {
-                cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
-                cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, set_writes);
-            });
+            if (!IsCompute() && scheduler.NativeDrawBatchEnabled()) {
+                scheduler.RecordBatchState([&](vk::CommandBuffer cmdbuf) {
+                    scheduler.BindGraphicsResourcesCached(cmdbuf, layout, stage_flags, set_writes,
+                                                         &push_data, sizeof(push_data));
+                });
+            } else {
+                scheduler.Record([&](vk::CommandBuffer cmdbuf) {
+                    cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
+                    cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, set_writes);
+                });
+            }
             return;
         }
         // Capture all descriptor payloads in the recording chunk. The final
@@ -71,10 +78,17 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
                     scheduler.RecordData(std::span{write.pTexelBufferView, write.descriptorCount}).data();
             }
         }
-        scheduler.Record([bind_point, layout, writes, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
-            cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
-            cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, writes);
-        });
+        if (!IsCompute() && scheduler.NativeDrawBatchEnabled()) {
+            scheduler.RecordBatchState([this, layout, writes, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
+                scheduler.BindGraphicsResourcesCached(cmdbuf, layout, stage_flags, writes,
+                                                     &push_data, sizeof(push_data));
+            });
+        } else {
+            scheduler.Record([bind_point, layout, writes, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
+                cmdbuf.pushConstants(layout, stage_flags, 0u, sizeof(push_data), &push_data);
+                cmdbuf.pushDescriptorSetKHR(bind_point, layout, 0, writes);
+            });
+        }
         return;
     }
 

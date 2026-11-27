@@ -306,13 +306,15 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceMaintenance8FeaturesKHR,
         vk::PhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT,
         vk::PhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT,
-        vk::PhysicalDeviceVertexAttributeDivisorFeatures>();
+        vk::PhysicalDeviceVertexAttributeDivisorFeatures,
+        vk::PhysicalDeviceMultiDrawFeaturesEXT>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
         vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan11Properties,
         vk::PhysicalDeviceVulkan12Properties, vk::PhysicalDeviceVulkan13Properties,
-        vk::PhysicalDevicePushDescriptorPropertiesKHR>();
+        vk::PhysicalDevicePushDescriptorPropertiesKHR,
+        vk::PhysicalDeviceMultiDrawPropertiesEXT>();
     vk11_props = properties_chain.get<vk::PhysicalDeviceVulkan11Properties>();
     vk12_props = properties_chain.get<vk::PhysicalDeviceVulkan12Properties>();
     vk13_props = properties_chain.get<vk::PhysicalDeviceVulkan13Properties>();
@@ -397,6 +399,15 @@ bool Instance::CreateDevice() {
                     "Mali compatibility: vertex attribute divisor unavailable; using divisor 1");
     }
 
+    // Only enable an extension and feature actually advertised by this ICD.
+    const char* batch_opt = std::getenv("GOW3_MALI_NATIVE_DRAW_BATCH");
+    if (is_mali && std::getenv("GOW3_ANDROID_PORT") && batch_opt && batch_opt[0] == '1' &&
+        feature_chain.get<vk::PhysicalDeviceMultiDrawFeaturesEXT>().multiDraw &&
+        properties_chain.get<vk::PhysicalDeviceMultiDrawPropertiesEXT>().maxMultiDrawCount > 1 &&
+        add_extension(VK_EXT_MULTI_DRAW_EXTENSION_NAME)) {
+        native_draw_batch_limit = std::min<u32>(32u,
+            properties_chain.get<vk::PhysicalDeviceMultiDrawPropertiesEXT>().maxMultiDrawCount);
+    }
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME) &&
         feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5;
@@ -771,7 +782,13 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceConditionalRenderingFeaturesEXT{
             .conditionalRendering = true,
         },
+        vk::PhysicalDeviceMultiDrawFeaturesEXT{
+            .multiDraw = native_draw_batch_limit != 0,
+        },
     };
+    if (!native_draw_batch_limit) {
+        device_chain.unlink<vk::PhysicalDeviceMultiDrawFeaturesEXT>();
+    }
 
     if (!custom_border_color) {
         device_chain.unlink<vk::PhysicalDeviceCustomBorderColorFeaturesEXT>();
@@ -846,6 +863,11 @@ bool Instance::CreateDevice() {
     device = std::move(dev);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
+    if (native_draw_batch_limit &&
+        (!VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdDrawMultiEXT ||
+         !VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdDrawMultiIndexedEXT)) native_draw_batch_limit = 0;
+    if (is_mali)
+        std::printf("GOW3_MALI_NATIVE_DRAW_BATCH limit=%u\n", native_draw_batch_limit);
     if (pipeline_binaries) {
         const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
         const bool callable = dispatch.vkGetPipelineKeyKHR && dispatch.vkCreatePipelineBinariesKHR &&

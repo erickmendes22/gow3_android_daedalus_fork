@@ -1354,9 +1354,33 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
+    // Shader IR has no DrawIndex. Exclude storage writes, DMA, GS/tess,
+    // queries, predication, square workaround and capture.
+    bool native_batch = scheduler.NativeDrawBatchEnabled() && !square && !zpass_query &&
+        !pred.predicated && !FrameCapture::Active() && !MaliPassCapture::Enabled(instance);
+    if (native_batch) {
+        for (const auto* stage : pipeline->GetStages()) {
+            if (!stage) continue;
+            if (stage->uses_dma ||
+                (stage->sw_stage != Shader::SwStage::Vertex &&
+                 stage->sw_stage != Shader::SwStage::Fragment) ||
+                std::ranges::any_of(stage->buffers, [](const auto& b) { return b.is_written; }) ||
+                std::ranges::any_of(stage->images, [](const auto& im) { return im.is_written || im.is_atomic; })) {
+                native_batch = false;
+                break;
+            }
+        }
+    }
     {
         const MaliPerfStats::Scoped phase{MaliPerfStats::Stage::DrawCommands,
                                           draw_phase_sample};
+        if (native_batch) {
+            scheduler.RecordBatchState([=, this](vk::CommandBuffer cmdbuf) {
+                scheduler.BindGraphicsPipelineCached(cmdbuf, handle);
+                scheduler.QueueNativeDraw(cmdbuf, is_indexed, num_indices, num_instances,
+                                          first_index, s32(first_vertex), first_instance);
+            });
+        } else {
         scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         const auto draw = [&] {
             if (is_indexed) {
@@ -1375,10 +1399,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
         predication.EndDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         });
+        }
     }
     // Vulkan command records, not guest PM4 packets. The MIN/MAX square
     // workaround emits two draws; no operation is deduplicated here.
-    MaliPerfStats::CountDrawRecorded(square ? 2u : 1u);
+    if (!native_batch) MaliPerfStats::CountDrawRecorded(square ? 2u : 1u);
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);
@@ -2069,7 +2094,7 @@ void Rasterizer::EmitVertexBuffers(bool include_index_buffer) {
     const auto index_offset = index_bind.offset;
     const auto index_type = index_bind.type;
     // Draw order unchanged: setVertexInput, bindVertexBuffers, bindIndexBuffer.
-    scheduler.Record([this, dynamic_input, num_buffers, bindings, attributes, buffers, offsets,
+    scheduler.RecordBatchState([this, dynamic_input, num_buffers, bindings, attributes, buffers, offsets,
                       sizes, strides, include_index_buffer, index_handle, index_offset,
                       index_type](vk::CommandBuffer cmdbuf) {
         if (dynamic_input) {

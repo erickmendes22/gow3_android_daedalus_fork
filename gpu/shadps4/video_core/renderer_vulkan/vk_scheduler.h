@@ -737,6 +737,14 @@ public:
     void BindIndexBufferCached(vk::CommandBuffer cmdbuf, vk::Buffer buffer,
                                vk::DeviceSize offset, vk::IndexType type);
 
+    bool NativeDrawBatchEnabled() const noexcept { return native_draw_batch_limit > 1; }
+    void FlushNativeDrawBatch(vk::CommandBuffer cmdbuf);
+    void QueueNativeDraw(vk::CommandBuffer cmdbuf, bool indexed, u32 count,
+                         u32 instances, u32 first_index, s32 first_vertex, u32 first_instance);
+    void BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf, vk::PipelineLayout layout,
+        vk::ShaderStageFlags stages, std::span<const vk::WriteDescriptorSet> writes,
+        const void* push_data, size_t push_size);
+
     /// Returns the current command buffer for recording on the calling thread. With threaded
     /// recording this first waits until all commands passed to Record() are recorded, then
     /// records directly (Record() included, so callers may mix both) until the next
@@ -748,6 +756,8 @@ public:
             direct_recordings.fetch_add(1, std::memory_order_relaxed);
             TraceDirectRecording(__builtin_return_address(0));
         }
+        FlushNativeDrawBatch(current_cmdbuf);
+        last_graphics_resource_layout = vk::PipelineLayout{};
         // A raw caller may record its own graphics pipeline binds (ImGui,
         // post-processing, overlays). Invalidate before exposing the buffer.
         last_graphics_bind_cmd = vk::CommandBuffer{};
@@ -764,6 +774,22 @@ public:
     /// everything it uses (capture by value): it may run later on the recording thread.
     template <typename Func>
     void Record(Func&& func) {
+        if (!NativeDrawBatchEnabled()) {
+            RecordBatchState(std::forward<Func>(func));
+            return;
+        }
+        // Every ordinary command is a hard boundary: barriers, queries,
+        // dynamic state, transfers, dispatch or unknown state.
+        RecordBatchState([this, fn = std::forward<Func>(func)](vk::CommandBuffer cmdbuf) mutable {
+            FlushNativeDrawBatch(cmdbuf);
+            last_graphics_resource_layout = vk::PipelineLayout{};
+            fn(cmdbuf);
+        });
+    }
+
+    // Only audited graphics state commands and eligible direct draws.
+    template <typename Func>
+    void RecordBatchState(Func&& func) {
         if (!recording_threaded || direct_mode) {
             func(current_cmdbuf);
             return;
@@ -952,6 +978,15 @@ private:
     std::vector<vk::VertexInputAttributeDescription2EXT> last_vertex_input_attributes;
     bool vertex_input_cache_enabled = false;
     bool buffer_bind_cache_enabled = false;
+    u32 native_draw_batch_limit = 0;
+    u32 native_draw_count = 0, native_instances = 0, native_first_instance = 0;
+    bool native_indexed = false;
+    std::array<VkMultiDrawInfoEXT, 32> native_draws{};
+    std::array<VkMultiDrawIndexedInfoEXT, 32> native_indexed_draws{};
+    u64 native_draws_saved = 0, native_batches = 0;
+    vk::PipelineLayout last_graphics_resource_layout{};
+    vk::ShaderStageFlags last_graphics_resource_stages{};
+    std::vector<u8> last_graphics_resource_key, graphics_resource_scratch;
     vk::CommandBuffer last_vertex_buffer_cmd{}, last_index_buffer_cmd{};
     bool last_vertex_buffer_dynamic{};
     std::vector<vk::Buffer> last_vertex_buffers;
