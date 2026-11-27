@@ -1,4 +1,4 @@
-name: GoW III Mali 1023daf52 R10 tiny readbacks, submit history and graphics state performance APK
+name: GoW3 Mali R10.1 - bulk download regression gate fix
 
 on:
   push:
