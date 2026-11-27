@@ -1120,12 +1120,21 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                                 (unsigned long long)cache_image.tick_accessed_last);
             }
             if (can_retire_alias) {
+                // Age alone is not proof of guest authority or no live binding.
+                if (cache_image.binding.is_bound || cache_image.binding.is_target ||
+                    True(cache_image.flags & ImageFlagBits::GpuModified))
+                    return {merged_image_id, -1, -1};
                 // This branch rejected a mismatched guest layout without
                 // scheduling any GPU copy. An already-completed, clean image
                 // may return its VkImage to the pool immediately. Every other
                 // FreeImage caller (notably ExpandImage/CopyImage) keeps the
                 // original deferred destruction semantics.
+                const auto retired_address = a.guest_address;
                 FreeImage(cache_image_id, clean_alias_retirable);
+                if (rejected_overlap_layout <= 12 || rejected_overlap_layout % 1000 == 0)
+                    std::printf("GOW3_TEXTURE_OVERLAP_RETIRED address=%#llx tick=%llu\n",
+                        (unsigned long long)retired_address,
+                        (unsigned long long)scheduler.CurrentTick());
             }
             return {merged_image_id, -1, -1};
         }
@@ -1395,8 +1404,11 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     auto& cached = find_image_cache[key_hash % find_image_cache.size()];
     // An exact match stays valid while that image is registered with the same description;
     // resolved overlaps (views into other images) only until any image registration changes.
+    // Exact descriptor equality does not prove a recycled slot's lifetime.
+    const bool cached_live = IsLiveImage(cached.image_id, cached.image_uid) &&
+        True(slot_images[cached.image_id].flags & ImageFlagBits::Registered);
     const auto still_exact = [&] {
-        if (cached.view_mip >= 0 || cached.view_slice >= 0 || !cached.image_id) {
+        if (!cached_live || cached.view_mip >= 0 || cached.view_slice >= 0) {
             return false;
         }
         const Image& image = slot_images[cached.image_id];
@@ -1406,7 +1418,8 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
                image.info.pixel_format == info.pixel_format &&
                same_layout(image.info, info);
     };
-    if ((cached.generation == registry_generation.load(std::memory_order_relaxed) || still_exact()) &&
+    if (cached_live &&
+        (cached.generation == registry_generation.load(std::memory_order_relaxed) || still_exact()) &&
         cached.address == info.guest_address &&
         cached.size == info.guest_size && cached.extent == info.size &&
         cached.format == info.pixel_format && cached.type == info.type &&
@@ -1510,6 +1523,9 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     int view_slice{-1};
     if (!image_id) {
         for (const auto& cache_id : image_ids) {
+            // Earlier overlap resolution may unregister an image.
+            if (cache_id == image_id || !slot_images.is_allocated(cache_id) ||
+                False(slot_images[cache_id].flags & ImageFlagBits::Registered)) continue;
             view_mip = -1;
             view_slice = -1;
 
@@ -1553,8 +1569,24 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
 
     // Create and register a new image
     if (!image_id) {
+        static u32 wide_alias_creates = 0;
+        const bool wide_alias = !image_ids.empty() &&
+            info.pixel_format == vk::Format::eR32G32B32A32Uint &&
+            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+        const bool trace_wide = wide_alias && (++wide_alias_creates <= 12 ||
+                                                wide_alias_creates % 512 == 0);
+        if (trace_wide)
+            std::printf("GOW3_WIDE_ALIAS_CREATE_BEGIN addr=%llx extent=%ux%ux%u guest_bytes=%llu cache_bytes=%llu tick=%llu\n",
+                (unsigned long long)info.guest_address, info.size.width, info.size.height,
+                info.size.depth, (unsigned long long)info.guest_size,
+                (unsigned long long)total_used_memory, (unsigned long long)scheduler.CurrentTick());
         image_id = slot_images.insert(instance, runtime, slot_image_views, info);
         RegisterImage(image_id);
+        if (trace_wide)
+            std::printf("GOW3_WIDE_ALIAS_CREATE_END addr=%llx uid=%llu tick=%llu\n",
+                (unsigned long long)info.guest_address,
+                (unsigned long long)slot_images[image_id].image_uid,
+                (unsigned long long)scheduler.CurrentTick());
         if (diag) {
             ++images_created;
             const auto same = [&](const CreateStat& s) {
@@ -1607,6 +1639,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         .is_block = bool(info.props.is_block),
         .generation = registry_generation.load(std::memory_order_relaxed),
         .image_id = image_id,
+        .image_uid = image.image_uid,
         .view_mip = view_mip,
         .view_slice = view_slice,
     };

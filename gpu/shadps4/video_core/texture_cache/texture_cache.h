@@ -594,6 +594,7 @@ private:
         bool is_block = false;
         u64 generation = ~0ULL;
         ImageId image_id{};
+        u64 image_uid{};
         int view_mip = -1;
         int view_slice = -1;
     };

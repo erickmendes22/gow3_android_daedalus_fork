@@ -1,6 +1,7 @@
 package ro.cobrabm.fexdroid;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
@@ -1052,8 +1053,12 @@ public final class GameActivity extends Activity {
             Thread log=new Thread(() -> {
                 try (BufferedReader r=new BufferedReader(new InputStreamReader(launched.getInputStream()));
                      PrintWriter out=new PrintWriter(new File(BASE,"logs/android-game.log"))) {
+                    logExitMemory(out, "start");
                     String line; while ((line=r.readLine())!=null) { out.println(line); out.flush(); }
                     int code=launched.waitFor();
+                    out.println("GOW3_PROCESS_EXIT code="+code+" requested_stop="+(game!=launched || destroyed));
+                    logExitMemory(out, "exit");
+                    out.flush();
                     if (game==launched) {
                         game=null;
                         // run-gow3.sh exits 4 when Vulkan/Turnip cannot initialize: the driver
@@ -1068,6 +1073,18 @@ public final class GameActivity extends Activity {
                 }
             },"God of War III-log"); log.setDaemon(true); log.start();
         } catch (Exception ex) { error(ex.toString()); }
+    }
+    // Start/exit only: no polling, GPU interaction or frame work.
+    private void logExitMemory(PrintWriter out, String phase) {
+        try {
+            ActivityManager am=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
+            if (am==null) return;
+            ActivityManager.MemoryInfo mem=new ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mem);
+            out.println("GOW3_ANDROID_MEMORY phase="+phase+" total_bytes="+mem.totalMem+
+                " available_bytes="+mem.availMem+" threshold_bytes="+mem.threshold+
+                " low_memory="+mem.lowMemory);
+        } catch (Exception ignored) {}
     }
     private void error(String message) {
         hadError=true;

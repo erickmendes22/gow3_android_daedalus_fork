@@ -1,4 +1,4 @@
-name: GoW3 Mali R11 - producer readback and DeviceLost evidence
+name: GoW3 Mali R11.1 - image lifetime and process-exit diagnostics
 
 on:
   push:
