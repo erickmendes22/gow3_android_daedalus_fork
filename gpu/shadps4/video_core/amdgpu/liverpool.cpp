@@ -16,6 +16,9 @@
 #include "common/debug.h"
 #include "common/polyfill_thread.h"
 #include "common/thread.h"
+#ifdef __ANDROID__
+#include "gow3_ub2_cpu_policy.h"
+#endif
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/kernel/process.h"
@@ -134,6 +137,9 @@ void Liverpool::Process(std::stop_token stoken) {
     Gow3Stats::gpu_thread_id.store(GetCurrentThreadId());
 #endif
     gpu_id = std::this_thread::get_id();
+#ifdef __ANDROID__
+    bool ub2_placement_applied = false;
+#endif
 #if defined(__linux__) || defined(_WIN32)
     gpu_tid = gettid();
 #endif
@@ -213,6 +219,14 @@ void Liverpool::Process(std::stop_token stoken) {
             }
         }
         Platform::IrqC::Instance()->Signal(Platform::InterruptId::GpuIdle);
+#ifdef __ANDROID__
+        // Delay narrowing until the renderer and its startup helpers exist.
+        if (!ub2_placement_applied && rasterizer) {
+            Gow3Ub2Cpu::ApplyToCommandProcessor();
+            ub2_placement_applied = true;
+        }
+        Gow3Ub2Cpu::SampleCommandProcessor();
+#endif
     }
 }
 

@@ -57,6 +57,7 @@ public:
             ++epochs.back().pending;
             ++pending;
             async_tasks.push_back({std::move(task), epoch});
+            if (progress_waiters) progress_cv.notify_one();
         }
         cv.notify_one();
     }
@@ -75,24 +76,24 @@ public:
     }
 
     void WaitAll() {
-        // The waiting thread helps instead of only spinning.
+        // Help with queued work, but park if all remaining work belongs to
+        // another thread. The completion predicate and both notifications
+        // use the same mutex, so no completion can be lost.
         while (true) {
             Task task;
             {
-                std::scoped_lock lk{mutex};
-                if (pending == 0 && epochs.size() == 1 && !draining) {
-                    return;
-                }
-                if (!async_tasks.empty()) {
-                    task = std::move(async_tasks.front());
-                    async_tasks.pop_front();
-                }
+                std::unique_lock lk{mutex};
+                ++progress_waiters;
+                progress_cv.wait(lk, [this] {
+                    return !async_tasks.empty() ||
+                           (pending == 0 && epochs.size() == 1 && !draining);
+                });
+                --progress_waiters;
+                if (pending == 0 && epochs.size() == 1 && !draining) return;
+                task = std::move(async_tasks.front());
+                async_tasks.pop_front();
             }
-            if (task.run) {
-                RunAsync(task);
-            } else {
-                std::this_thread::yield();
-            }
+            RunAsync(task);
         }
     }
 
@@ -108,8 +109,9 @@ public:
         cv.notify_all();
         Work(*job);
         // Workers only call the task for indices below count, all done before this returns.
-        while (job->done.load(std::memory_order_acquire) < count) {
-            std::this_thread::yield();
+        for (auto done = job->done.load(std::memory_order_acquire); done < count;
+             done = job->done.load(std::memory_order_acquire)) {
+            job->done.wait(done, std::memory_order_acquire);
         }
         std::scoped_lock lk{mutex};
         if (current == job) {
@@ -172,6 +174,7 @@ private:
             lk.lock();
         }
         draining = false;
+        if (progress_waiters && pending == 0 && epochs.size() == 1) progress_cv.notify_all();
     }
 
     static void Work(Job& job) {
@@ -179,7 +182,9 @@ private:
         in_copy_thread = true;
         for (std::size_t i; (i = job.next.fetch_add(1, std::memory_order_relaxed)) < job.count;) {
             (*job.task)(i);
-            job.done.fetch_add(1, std::memory_order_release);
+            if (job.done.fetch_add(1, std::memory_order_release) + 1 == job.count) {
+                job.done.notify_all();
+            }
         }
         in_copy_thread = was;
     }
@@ -214,6 +219,8 @@ private:
     std::vector<std::thread> threads;
     std::mutex mutex;
     std::condition_variable cv;
+    std::condition_variable progress_cv;
+    std::size_t progress_waiters = 0; // guarded by mutex
     std::shared_ptr<Job> current;
     u64 generation = 0;
     bool stop = false;

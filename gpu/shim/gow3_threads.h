@@ -7,6 +7,9 @@
 
 #include <algorithm>
 #include <thread>
+#ifdef __ANDROID__
+#include "gow3_ub2_cpu_policy.h"
+#endif
 #ifdef _WIN32
 #include <bit>
 #include <windows.h>
@@ -37,7 +40,14 @@ inline void MakeBackground() {
 inline unsigned Available() {
     cpu_set_t set;
     CPU_ZERO(&set);
-    if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+#ifdef __ANDROID__
+    // The command processor may be limited to the prime pair. Pool sizing is
+    // based on the process leader, not on that individual thread's mask.
+    const auto tid = Gow3Ub2Cpu::Get().enabled ? getpid() : 0;
+#else
+    const auto tid = 0;
+#endif
+    if (sched_getaffinity(tid, sizeof(set), &set) == 0) {
         return std::max(1, CPU_COUNT(&set));
     }
     return std::max(1u, std::thread::hardware_concurrency());

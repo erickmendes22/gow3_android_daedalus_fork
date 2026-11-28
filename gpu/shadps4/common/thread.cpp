@@ -11,6 +11,9 @@
 #include "common/error.h"
 #include "common/logging/log.h"
 #include "common/thread.h"
+#ifdef __ANDROID__
+#include "gow3_ub2_cpu_policy.h"
+#endif
 #include "ntapi.h"
 #ifdef __APPLE__
 #include <mach/mach.h>
@@ -197,6 +200,9 @@ void SetCurrentThreadName(const char* name) {
     // Linux limits thread names to 15 characters and will outright reject any
     // attempt to set a longer name with ERANGE.
     std::string truncated(name, std::min(strlen(name), static_cast<std::size_t>(15)));
+    #ifdef __ANDROID__
+    Gow3Ub2Cpu::RestoreNamedHostWorker(name);
+    #endif
     if (int e = pthread_setname_np(pthread_self(), truncated.c_str())) {
         errno = e;
         LOG_ERROR(Common, "Failed to set thread name to '{}': {}", truncated, GetLastErrorMsg());
