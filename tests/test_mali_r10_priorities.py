@@ -159,4 +159,19 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("((row_length + block[0] - 1) / block[0])",RT)
         self.assertIn("((height + block[1] - 1) / block[1])",RT)
         self.assertIn("partial_linear_upload = partial_linear_enabled &&",C)
+    def test_image_copy_never_faults_on_unrelated_readback(self):
+        bc=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
+        mem=(R/"src/runtime_memory.c").read_text()
+        p=bc.split("BufferCache::ObtainBufferForImage(",1)[1].split("bool BufferCache::IsRegionCpuModified",1)[0]
+        self.assertLess(p.index("ResolveReadbacks("),p.index("IsRegionGpuModified("))
+        self.assertLess(p.index("IsRegionGpuModified("),p.index("resolved_backing ="))
+        self.assertIn("return ObtainBuffer(device_addr, size, false)",p)
+        self.assertIn("resolved_backing ? &RunResolvedImageCopy : &RunGuestCopy",p)
+        self.assertIn("memory->CopyResolvedImageBacking",p)
+        impl=mem.split("void runtime_memory_read_backing_sparse",1)[1].split("int runtime_memory_write_backing",1)[0]
+        self.assertLess(impl.index("read_lock();"),impl.index("memcpy(dst,backing_base"))
+        self.assertLess(impl.index("memcpy(dst,backing_base"),impl.index("read_unlock();"))
+        self.assertIn("memset(dst,0,n)",impl)
+        self.assertNotIn("(void *)address",impl)
+        self.assertIn("[this, &gpu_tick]",(V/"vk_resource_pool.cpp").read_text())
 if __name__=="__main__": unittest.main()

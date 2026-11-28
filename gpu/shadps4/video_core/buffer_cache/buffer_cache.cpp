@@ -178,6 +178,14 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
     buffer->Flush(dst - buffer->mapped_data.data(), item.size);
 }
 
+void BufferCache::RunResolvedImageCopy(const Gow3Copy::Item& item) {
+    auto* cache = static_cast<BufferCache*>(item.context);
+    auto* dst = reinterpret_cast<u8*>(item.destination);
+    cache->memory->CopyResolvedImageBacking(item.source, dst, item.size);
+    auto* buffer = reinterpret_cast<Buffer*>(item.extra);
+    buffer->Flush(dst - buffer->mapped_data.data(), item.size);
+}
+
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
@@ -454,6 +462,13 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
     if (IsRegionGpuModified(device_addr, size)) {
         return ObtainBuffer(device_addr, size, false);
     }
+    // Exact image readback resolution above deliberately leaves unrelated
+    // bytes on a watched page protected. A deferred memcpy via guest VA
+    // would fault, then wait for Liverpool while Liverpool waits for it.
+    // Read CPU-authoritative texture bytes through the shared backing view.
+    // The GPU-modified branch above MUST stay before this path.
+    const bool resolved_backing = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
     const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostUncached,
                                               instance.StorageMinAlignment());
     if (!Gow3Toggle::Disabled(Gow3Toggle::DeferredUploads)) {
@@ -466,7 +481,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
         }
         for (u64 offset = 0; offset < staging.size; offset += Chunk) {
             const Gow3Copy::Item item{
-                .run = &RunGuestCopy,
+                .run = resolved_backing ? &RunResolvedImageCopy : &RunGuestCopy,
                 .context = this,
                 .source = device_addr + offset,
                 .destination = reinterpret_cast<u64>(staging.mapped + offset),
@@ -482,7 +497,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
         Gow3Copy::AsyncItems(large_copies);
         return {staging.buffer, staging.offset};
     }
-    memory->CopySparseMemory(device_addr, staging.mapped, staging.size);
+    if (resolved_backing)
+        memory->CopyResolvedImageBacking(device_addr, staging.mapped, staging.size);
+    else
+        memory->CopySparseMemory(device_addr, staging.mapped, staging.size);
     staging.Flush();
     return {staging.buffer, staging.offset};
 }

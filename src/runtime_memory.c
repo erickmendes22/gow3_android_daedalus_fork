@@ -751,6 +751,40 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
     write_unlock();
     flush_hooks();
 }
+/* Read a GPU-owner-resolved CPU-authoritative range via the stable backing
+ * alias. The guest virtual view may be PROT_NONE for an unrelated readback
+ * on the same page; a copy worker must never fault and wait for the GPU
+ * owner that is joining it. Keep the table read lock through each memcpy
+ * so a concurrent guest unmap cannot recycle the physical backing mid-copy.
+ * Sparse gaps/reservations have the same zero-fill semantics as CopySparseMemory.
+ * This is NOT a general guest read API: the caller must resolve actual GPU
+ * writes before scheduling the copy. */
+void runtime_memory_read_backing_sparse(uintptr_t address, void *data, uint64_t size) {
+    unsigned char *dst=(unsigned char *)data;
+    read_lock();
+    while (size) {
+        size_t i=vma_index(address);
+        uint64_t n=size;
+        if (i<vma_count) {
+            const Vma *v=&vmas[i];
+            if (v->start<=address) {
+                if (v->end-address<n) n=v->end-address;
+                if (v->kind!=KIND_RESERVED)
+                    memcpy(dst,backing_base+v->phys+(address-v->start),n);
+                else
+                    memset(dst,0,n);
+            } else {
+                if (v->start-address<n) n=v->start-address;
+                memset(dst,0,n);
+            }
+        } else {
+            memset(dst,0,n);
+        }
+        address+=n; dst+=n; size-=n;
+    }
+    read_unlock();
+}
+
 /* Writes through the backing view; 0 when part of the range has no backing. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size) {
     read_lock();
