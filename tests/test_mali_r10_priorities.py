@@ -174,4 +174,21 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("memset(dst,0,n)",impl)
         self.assertNotIn("(void *)address",impl)
         self.assertIn("[this, &gpu_tick]",(V/"vk_resource_pool.cpp").read_text())
+    def test_resolved_image_copy_on_protected_sparse_pages(self):
+        import shutil
+        import subprocess
+        import tempfile
+        compiler=shutil.which("cc")
+        if not compiler:
+            self.skipTest("host C compiler unavailable")
+        source=(R/"src/runtime_memory.c").read_text()
+        start=source.index("void runtime_memory_read_backing_sparse(")
+        impl=source[start:source.index("\n}\n",start)+3]
+        fixture=(R/"tests/mali_resolved_image_backing_fixture.c").read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            src=Path(tmp)/"test.c"
+            out=Path(tmp)/"test"
+            src.write_text(fixture.replace("/* REAL_IMPLEMENTATION */",impl))
+            subprocess.run([compiler,"-std=c11","-Wall","-Wextra","-Werror","-pthread",str(src),"-o",str(out)],check=True)
+            subprocess.run([str(out)],check=True,timeout=10)
 if __name__=="__main__": unittest.main()
