@@ -707,6 +707,17 @@ void Runtime::TickFrame() {
 
 void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* dst,
                          std::span<const vk::BufferCopy> copies) {
+    if (copies.empty()) return;
+    // Catch invalid transfer ranges on the CPU, before a driver can execute
+    // them and lose the device. Subtraction avoids offset+size overflow.
+    for (const auto& copy : copies) {
+        ASSERT_MSG(copy.size && copy.srcOffset <= src->SizeBytes() &&
+                   copy.size <= src->SizeBytes() - copy.srcOffset &&
+                   copy.dstOffset <= dst->SizeBytes() &&
+                   copy.size <= dst->SizeBytes() - copy.dstOffset,
+                   "Invalid Vulkan buffer copy src_off={} dst_off={} bytes={} src_cap={} dst_cap={}",
+                   copy.srcOffset, copy.dstOffset, copy.size, src->SizeBytes(), dst->SizeBytes());
+    }
     scheduler.EndRendering();
 
     // gow3: many regions (HLE copy shaders) are tracked as one bounding range per buffer:

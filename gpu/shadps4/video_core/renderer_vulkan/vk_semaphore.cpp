@@ -13,6 +13,10 @@ namespace Vulkan {
 
 constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
 thread_local const Semaphore::ReadbackWaitContext* Semaphore::readback_wait_context = nullptr;
+namespace {
+std::mutex history_registry_mutex;
+std::array<Semaphore*, 16> history_registry{};
+}
 
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
 #ifdef __ANDROID__
@@ -39,9 +43,21 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     ASSERT_MSG(semaphore_result == vk::Result::eSuccess, "Failed to create master semaphore: {}",
                vk::to_string(semaphore_result));
     semaphore = std::move(sem);
+    if (trace_enabled) {
+        std::scoped_lock lock{history_registry_mutex};
+        for (auto& slot : history_registry) {
+            if (!slot) { slot = this; break; }
+        }
+    }
 }
 
-Semaphore::~Semaphore() = default;
+Semaphore::~Semaphore() {
+    if (trace_enabled) {
+        std::scoped_lock lock{history_registry_mutex};
+        for (auto& slot : history_registry)
+            if (slot == this) slot = nullptr;
+    }
+}
 
 void Semaphore::TraceSubmission(const SubmitRecord& record) {
     if (!trace_enabled) return;
@@ -51,7 +67,23 @@ void Semaphore::TraceSubmission(const SubmitRecord& record) {
 
 void Semaphore::DumpSubmissionHistory(u64 requested) {
     if (!trace_enabled) return;
-    std::scoped_lock lock{trace_mutex};
+    DumpLocalSubmissionHistory(requested);
+    // The presenter may be the first Vulkan caller to observe a lost
+    // device. Capture the main graphics timeline too, without querying
+    // the GPU or waiting for a recorder, queue lock, or another trace.
+    std::unique_lock registry{history_registry_mutex, std::try_to_lock};
+    if (!registry.owns_lock()) return;
+    for (auto* peer : history_registry) {
+        if (!peer || peer == this || &peer->instance != &instance) continue;
+        std::fprintf(stderr, "GOW3_SUBMIT_PEER origin=%p peer=%p\n",
+                     static_cast<const void*>(this), static_cast<const void*>(peer));
+        peer->DumpLocalSubmissionHistory(peer->KnownGpuTick() + 1);
+    }
+}
+
+void Semaphore::DumpLocalSubmissionHistory(u64 requested) {
+    std::unique_lock lock{trace_mutex, std::try_to_lock};
+    if (!lock.owns_lock()) return;
     std::fprintf(stderr, "GOW3_SUBMIT_HISTORY requested=%llu known=%llu current=%llu semaphore=%p\n",
         (unsigned long long)requested, (unsigned long long)KnownGpuTick(),
         (unsigned long long)CurrentTick(), static_cast<const void*>(this));

@@ -46,7 +46,9 @@ class MaliPerformanceBundle(unittest.TestCase):
         f=(ROOT/"gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_serialization.cpp").read_text()
         s=f.split("void PipelineCache::PrepareCachedMaliPipelines",1)[1].split("bool PipelineCache::StartBackgroundWarmUp",1)[0]
         self.assertIn("StartSafeMaliWarmUp(true)",s)
-        self.assertIn("std::chrono::seconds(6)",s)
+        self.assertIn("std::chrono::seconds(12)",s)
+        self.assertIn("std::chrono::steady_clock::now() < deadline",s)
+        self.assertIn("std::this_thread::sleep_for(std::chrono::milliseconds(4))",s)
         self.assertIn("PumpWarmUp()",s)
         self.assertNotIn("pool->Wait",s)
         self.assertNotIn("StopWarmUp()",s)

@@ -569,10 +569,28 @@ void BufferCache::DrainCompletedFaults() {
 
 void BufferCache::SynchronizeDmaBuffers() {
     for (const auto& range : resident_ranges) {
-        const u64 page = range.start >> (arena_page_bits - block_shift);
-        const VAddr device_addr = range.start << block_shift;
-        const u64 size = (range.end - range.start) << block_shift;
-        SynchronizeMemory(address_space[page], device_addr, size, false, false);
+        // Residency is a guest-address interval, not a VkBuffer interval.
+        // In non-sparse mode Backing::CanMergeWith coalesces adjacent ranges
+        // even when their physical VkBuffers differ (memory==null and
+        // offset==guest block). Never upload the entire merged interval
+        // into the first arena: that can write past VkBuffer::size.
+        const VAddr end = range.end << block_shift;
+        VAddr addr = range.start << block_shift;
+        while (addr < end) {
+            const u64 page = addr >> arena_page_bits;
+            const auto* arena = address_space[page];
+            ASSERT_MSG(arena && addr >= arena->cpu_addr &&
+                       addr - arena->cpu_addr < arena->SizeBytes(),
+                       "Resident DMA range has no owning arena");
+            const u64 remaining = std::min<u64>(end - addr,
+                arena->SizeBytes() - (addr - arena->cpu_addr));
+            // SynchronizeMemory uses a u32 byte count; retain block alignment.
+            const u64 limit = u64{std::numeric_limits<u32>::max()} & ~(u64{block_size} - 1);
+            const u32 bytes = static_cast<u32>(std::min(remaining, limit));
+            ASSERT(bytes != 0);
+            SynchronizeMemory(arena, addr, bytes, false, false);
+            addr += bytes;
+        }
     }
 }
 
@@ -763,6 +781,11 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
     }
     // Resolve before launching host copies: a copy-thread fault could deadlock submission.
     for (const auto& copy : copies) {
+        ASSERT_MSG(copy.dstOffset >= arena->cpu_addr &&
+                   copy.dstOffset - arena->cpu_addr <= arena->SizeBytes() &&
+                   copy.size <= arena->SizeBytes() - (copy.dstOffset - arena->cpu_addr),
+                   "Guest DMA upload outside owning arena: addr={:#x} size={} base={:#x} bytes={}",
+                   copy.dstOffset, copy.size, arena->cpu_addr, arena->SizeBytes());
         texture_cache.ResolveReadbacks(copy.dstOffset, copy.size, true, ReadbackSource::BufferUpload);
     }
     Gow3Stats::buffer_upload_bytes.fetch_add(total_size_bytes, std::memory_order_relaxed);

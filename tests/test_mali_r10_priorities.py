@@ -234,4 +234,18 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("overlap(a.baseArrayLayer",transit)
         self.assertLess(transit.index("if (chained) FlushBarriers();"),transit.index("image_barriers.insert"))
         self.assertIn("scheduler.TraceWork(12, addr",RT)
+    def test_dma_ranges_split_at_real_arena_end_and_peer_history(self):
+        bc=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
+        dma=bc.split("void BufferCache::SynchronizeDmaBuffers()",1)[1].split("const Buffer* BufferCache::GetArena",1)[0]
+        self.assertIn("while (addr < end)",dma)
+        self.assertIn("arena->SizeBytes() - (addr - arena->cpu_addr)",dma)
+        self.assertIn("SynchronizeMemory(arena, addr, bytes",dma)
+        self.assertIn("addr += bytes",dma)
+        self.assertIn("Guest DMA upload outside owning arena",bc)
+        self.assertIn("copy.size <= dst->SizeBytes() - copy.dstOffset",RT)
+        sem=(V/"vk_semaphore.cpp").read_text()
+        self.assertIn("GOW3_SUBMIT_PEER",sem)
+        self.assertIn("peer->DumpLocalSubmissionHistory(peer->KnownGpuTick() + 1)",sem)
+        self.assertIn("std::unique_lock registry{history_registry_mutex, std::try_to_lock}",sem)
+        self.assertIn("std::unique_lock lock{trace_mutex, std::try_to_lock}",sem)
 if __name__=="__main__": unittest.main()

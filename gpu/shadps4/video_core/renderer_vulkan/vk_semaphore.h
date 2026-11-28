@@ -75,6 +75,7 @@ public:
     };
     void TraceSubmission(const SubmitRecord& record);
     void DumpSubmissionHistory(u64 requested);
+    void DumpLocalSubmissionHistory(u64 requested);
     bool TraceEnabled() const noexcept { return trace_enabled; }
 
     /// Refresh the known GPU tick
