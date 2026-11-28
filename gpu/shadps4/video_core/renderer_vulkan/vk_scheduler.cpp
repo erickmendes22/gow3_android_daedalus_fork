@@ -849,6 +849,17 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
+    // Only large explicit upload batches use this trace. No polling, new
+    // locks, GPU commands or waits: locate a stall even before vkQueueSubmit.
+    const bool trace_heavy = info.diagnostic_upload_bytes >= 16ull * 1024 * 1024;
+    const u64 trace_tick = trace_heavy ? CurrentTick() : 0;
+    const auto heavy_phase = [&](const char* phase) {
+        if (trace_heavy)
+            std::fprintf(stderr, "GOW3_MALI_HEAVY_SUBMIT tick=%llu bytes=%llu phase=%s\n",
+                (unsigned long long)trace_tick,
+                (unsigned long long)info.diagnostic_upload_bytes, phase);
+    };
+    heavy_phase("begin");
     // Compare Bachata's deeper timeline queue with GoW3's old PanVK cap=2.
     // Only one out of 32 lock/record/submit operations are timed.
     const bool mali_submit_sample = MaliPerfStats::SampleSubmit();
@@ -857,6 +868,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     const auto lock_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                : MaliPerfStats::TimePoint{};
     std::unique_lock lk{submit_mutex};
+    heavy_phase("queue-lock");
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitMutex, lock_start);
     // Do not advertise a new logical tick while this scheduler is merely
@@ -929,9 +941,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
 #endif
 
+    heavy_phase("callback-begin");
     if (on_submit) {
         on_submit(info);
     }
+    heavy_phase("callback-end");
 
     EndRendering();
     if (auto* profiler = GpuProfiler::Get(); profiler && profiler->Records(this)) {
@@ -940,13 +954,17 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
     const auto recording_start = mali_submit_sample ? MaliPerfStats::Clock::now()
                                                     : MaliPerfStats::TimePoint{};
+    heavy_phase("recorder-begin");
     SyncRecording();
     FlushNativeDrawBatch(current_cmdbuf);
+    heavy_phase("recorder-end");
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
+    heavy_phase("host-copies-end");
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitHostCopies, recording_start);
     Check(current_cmdbuf.end());
+    heavy_phase("command-buffer-end");
 
     if (mali_unlocked_submit_throttle) {
         // Overlap command recording and host copies with the older GPU work.
@@ -955,6 +973,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         const auto reserved = work_semaphore.NextTick();
         ASSERT_MSG(reserved == signal_value, "Scheduler submission tick changed during throttle");
     }
+    heavy_phase("throttle-end");
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
@@ -999,7 +1018,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         work_semaphore.TraceSubmission(submit_history);
         submit_history = {};
     }
+    heavy_phase("driver-submit-begin");
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    heavy_phase("driver-submit-end");
     if (submit_result != vk::Result::eSuccess) work_semaphore.DumpSubmissionHistory(signal_value);
     if (mali_submit_sample)
         MaliPerfStats::Record(MaliPerfStats::Stage::SubmitQueueDriver, queue_start);
@@ -1013,9 +1034,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         work_semaphore.Refresh();
     }
     AllocateWorkerCommandBuffers();
+    heavy_phase("new-command-buffer");
 
     // Apply pending operations
     PopPendingOperations();
+    heavy_phase("complete");
 }
 
 void Scheduler::PriorityPendingOpsThread(std::stop_token stoken) {

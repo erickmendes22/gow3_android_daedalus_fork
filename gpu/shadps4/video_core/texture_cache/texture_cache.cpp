@@ -1927,7 +1927,11 @@ void TextureCache::RefreshImage(Image& image) {
     // untouched leading/trailing mips into host staging. Tiled images still
     // need the full allocation and original offsets for the detile shader.
     const u64 block_size = vk::blockSize(image.info.pixel_format);
-    const bool partial_linear_upload = mali_exact_readback_ranges &&
+    static const bool partial_linear_enabled = [] {
+        const char* opt = std::getenv("GOW3_MALI_PARTIAL_LINEAR_UPLOAD");
+        return opt && opt[0] == '1';
+    }();
+    const bool partial_linear_upload = partial_linear_enabled && mali_exact_readback_ranges &&
         !image.info.props.is_tiled && !image.transcoded_snorm2101010 &&
         !image.transcoded_bc_to_etc2 && block_size &&
         first_upload_byte % std::max<u64>(4, block_size) == 0 &&
@@ -1999,7 +2003,9 @@ void TextureCache::MaybeSubmitTextureBatch() {
                     upload_bytes / 1048576.0);
     runtime.ResetUploadBatchBytes();
     mali_batch_commands = 0;
-    scheduler.Flush();
+    Vulkan::SubmitInfo info{};
+    info.diagnostic_upload_bytes = upload_bytes;
+    scheduler.Flush(info);
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,

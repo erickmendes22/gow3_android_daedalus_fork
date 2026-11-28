@@ -121,7 +121,7 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("mergePipelineCaches(cache, *pipeline_cache)",pc)
         self.assertIn("mergePipelineCaches(*pipeline_cache, cache)",pc)
         self.assertIn("needs_flush |= IsBufferAccessed(dst, dst_min, dst_max - dst_min, true)",RT)
-        self.assertNotIn("mali_dma_access_pending = true;\n            runtime.FlushBarriers(true);",D)
+        self.assertIn("mali_dma_access_pending = true;\n            runtime.FlushBarriers(true);",D)
         self.assertEqual(D.count("if (mali_dma_access_pending) {"),5)
         self.assertEqual(D.count("runtime.CompleteUntrackedShaderAccess(is_compute)"),1)
         self.assertIn("GOW3_MALI_PREPARE_CACHED_PIPELINES=${GOW3_MALI_PREPARE_CACHED_PIPELINES:-1}",(R/"tools/android/bionic/run-bionic.sh").read_text())
@@ -149,4 +149,14 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("GOW3_MALI_EXPOSURE_COPY",C)
         self.assertIn("pre.copy.size != size",C)
         self.assertIn("WatchReadback<true>",C)
+    def test_heavy_submit_breadcrumbs_and_compressed_copy_footprint(self):
+        self.assertIn("info.diagnostic_upload_bytes = upload_bytes",C)
+        self.assertIn("info.diagnostic_upload_bytes >= 16ull * 1024 * 1024",S)
+        for phase in ("callback-begin","callback-end","recorder-begin","recorder-end",
+                      "host-copies-end","throttle-end","driver-submit-begin","driver-submit-end",
+                      "new-command-buffer","complete"):
+            self.assertIn(f'heavy_phase("{phase}")',S)
+        self.assertIn("((row_length + block[0] - 1) / block[0])",RT)
+        self.assertIn("((height + block[1] - 1) / block[1])",RT)
+        self.assertIn("partial_linear_upload = partial_linear_enabled &&",C)
 if __name__=="__main__": unittest.main()

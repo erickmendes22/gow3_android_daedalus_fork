@@ -73,6 +73,7 @@ struct SubmitInfo {
     vk::Fence fence;
     u32 num_wait_semas;
     u32 num_signal_semas;
+    u64 diagnostic_upload_bytes{}; // CPU breadcrumbs for large upload submissions only
 
     void AddWait(vk::Semaphore semaphore, u64 tick = 1) {
         ASSERT(num_wait_semas < wait_semas.size());

@@ -2090,10 +2090,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         // descriptor ranges. Publish arena and BDA page-table writes
         // with the global dependency before the DMA shader executes.
         if (instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5) {
-            // The four draw/dispatch paths publish the global dependency
-            // after all bindings (including late vertex/index uploads).
-            // Do not flush a second time here, before those inputs exist.
+            // Restore the pre-R13 visibility boundary for BDA arena writes.
+            // Later binding operations can themselves use these arenas.
+            // Keep the final pre-draw dependency for late vertex/index uploads.
             mali_dma_access_pending = true;
+            runtime.FlushBarriers(true);
         }
         fault_process_pending = true;
     }
