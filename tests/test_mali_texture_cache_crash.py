@@ -29,7 +29,9 @@ class TextureCacheCrash(unittest.TestCase):
     def test_upload_batch_not_across_guest_draws_or_stale_frames(self):
         self.assertIn("recorded_upload_bytes += mip_size;",C)
         runtime=(V/"vk_runtime.cpp").read_text()
-        self.assertIn("texture_upload_batch_bytes += BufferImageCopySize(copy, dst->info.pixel_format);",runtime)
+        self.assertIn("CountUploadWork(BufferImageCopySize(copy, dst->info.pixel_format));",runtime)
+        self.assertIn("texture_upload_batch_bytes += bytes;",runtime)
+        self.assertIn("CountUploadWork(copy.size)",runtime)
         self.assertIn("runtime.CurrentUploadBatchBytes()",C)
         self.assertEqual(R.count("texture_cache.MaybeSubmitTextureBatch();"),4)
         for b in ("true","false"):

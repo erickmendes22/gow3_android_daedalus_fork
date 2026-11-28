@@ -70,6 +70,12 @@ class MaliSignedFormatTests(unittest.TestCase):
         prewarm = IMAGE[IMAGE.index("void PrewarmMaliImagePool("):IMAGE.index("void UniqueImage::Destroy()")]
         self.assertIn(".extent = {2048, 2048, 1}", prewarm)
         self.assertIn("rgba.extent = {4096, 248, 1}", prewarm)
+        self.assertIn("etc2_square1024.extent = vk::Extent3D{1024, 1024, 1}",prewarm)
+        self.assertIn("etc2_square1024.mipLevels = 10",prewarm)
+        create=IMAGE.split("void UniqueImage::Create(",1)[1].split("Image::Image(",1)[0]
+        self.assertIn("result == VK_ERROR_OUT_OF_DEVICE_MEMORY",create)
+        self.assertIn("FlushMaliBcImagePool(allocator);",create)
+        self.assertIn("GOW3_MALI_IMAGE_OOM_RETRY",create)
         self.assertIn("GOW3_MALI_VMA_PREWARM", prewarm)
         self.assertIn("VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT", prewarm)
         self.assertIn("BcPoolHasBudget(allocator)", prewarm)

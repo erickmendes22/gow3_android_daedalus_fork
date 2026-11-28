@@ -1,4 +1,4 @@
-name: GoW3 Mali R15 - padded readbacks and descriptor reuse
+name: GoW3 Mali R16 - save menu composition, DMA safety and transfer accounting
 
 on:
   push:
@@ -74,6 +74,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_beta3_ports.py' -v || regression_failures=$((regression_failures + 1))
           python3 -m unittest discover -s tests -p 'test_mali_r9_native_batch.py' -v || regression_failures=$((regression_failures + 1))
           python3 -m unittest discover -s tests -p 'test_mali_r10_priorities.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_present_source_resolution.py' -v || regression_failures=$((regression_failures + 1))
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_beta3_copy_policy.cpp -o /tmp/gow3-beta3-copy-policy
           /tmp/gow3-beta3-copy-policy
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_gpu_fault_drain.cpp -o /tmp/gow3-gpu-fault-drain

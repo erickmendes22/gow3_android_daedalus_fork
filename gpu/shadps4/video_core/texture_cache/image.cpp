@@ -863,6 +863,10 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     auto etc2_1024 = etc2;
     etc2_1024.extent = vk::Extent3D{1024, 2048, 1};
     etc2_1024.mipLevels = 10;
+    // R14 G615: 1024x1024 mip10 cold allocation took 37.78 ms.
+    auto etc2_square1024 = etc2;
+    etc2_square1024.extent = vk::Extent3D{1024, 1024, 1};
+    etc2_square1024.mipLevels = 10;
     auto etc2_256 = etc2;
     etc2_256.extent = vk::Extent3D{1024, 256, 1};
     etc2_256.mipLevels = 8;
@@ -875,8 +879,10 @@ void PrewarmMaliImagePool(VmaAllocator allocator, bool feedback_loop_supported) 
     rgba168.extent.height = 168;
     auto rgba184 = rgba;
     rgba184.extent.height = 184;
-    for (const auto& ci : {etc2, etc2_1024, etc2_256, etc2_512, etc2_512x1024,
-                           rgba208, rgba, rgba232, rgba168, rgba184, rgba208}) {
+    // The G720 R14 trace also has repeated 2048-square ETC2 cold
+    // allocations. Retain an extra exact shape within existing pool limits.
+    for (const auto& ci : {etc2, etc2_1024, etc2_square1024, etc2_256, etc2_512, etc2_512x1024,
+                           etc2, rgba208, rgba, rgba232, rgba168, rgba184, rgba208}) {
         if ((ci.format == etc2.format && !bc_enabled) ||
             (ci.format == rgba.format && !rgba_enabled)) continue;
         // Never allocate extra memory once VMA's shared heap is pressured.
@@ -969,6 +975,16 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
             Vulkan::MaliPerfStats::Stage::ImageVkAllocate, Vulkan::MaliPerfStats::Enabled()};
         result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
                                 &allocation, &alloc_info);
+    }
+    // A budget rejection may be caused by already retired image memory.
+    // On Mali only, drain that idle pool and retry once; never retry DeviceLost,
+    // wait for live GPU work or relax WITHIN_BUDGET.
+    const char* mali_cpu = std::getenv("GOW3_MALI_CPU_PRESENT");
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY && mali_cpu && mali_cpu[0] == '1') {
+        FlushMaliBcImagePool(allocator);
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
+                                &allocation, &alloc_info);
+        std::printf("GOW3_MALI_IMAGE_OOM_RETRY result=%d\n", int(result));
     }
     // A single PanVK allocation took 780 ms in the G720 capture. Record the
     // actual image dimensions/bytes on abnormal allocations: pool hit/miss
