@@ -31,6 +31,21 @@ namespace VideoCore {
 static constexpr u64 PageShift = 12;
 static constexpr u64 NumFramesBeforeRemoval = 32;
 
+// A single RG16F texel has four defined bytes even with a padded guest row.
+// The measured GoW3 exposure render target has pitch=128, not pitch=1.
+// Vulkan copies only the extent, not padding after the final texel.
+static bool IsMaliExposureReadback(const ImageInfo& i) {
+    return i.size.width == 1 && i.size.height == 1 && i.size.depth == 1 &&
+        i.resources.layers == 1 && i.resources.levels >= 1 && i.num_samples == 1 &&
+        i.pixel_format == vk::Format::eR16G16Sfloat && i.num_bits == 32 &&
+        !i.props.is_depth && i.pitch >= 1 && i.guest_address && i.guest_size >= 4;
+}
+
+static u32 ImageDownloadBytes(const ImageInfo& i, bool mali) {
+    if (mali && IsMaliExposureReadback(i)) return 4;
+    return i.pitch * i.size.height * i.size.depth * i.resources.layers * (i.num_bits / 8);
+}
+
 TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
                            Vulkan::Runtime& runtime_, AmdGpu::Liverpool* liverpool_,
                            BufferCache& buffer_cache_, PageManager& tracker_)
@@ -321,9 +336,7 @@ void TextureCache::PrefetchTinyReadback(ImageId image_id) {
         // Keep actual CPU/GPU dirty writes excluded. A MaybeCpuDirty flag
         // only records a page access outside the image: a real overlapping
         // invalidation clears alias_generation. Take revalidates the flags.
-        const bool shape = i.size.width == 1 && i.size.height == 1 && i.size.depth == 1 &&
-            i.resources.layers == 1 && i.resources.levels >= 1 && i.num_samples == 1 &&
-            i.pixel_format == vk::Format::eR16G16Sfloat && i.pitch == 1 && i.guest_address;
+        const bool shape = IsMaliExposureReadback(i);
         const u32 reason = !shape ? 1 : !image.alias_generation ? 2 :
             !image.gpu_write_epoch ? 3 :
             True(image.flags & (ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty)) ? 4 :
@@ -398,7 +411,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
     const auto tiny = [&](ImageId id) {
         const auto& i = slot_images[id].info;
         return i.size.width == 1 && i.size.height == 1 && i.size.depth == 1 &&
-               i.resources.layers == 1 && u64(i.pitch) * (i.num_bits / 8) <= 64;
+               i.resources.layers == 1 && ImageDownloadBytes(i, mali_exact_readback_ranges) <= 64;
     };
     if (!tiny_only && Vulkan::WaitDiagnostics::Enabled()) {
         ReportImageCreates();
@@ -441,8 +454,7 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                 it = download_images.erase(it);
                 continue;
             }
-            const u64 size = u64{image.info.pitch} * image.info.size.height *
-                image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
+            const u64 size = ImageDownloadBytes(image.info, mali_exact_readback_ranges);
             // Strict duplicate suppression only when the GPU producer version,
             // physical image, and pending copy are all identical. A new GPU
             // write gets a new alias_generation; zero means unknown.
@@ -630,15 +642,15 @@ std::optional<TextureCache::PendingDownload> TextureCache::RecordImageDownload(I
     if (False(image.flags & ImageFlagBits::GpuModified)) {
         return std::nullopt;
     }
-    const u32 download_size = image.info.pitch * image.info.size.height * image.info.size.depth *
-                              image.info.resources.layers * (image.info.num_bits / 8);
+    const bool compact_exposure = mali_exact_readback_ranges && IsMaliExposureReadback(image.info);
+    const u32 download_size = ImageDownloadBytes(image.info, mali_exact_readback_ranges);
     ASSERT(download_size <= image.info.guest_size);
     const auto download =
         runtime.GetStagingPool().Request(download_size, MemoryType::HostCached, 16, true);
     const vk::BufferImageCopy image_download = {
         .bufferOffset = download.offset,
-        .bufferRowLength = image.info.pitch,
-        .bufferImageHeight = image.info.size.height,
+        .bufferRowLength = compact_exposure ? 0u : image.info.pitch,
+        .bufferImageHeight = compact_exposure ? 0u : image.info.size.height,
         .imageSubresource =
             {
                 .aspectMask = image.info.props.is_depth ? vk::ImageAspectFlagBits::eDepth
@@ -651,6 +663,13 @@ std::optional<TextureCache::PendingDownload> TextureCache::RecordImageDownload(I
         .imageExtent = {image.info.size.width, image.info.size.height, image.info.size.depth},
     };
     runtime.DownloadImage(&image, download.buffer, std::span{&image_download, 1});
+    if (compact_exposure) {
+        static u64 copies = 0;
+        if (++copies <= 4 || (copies & 511u) == 0)
+            std::printf("GOW3_MALI_EXPOSURE_COPY addr=%llx pitch=%u bytes=%u count=%llu\n",
+                (unsigned long long)image.info.guest_address, image.info.pitch, download_size,
+                (unsigned long long)copies);
+    }
     return PendingDownload{image.info.guest_address, download_size, download};
 }
 
@@ -661,15 +680,15 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     if (False(image.flags & ImageFlagBits::GpuModified)) {
         return;
     }
-    const u32 download_size = image.info.pitch * image.info.size.height * image.info.size.depth *
-                              image.info.resources.layers * (image.info.num_bits / 8);
+    const bool compact_exposure = mali_exact_readback_ranges && IsMaliExposureReadback(image.info);
+    const u32 download_size = ImageDownloadBytes(image.info, mali_exact_readback_ranges);
     ASSERT(download_size <= image.info.guest_size);
     const auto download =
         runtime.GetStagingPool().Request(download_size, MemoryType::HostCached, 16, !sync);
     const vk::BufferImageCopy image_download = {
         .bufferOffset = download.offset,
-        .bufferRowLength = image.info.pitch,
-        .bufferImageHeight = image.info.size.height,
+        .bufferRowLength = compact_exposure ? 0u : image.info.pitch,
+        .bufferImageHeight = compact_exposure ? 0u : image.info.size.height,
         .imageSubresource =
             {
                 .aspectMask = image.info.props.is_depth ? vk::ImageAspectFlagBits::eDepth

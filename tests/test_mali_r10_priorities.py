@@ -95,7 +95,8 @@ class R10Priorities(unittest.TestCase):
     def test_r12_physical_prefetch_and_graphics_cache(self):
         pre=C.split("void TextureCache::PrefetchTinyReadback",1)[1].split("TextureCache::TakeTinyPrefetch",1)[0]
         take=C.split("TextureCache::TakeTinyPrefetch",1)[1].split("void TextureCache::ProcessDownloadImages",1)[0]
-        self.assertIn("i.resources.levels >= 1",pre)
+        self.assertIn("IsMaliExposureReadback(i)",pre)
+        self.assertIn("i.resources.levels >= 1",C)
         self.assertIn("ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty",pre)
         self.assertIn("ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty",take)
         self.assertIn("pre.uid != image.image_uid",take)
@@ -134,4 +135,18 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("runtime.AccessBuffer(in_buffer, in_offset, info.guest_size",tile)
         self.assertIn("return !image_barriers.empty();",RT)
         self.assertIn("last_state.pl_stage |= dst_stage",(T/"image.cpp").read_text())
+    def test_r13_padded_exposure_exact_bytes(self):
+        policy=C.split("static bool IsMaliExposureReadback",1)[1].split("TextureCache::TextureCache",1)[0]
+        self.assertIn("i.pitch >= 1",policy)
+        self.assertNotIn("i.pitch == 1",policy)
+        self.assertIn("i.num_bits == 32",policy)
+        self.assertIn("i.guest_size >= 4",policy)
+        self.assertIn("if (mali && IsMaliExposureReadback(i)) return 4;",policy)
+        self.assertIn("ImageDownloadBytes(i, mali_exact_readback_ranges) <= 64",C)
+        self.assertIn("const u64 size = ImageDownloadBytes(image.info, mali_exact_readback_ranges)",C)
+        self.assertEqual(C.count("const u32 download_size = ImageDownloadBytes(image.info, mali_exact_readback_ranges)"),2)
+        self.assertEqual(C.count(".bufferRowLength = compact_exposure ? 0u : image.info.pitch"),2)
+        self.assertIn("GOW3_MALI_EXPOSURE_COPY",C)
+        self.assertIn("pre.copy.size != size",C)
+        self.assertIn("WatchReadback<true>",C)
 if __name__=="__main__": unittest.main()
