@@ -1,0 +1,118 @@
+name: Daedalus Snapdragon reconstructed Qualcomm and Turnip test APK
+
+on:
+  push:
+    branches: [perf/gow3-snapdragon-timeline-hostcopy-20261127]
+    paths: ['.github/workflows/bionic-ubo-test.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bionic-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/perf/gow3-snapdragon-timeline-hostcopy-20261127'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+      GOW3_BUILD_TOOLS: '36.0.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - name: Prepare isolated UBO test signing identity
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/gow3-ubo-test.jks" -storepass android \
+            -keypass android -alias bionic -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Daedalus GoW III UBO Test"
+          echo "GOW3_BIONIC_UBO_TEST=1" >> "$GITHUB_ENV"
+          echo "GOW3_UBO_TEST_KEYSTORE=$RUNNER_TEMP/gow3-ubo-test.jks" >> "$GITHUB_ENV"
+      - name: Source and native preparation tests
+        run: |
+          python -m pip install unicorn==2.1.4
+          python -m unittest discover -s tests -p 'test_android_*.py'
+          bash tools/android/bionic/build_prepare.sh host
+          python -m unittest discover -s tests -p 'test_bionic_*.py'
+          python -m compileall -q tools/android/bionic scripts
+          "$ANDROID_HOME/build-tools/$GOW3_BUILD_TOOLS/aapt2" compile --dir android-launcher/app/src/main/res -o "$RUNNER_TEMP/resources.zip"
+      - name: Check launcher compilation before building native runtime
+        run: bash android-launcher/gradlew -p android-launcher :app:compileReleaseJavaWithJavac :app:testReleaseUnitTest --tests com.gow3.android.GameSfoTest -Pgow3Bionic=true -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false --no-daemon --max-workers=2
+      - name: Fetch the verified 2.1.8 public baseline
+        run: |
+          mkdir -p out/baseline
+          curl -fLsS --retry 4 --retry-all-errors --connect-timeout 25 --max-time 180 \
+            "https://github.com/erickmendes22/gow3_android_daedalus_fork/releases/download/v2.1.8-daedalus-bionic/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk" \
+            -o out/baseline/gow3-2.1.8.apk
+          echo 'bffc0edf6e70738423963ede8a76a2a0274320f6e18671302a0a589a6dcc879f  out/baseline/gow3-2.1.8.apk' | sha256sum -c -
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Host headers and native tools
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build Android dependencies and audit GPU configuration before compilation
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh --configure-only
+      - name: Build the ARM64 Vulkan renderer
+        shell: bash -el {0}
+        run: bash tools/android/bionic/build_gpu.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snapdragon-UBO-native-checkpoint
+          path: out/bionic/lib/libgow3gpu.so
+          retention-days: 2
+          if-no-files-found: error
+      - name: Stage the verified baseline with the new Vulkan renderer
+        run: |
+          python tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3-2.1.8.apk \
+            out/bionic/lib/libgow3gpu.so "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+      - name: Build pinned Qualcomm isolated loader and hooks
+        run: bash tools/android/bionic/build_adrenotools.sh
+      - name: Package, sign and validate the isolated UBO APK
+        run: |
+          bash android-launcher/gradlew -p android-launcher :app:assembleRelease \
+            -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+          bash tools/android/bionic/sign_apk.sh
+          apk=$(find out/release -name 'God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk' -print -quit)
+          for lib in libadrenotools libhook_impl libmain_hook libfile_redirect_hook libgsl_alloc_hook; do
+            unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$lib.so"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: God-of-War-III-Daedalus-Snapdragon-UBO-Test
+          path: |
+            out/release/God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk
+            out/release/God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Bionic-build-diagnostics
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+            out/bionic/gpu/.cmake/api/v1/reply/target-gow3gpu-*.json
+            android-launcher/app/build/outputs/logs/
+          if-no-files-found: ignore
