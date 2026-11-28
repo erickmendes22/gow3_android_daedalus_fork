@@ -56,6 +56,8 @@ struct Frame {
     VmaAllocation mali_cpu_readback_allocation{};
     void* mali_cpu_readback_mapped{};
     VkDeviceSize mali_cpu_readback_size{};
+    // Separate UI composition target; never modify the reusable game frame.
+    std::unique_ptr<Frame> mali_overlay_frame;
 #endif
     u8 id{};
 

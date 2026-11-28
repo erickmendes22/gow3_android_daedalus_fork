@@ -278,6 +278,11 @@ Presenter::~Presenter() {
     const vk::Device device = instance.GetDevice();
     for (auto& frame : present_frames) {
 #ifdef __ANDROID__
+        if (frame.mali_overlay_frame) {
+            auto& ui = *frame.mali_overlay_frame;
+            if (ui.image_view) device.destroyImageView(ui.image_view);
+            if (ui.image) vmaDestroyImage(instance.GetAllocator(), ui.image, ui.allocation);
+        }
         if (frame.mali_cpu_readback != VK_NULL_HANDLE) {
             vmaDestroyBuffer(instance.GetAllocator(), frame.mali_cpu_readback,
                              frame.mali_cpu_readback_allocation);
@@ -567,6 +572,12 @@ Frame* Presenter::PrepareLastFrame() {
                    "Device lost during waiting for a frame");
     }
 
+#ifdef __ANDROID__
+    // CPU presentation restores GENERAL, not SHADER_READ_ONLY_OPTIMAL.
+    // The completed presentation fence already guarantees the image is ready;
+    // keep the original producer semaphore and avoid an invalid layout transition.
+    if (swapchain.UsesCpuPresentation()) return frame;
+#endif
     auto& scheduler = flip_scheduler;
     scheduler.EndRendering();
     const auto cmdbuf = scheduler.CommandBuffer();
@@ -1114,15 +1125,15 @@ void Presenter::PresentLoadingFrame() {
     if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
-    if (!swapchain.AcquireNextImage()) {
-        return;
-    }
 #ifdef __ANDROID__
     if (swapchain.UsesCpuPresentation()) {
-        swapchain.PresentCpuPixels(nullptr, 0, 0);
+        if (auto* frame = PrepareBlankFrame(true)) Present(frame, false, false);
         return;
     }
 #endif
+    if (!swapchain.AcquireNextImage()) {
+        return;
+    }
     const vk::Image image = swapchain.Image();
     const vk::Extent2D extent = swapchain.GetExtent();
     const auto cmdbuf = present_scheduler.CommandBuffer();
@@ -1328,8 +1339,59 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1,
         };
+        Gow3Overlay::PollMenuShortcut();
+        const bool overlay = Gow3Overlay::Visible();
+        vk::Image readback_image = frame->image;
+        const auto transition = [&](vk::Image image, vk::ImageLayout old_layout,
+                                    vk::ImageLayout new_layout, vk::AccessFlags src,
+                                    vk::AccessFlags dst) {
+            const vk::ImageMemoryBarrier barrier{
+                .srcAccessMask = src, .dstAccessMask = dst,
+                .oldLayout = old_layout, .newLayout = new_layout,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = image, .subresourceRange = range,
+            };
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                vk::PipelineStageFlagBits::eAllCommands, {}, {}, {}, barrier);
+        };
+        if (overlay) {
+            // Each frame's fence protects both the original and scratch image.
+            // The overlay is rendered into a fresh copy even on a host redraw.
+            if (!frame->mali_overlay_frame) frame->mali_overlay_frame = std::make_unique<Frame>();
+            auto* ui = frame->mali_overlay_frame.get();
+            ui->id = frame->id;
+            if (!ui->image || ui->width != frame->width || ui->height != frame->height ||
+                ui->is_hdr != frame->is_hdr)
+                RecreateFrame(ui, frame->width, frame->height);
+            transition(frame->image, vk::ImageLayout::eGeneral,
+                vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits::eMemoryWrite,
+                vk::AccessFlagBits::eTransferRead);
+            transition(ui->image, vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eTransferDstOptimal, {}, vk::AccessFlagBits::eTransferWrite);
+            const vk::ImageSubresourceLayers layers{vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+            const vk::ImageCopy copy{.srcSubresource = layers, .dstSubresource = layers,
+                                     .extent = {frame->width, frame->height, 1}};
+            cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                             ui->image, vk::ImageLayout::eTransferDstOptimal, copy);
+            transition(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+                vk::ImageLayout::eGeneral, vk::AccessFlagBits::eTransferRead,
+                vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite);
+            transition(ui->image, vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::AccessFlagBits::eTransferWrite,
+                vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
+            Gow3Overlay::Render(cmdbuf, ui->image_view, {frame->width, frame->height});
+            transition(ui->image, vk::ImageLayout::eColorAttachmentOptimal,
+                vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits::eColorAttachmentWrite,
+                vk::AccessFlagBits::eTransferRead);
+            readback_image = ui->image;
+            static u64 composed = 0;
+            if (++composed <= 4 || composed % 120 == 0)
+                std::printf("GOW3_MALI_OVERLAY_COMPOSED count=%llu size=%ux%u\n",
+                    (unsigned long long)composed, frame->width, frame->height);
+        }
         const vk::ImageMemoryBarrier to_readback{
-            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
             .dstAccessMask = vk::AccessFlagBits::eTransferRead,
             .oldLayout = vk::ImageLayout::eGeneral,
             .newLayout = vk::ImageLayout::eTransferSrcOptimal,
@@ -1337,9 +1399,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .image = frame->image, .subresourceRange = range,
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                               vk::PipelineStageFlagBits::eTransfer,
-                               vk::DependencyFlagBits::eByRegion, {}, {}, to_readback);
+        if (!overlay)
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                                   vk::PipelineStageFlagBits::eTransfer,
+                                   {}, {}, {}, to_readback);
         const vk::BufferImageCopy region{
             .bufferOffset = 0,
             .bufferRowLength = 0, .bufferImageHeight = 0,
@@ -1347,7 +1410,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .imageOffset = {0, 0, 0},
             .imageExtent = {frame->width, frame->height, 1},
         };
-        cmdbuf.copyImageToBuffer(frame->image, vk::ImageLayout::eTransferSrcOptimal,
+        cmdbuf.copyImageToBuffer(readback_image, vk::ImageLayout::eTransferSrcOptimal,
                                  vk::Buffer{frame->mali_cpu_readback}, region);
         const vk::ImageMemoryBarrier restore_frame{
             .srcAccessMask = vk::AccessFlagBits::eTransferRead,
@@ -1358,9 +1421,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .image = frame->image, .subresourceRange = range,
         };
-        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eAllCommands,
-                               vk::DependencyFlagBits::eByRegion, {}, {}, restore_frame);
+        if (!overlay)
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eAllCommands,
+                                   {}, {}, {}, restore_frame);
         SubmitInfo cpu_info{};
         cpu_info.AddWait(frame->ready_semaphore, frame->ready_tick);
         cpu_info.AddSignal(frame->present_done);
