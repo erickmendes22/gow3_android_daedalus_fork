@@ -1,4 +1,4 @@
-name: GoW3 Mali R16 - save menu composition, DMA safety and transfer accounting
+name: GoW3 Mali R17 - staging ownership and exact native presentation
 
 on:
   push:
@@ -76,6 +76,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_mali_r10_priorities.py' -v || regression_failures=$((regression_failures + 1))
           python3 -m unittest discover -s tests -p 'test_mali_cpu_present_source.py' -v || regression_failures=$((regression_failures + 1))
           python3 -m unittest discover -s tests -p 'test_mali_present_source_resolution.py' -v || regression_failures=$((regression_failures + 1))
+          python3 -m unittest discover -s tests -p 'test_mali_r17_staging_native.py' -v || regression_failures=$((regression_failures + 1))
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_beta3_copy_policy.cpp -o /tmp/gow3-beta3-copy-policy
           /tmp/gow3-beta3-copy-policy
           c++ -std=c++20 -Wall -Wextra -Werror -Igpu/shadps4 tests/test_mali_gpu_fault_drain.cpp -o /tmp/gow3-gpu-fault-drain
@@ -221,7 +222,7 @@ jobs:
           (cd out/release && sha256sum -c God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: GoW3-Mali-1023daf52-GPU-TICK-PRIORITY
+          name: GoW3-Mali-R17
           path: |
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk
             out/release/God-of-War-III-Mali-Diagnostic-v2.1.8-arm64.apk.sha256

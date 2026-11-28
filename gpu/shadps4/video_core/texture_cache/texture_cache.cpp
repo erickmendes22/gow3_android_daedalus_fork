@@ -769,10 +769,12 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
                 Vulkan::MaliPerfStats::Stage::SyncTextureDownload, download_start);
     } else {
         scheduler.DeferPriorityOperation(
-            [this, device_addr = image.info.guest_address, download, download_size, row_bytes, row_pitch] {
+            [this, device_addr = image.info.guest_address, download, download_size, row_bytes, row_pitch,
+             completed_tick = scheduler.CurrentTick()] {
                 download.Invalidate();
                 PublishReadbackRows(device_addr, download, download_size, row_bytes, row_pitch);
-                runtime.GetStagingPool().FreeDeferred(download);
+                // PriorityPendingOpsThread has already waited for this exact tick.
+                runtime.GetStagingPool().FreeDeferred(download, completed_tick);
             });
     }
 }

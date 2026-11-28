@@ -5,6 +5,7 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "common/types.h"
@@ -82,6 +83,9 @@ private:
     const Instance& instance;
     Scheduler& scheduler;
 
+    // Priority download callbacks release buffers on a different thread.
+    // Serialize allocation, release and trimming; never wait on GPU work here.
+    std::mutex pool_mutex;
     std::array<Ring, NUM_TYPES> rings;
     u64 keep_blocks = 0; ///< gow3: ring blocks never trimmed
     std::array<std::vector<LargeBuffer>, NUM_TYPES> large_caches;

@@ -175,6 +175,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # resolutions and unverified eboots at their original 1280x720.
       # GOW3_MALI_NATIVE_AHB=0 restores the previous output size.
       export GOW3_MALI_NATIVE_AHB=${GOW3_MALI_NATIVE_AHB:-1}
+      unset GOW3_MALI_PRESENT_NATIVE_EXTENT
       if [ "$GOW3_MALI_CPU_PRESENT" = 1 ] &&
          [ "$GOW3_MALI_NATIVE_AHB" = 1 ] &&
          [ "${GOW3_RESOLUTION_STATUS:-}" = verified-direct-game-patch ]; then
@@ -182,6 +183,22 @@ case "${GOW3_VULKAN_DRIVER:-}" in
           960x540|854x480|752x424|640x360|426x240)
             export GOW3_SCREEN_W="${GOW3_PATCH_INPUT_RES%x*}"
             export GOW3_SCREEN_H="${GOW3_PATCH_INPUT_RES#*x}"
+            export GOW3_MALI_PRESENT_NATIVE_EXTENT=1
+            ;;
+        esac
+      elif [ "$GOW3_MALI_CPU_PRESENT" = 1 ] &&
+           [ "$GOW3_MALI_NATIVE_AHB" = 1 ] &&
+           [ "${GOW3_RESOLUTION_STATUS:-}" = native-game-patch ] &&
+           [ "${GOW3_PATCH_STATUS:-}" = validated ] &&
+           [ "${GOW3_GAME_VERSION:-}" = 01.02 ] &&
+           [ "${GOW3_EBOOT_SHA256:-}" = 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c ]; then
+        # The canonical 480p PS4 patch has no GOW3_PATCH_INPUT_RES by
+        # design. Its verified 854x480 VideoOut must not be CPU-upscaled
+        # into the historical 1280x720 AHB (R16 log 203435).
+        case ";${GOW3_PATCHES:-};" in
+          *";Resolution Patch - 480p;"*)
+            export GOW3_SCREEN_W=854 GOW3_SCREEN_H=480
+            export GOW3_MALI_PRESENT_NATIVE_EXTENT=1
             ;;
         esac
       fi
@@ -386,7 +403,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_TINY_READBACK_FIRST=${GOW3_MALI_TINY_READBACK_FIRST:-1}
       export GOW3_MALI_READBACK_VERSION_DEDUP=${GOW3_MALI_READBACK_VERSION_DEDUP:-1}
       export GOW3_MALI_UPLOAD_STRIPES=${GOW3_MALI_UPLOAD_STRIPES:-1}
-      echo "Mali R16: submit_history=$GOW3_MALI_SUBMIT_HISTORY tiny_first=$GOW3_MALI_TINY_READBACK_FIRST version_dedup=$GOW3_MALI_READBACK_VERSION_DEDUP upload_stripes=$GOW3_MALI_UPLOAD_STRIPES producer_prefetch=$GOW3_MALI_TINY_PRODUCER_PREFETCH"
+      echo "Mali R17: submit_history=$GOW3_MALI_SUBMIT_HISTORY tiny_first=$GOW3_MALI_TINY_READBACK_FIRST version_dedup=$GOW3_MALI_READBACK_VERSION_DEDUP upload_stripes=$GOW3_MALI_UPLOAD_STRIPES producer_prefetch=$GOW3_MALI_TINY_PRODUCER_PREFETCH"
       echo "Mali R9: native_draw_batch=$GOW3_MALI_NATIVE_DRAW_BATCH coalesce_eop=$GOW3_MALI_COALESCE_EOP_READBACK"
       export GOW3_MALI_TEXTURE_BATCH_MIB=${GOW3_MALI_TEXTURE_BATCH_MIB:-16}
       echo "Mali texture-cache safety: early_readback_submit=$GOW3_MALI_EARLY_READBACK_SUBMIT texture_batch_mib=$GOW3_MALI_TEXTURE_BATCH_MIB exact_pool_only=$([ "$GOW3_MALI_REBIND_RETIRED_MEMORY" = 0 ] && echo yes || echo no)"

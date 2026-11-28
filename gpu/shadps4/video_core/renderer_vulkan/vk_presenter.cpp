@@ -840,8 +840,18 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                 target_h = verified_patch.height;
             }
             // Prevent a 0x0 swapchain during an Android surface transition.
-            if (target_w && target_h)
-                SetExpectedGameSize(s32(target_w), s32(target_h));
+            if (target_w && target_h) {
+                const char* native_extent = std::getenv("GOW3_MALI_PRESENT_NATIVE_EXTENT");
+                if (native_extent && native_extent[0] == '1') {
+                    // Verified native AHB dimensions must be retained exactly.
+                    // 752x424 is intentionally not 16:9; aspect fitting here
+                    // truncated it to 752x423, forcing another scale/copy.
+                    expected_frame_width = target_w;
+                    expected_frame_height = target_h;
+                } else {
+                    SetExpectedGameSize(s32(target_w), s32(target_h));
+                }
+            }
         }
     }
 #endif
