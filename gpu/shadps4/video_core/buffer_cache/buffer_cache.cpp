@@ -127,6 +127,23 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
+#ifdef __ANDROID__
+    static const bool ub2_pool_small = [] {
+        const char* opt = std::getenv("GOW3_UB2_COPY_POOL");
+        const char* pipe = std::getenv("GOW3_DRAW_PIPE");
+        return std::getenv("BB_AOT") && !(opt && opt[0] == '0') &&
+               !(pipe && pipe[0] == '1');
+    }();
+    // Staging reservations are disjoint; their contents are consumed only
+    // by the submitted GPU work. The existing pool path is covered by
+    // WaitAsync at every WaitHostCopies and by the deferred-fence epochs.
+    // Do not put these copies behind Vulkan draw recording on UB2 AOT.
+    // The original FEX/desktop/explicit draw-pipe route is unchanged.
+    if (ub2_pool_small && Gow3Copy::Enabled()) {
+        Gow3Copy::QueueCopy(item);
+        return;
+    }
+#endif
     if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
         scheduler.RecordHostCopy([item] { item.run(item); });
         return;

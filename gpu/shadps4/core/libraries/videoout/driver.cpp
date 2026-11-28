@@ -518,10 +518,22 @@ void VideoOutDriver::Flip(const Request& req) {
             const auto vrs_coarse = Gow3Stats::ub2_vrs_coarse.exchange(0);
             const auto vrs_eligible = Gow3Stats::ub2_vrs_eligible.exchange(0);
             if (vrs_total)
-                std::printf("UB2_VRS_DRAWS coarse=%llu total=%llu pct=%.3f eligible=%llu dynamic_pct=%.3f\n",
+                std::printf("UB2_VRS_DRAWS coarse=%llu total=%llu pct=%.3f eligible=%llu eligible_pct=%.3f mode=static\n",
                     static_cast<unsigned long long>(vrs_coarse),
                     static_cast<unsigned long long>(vrs_total), 100.0 * vrs_coarse / vrs_total,
                     static_cast<unsigned long long>(vrs_eligible), 100.0 * vrs_eligible / vrs_total);
+            const auto copy_batches = Gow3Stats::ub2_copy_batches.exchange(0);
+            const auto copy_items = Gow3Stats::ub2_copy_items.exchange(0);
+            const auto copy_bytes = Gow3Stats::ub2_copy_bytes.exchange(0);
+            const auto inline_items = Gow3Stats::ub2_copy_inline_items.exchange(0);
+            const auto inline_bytes = Gow3Stats::ub2_copy_inline_bytes.exchange(0);
+            if (copy_items || inline_items)
+                std::printf("UB2_COPY_POOL batches=%llu async_items=%llu async_bytes=%llu inline_items=%llu inline_bytes=%llu\n",
+                    static_cast<unsigned long long>(copy_batches),
+                    static_cast<unsigned long long>(copy_items),
+                    static_cast<unsigned long long>(copy_bytes),
+                    static_cast<unsigned long long>(inline_items),
+                    static_cast<unsigned long long>(inline_bytes));
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).

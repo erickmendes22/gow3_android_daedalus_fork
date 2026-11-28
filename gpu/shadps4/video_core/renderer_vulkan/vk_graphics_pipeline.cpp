@@ -219,10 +219,8 @@ GraphicsPipeline::GraphicsPipeline(
             !ps->uses_dma &&
             std::ranges::none_of(ps->buffers, [](const auto& b) { return b.is_written; }) &&
             std::ranges::none_of(ps->images, [](const auto& i) { return i.is_written; });
-        // Native-rate pipelines bake 1x1 instead of requiring a dynamic
-        // vkCmdSetFragmentShadingRateKHR on every draw.
-        if (ub2_vrs_shader_safe)
-            dynamic_states.push_back(vk::DynamicState::eFragmentShadingRateKHR);
+        // Both variants bake their fragment rate. Draws select a handle,
+        // avoiding a driver dynamic-state call for every eligible draw.
     }
 
     const vk::PipelineDynamicStateCreateInfo dynamic_info = {
@@ -494,6 +492,30 @@ GraphicsPipeline::GraphicsPipeline(
                vk::to_string(pipeline_result));
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
+
+    if (ub2_vrs_shader_safe && !needs_square_pass) {
+        // Exactly the same shaders, layout and attachment state. Only the
+        // baked shading rate differs. The driver's pipeline-binary key
+        // incorporates the complete create info, including this rate.
+        auto coarse_rate_ci = shading_rate_ci;
+        coarse_rate_ci.fragmentSize = vk::Extent2D{2, 2};
+        auto coarse_info = pipeline_info;
+        coarse_info.pNext = &coarse_rate_ci;
+        auto [coarse_result, coarse] =
+            CreateCachedGraphicsPipeline(device, pipeline_cache, coarse_info, key,
+                                         instance.GetPipelineBinaryGlobalKey(), binary_directory);
+        if (coarse_result == vk::Result::eSuccess && coarse) {
+            ub2_coarse_pipeline = std::move(coarse);
+        } else {
+            // No dynamic state is required on the original 1x1 pipeline.
+            // Fail open to native shading on a driver rejecting this variant.
+            ub2_vrs_shader_safe = false;
+            LOG_WARNING(Render_Vulkan, "UB2 VRS static 2x2 variant unavailable: {}",
+                        vk::to_string(coarse_result));
+        }
+    } else {
+        ub2_vrs_shader_safe = false;
+    }
 
     if (needs_square_pass) {
         auto square_blending = color_blending;

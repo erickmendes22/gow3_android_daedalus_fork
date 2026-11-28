@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "gow3_copy.h"
 #include "gow3_threads.h"
+#ifdef __ANDROID__
+#include "gow3_ub2_cpu_policy.h"
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -190,7 +193,11 @@ private:
     }
 
     void Loop(unsigned index) {
-        Common::SetCurrentThreadName(("gow3:Copy" + std::to_string(index)).c_str());
+        const auto name = "gow3:Copy" + std::to_string(index);
+        Common::SetCurrentThreadName(name.c_str());
+#ifdef __ANDROID__
+        u32 sample_jobs = 0;
+#endif
         u64 seen = 0;
         std::unique_lock lk{mutex};
         while (true) {
@@ -205,6 +212,10 @@ private:
                 async_tasks.pop_front();
                 lk.unlock();
                 RunAsync(task);
+#ifdef __ANDROID__
+                if ((++sample_jobs & 127u) == 0)
+                    Gow3Ub2Cpu::SampleThread(name.c_str() + 5);
+#endif
                 lk.lock();
                 continue;
             }
@@ -260,6 +271,11 @@ void FlushBatch() {
     if (batch.items.empty()) {
         return;
     }
+    if (Gow3Stats::enabled) {
+        Gow3Stats::ub2_copy_batches.fetch_add(1, std::memory_order_relaxed);
+        Gow3Stats::ub2_copy_items.fetch_add(batch.items.size(), std::memory_order_relaxed);
+        Gow3Stats::ub2_copy_bytes.fetch_add(batch.bytes, std::memory_order_relaxed);
+    }
     auto items = std::make_shared<std::vector<Item>>(std::move(batch.items));
     batch.items = {};
     batch.items.reserve(256);
@@ -279,7 +295,23 @@ void QueueCopy(const Item& item) {
     // Smaller batches (32 items / 64 KiB, done before the next fence) measured slower.
     batch.items.push_back(item);
     batch.bytes += item.size;
-    if (batch.bytes >= 512 * 1024 || batch.items.size() >= 256) {
+    // UB2 2010811 spends ~27% of the command thread's wall time waiting
+    // for recorder copies. Dispatch a moderate batch earlier so the
+    // existing two workers overlap the draw stream instead of collecting
+    // most of a fence's copies on the waiting command thread.
+    static const bool ub2_pool_small = [] {
+#ifdef __ANDROID__
+        const char* opt = std::getenv("GOW3_UB2_COPY_POOL");
+        const char* pipe = std::getenv("GOW3_DRAW_PIPE");
+        return std::getenv("BB_AOT") && !(opt && opt[0] == '0') &&
+               !(pipe && pipe[0] == '1');
+#else
+        return false;
+#endif
+    }();
+    const auto max_bytes = ub2_pool_small ? 128 * 1024ULL : 512 * 1024ULL;
+    const auto max_items = ub2_pool_small ? 64u : 256u;
+    if (batch.bytes >= max_bytes || batch.items.size() >= max_items) {
         FlushBatch();
     }
 }
@@ -292,6 +324,10 @@ void AfterCopies(std::function<void()> callback) {
 void WaitAsync() {
     // The caller's own batch runs here: handing it over only to wait for it costs a wakeup.
     if (!batch.items.empty()) {
+        if (Gow3Stats::enabled) {
+            Gow3Stats::ub2_copy_inline_items.fetch_add(batch.items.size(), std::memory_order_relaxed);
+            Gow3Stats::ub2_copy_inline_bytes.fetch_add(batch.bytes, std::memory_order_relaxed);
+        }
         for (const auto& item : batch.items) {
             item.run(item);
         }

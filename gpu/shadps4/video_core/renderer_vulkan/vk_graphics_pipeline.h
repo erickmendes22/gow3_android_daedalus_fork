@@ -111,6 +111,7 @@ public:
     }
 
     bool IsUb2VrsShaderSafe() const { return ub2_vrs_shader_safe; }
+    vk::Pipeline Ub2CoarseHandle() const noexcept { return *ub2_coarse_pipeline; }
 
     u16 UniformBufferMask(Shader::SwStage stage) const {
         return uniform_buffer_masks[u32(stage)];
@@ -137,6 +138,7 @@ private:
     std::array<u16, MaxShaderStages> uniform_buffer_masks{};
     std::optional<const Shader::Gcn::FetchShaderData> fetch_shader{};
     vk::UniquePipeline square_pipeline;
+    vk::UniquePipeline ub2_coarse_pipeline;
 };
 
 struct ClipDistanceShaderKey {

@@ -1,4 +1,4 @@
-name: GoW III UB2 selective VRS and direct CPU APK
+name: GoW III UB2 static VRS copy pool and A6xx APK
 
 on:
   push:
@@ -77,19 +77,19 @@ jobs:
           bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
           mkdir -p out/ub2-delivery
           bt="$ANDROID_HOME/build-tools/36.0.0"
-          apk=out/ub2-delivery/GoW3-UB2-VRS-Selective-unsigned.apk
+          apk=out/ub2-delivery/GoW3-UB2-VRS-Copy-A6xx-unsigned.apk
           "$bt/zipalign" -P 16 -f 4 android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk "$apk"
           "$bt/zipalign" -P 16 -c -v 4 "$apk"
           python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt" --ubo-test
           "$bt/aapt" dump badging "$apk" > out/ub2-delivery/badging.txt
-          grep "name='com.gow3.android.bionic.ub2' versionCode='2010811'" out/ub2-delivery/badging.txt
+          grep "name='com.gow3.android.bionic.ub2' versionCode='2010812'" out/ub2-delivery/badging.txt
           unzip -l "$apk" | grep 'lib/arm64-v8a/libbbrecomp.so'
           cp "$bt/lib/apksigner.jar" out/ub2-delivery/apksigner.jar
           git rev-parse HEAD > out/ub2-delivery/source-commit.txt
           (cd out/ub2-delivery && sha256sum *.apk apksigner.jar > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: gow3-ub2-vrs-selective-unsigned
+          name: gow3-ub2-vrs-copy-a6xx-unsigned
           path: out/ub2-delivery/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
