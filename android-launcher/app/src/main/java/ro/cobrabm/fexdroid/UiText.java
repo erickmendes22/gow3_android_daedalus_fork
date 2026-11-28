@@ -75,8 +75,8 @@ final class UiText {
         PT.put("Restarting the game loses unsaved progress.", "Reiniciar descarta o progresso não salvo.");
         PT.put("Preparing local ARM64 compilation…", "Preparando a compilação ARM64 local…");
         PT.put("Compiling ARM64 on this device…", "Compilando ARM64 neste aparelho…");
-        PT.put("Local ARM64 compilation complete. AOT is enabled for Play.",
-               "Compilação ARM64 concluída. O AOT foi ativado para jogar.");
+        PT.put("Local ARM64 compilation complete. Choose AOT in CPU mode to play.",
+               "Compilação ARM64 concluída. Selecione AOT em Modo de CPU para jogar.");
         PT.put("Local ARM64 compilation failed. See logs/android-game.log.",
                "A compilação ARM64 local falhou. Consulte logs/android-game.log.");
         PT.put("Exit", "Saída");

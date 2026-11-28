@@ -331,4 +331,8 @@
     <string name="gpu_driver_panvk">PanVK 3.2 (Mali; experimental)</string>
     <string name="gpu_driver_adreno_auto">Gen8 V38 Patched (Adreno 8xx) / v27 R1 (Adreno 6xx/7xx)</string>
     <string name="home_compile_aot">Compilar ARM64 AOT (sem TSO)</string>
+    <string name="home_cpu_mode">Modo de CPU</string>
+    <string name="home_cpu_standard">Processo padrão (FEX)</string>
+    <string name="home_cpu_aot">ARM64 AOT (sem TSO)</string>
+    <string name="home_cpu_summary">Modo de CPU · %1$s</string>
 </resources>

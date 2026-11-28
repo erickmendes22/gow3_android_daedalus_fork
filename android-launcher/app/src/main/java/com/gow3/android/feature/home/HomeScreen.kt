@@ -14,8 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +61,10 @@ internal fun HomeScreen(
 ) {
     val context = LocalContext.current
     val isBionic = ro.cobrabm.fexdroid.GpuDriverManager.supported(context)
+    val supportsAot = context.packageName == "com.gow3.android.bionic.ub2"
+    val preferences = remember(context) { context.getSharedPreferences("gow3", Context.MODE_PRIVATE) }
+    var aotEnabled by remember(preferences) { mutableStateOf(preferences.getBoolean("cpu_aot", false)) }
+    var chooseCpu by remember { mutableStateOf(false) }
     var iniValues by remember { mutableStateOf(loadIni(context)) }
     var gameDir by remember(pkgGeneration) { mutableStateOf(currentGameDir(context)) }
     var updateDir by remember(pkgGeneration) { mutableStateOf(currentUpdateDir(context)) }
@@ -68,6 +75,7 @@ internal fun HomeScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 gameDir = currentGameDir(context)
                 updateDir = currentUpdateDir(context)
+                aotEnabled = preferences.getBoolean("cpu_aot", false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -97,7 +105,9 @@ internal fun HomeScreen(
             color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
         HomeSection {
             LaunchButton(onStartGame)
-            if (context.packageName == "com.gow3.android.bionic.ub2") {
+            if (supportsAot) {
+                val cpuLabel = stringResource(if (aotEnabled) R.string.home_cpu_aot else R.string.home_cpu_standard)
+                HomeAction(stringResource(R.string.home_cpu_summary, cpuLabel)) { chooseCpu = true }
                 HomeAction(stringResource(R.string.home_compile_aot), enabled = !pkgInstallBusy,
                     onClick = onCompileAot)
             }
@@ -141,6 +151,34 @@ internal fun HomeScreen(
     }
     popup?.let { which ->
         HomePopup(which, iniValues, ::applyChanges, close = { popup = null })
+    }
+    if (chooseCpu) {
+        fun select(enabled: Boolean) {
+            preferences.edit().putBoolean("cpu_aot", enabled).apply()
+            aotEnabled = enabled
+            chooseCpu = false
+        }
+        AlertDialog(
+            onDismissRequest = { chooseCpu = false },
+            title = { Text(stringResource(R.string.home_cpu_mode)) },
+            text = {
+                Column {
+                    for (enabled in listOf(false, true)) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { select(enabled) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = aotEnabled == enabled, onClick = null,
+                                modifier = Modifier.padding(12.dp))
+                            Text(stringResource(if (enabled) R.string.home_cpu_aot else R.string.home_cpu_standard))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { chooseCpu = false }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
     }
 }
 

@@ -1104,6 +1104,7 @@ public final class GameActivity extends Activity {
                     compileOnly ? "aot-compile" : "game")
                 : process(ROOT+"/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
                     ROOT+"/bin/sh",BASE+"/run-gow3.sh","game"); game=launched;
+            if (destroyed) { stopGame(); return; }
             Thread log=new Thread(() -> {
                 try (BufferedReader r=new BufferedReader(new InputStreamReader(launched.getInputStream()));
                      PrintWriter out=new PrintWriter(new File(BASE,"logs/android-game.log"))) {
@@ -1126,8 +1127,7 @@ public final class GameActivity extends Activity {
                         if (code==4) error("Graphics initialization failed (Vulkan/Turnip). See logs/android-game.log.");
                         else if (compileOnly && code==0) main.post(() -> {
                             if (destroyed) return;
-                            getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("cpu_aot",true).apply();
-                            status.setText(UiText.get(this,"Local ARM64 compilation complete. AOT is enabled for Play."));
+                            status.setText(UiText.get(this,"Local ARM64 compilation complete. Choose AOT in CPU mode to play."));
                         });
                         else if (compileOnly || code==5) error("Local ARM64 compilation failed. See logs/android-game.log.");
                         else error("Game stopped ("+code+"). Open the menu to restart.");
