@@ -1,29 +1,98 @@
-name: GoW III UB2 AOT launcher fix
+name: GoW III UB2 CPU balanced unsigned APK
 
 on:
   push:
     branches: [fix/gow3-ub2-aot-compile-entry]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: gow3-ub2-cpu-balanced
+  cancel-in-progress: true
+
 jobs:
-  launcher:
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 120
+    env:
+      GOW3_JOBS: '3'
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
       - uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-37.0 build-tools;36.0.0'
-      - name: Build the Android launcher
-        run: bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+          packages: 'platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - name: CPU topology policy test
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -I gpu/shim tests/test_ub2_cpu_policy.cpp -o /tmp/ub2-cpu-test
+          env -u BB_AOT /tmp/ub2-cpu-test
+      - name: Recover SHA-pinned release inputs
+        run: |
+          set -euo pipefail
+          mkdir -p out/baseline
+          curl -fLsS --retry 4 --retry-all-errors --max-time 180 \
+            https://github.com/erickmendes22/gow3_android_daedalus_fork/releases/download/v2.1.8-daedalus-bionic/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk \
+            -o out/baseline/gow3.apk
+          curl -fLsS --retry 4 --retry-all-errors --max-time 180 \
+            https://github.com/erickmendes22/tlou-remastered-android/releases/download/0.2.1-android-bionic/TheLastOfUsRemastered-Android-v0.2.1-AOTNative.apk \
+            -o out/baseline/tlou.apk
+          echo 'bffc0edf6e70738423963ede8a76a2a0274320f6e18671302a0a589a6dcc879f  out/baseline/gow3.apk' | sha256sum -c -
+          echo '7a06c68cc005c3855f176458dce88d216ab63dd47f5f0be147e7452578fe15e6  out/baseline/tlou.apk' | sha256sum -c -
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Compile renderer and probe with NDK 29
+        shell: bash -el {0}
+        run: |
+          set -eo pipefail
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export GOW3_BIONIC_HEADERS="$CONDA_PREFIX"
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh
+          mkdir -p out/bionic/lib
+          unzip -p out/baseline/gow3.apk assets/runtime.payload | tar -xOzf - gow3port/arm64/lib/libgow3cpu.so > out/bionic/lib/libgow3cpu.so
+          bash tools/android/bionic/build_runtime.sh --probe-only
+          llvm="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$llvm/llvm-strip" --strip-unneeded out/bionic/lib/libgow3gpu.so out/bionic/bin/gow3-probe
+          bash tools/android/bionic/build_qualcomm.sh
+          python3 tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3.apk out/bionic/lib/libgow3gpu.so "$llvm"
+          python3 tools/android/bionic/stage_ub2_aot.py out/baseline/tlou.apk out/bionic/bin/gow3-probe out/baseline/gow3.apk
+      - name: Assemble unsigned UB2 with complete payload
+        run: |
+          bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+          mkdir -p out/ub2-delivery
+          bt="$ANDROID_HOME/build-tools/36.0.0"
+          apk=out/ub2-delivery/GoW3-UB2-CPU-Balanced-unsigned.apk
+          "$bt/zipalign" -P 16 -f 4 android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk "$apk"
+          "$bt/zipalign" -P 16 -c -v 4 "$apk"
+          python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt" --ubo-test
+          "$bt/aapt" dump badging "$apk" > out/ub2-delivery/badging.txt
+          grep "name='com.gow3.android.bionic.ub2' versionCode='2010806'" out/ub2-delivery/badging.txt
+          unzip -l "$apk" | grep 'lib/arm64-v8a/libbbrecomp.so'
+          cp "$bt/lib/apksigner.jar" out/ub2-delivery/apksigner.jar
+          git rev-parse HEAD > out/ub2-delivery/source-commit.txt
+          (cd out/ub2-delivery && sha256sum *.apk apksigner.jar > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: gow3-ub2-aot-launcher-fix
-          path: android-launcher/app/build/outputs/apk/release/*.apk
+          name: gow3-ub2-cpu-balanced-unsigned
+          path: out/ub2-delivery/
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: gow3-ub2-cpu-build-diagnostics
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+            android-launcher/app/build/outputs/logs/
+          if-no-files-found: ignore
