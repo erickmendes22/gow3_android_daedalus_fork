@@ -820,10 +820,16 @@ static void early_cpu_sigill(int sig, siginfo_t *info, void *context) {
     (void)sig;
     (void)info;
     ucontext_t *uc = (ucontext_t *)context;
-    char line[160], *p = line;
+    char line[256], *p = line;
     const char *label = "UB2_EARLY_SIGILL pc=0x";
     while (*label) *p++ = *label++;
     boot_hex(&p, (uintptr_t)uc->uc_mcontext.pc);
+    label = " lr=0x";
+    while (*label) *p++ = *label++;
+    boot_hex(&p, (uintptr_t)uc->uc_mcontext.regs[30]);
+    label = " sp=0x";
+    while (*label) *p++ = *label++;
+    boot_hex(&p, (uintptr_t)uc->uc_mcontext.sp);
     label = " probe_base=0x";
     while (*label) *p++ = *label++;
     boot_hex(&p, boot_probe_base);

@@ -37,6 +37,8 @@ jobs:
           timeout 30s /tmp/ub2-copy-test
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -I gpu/shadps4 tests/test_ub2_vrs_policy.cpp -o /tmp/ub2-vrs-test
           /tmp/ub2-vrs-test
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -I cpu tests/test_fex_android_va_probe.cpp -o /tmp/ub2-fex-va-test
+          /tmp/ub2-fex-va-test
       - name: Recover SHA-pinned release inputs
         run: |
           set -euo pipefail

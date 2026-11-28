@@ -398,14 +398,31 @@ uint64_t ReadGuest(uintptr_t address) {
 extern "C" {
 void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     low_map = map;
+    // Install diagnostics before any allocator operation. A fatal assertion
+    // during the optional high-VA reservation otherwise has no log handler.
+    LogMan::Throw::InstallHandler(LogAssert);
+    LogMan::Msg::InstallHandler(LogMessage);
+#ifdef __ANDROID__
+    const auto page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0) Fatal("invalid host page size");
+    const auto va_bits = FEXCore::Allocator::GetHostVABits();
+    std::fprintf(stderr, "UB2_FEX_INIT stage=allocator va_bits=%zu high48=%d\n",
+                 va_bits, int(va_bits >= 48));
+#endif
     // FEXCore's allocator maps its first arena on first use: before the free address space
     // above 47 bits is listed and claimed, so that the arena does not land in a listed gap.
     FEXCore::Allocator::free(FEXCore::Allocator::malloc(64));
+#ifdef __ANDROID__
+    // Android hosts below 48 bits must use the original mmap hooks. Do not
+    // attempt to reserve the nonexistent high 128 TiB range.
+    if (va_bits >= 48)
+        FEXCore::Allocator::Setup48BitAllocatorIfExists(static_cast<size_t>(page_size));
+    std::fprintf(stderr, "UB2_FEX_INIT stage=allocator-ready\n");
+#else
     FEXCore::Allocator::Setup48BitAllocatorIfExists(sysconf(_SC_PAGESIZE));
+#endif
     // FEXCore's allocator must outlive the static destructors that would free it.
     std::atexit(FEXCore::Allocator::ClearHooks);
-    LogMan::Throw::InstallHandler(LogAssert);
-    LogMan::Msg::InstallHandler(LogMessage);
     FEX::Config::LoadConfig("bb-probe", environ);
     FEXCore::Config::ReloadMetaLayer();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_IS64BIT_MODE, "1");
@@ -430,11 +447,15 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     std::printf("GOW3_FEX_CACHE dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
                 int(dynamic_l1));
 #ifdef __ANDROID__
+    std::fprintf(stderr, "UB2_FEX_INIT stage=host-features\n");
     const auto features = FetchAndroidHostFeatures();
 #else
     const auto features = FEX::FetchHostFeatures();
 #endif
     wide_xmm = features.SupportsAVX && features.SupportsSVE256;
+#ifdef __ANDROID__
+    std::fprintf(stderr, "UB2_FEX_INIT stage=context\n");
+#endif
     ctx = FEXCore::Context::Context::CreateNewContext(features).release();
     ctx->SetSignalDelegator(&delegator);
     ctx->SetSyscallHandler(&handler);

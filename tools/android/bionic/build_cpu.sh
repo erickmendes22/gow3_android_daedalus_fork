@@ -8,6 +8,7 @@ ndk=${GOW3_NDK:-${ANDROID_NDK_HOME:-}}
 api=${GOW3_BIONIC_API:-30}
 out=$PWD/out/bionic
 fex=${GOW3_FEX_SOURCE:-$PWD/third_party/FEX}
+python3 tools/android/bionic/patch_fex_allocator.py "$fex"
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CMAKE_PREFIX_PATH
 cmake -S "$fex" -B "$out/fex" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
