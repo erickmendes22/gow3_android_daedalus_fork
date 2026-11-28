@@ -194,12 +194,10 @@
         </PatchList>
         <Target Name="frame_index" Address="0x018ba600" Pattern="8b 05 ?? ?? ?? ?? 89 05 ?? ?? ?? ?? 44 89 35 ?? ?? ?? ?? c6 05 ?? ?? ?? ?? 01" At="15" Ref="1" Tail="0"/>
     </Metadata>
-    <!-- Opt-in from effect_dynamic_shadows=0. SHA-gated in launch_env.py:
-         CUSA01715 01.02 eboot 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c.
-         The game's no-shadow-job path was located in the supplied RT17 patch; do
-         not try this absolute-address patch on another executable revision. -->
+    <!-- Opt-in from effect_dynamic_shadows=0. The launcher checks the SHA
+         and the compiler locates the no-shadow-job path by signature. -->
     <Metadata Title="God of War III Remastered" Name="Disable Dynamic Shadows"
-        Note="Turns off the dynamic shadow jobs. Experimental; only the verified CUSA01715 1.02 executable."
+        Note="Turns off the dynamic shadow jobs on verified executables. Experimental."
         Author="erickmendes22" PatchVer="1.0" AppVer="01.02" AppElf="eboot.bin" isEnabled="false">
         <PatchList>
             <Line Type="bytes" Address="0x005b739b" Value="eb32" Pattern="83 bb 80 01 00 00 00 74 32 4c 8d 7d a8" At="7"/>

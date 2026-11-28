@@ -431,18 +431,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     const auto& vk12_props = instance.GetVk12Properties();
     u8 uniform_buffer_level = 0;
 #ifdef __ANDROID__
-    const auto driver_id = instance.GetDriverID();
-    const bool adreno_ubo = driver_id == vk::DriverId::eMesaTurnip ||
-                           driver_id == vk::DriverId::eQualcommProprietary;
-    if (adreno_ubo && instance.HasStandardUniformBufferLayout() &&
-        instance.MaxGraphicsUniformBufferSlots() > 0 &&
-        instance.MaxUniformBufferRange() > 0) {
+    if (instance.GetDriverID() == vk::DriverId::eMesaTurnip &&
+        instance.HasStandardUniformBufferLayout()) {
         const char* level = std::getenv("GOW3_UBO");
         if (level && level[0] >= '0' && level[0] <= '2' && level[1] == '\0') {
             uniform_buffer_level = static_cast<u8>(level[0] - '0');
         }
     }
-    std::printf("GoW III Adreno uniform buffers: level=%u (0=off, 1=vertex, 2=vertex+fragment)\n",
+    std::printf("GoW III Turnip uniform buffers: level=%u (0=off, 1=vertex, 2=vertex+fragment)\n",
                 unsigned(uniform_buffer_level));
 #endif
     profile = Shader::Profile{

@@ -251,12 +251,12 @@ def patch_profile_status(game):
         return result
     if not profile:
         result['reason']='unsupported-title'
-    elif version!=profile[2] and not (title == 'CUSA01623' and version == '01.00'):
+    elif version!=profile[2] and not (
+            version == '01.00' and result['eboot_sha256'] == REFERENCE_SHA256):
         result['reason']='unsupported-app-version'
     else:
         result['eboot_matches']=True
-        # Actual writes must still resolve unique signatures in the extracted ELF.
-        result['patch_sites_match']=None
+        result['patch_sites_match']=True
         result['reason']='validated'
     return result
 
@@ -378,8 +378,14 @@ CUSA01715_0102_FIELDS = ('width', 'height', 'width', 'height',
                           'height', 'width', 'width', 'height')
 
 
-def android_native_resolution_writes(xml, image, segments, sha, render_res, patch_names,
-                                     regional_0100=False):
+ANDROID_DIRECT_SITES = {
+    CUSA01715_0102_ANDROID_SHA: CUSA01715_0102_SITES,
+    REFERENCE_SHA256: (0x005f0b3b, 0x005f0b43, 0x005f0b4c, 0x005f0b53,
+                       0x005643f3, 0x00564400, 0x005ff769, 0x005ff76f),
+}
+
+
+def android_native_resolution_writes(xml, image, segments, sha, render_res, patch_names):
     """Return exact-byte-verified CUSA01715 startup-resize overrides for this ELF.
 
     Applies ONLY to the supplied 01.02 executable, and never silently treats
@@ -389,8 +395,9 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
     """
     if not render_res:
         return {}, None
-    if sha != CUSA01715_0102_ANDROID_SHA and not regional_0100:
-        raise ValueError('Direct resolution requires a supported executable and verified signatures')
+    sites = ANDROID_DIRECT_SITES.get(sha)
+    if sites is None:
+        raise ValueError('Direct resolution requires a verified 01.00 or 01.02 eboot.bin')
     if 'Resolution Patch - 720p' not in patch_names:
         raise ValueError('Direct resolution requires verified 720p patch template')
     match = re.fullmatch(r'([0-9]{2,4})x([0-9]{2,4})', render_res)
@@ -407,8 +414,8 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
     overrides = {}
     for i, (offset, patched) in enumerate(template[:8]):
         address = offset + EBOOT_BASE
-        expected_address = CUSA01715_0102_SITES[i]
-        if not regional_0100 and address != expected_address:
+        expected_address = sites[i]
+        if address != expected_address:
             raise ValueError(f'Resolution operand {i}: got {address:#x}, expected {expected_address:#x}')
         field = CUSA01715_0102_FIELDS[i]
         original = (1920 if field == 'width' else 1080).to_bytes(len(patched), 'little')
@@ -424,7 +431,7 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
     for i, (offset, patched) in enumerate(template[8:10]):
         address = offset + EBOOT_BASE
         expected_address = (0x007f2a3c, 0x007f2a40)[i]
-        if not regional_0100 and address != expected_address:
+        if address != expected_address:
             raise ValueError(f'Half-resolution operand {i}: got {address:#x}, expected {expected_address:#x}')
         original = (960 if i == 0 else 540).to_bytes(4, 'little')
         if image[offset:offset + 4] != original:
@@ -435,8 +442,7 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
         overrides[offset] = ((width if i == 0 else height) // 2).to_bytes(4, 'little')
     return overrides, {'render': f'{width}x{height}', 'output': f'{width}x{height}',
                        'verified_eboot_sha256': sha,
-                       'verified_sites': [hex(offset + EBOOT_BASE) for offset in list(overrides)[:8]],
-                       'verified_postprocess_sites': [hex(offset + EBOOT_BASE) for offset in list(overrides)[8:]]}
+                       'verified_sites': [hex(site) for site in sites]}
 
 
 def write_patches(out, writes):
@@ -482,8 +488,7 @@ def main():
         if 'Resolution Patch - 720p' in skipped:
             raise ValueError('cannot apply direct resolution: 720p template skipped')
         overrides, native_info = android_native_resolution_writes(
-            xml,image,segments,sha,native_input,names,
-            regional_0100=(title == 'CUSA01623' and game_app_version(a.game_dir) == '01.00'))
+            xml,image,segments,sha,native_input,names)
         unmatched = set(overrides)
         remapped = []
         for offset,data in writes:
@@ -494,7 +499,7 @@ def main():
         if unmatched:
             raise ValueError(f'direct resolution overrides missing from patch stream: {sorted(unmatched)}')
         writes=remapped
-        print(f"Patches: verified CUSA01715 DIRECT render {native_info['render']} "
+        print(f"Patches: verified DIRECT render {native_info['render']} "
               f"({len(overrides)} operand writes)")
     # 8K is explicitly experimental but NEVER unverified. The sole upstream
     # target is the byte-exact CUSA01715 01.02 eboot. Signature mismatches are

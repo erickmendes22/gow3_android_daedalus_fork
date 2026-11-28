@@ -194,9 +194,6 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         Gow3Copy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
             signal();
             done->fetch_add(1, std::memory_order_release);
-#ifdef __ANDROID__
-            if (Gow3Toggle::SnapdragonFastPaths()) done->notify_all();
-#endif
         });
     });
     KickRecording(true);
@@ -210,18 +207,8 @@ void Scheduler::WaitDeferredSignals() {
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
     KickRecording(true);
-#ifdef __ANDROID__
-    if (Gow3Toggle::SnapdragonFastPaths() && Gow3Copy::Enabled()) {
-        // Only the captured fence is required. The recorder's AfterCopies
-        // callback publishes it after every preceding copy, in registration order.
-        for (u64 done = deferred_signals_done->load(std::memory_order_acquire); done < issued;
-             done = deferred_signals_done->load(std::memory_order_acquire)) {
-            deferred_signals_done->wait(done, std::memory_order_acquire);
-        }
-        return;
-    }
-#endif
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
+        // Helps the copy threads the signals wait for.
         Gow3Copy::WaitAsync();
         std::this_thread::yield();
     }
@@ -232,25 +219,8 @@ void Scheduler::WaitHostCopies() {
         Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
         Gow3Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
-        const u64 target = host_copies_issued;
-#ifdef __ANDROID__
-        if (Gow3Toggle::SnapdragonFastPaths()) {
-        // As in TLOU, wait for the required copy sequence, not repeated CPU yields.
-        // Release/acquire ordering remains unchanged; the recorder notifies after copying.
-        for (unsigned spin = 0; spin < 32 &&
-             host_copies_done.load(std::memory_order_acquire) < target; ++spin) {
+        while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
             std::this_thread::yield();
-        }
-        for (u64 done = host_copies_done.load(std::memory_order_acquire); done < target;
-             done = host_copies_done.load(std::memory_order_acquire)) {
-            host_copies_done.wait(done, std::memory_order_acquire);
-        }
-        } else
-#endif
-        {
-            while (host_copies_done.load(std::memory_order_acquire) < target) {
-                std::this_thread::yield();
-            }
         }
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::copy_threads_wait_ns};
@@ -410,13 +380,6 @@ void Scheduler::PopPendingOperations() {
         return;
     }
     if (!work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
-#ifdef __ANDROID__
-        // A pending callback belonging to the current, unsubmitted command buffer
-        // cannot become ready as a result of a counter query.
-        if (pending_ops.front().gpu_tick >= work_semaphore.CurrentTick()) {
-            return;
-        }
-#endif
         if ((++pending_polls & 31) != 0 && !Gow3Toggle::Disabled(Gow3Toggle::PendingPollLimit)) {
             return;
         }
@@ -468,10 +431,10 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                !(opt_out && opt_out[0] == '1');
     }();
-    if (!Gow3Toggle::SnapdragonFastPaths() && bounded_submit &&
-        signal_value > MaxAndroidInFlightSubmissions) {
+    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
         work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
     }
+
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
     if (profiler_ctx) {
@@ -521,12 +484,6 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     };
 
     ImGui::Core::TextureManager::Submit();
-    // Keep the same in-flight cap and exact previously submitted tick, but
-    // overlap the recorder and staging work with GPU execution before waiting.
-    if (Gow3Toggle::SnapdragonFastPaths() && bounded_submit &&
-        signal_value > MaxAndroidInFlightSubmissions) {
-        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
-    }
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 

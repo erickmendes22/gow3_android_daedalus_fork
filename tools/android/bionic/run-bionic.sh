@@ -1,4 +1,5 @@
 #!/system/bin/sh
+export GOW3_PERF_DIAG_DEFAULT=1
 # Experimental Android/Bionic runtime. No Debian, X server or Linux loader.
 set -eu
 files=${FXD_FILES:?FXD_FILES must identify the app private files directory}
@@ -36,6 +37,7 @@ case "$turnip" in
  *) echo "Invalid Bionic driver selection: $turnip" >&2; exit 2 ;;
 esac
 unset VK_DRIVER_FILES VK_ICD_FILENAMES VK_LAYER_PATH GOW3_LSFG LSFG_CONFIG GOW3_LSFG_STATE_FILE GOW3_LSFG_LIB
+unset GOW3_QUALCOMM_HOOK_DIR GOW3_QUALCOMM_VULKAN_DRIVER
 if [ "$turnip" = gen8 ] || [ "$turnip" = adreno7xx ]; then
  export GOW3_VULKAN_DRIVER="$runtime/drivers/$turnip/libvulkan_freedreno.so"
  [ -f "$GOW3_VULKAN_DRIVER" ] || { echo "Bundled $turnip driver is missing" >&2; exit 2; }
@@ -43,25 +45,25 @@ elif [ "$turnip" = custom ]; then
  custom=${GOW3_CUSTOM_VULKAN_DRIVER:-}
  case "$custom" in "$files"/gpu-drivers/*/*.so) ;; *) echo 'Invalid custom driver path' >&2; exit 2 ;; esac
  [ -f "$custom" ] || { echo 'Selected custom driver is missing; select a driver on Home' >&2; exit 2; }
- export GOW3_VULKAN_DRIVER="$custom"
  # Companion libraries supplied in the package resolve beside the selected driver.
- if [ "${GOW3_EXTERNAL_QUALCOMM_DRIVER:-0}" = 1 ]; then
-    [ -d "${GOW3_ADRENOTOOLS_HOOK_DIR:-}" ] || { echo "Qualcomm hook directory missing" >&2; exit 4; }
-    export LD_LIBRARY_PATH="${custom%/*}:$GOW3_ADRENOTOOLS_HOOK_DIR:$LD_LIBRARY_PATH"
-    echo "GOW3_QUALCOMM_LINKER hook_dir=$GOW3_ADRENOTOOLS_HOOK_DIR driver_dir=${custom%/*}"
- else
-    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${custom%/*}"
- fi
+ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${custom%/*}"
+ case "${custom##*/}" in
+   vulkan.adr*.so|vulkan.qcom*.so)
+     export GOW3_QUALCOMM_VULKAN_DRIVER="$custom"
+     export GOW3_QUALCOMM_HOOK_DIR="$runtime/lib"
+     export GOW3_VULKAN_DRIVER="$runtime/lib/libgow3qualcommvulkan.so"
+     [ -f "$GOW3_VULKAN_DRIVER" ] || { echo 'Qualcomm vendor namespace loader is missing' >&2; exit 2; }
+     ;;
+   *) export GOW3_VULKAN_DRIVER="$custom" ;;
+ esac
 else unset GOW3_VULKAN_DRIVER; fi
-echo "Bionic Vulkan selection: $turnip${GOW3_VULKAN_DRIVER:+ ($GOW3_VULKAN_DRIVER)}"
+selected_driver=${GOW3_QUALCOMM_VULKAN_DRIVER:-${GOW3_VULKAN_DRIVER:-}}
+echo "Bionic Vulkan selection: $turnip${selected_driver:+ ($selected_driver)}"
 export GOW3_ANDROID_INPUT=1 GOW3_PAD_FILE="$base/android-pad.state" GOW3_PAD_QUIET=1
 export GOW3_IME_FILE="$base/ime.request" GOW3_AUDIO_FIFO="$base/audio.fifo"
 export GOW3_PRESENT_SOCKET="$base/present.sock"
 export GOW3_READBACK_LINEAR=1
 export GOW3_COPY_GPU_BUFFERS=1
-export GOW3_FRAME_STATS=${GOW3_FRAME_STATS:-1}
-export GOW3_SNAPDRAGON_FAST_PATHS=${GOW3_SNAPDRAGON_FAST_PATHS:-0}
-echo "GOW3_SNAPDRAGON_FAST_PATHS=$GOW3_SNAPDRAGON_FAST_PATHS GOW3_FRAME_STATS=$GOW3_FRAME_STATS"
 probe="$runtime/bin/gow3-probe"
 case ${1:-game} in vulkan) exec "$probe" --vulkan-only ;; esac
 out="$base/out"
@@ -114,6 +116,13 @@ mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || true)
 [ -n "$mem_kb" ] && [ "$mem_kb" -gt 0 ] && export GOW3_DEVICE_MEM_MB=${GOW3_DEVICE_MEM_MB:-$((mem_kb/1024))}
 # Select game rendering resolution directly.
 export GOW3_ANDROID_PORT=1
+# Enable the bounded existing frame and wait counters with a build default or
+# by setting perf_diagnostics=1. No new GPU waits are issued by these counters.
+perf_diagnostics=$(setting perf_diagnostics)
+[ -n "$perf_diagnostics" ] || perf_diagnostics=${GOW3_PERF_DIAG_DEFAULT:-0}
+if [ "$perf_diagnostics" = 1 ]; then
+    export GOW3_FRAME_STATS=1 GOW3_PERF_DIAG=1
+fi
 # R7 forensic probe: one 32x18 RGB readback per GSR2 Vulkan stage, written
 # into android-game.log. No image substitution and no framegen/HUD changes.
 # No recurring GPU forensic probe in the stable spatial-only mode.

@@ -59,7 +59,6 @@ public:
             async_tasks.push_back({std::move(task), epoch});
         }
         cv.notify_one();
-        if (Gow3Toggle::SnapdragonFastPaths()) done_cv.notify_all();
     }
 
     void AfterCopies(std::function<void()> callback) {
@@ -76,38 +75,24 @@ public:
     }
 
     void WaitAll() {
-        if (!Gow3Toggle::SnapdragonFastPaths()) {
-            while (true) {
-                Task task;
-                {
-                    std::scoped_lock lk{mutex};
-                    if (pending == 0 && epochs.size() == 1 && !draining) return;
-                    if (!async_tasks.empty()) {
-                        task = std::move(async_tasks.front());
-                        async_tasks.pop_front();
-                    }
-                }
-                if (task.run) RunAsync(task);
-                else std::this_thread::yield();
-            }
-        }
-        // TLOU: help pending copies, but park instead of repeatedly yielding
-        // if the only remaining work is already executing on another thread.
+        // The waiting thread helps instead of only spinning.
         while (true) {
             Task task;
             {
-                std::unique_lock lk{mutex};
-                done_cv.wait(lk, [&] {
-                    return (pending == 0 && epochs.size() == 1 && !draining) ||
-                           !async_tasks.empty();
-                });
+                std::scoped_lock lk{mutex};
                 if (pending == 0 && epochs.size() == 1 && !draining) {
                     return;
                 }
-                task = std::move(async_tasks.front());
-                async_tasks.pop_front();
+                if (!async_tasks.empty()) {
+                    task = std::move(async_tasks.front());
+                    async_tasks.pop_front();
+                }
             }
-            RunAsync(task);
+            if (task.run) {
+                RunAsync(task);
+            } else {
+                std::this_thread::yield();
+            }
         }
     }
 
@@ -187,9 +172,6 @@ private:
             lk.lock();
         }
         draining = false;
-        if (Gow3Toggle::SnapdragonFastPaths() && pending == 0 && epochs.size() == 1) {
-            done_cv.notify_all();
-        }
     }
 
     static void Work(Job& job) {
@@ -232,7 +214,6 @@ private:
     std::vector<std::thread> threads;
     std::mutex mutex;
     std::condition_variable cv;
-    std::condition_variable done_cv;
     std::shared_ptr<Job> current;
     u64 generation = 0;
     bool stop = false;

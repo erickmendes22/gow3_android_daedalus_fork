@@ -13,14 +13,12 @@
 #include <span>
 #include <source_location>
 #include <utility>
-#include <type_traits>
 #include <vector>
 #include <mutex>
 #include <thread>
 #include <queue>
 
 #include "gow3_toggles.h"
-#include "video_core/renderer_vulkan/host_copy_batch.h"
 #include "common/assert.h"
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -588,7 +586,6 @@ public:
     /// Returns false (and leaves `func` untouched) when the chunk has no room.
     template <typename Func>
     bool Push(Func&& func) {
-        last_host_batch = nullptr; // any other Vulkan command breaks adjacency
         using Command = TypedCommand<std::decay_t<Func>>;
         static_assert(sizeof(Command) <= Capacity, "recorded command is too large");
         const size_t offset = (used + alignof(Command) - 1) & ~(alignof(Command) - 1);
@@ -607,40 +604,8 @@ public:
         return true;
     }
 
-    // TLOU recorder optimization: batch only consecutive host copies in this
-    // unpublished chunk. Keep the original sequence and execution position.
-    [[nodiscard]] bool PushHostCopy(const Gow3Copy::Item& item, u64 sequence,
-                                    std::atomic<u64>& completed) {
-        static_assert(std::is_trivially_destructible_v<Gow3Copy::Item>);
-        if (last_host_batch) {
-            const size_t at = (used + alignof(Gow3Copy::Item) - 1) &
-                              ~(alignof(Gow3Copy::Item) - 1);
-            if (at + sizeof(Gow3Copy::Item) > Capacity) return false;
-            auto* next = new (storage + at) Gow3Copy::Item(item);
-            const bool appended = last_host_batch->batch.Append(next, sequence);
-            ASSERT(appended);
-            used = at + sizeof(Gow3Copy::Item);
-            PrefetchAhead();
-            return true;
-        }
-        using Command = HostCopyBatchCommand;
-        const size_t offset = (used + alignof(Command) - 1) & ~(alignof(Command) - 1);
-        const size_t item_offset = (offset + sizeof(Command) + alignof(Gow3Copy::Item) - 1) &
-                                   ~(alignof(Gow3Copy::Item) - 1);
-        if (item_offset + sizeof(Gow3Copy::Item) > Capacity) return false;
-        auto* first_item = new (storage + item_offset) Gow3Copy::Item(item);
-        auto* command = new (storage + offset) Command(completed, first_item, sequence);
-        if (last) last->next = command; else first = command;
-        last = command;
-        last_host_batch = command;
-        used = item_offset + sizeof(Gow3Copy::Item);
-        PrefetchAhead();
-        return true;
-    }
-
     /// Raw storage in the chunk for a command's variable-length data; null when full.
     void* Allocate(size_t bytes, size_t align) {
-        last_host_batch = nullptr;
         const size_t offset = (used + align - 1) & ~(align - 1);
         if (offset + bytes > Capacity) {
             return nullptr;
@@ -658,7 +623,6 @@ public:
             command = next;
         }
         first = last = nullptr;
-        last_host_batch = nullptr;
         used = 0;
     }
 
@@ -696,17 +660,10 @@ private:
         Func func;
     };
 
-    struct HostCopyBatchCommand final : CommandBase {
-        HostCopyBatchCommand(std::atomic<u64>& done, Gow3Copy::Item* first, u64 sequence)
-            : batch{done, first, sequence} {}
-        void Execute(vk::CommandBuffer) override { batch.Execute(); }
-        Detail::HostCopyBatch batch;
-    };
     alignas(64) std::byte storage[Capacity];
     size_t used = 0;
     CommandBase* first{};
     CommandBase* last{};
-    HostCopyBatchCommand* last_host_batch{};
 };
 
 class Scheduler {
@@ -843,16 +800,6 @@ public:
     /// submission that reads them. Waits for all.
     void WaitHostCopies();
 
-    void RecordHostCopyItem(const Gow3Copy::Item& item) {
-        ASSERT(IsRecordingDeferred());
-        const u64 sequence = ++host_copies_issued;
-        if (!CurrentChunk().PushHostCopy(item, sequence, host_copies_done)) {
-            RetireChunk();
-            const bool pushed = CurrentChunk().PushHostCopy(item, sequence, host_copies_done);
-            ASSERT(pushed);
-        }
-    }
-
     /// Runs `copy` on the recording thread in order with the commands (the thread spins for
     /// work anyway, so small copies cost no wakeup); WaitHostCopies() covers it.
     template <typename Func>
@@ -861,9 +808,6 @@ public:
                 seq = ++host_copies_issued](vk::CommandBuffer) {
             copy();
             host_copies_done.store(seq, std::memory_order_release);
-#ifdef __ANDROID__
-            if (Gow3Toggle::SnapdragonFastPaths()) host_copies_done.notify_all();
-#endif
         });
     }
 
