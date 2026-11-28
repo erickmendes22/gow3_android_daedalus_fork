@@ -118,6 +118,9 @@ public:
                     u64 toggle = Gow3Toggle::PipelinedTasks);
     /// Stage A: the draw pipe position after the last handed-over packet, and whether the
     /// recording thread has run everything before a position.
+    // Fixed at renderer construction. Keep tracking even if a live debug
+    // toggle temporarily bypasses the allocated draw pipe.
+    [[nodiscard]] bool HasDrawPipe() const { return bool(draw_pipe); }
     [[nodiscard]] u64 DrawPipeHead() const {
         return draw_pipe ? draw_pipe->Head() : 0;
     }

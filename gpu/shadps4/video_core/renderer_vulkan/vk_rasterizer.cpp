@@ -442,19 +442,12 @@ bool Rasterizer::DrawPipeWanted() {
     if (env && env[0]) {
         return env[0] == '1';
     }
-    // UB2 AOT logs show the direct command processor at 93.45% CPU in
-    // gameplay even after prime affinity. The existing ordered draw pipe
-    // transfers resource binding and recording to stage B. Only enable
-    // automatically for the measured heterogeneous topology; FEX and other
-    // Android devices retain their established direct path.
+    // UB2 2010807: two prime-core threads consumed ~137% CPU instead of
+    // 93% and spent ~20% waiting at the submission boundary. Restore the
+    // measured faster direct Android path. Explicit A/B override still works.
     if (std::getenv("GOW3_ANDROID_PORT")) {
-#ifdef __ANDROID__
-        const bool enabled = Gow3Ub2Cpu::Get().enabled;
-        std::printf("UB2_DRAW_PIPE default=%d (AOT verified prime pair)\n", int(enabled));
-        return enabled;
-#else
+        std::printf("UB2_DRAW_PIPE default=0 (direct path)\n");
         return false;
-#endif
     }
     return Gow3Threads::Available() >= 8;
 }
@@ -1036,16 +1029,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // Consume the boundary once per validated scene, not once per display draw.
     const bool is_display_draw = regs.color_buffers[0] &&
         FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
-    const bool gsr2_bionic = std::getenv("GOW3_ANDROID_PORT") &&
-                             std::getenv("GOW3_UPSCALER") &&
-                             std::strcmp(std::getenv("GOW3_UPSCALER"), "gsr2") == 0;
+    // The subprocess receives its upscaler and backend at launch. The
+    // render preset remains a live setting and is still evaluated below.
+    static const bool gsr2_bionic = [] {
+        const char* mode = std::getenv("GOW3_UPSCALER");
+        return std::getenv("GOW3_ANDROID_PORT") && mode && std::strcmp(mode, "gsr2") == 0;
+    }();
+    static const bool direct_gsr2 = gsr2_bionic && std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT");
     // One guest frame can write dozens of registered VideoOut targets, but
     // only SubmitFlipInternal identifies which surface is REALLY presented.
     // Do not advance the scene camera, depth, jitter or GSR2 history on an
     // arbitrary display-target DRAW. Gsr2OnVideoOutFlip() does that at flip.
     const bool defer_gsr2_boundary_to_flip =
-        gsr2_bionic && std::getenv("GOW3_GSR2_DIRECT_VIDEOOUT") &&
-        Gow3Settings::RenderPreset() != Gow3Settings::NativeAA;
+        direct_gsr2 && Gow3Settings::RenderPreset() != Gow3Settings::NativeAA;
     if (defer_gsr2_boundary_to_flip && camera_motion->Enabled() &&
         is_display_draw && scene_started) {
         // This address comes from the guest's color-buffer register at
@@ -2228,12 +2224,13 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
     // BindBuffers is a separate method from BindResources; declarations there
     // are NOT visible here. Evaluate the camera gate in the actual reader scope.
     // Both guest and host-ring constants are consumed below.
-    const char* active_upscaler = std::getenv("GOW3_UPSCALER");
-    const bool gow3_gsr2_camera = std::getenv("GOW3_ANDROID_PORT") &&
-        active_upscaler && std::strcmp(active_upscaler, "gsr2") == 0;
-    const bool android_camera_feed = upscaler && upscaler->Enabled() &&
-        (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") || gow3_gsr2_camera) &&
-        camera_motion->Depth();
+    static const bool camera_feed_configured = [] {
+        const char* mode = std::getenv("GOW3_UPSCALER");
+        return std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") ||
+               (std::getenv("GOW3_ANDROID_PORT") && mode && std::strcmp(mode, "gsr2") == 0);
+    }();
+    const bool android_camera_feed = camera_feed_configured && upscaler &&
+        upscaler->Enabled() && camera_motion->Depth();
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
         const bool uniform = buffer_index < 16 && ((uniform_mask >> buffer_index) & 1);
@@ -2915,12 +2912,14 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     // GoW3 uses forward passes (usually 1-2 MRTs), not Bloodborne's five-MRT
     // G-buffer. Recognize only color+depth attachments at the SHA-validated
     // guest resolution; shadow-map passes have different extents.
-    const bool gsr2_forward = std::getenv("GOW3_ANDROID_PORT") &&
-                              std::getenv("GOW3_PATCH_INPUT_RES") &&
-                              std::getenv("GOW3_UPSCALER") &&
-                              std::string_view(std::getenv("GOW3_UPSCALER")) == "gsr2" &&
-                              std::popcount(key.mrt_mask & 0x7f) >= 1 &&
-                              std::popcount(key.mrt_mask & 0x7f) <= 2;
+    static const bool gsr2_forward_configured = [] {
+        const char* mode = std::getenv("GOW3_UPSCALER");
+        return std::getenv("GOW3_ANDROID_PORT") && std::getenv("GOW3_PATCH_INPUT_RES") &&
+               mode && std::strcmp(mode, "gsr2") == 0;
+    }();
+    const auto mrt_count = std::popcount(key.mrt_mask & 0x7f);
+    const bool gsr2_forward = gsr2_forward_configured && mrt_count >= 1 && mrt_count <= 2;
+    static const bool fixed_output = std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT") != nullptr;
     if ((std::popcount(key.mrt_mask & 0x7f) >= 5 || gsr2_forward) && db_desc.first) {
         const auto& depth = texture_cache.GetImage(db_desc.first);
         // The 720p eboot patch changes guest allocations, but checking the
@@ -2935,7 +2934,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             }
         }
         const bool eligible = scene_targets->EligibleScene(depth);
-        if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT")) {
+        if (fixed_output) {
             static unsigned gbuffer_traces = 0;
             if (gbuffer_traces++ < 4) {
                 std::printf("GOW3_GBUFFER_INPUT size=%ux%u eligible=%d depth_format=%u mrt=%u\n",
@@ -3018,7 +3017,7 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         }
         std::printf("Scene pass: reduced %d %s\n", reduced, why.c_str());
     }
-    if (std::getenv("GOW3_ANDROID_FSR_FIXED_OUTPUT")) {
+    if (fixed_output) {
         static u32 inspected = 0, accepted = 0;
         if (inspected < 1024) {
             ++inspected;

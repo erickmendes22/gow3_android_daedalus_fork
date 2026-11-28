@@ -536,7 +536,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
     FIBER_ENTER(ccb_task_name);
 
     while (!ccb.empty()) {
-        ProcessCommands();
+        if (num_commands.load(std::memory_order_acquire)) ProcessCommands();
 
         const auto* header = reinterpret_cast<const PM4Header*>(ccb.data());
         const u32 type = header->type;
@@ -614,7 +614,7 @@ u64 Liverpool::HashRegisterPacket(u64 checksum, const u32* words, u32 count) {
 }
 
 void Liverpool::ApplyGraphicsRegisterPacket(Regs& regs, const PM4Header* header, u64& checksum,
-                                             RegDirty* dirty) {
+                                             RegDirty* dirty, bool track_checksum) {
     const u32 count = header->type3.NumWords();
     const auto* payload = reinterpret_cast<const u32*>(header + 2);
     const auto mark = [&](u32 word, u32 words) {
@@ -731,7 +731,9 @@ void Liverpool::ApplyGraphicsRegisterPacket(Regs& regs, const PM4Header* header,
     default:
         return;
     }
-    checksum = HashRegisterPacket(checksum, reinterpret_cast<const u32*>(header), count + 1);
+    if (track_checksum) {
+        checksum = HashRegisterPacket(checksum, reinterpret_cast<const u32*>(header), count + 1);
+    }
 }
 
 // gow3: GOW3_DCB_STATS=1 — structure of graphics command buffers (read-only scan, printed every
@@ -844,8 +846,15 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     // Top-level buffers enqueued for the draw preparation workers (nested IBs are not).
     Vulkan::DrawPreparation* draw_prep =
         seq != NoSeq && rasterizer ? &rasterizer->GetDrawPreparation() : nullptr;
-    if (draw_prep) {
+    // Keep the top-level sequence for retirement/statistics, but avoid all
+    // speculative register hashing and draw-pipe bookkeeping when neither
+    // consumer exists. Nested command buffers use the same startup policy.
+    const bool track_checksum = !rasterizer || rasterizer->GetDrawPreparation().Enabled();
+    RegDirty* const dirty = !rasterizer || rasterizer->HasDrawPipe() ? &pipe_dirty : nullptr;
+    if (draw_prep && draw_prep->Enabled()) {
         draw_prep->BeginSubmission(seq, regs, gfx_reg_checksum);
+    } else {
+        draw_prep = nullptr;
     }
     auto* const predication = rasterizer ? &rasterizer->GetPredication() : nullptr;
     static const bool dcb_stats = EmulatorSettingsImpl::Flag("GOW3_DCB_STATS", false);
@@ -868,7 +877,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
 
     const auto base_addr = reinterpret_cast<uintptr_t>(dcb.data());
     while (!dcb.empty()) {
-        ProcessCommands();
+        if (num_commands.load(std::memory_order_acquire)) ProcessCommands();
 
         const auto* header = reinterpret_cast<const PM4Header*>(dcb.data());
         const u32 type = header->type;
@@ -908,7 +917,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 saved_index_base.reset();
             }
 
-            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, &pipe_dirty);
+            ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, dirty, track_checksum);
             // DmaData to 0x3022C does nothing here (skipped below): no need to wait.
             if (rasterizer && !PipelinedOpcode(opcode) &&
                 !(opcode == PM4ItOpcode::DmaData &&
@@ -1532,7 +1541,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
     auto base_addr = reinterpret_cast<VAddr>(acb.data());
     size_t acb_size = acb.size_bytes();
     while (!acb.empty()) {
-        ProcessCommands();
+        if (num_commands.load(std::memory_order_acquire)) ProcessCommands();
         if (rasterizer) {
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // gow3: compute work uses the caches
         }
@@ -1673,9 +1682,11 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                             header + 2, set_size);
                 // gow3: interleaves with the graphics stream at an unpredictable point, so
                 // draw-preparation workers cannot reproduce it: make their checksums differ.
-                gfx_reg_checksum = HashRegisterPacket(gfx_reg_checksum ^ 0xA5C0A5C0A5C0ull,
-                                                      reinterpret_cast<const u32*>(header),
-                                                      header->type3.NumWords() + 1);
+                if (!rasterizer || rasterizer->GetDrawPreparation().Enabled()) {
+                    gfx_reg_checksum = HashRegisterPacket(gfx_reg_checksum ^ 0xA5C0A5C0A5C0ull,
+                                                          reinterpret_cast<const u32*>(header),
+                                                          header->type3.NumWords() + 1);
+                }
             }
             break;
         }
