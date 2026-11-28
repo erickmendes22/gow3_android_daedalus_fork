@@ -33,6 +33,10 @@ jobs:
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
           echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Test ordered host-copy batch production helper
+        run: |
+          c++ -std=c++20 -pthread -Wall -Wextra -Werror -Igpu/shim tests/test_snapdragon_host_copy_batch.cpp -o /tmp/gow3-host-copy-test
+          /tmp/gow3-host-copy-test --correctness-only
       - name: Compile Vulkan renderer
         shell: bash -el {0}
         run: |
