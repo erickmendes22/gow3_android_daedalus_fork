@@ -194,6 +194,9 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         Gow3Copy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
             signal();
             done->fetch_add(1, std::memory_order_release);
+#ifdef __ANDROID__
+            done->notify_all();
+#endif
         });
     });
     KickRecording(true);
@@ -207,8 +210,18 @@ void Scheduler::WaitDeferredSignals() {
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
     KickRecording(true);
+#ifdef __ANDROID__
+    if (Gow3Copy::Enabled()) {
+        // Only the captured fence is required. The recorder's AfterCopies
+        // callback publishes it after every preceding copy, in registration order.
+        for (u64 done = deferred_signals_done->load(std::memory_order_acquire); done < issued;
+             done = deferred_signals_done->load(std::memory_order_acquire)) {
+            deferred_signals_done->wait(done, std::memory_order_acquire);
+        }
+        return;
+    }
+#endif
     while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
-        // Helps the copy threads the signals wait for.
         Gow3Copy::WaitAsync();
         std::this_thread::yield();
     }
