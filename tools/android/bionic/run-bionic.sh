@@ -191,6 +191,28 @@ printf '%s\n' "{\"title_id\":\"${GOW3_GAME_TITLE:-unknown}\",\"app_version\":\"$
     --game-dir "$game" --patches-dir "${GOW3_PATCHES_DIR:-$base/patches}" \
     --patches-config "${GOW3_PATCHES_CONFIG:-$base/patches.json}"
 
+# The patch compiler has already verified every direct size operand. Hand the
+# resulting raster size to the AHardwareBuffer presenter and let SurfaceControl
+# scale it to the display. The stock/native and higher presets keep the existing
+# 720p Android output budget.
+present_size=${GOW3_PATCH_INPUT_RES:-}
+case ";${GOW3_PATCHES:-};" in
+    *";Resolution Patch - 480p;"*)
+        present_size=$("$python" -c '
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as status:
+    if "Resolution Patch - 480p" in json.load(status)["applied"]:
+        print("854x480")
+' "$out/patch_status.json")
+        ;;
+esac
+case "$present_size" in
+    426x240|640x360|752x424|854x480|960x540|1280x720)
+        export GOW3_SCREEN_W="${present_size%x*}" GOW3_SCREEN_H="${present_size#*x}"
+        echo "Android present: $present_size (guest output; SurfaceControl scales to screen)"
+        ;;
+esac
 
 cd "$base"
 echo "Bionic: driver=$turnip chip=$chip; starting God of War III"

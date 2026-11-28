@@ -62,9 +62,19 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
+    vk::Result result;
+    do {
+        result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    } while (result == vk::Result::eTimeout);
+    ASSERT_MSG(result == vk::Result::eSuccess, "Master semaphore wait failed at tick {}: {}",
+               tick, vk::to_string(result));
+    // Completion of this tick is already proven by Vulkan. Another thread
+    // may have published a newer tick while the driver was waiting.
+    u64 known = gpu_tick.load(std::memory_order_relaxed);
+    while (known < tick &&
+           !gpu_tick.compare_exchange_weak(known, tick, std::memory_order_release,
+                                           std::memory_order_relaxed)) {
     }
-    Refresh();
 }
 
 } // namespace Vulkan

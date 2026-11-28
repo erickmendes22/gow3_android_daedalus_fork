@@ -22,6 +22,7 @@
 #include "imgui/renderer/texture_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/host_copy_wait.h"
 #include "gow3_threads.h"
 
 namespace Vulkan {
@@ -194,6 +195,7 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
         Gow3Copy::AfterCopies([signal = std::move(signal), done = std::move(done)] {
             signal();
             done->fetch_add(1, std::memory_order_release);
+            done->notify_all();
         });
     });
     KickRecording(true);
@@ -207,21 +209,23 @@ void Scheduler::WaitDeferredSignals() {
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
     KickRecording(true);
-    while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
-        // Helps the copy threads the signals wait for.
-        Gow3Copy::WaitAsync();
-        std::this_thread::yield();
+    if (Gow3Copy::Enabled()) {
+        Detail::WaitForHostCopySequence(*deferred_signals_done, issued);
+    } else {
+        while (deferred_signals_done->load(std::memory_order_acquire) < issued) {
+            Gow3Copy::WaitAsync();
+            std::this_thread::yield();
+        }
     }
 }
 
 void Scheduler::WaitHostCopies() {
-    if (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
+    const u64 issued = host_copies_issued;
+    if (host_copies_done.load(std::memory_order_acquire) < issued) {
         Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
         Gow3Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
-        while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
-            std::this_thread::yield();
-        }
+        Detail::WaitForHostCopySequence(host_copies_done, issued);
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::copy_threads_wait_ns};
     Gow3Copy::WaitAsync();

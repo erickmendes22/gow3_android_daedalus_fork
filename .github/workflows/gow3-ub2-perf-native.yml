@@ -1,0 +1,53 @@
+name: GoW III UB2 performance renderer
+
+on:
+  push:
+    branches: [perf/gow3-ub2-copy-present]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gow3-ub2-perf-native
+  cancel-in-progress: true
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      GOW3_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;29.0.14206865'
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Build the ARM64 renderer
+        shell: bash -el {0}
+        run: |
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export GOW3_BIONIC_HEADERS="$CONDA_PREFIX"
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh
+          llvm="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$llvm/llvm-strip" --strip-unneeded out/bionic/lib/libgow3gpu.so
+          sha256sum out/bionic/lib/libgow3gpu.so > out/bionic/lib/libgow3gpu.so.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gow3-ub2-perf-renderer
+          path: |
+            out/bionic/lib/libgow3gpu.so
+            out/bionic/lib/libgow3gpu.so.sha256
+          if-no-files-found: error

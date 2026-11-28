@@ -177,6 +177,8 @@ def derive(game, config, state_path, env):
             device_mem = env.get('GOW3_DEVICE_MEM_MB')
             if dmem and device_mem and str(device_mem).isdigit() and dmem > int(device_mem):
                 names, dmem, vblank, reason = [], None, None, 'insufficient-memory-budget'
+    if reason != 'validated' and updates.pop('GOW3_PATCH_INPUT_RES', None):
+        updates['GOW3_RESOLUTION_STATUS'] = 'unsupported-eboot-native-fallback'
     updates.update({'GOW3_GAME_TITLE': identity['title_id'] or 'unknown',
                     'GOW3_GAME_VERSION': identity['app_version'] or 'unknown',
                     'GOW3_EBOOT_SHA256': identity['eboot_sha256'] or 'unavailable',
