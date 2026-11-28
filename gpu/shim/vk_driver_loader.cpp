@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstring>
 #include <mutex>
+#include <string>
 
 namespace {
 
@@ -172,6 +173,19 @@ Gow3VkGetInstanceProcAddr OpenHal(void* hmi, const char* driver) {
     return &HalGetInstanceProcAddr;
 }
 
+bool IsExternalVendorVulkan(const char* path) {
+    // Qualcomm packages use names like vulkan.adr891.so and vulkan.adreno.so.
+    // Mesa Turnip names are libvulkan_freedreno.so and must NEVER be silently
+    // replaced by the system driver on failure.
+    const char* filename = std::strrchr(path, '/');
+    filename = filename ? filename + 1 : path;
+    const char* raw_vendor = std::getenv("GOW3_EXTERNAL_QUALCOMM_DRIVER");
+    if (raw_vendor && std::strcmp(raw_vendor,"1")==0 &&
+        std::strncmp(filename,"driver-",7)==0) return true;
+    return std::strncmp(filename, "vulkan.adr", 10) == 0 ||
+           std::strncmp(filename, "vulkan.qcom", 11) == 0;
+}
+
 Gow3VkGetInstanceProcAddr Load() {
     const char* driver = std::getenv("GOW3_VULKAN_DRIVER");
     if (!driver || !*driver) {
@@ -191,6 +205,39 @@ Gow3VkGetInstanceProcAddr Load() {
         std::fprintf(stderr, "Vulkan: no system loader (%s)\n", dlerror());
         return nullptr;
     }
+#ifdef __ANDROID__
+    if (IsExternalVendorVulkan(driver)) {
+        // Use the stock Vulkan loader in an isolated namespace, with the
+        // imported ICD in a child of Android's actual vendor namespace.
+        // Do not attempt vendor mapper dlopen from this executable's default namespace.
+        const char* hooks=std::getenv("GOW3_ADRENOTOOLS_HOOK_DIR");
+        const char* slash=std::strrchr(driver,'/');
+        if (!hooks || !*hooks || !slash) {
+            std::fprintf(stderr,"Vulkan: external Qualcomm loader configuration missing\n");
+            return nullptr;
+        }
+        const std::string hook_dir=std::string(hooks)+"/";
+        const std::string driver_dir(driver,size_t(slash-driver)+1);
+        const std::string tool=hook_dir+"libadrenotools.so";
+        void* adreno=dlopen(tool.c_str(),RTLD_NOW|RTLD_LOCAL);
+        using Open=void*(*)(int,int,const char*,const char*,const char*,const char*,const char*,void**);
+        const auto open=adreno?reinterpret_cast<Open>(dlsym(adreno,"adrenotools_open_libvulkan")):nullptr;
+        if (!open) {
+            std::fprintf(stderr,"Vulkan: cannot initialize imported Qualcomm loader: %s\n",dlerror());
+            return nullptr;
+        }
+        // ADRENOTOOLS_DRIVER_CUSTOM (upstream pinned API).
+        void* loader=open(RTLD_NOW|RTLD_LOCAL,1,nullptr,hook_dir.c_str(),driver_dir.c_str(),
+                          slash+1,nullptr,nullptr);
+        if(!loader) {
+            std::fprintf(stderr,"Vulkan: imported Qualcomm namespace initialization failed\n");
+            return nullptr;
+        }
+        auto gipa=reinterpret_cast<Gow3VkGetInstanceProcAddr>(dlsym(loader,"vkGetInstanceProcAddr"));
+        std::fprintf(stderr,"Vulkan: imported Qualcomm isolated loader for %s (%s)\n",driver,gipa?"ready":"no GIPA");
+        return gipa;
+    }
+#endif
     void* lib = dlopen(driver, RTLD_NOW | RTLD_LOCAL);
     if (!lib) {
         std::fprintf(stderr, "Vulkan: cannot load driver %s: %s\n", driver, dlerror());
