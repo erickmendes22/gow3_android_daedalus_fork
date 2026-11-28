@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 out="$PWD/out/bionic"
-stage="$out/apk-jni/arm64-v8a"
+stage="$out/qualcomm-runtime"
 assets="$PWD/out/android-release/assets"
 ndk="${GOW3_NDK:?Android NDK required}"
 llvm="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -24,28 +24,16 @@ from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text()
-old='#define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__)'
-new='#define LOGI(fmt, ...) do { __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__); std::fprintf(stderr, "GOW3_QUALCOMM_HOOK " fmt "\\n", ##__VA_ARGS__); } while (0)'
-assert s.count(old)==1
-s=s.replace(old,new)
 old='LOGI("hook_android_dlopen_ext: falling back!");'
 new='''LOGI("hook_android_dlopen_ext: falling back!");
         if (hook_params->featureFlags & ADRENOTOOLS_DRIVER_CUSTOM) {
-            std::fprintf(stderr, "GoW III imported Qualcomm: vendor hook failed; refusing system fallback\\n");
+            std::fprintf(stderr, "TLOU imported Qualcomm: vendor hook failed; refusing system fallback\\n");
             return static_cast<void*>(nullptr);
         }'''
 assert s.count(old)==1
 s=s.replace(old,new)
 old='return handle;\n    } else {'
-new='std::fprintf(stderr, "GoW III imported Qualcomm: custom ICD loaded: %s%s\\n", hook_params->customDriverDir.c_str(), hook_params->customDriverName.c_str());\n        return handle;\n    } else {'
-assert s.count(old)==1
-s=s.replace(old,new)
-old='if (!hookImpl)\n        return nullptr;'
-new='if (!hookImpl) { LOGI("child hook_impl load failed: %s", dlerror()); return nullptr; }'
-assert s.count(old)==1
-s=s.replace(old,new)
-old='if (!initHookParam)\n        return nullptr;'
-new='if (!initHookParam) { LOGI("child init_hook_param missing: %s", dlerror()); return nullptr; }'
+new='std::fprintf(stderr, "TLOU imported Qualcomm: custom ICD loaded: %s%s\\n", hook_params->customDriverDir.c_str(), hook_params->customDriverName.c_str());\n        return handle;\n    } else {'
 assert s.count(old)==1
 p.write_text(s.replace(old,new))
 PY
@@ -62,3 +50,9 @@ for lib in libadrenotools.so libhook_impl.so libmain_hook.so libfile_redirect_ho
 done
 mkdir -p "$assets/licenses"
 cp "$adreno_src/LICENSE" "$assets/licenses/libadrenotools.txt"
+
+# Restore the standalone dispatch wrapper recovered from the working APK.
+"$llvm/aarch64-linux-android30-clang" -O2 -fPIC -shared \
+    -Wl,-soname,libgow3qualcommvulkan.so \
+    tools/android/bionic/qualcomm_vulkan.c -ldl -o "$stage/libgow3qualcommvulkan.so"
+"$llvm/llvm-readelf" -h "$stage/libgow3qualcommvulkan.so" | grep -E 'Machine:.*AArch64'

@@ -1,4 +1,4 @@
-name: Daedalus Snapdragon R3 recovery and Qualcomm namespace verification APK
+name: Daedalus Snapdragon R4 verified-baseline recovery APK
 
 on:
   push:
@@ -84,20 +84,21 @@ jobs:
           path: out/bionic/lib/libgow3gpu.so
           retention-days: 2
           if-no-files-found: error
+      - name: Build pinned Qualcomm isolated loader and hooks
+        run: bash tools/android/bionic/build_adrenotools.sh
       - name: Stage the verified baseline with the new Vulkan renderer
         run: |
           python tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3-2.1.8.apk \
             out/bionic/lib/libgow3gpu.so "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-      - name: Build pinned Qualcomm isolated loader and hooks
-        run: bash tools/android/bionic/build_adrenotools.sh
       - name: Package, sign and validate the isolated UBO APK
         run: |
           bash android-launcher/gradlew -p android-launcher :app:assembleRelease \
             -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
           bash tools/android/bionic/sign_apk.sh
           apk=$(find out/release -name 'God-of-War-III-Daedalus-UBO-Test-v*-bionic-arm64.apk' -print -quit)
-          for lib in libadrenotools libhook_impl libmain_hook libfile_redirect_hook libgsl_alloc_hook; do
-            unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$lib.so"
+          unzip -p "$apk" assets/runtime.payload | tar -tzf - > "$RUNNER_TEMP/gow3-runtime-files.txt"
+          for lib in libadrenotools libhook_impl libmain_hook libfile_redirect_hook libgsl_alloc_hook libgow3qualcommvulkan; do
+            grep -Fx "gow3port/arm64/lib/$lib.so" "$RUNNER_TEMP/gow3-runtime-files.txt"
           done
       - uses: actions/upload-artifact@v4
         with:

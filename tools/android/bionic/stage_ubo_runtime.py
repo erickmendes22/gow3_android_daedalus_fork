@@ -55,9 +55,6 @@ def main():
 
         with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as source:
             work = Path(work)
-            # Same C++ runtime for the external driver hook child namespace.
-            (apk_jni / 'libc++_shared.so').write_bytes(
-                source.extractfile('gow3port/arm64/lib/libc++_shared.so').read())
             old_gpu = work / 'libgow3gpu-original.so'
             old_gpu.write_bytes(source.extractfile(GPU).read())
             new_gpu = work / 'libgow3gpu.so'
@@ -79,6 +76,7 @@ def main():
                 'gow3port/run-bionic.sh': (root / 'tools/android/bionic/run-bionic.sh').read_bytes(),
                 'gow3port/scripts/launch_env.py': (root / 'scripts/launch_env.py').read_bytes(),
                 'gow3port/scripts/patches.py': (root / 'scripts/patches.py').read_bytes(),
+                'gow3port/patches/God_of_War_III_Remastered.xml': (root / 'patches/God_of_War_III_Remastered.xml').read_bytes(),
             }
             with tarfile.open(assets / 'runtime.payload', 'w:gz', compresslevel=6) as target:
                 for member in source:
@@ -88,6 +86,14 @@ def main():
                         target.addfile(member, io.BytesIO(data))
                     else:
                         target.addfile(member, source.extractfile(member) if member.isfile() else None)
+                for lib in ('libadrenotools.so', 'libhook_impl.so', 'libmain_hook.so',
+                            'libfile_redirect_hook.so', 'libgsl_alloc_hook.so',
+                            'libgow3qualcommvulkan.so'):
+                    data = (root / 'out/bionic/qualcomm-runtime' / lib).read_bytes()
+                    member = tarfile.TarInfo('gow3port/arm64/lib/' + lib)
+                    member.size = len(data)
+                    member.mode = 0o755
+                    target.addfile(member, io.BytesIO(data))
             if replacements:
                 raise ValueError(f'Baseline payload is missing entries: {sorted(replacements)}')
         digest = sha256((assets / 'runtime.payload').read_bytes())
