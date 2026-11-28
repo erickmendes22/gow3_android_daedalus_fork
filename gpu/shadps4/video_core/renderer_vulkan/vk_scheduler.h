@@ -617,7 +617,8 @@ public:
                               ~(alignof(Gow3Copy::Item) - 1);
             if (at + sizeof(Gow3Copy::Item) > Capacity) return false;
             auto* next = new (storage + at) Gow3Copy::Item(item);
-            ASSERT(last_host_batch->batch.Append(next, sequence));
+            const bool appended = last_host_batch->batch.Append(next, sequence);
+            ASSERT(appended);
             used = at + sizeof(Gow3Copy::Item);
             PrefetchAhead();
             return true;
