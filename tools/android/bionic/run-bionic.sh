@@ -184,6 +184,20 @@ case "${GOW3_VULKAN_DRIVER:-}" in
             export GOW3_SCREEN_H="${GOW3_PATCH_INPUT_RES#*x}"
             ;;
         esac
+      elif [ "$GOW3_MALI_CPU_PRESENT" = 1 ] &&
+           [ "$GOW3_MALI_NATIVE_AHB" = 1 ] &&
+           [ "${GOW3_RESOLUTION_STATUS:-}" = native-game-patch ] &&
+           [ "${GOW3_PATCH_STATUS:-}" = validated ] &&
+           [ "${GOW3_GAME_VERSION:-}" = 01.02 ] &&
+           [ "${GOW3_EBOOT_SHA256:-}" = 6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c ]; then
+        # The canonical 480p PS4 patch has no GOW3_PATCH_INPUT_RES by
+        # design. Its verified 854x480 VideoOut must not be CPU-upscaled
+        # into the historical 1280x720 AHB (R16 log 203435).
+        case ";${GOW3_PATCHES:-};" in
+          *";Resolution Patch - 480p;"*)
+            export GOW3_SCREEN_W=854 GOW3_SCREEN_H=480
+            ;;
+        esac
       fi
       # 4 buffers rather than 3 gives the FIFO compositor one spare release
       # while the CPU prepares the next image. GOW3_PRESENT_BUFFERS=3 restores
