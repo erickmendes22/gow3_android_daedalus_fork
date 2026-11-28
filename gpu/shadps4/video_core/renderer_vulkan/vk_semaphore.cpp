@@ -11,6 +11,16 @@ namespace Vulkan {
 
 constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
 
+namespace {
+// Port of TLOU cf3da741: publish only driver-proven completion, monotonically.
+void PublishCompleted(std::atomic<u64>& known, u64 completed) {
+    u64 old = known.load(std::memory_order_acquire);
+    while (old < completed &&
+           !known.compare_exchange_weak(old, completed, std::memory_order_release,
+                                        std::memory_order_relaxed)) {}
+}
+} // namespace
+
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     const vk::StructureChain semaphore_chain = {
         vk::SemaphoreCreateInfo{},
@@ -29,19 +39,17 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
 Semaphore::~Semaphore() = default;
 
 void Semaphore::Refresh() {
-    u64 this_tick{};
-    u64 counter{};
-    do {
-        this_tick = gpu_tick.load(std::memory_order_acquire);
-        auto [counter_result, cntr] = instance.GetDevice().getSemaphoreCounterValue(*semaphore);
-        ASSERT_MSG(counter_result == vk::Result::eSuccess,
-                   "Failed to get master semaphore value: {}", vk::to_string(counter_result));
-        counter = cntr;
-        if (counter < this_tick) {
-            return;
-        }
-    } while (!gpu_tick.compare_exchange_weak(this_tick, counter, std::memory_order_release,
-                                             std::memory_order_relaxed));
+#ifdef __ANDROID__
+    const u64 next = CurrentTick();
+    if (next && KnownGpuTick() >= next - 1) {
+        return;
+    }
+#endif
+    const auto [counter_result, counter] =
+        instance.GetDevice().getSemaphoreCounterValue(*semaphore);
+    ASSERT_MSG(counter_result == vk::Result::eSuccess,
+               "Failed to get master semaphore value: {}", vk::to_string(counter_result));
+    PublishCompleted(gpu_tick, counter);
 }
 
 void Semaphore::Wait(u64 tick) {
@@ -62,9 +70,11 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
-    }
-    Refresh();
+    const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+    ASSERT_MSG(result == vk::Result::eSuccess, "GPU semaphore wait failed: {}",
+               vk::to_string(result));
+    // The successful wait proves this lower bound; querying the driver again is redundant.
+    PublishCompleted(gpu_tick, tick);
 }
 
 } // namespace Vulkan
