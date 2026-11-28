@@ -1,0 +1,92 @@
+{
+  "gow3port/run-bionic.sh": {
+    "sha256": "58ada4200aa47d72dd3e31b22a2281acc439b76d065a9a456fa3892161df562c",
+    "size": 11794,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/scripts/launch_env.py": {
+    "sha256": "6138eae711233bc9854462559b6417805d1819038ec4c737d8649bd422207278",
+    "size": 11683,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/scripts/patches.py": {
+    "sha256": "2b464e6afb915b1a5552f020b790b08d4319c0f1e6d6b178404ce74b7fa90be0",
+    "size": 26497,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/scripts/graphics_options.py": {
+    "sha256": "078f12510d8c7d1e00251684605a5919291d6aa2d45d8c28ba36edbe2ef7676f",
+    "size": 5844,
+    "identical_in_R2_runtime": true
+  },
+  "gow3port/patches/God_of_War_III_Remastered.xml": {
+    "sha256": "353e48b05c1de900c48ae6989e31adf586771e76d3f34bad1e8a1140226cde21",
+    "size": 28924,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/gow3.default.ini": {
+    "sha256": "f1b51b3eaedc84c7ff3f39ac0e4994d3d5ce640a5db60bcc2f3124337a938ec4",
+    "size": 396,
+    "identical_in_R2_runtime": true
+  },
+  "runtime-manifest.json": {
+    "sha256": "1156c775822cb55cef9e7ea16e25cae5609d106589897a8d0bd692f426bf8280",
+    "size": 1782,
+    "identical_in_R2_runtime": true
+  },
+  "gow3port/arm64/lib/libgow3gpu.so": {
+    "sha256": "199adf2387e57beb1c9f05c48788057a0547640b730ae083c1fde66eccae648c",
+    "size": 28012680,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libgow3cpu.so": {
+    "sha256": "b7bff4d418d1b5d30ad758a11560082231d192cc1a58348c093ed3c53ca792c1",
+    "size": 3140504,
+    "identical_in_R2_runtime": true
+  },
+  "gow3port/arm64/lib/libgow3present.so": {
+    "sha256": "69886761d6b13179a011ed7fbcff2fc7528e950d9061a8c4ce23f3128263d2fd",
+    "size": 18232,
+    "identical_in_R2_runtime": true
+  },
+  "gow3port/arm64/lib/libadrenotools.so": {
+    "sha256": "3acf4ba94620c589336fc8e71f4ab6b8fee8b5aa9b8a2373d824b438904c3f9d",
+    "size": 43144,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libhook_impl.so": {
+    "sha256": "ab2bf3718cbffd14a9f0051408be52d6bf9fe1692f97eb59bbb6280ac2142f2b",
+    "size": 162328,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libmain_hook.so": {
+    "sha256": "56ae727952420e04d87d0f9de65611abb9329a3d15c6ae991b570b1a0b5d6bcb",
+    "size": 8640,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libfile_redirect_hook.so": {
+    "sha256": "654406f76a6cc56d0c931b64ff8ba2dac197d14ee098e0aab5d619e67fed0958",
+    "size": 7096,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libgsl_alloc_hook.so": {
+    "sha256": "eb50bfc7d01be88d8012bc9cec52188079a03058b1395a407b4e75f469b94e3c",
+    "size": 8416,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/lib/libgow3qualcommvulkan.so": {
+    "sha256": "6f145b109f156659aa1853d9216a5b55ed1e38676733a98eecc492cd1b2a6c42",
+    "size": 16104,
+    "identical_in_R2_runtime": false
+  },
+  "gow3port/arm64/bin/gow3-probe": {
+    "sha256": "73892fe9a8a082ad711713ef0b83a4c669fc069bde3abca8005fbd61bba342bd",
+    "size": 13692792,
+    "identical_in_R2_runtime": true
+  },
+  "gow3port/arm64/bin/gow3-prepare": {
+    "sha256": "88d999446bdfc677e7ab59ecdcd59b539b84cdf523f58a1bbe6b51b460e0a00d",
+    "size": 362432,
+    "identical_in_R2_runtime": true
+  }
+}

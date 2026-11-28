@@ -79,7 +79,7 @@ class GameActivity extends Context {
   assert a.bionicStarts==1 && a.xStarts==0 && RuntimeInstaller.calls==1;
   a.startRuntime(a.surface); // recreating the display must reattach the Bionic bridge
   assert a.bionicStarts==2 && RuntimeInstaller.calls==1;
-  GameActivity ubo=new GameActivity(); ubo.packageName="com.gow3.android.bionic.ubo";
+  GameActivity ubo=new GameActivity(); ubo.packageName="com.gow3.android.bionic.ub2";
   ubo.startRuntime(ubo.surface); ubo.drain();
   assert ubo.bionicStarts==1 && ubo.xStarts==0;
   GameActivity linux=new GameActivity(); linux.packageName="com.gow3.android";

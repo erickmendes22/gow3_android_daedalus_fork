@@ -32,6 +32,9 @@ def main():
             'lib':['libgow3cpu.so','libgow3gpu.so','libgow3present.so','libbloodframe.so','libc++_shared.so']}.items():
             (runtime/directory).mkdir(parents=True)
             for name in names:shutil.copy2(source/directory/name,runtime/directory/name)
+        for name in ('libgow3qualcommvulkan.so', 'libadrenotools.so', 'libhook_impl.so',
+                     'libmain_hook.so', 'libfile_redirect_hook.so', 'libgsl_alloc_hook.so'):
+            shutil.copy2(source/'qualcomm'/name, runtime/'lib'/name)
         shutil.copytree(source/'drivers',runtime/'drivers',ignore=shutil.ignore_patterns('.*'))
         # Reproducible Android Python install; keep stdlib modules, not build/test/development files.
         python = runtime/'python'
@@ -53,6 +56,7 @@ def main():
         shutil.copy2(ROOT/'LICENSE',notices/'LICENSE-Gow3.txt')
         shutil.copy2(ROOT/'android-launcher/app/src/main/assets/THIRD_PARTY_LICENSES.txt',notices/'THIRD_PARTY_LICENSES.txt')
         shutil.copy2(ROOT/'tools/android/bionic/NOTICE.txt',notices/'BIONIC-NOTICE.txt')
+        shutil.copy2(source/'qualcomm/libadrenotools-LICENSE.txt', notices/'libadrenotools-LICENSE.txt')
         shutil.copytree(ROOT/'tools/android/bionic/licenses',notices/'driver')
         # zFitness native MIT Bloodframe must carry its upstream license.
         bloodframe_licenses = source/'licenses'

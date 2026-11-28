@@ -11,6 +11,7 @@ if [[ ${1:-} != --package-only ]]; then
     bash tools/android/bionic/build_pkg.sh
 fi
 python3 tools/android/bionic/verify_bionic.py --ndk "$ndk" --api "${GOW3_BIONIC_API:-30}" --root out/bionic --complete
+bash tools/android/bionic/build_qualcomm.sh
 python3 tools/android/bionic/package_runtime.py --ndk "$ndk"
 # Mali-only experimental option: include SHA-pinned PanVK, never auto-select on Adreno.
 bash tools/android/bionic/fetch_panvk.sh

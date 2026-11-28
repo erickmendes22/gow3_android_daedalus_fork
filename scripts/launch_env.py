@@ -100,16 +100,16 @@ def derive(game, config, state_path, env):
     updates['GOW3_READBACK_LINEAR_SOURCE'] = (
         'override' if 'GOW3_READBACK_LINEAR' in env else 'android-safe-default')
     identity_check = patch_profile_status(game)
-    from patches import CUSA01715_0102_ANDROID_SHA
+    from patches import CUSA01715_0102_ANDROID_SHA, REFERENCE_SHA256
     # No preset-to-resolution remapping. GSR2 spatial samples the real
     # resolved guest VideoOut one-to-one at the user-selected resolution.
     # This preserves original game's resolution and the existing 8K validation.
     resolution = graphics['render_resolution']
     if android_port and resolution in graphics_options.DIRECT_RESOLUTIONS:
         if (identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
-            identity_check['app_version'] == '01.02' and
-            identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
-            identity_check['reason'] == 'validated'):
+            identity_check['reason'] == 'validated' and
+            (identity_check['app_version'], identity_check['eboot_sha256']) in (
+                ('01.00', REFERENCE_SHA256), ('01.02', CUSA01715_0102_ANDROID_SHA))):
             updates['GOW3_PATCH_INPUT_RES'] = graphics_options.DIRECT_PIXEL_RESOLUTIONS[resolution]
             updates['GOW3_RESOLUTION_STATUS'] = 'verified-direct-game-patch'
         else:
@@ -135,16 +135,17 @@ def derive(game, config, state_path, env):
         except ValueError:
             # Two resolution patches (or another exclusivity violation) cannot both apply.
             names, reason = [], 'patch-conflict'
-        if names:
+        if reason == 'validated':
             # gow3.ini decides the resolution and frame rate patches (in-game menu, launcher).
             names = graphics_options.patch_names(names, graphics)
-            # This exact-address patch belongs only to the supplied and
-            # verified eboot revision. Other builds retain their shadows.
-            shadow_reference = '6e72330e9092e5164049b865e5568f2d450904001a73fe0a2f4b39194c195b3c'
-            if shadow_requested and identity['eboot_sha256'] == shadow_reference:
-                names.append('Disable Dynamic Shadows')
+            # Restrict the shadow-job branch patch to the verified executables.
+            shadow_patch = 'Disable Dynamic Shadows'
+            names = [name for name in names if name != shadow_patch]
+            if shadow_requested and identity['eboot_sha256'] in (
+                    REFERENCE_SHA256, CUSA01715_0102_ANDROID_SHA):
+                names.append(shadow_patch)
             updates['GOW3_SHADOWS_STATUS'] = ('disabled-patch-selected'
-                if 'Disable Dynamic Shadows' in names else
+                if shadow_patch in names else
                 'unsupported-eboot' if shadow_requested else 'enabled')
             if android_port:
                 # Only explicit Android toggles affect their own named patches.

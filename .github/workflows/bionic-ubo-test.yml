@@ -86,6 +86,7 @@ jobs:
           if-no-files-found: error
       - name: Stage the verified baseline with the new Vulkan renderer
         run: |
+          bash tools/android/bionic/build_qualcomm.sh
           python tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3-2.1.8.apk \
             out/bionic/lib/libgow3gpu.so "$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
       - name: Package, sign and validate the isolated UBO APK

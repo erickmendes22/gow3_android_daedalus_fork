@@ -13,6 +13,8 @@ BASELINE_APK_SHA256 = 'bffc0edf6e70738423963ede8a76a2a0274320f6e18671302a0a589a6
 GPU = 'gow3port/arm64/lib/libgow3gpu.so'
 PROBE = 'gow3port/arm64/bin/gow3-probe'
 NATIVE_LIBRARIES = ('libgow3cpu.so', 'libgow3present.so', 'libbloodframe.so', 'libc++_shared.so')
+QUALCOMM_LIBRARIES = ('libgow3qualcommvulkan.so', 'libadrenotools.so', 'libhook_impl.so',
+                      'libmain_hook.so', 'libfile_redirect_hook.so', 'libgsl_alloc_hook.so')
 
 
 def sha256(data):
@@ -75,15 +77,31 @@ def main():
                 GPU: new_gpu.read_bytes(),
                 'gow3port/run-bionic.sh': (root / 'tools/android/bionic/run-bionic.sh').read_bytes(),
                 'gow3port/scripts/launch_env.py': (root / 'scripts/launch_env.py').read_bytes(),
+                'gow3port/scripts/patches.py': (root / 'scripts/patches.py').read_bytes(),
+                'gow3port/patches/God_of_War_III_Remastered.xml': (
+                    root / 'patches/God_of_War_III_Remastered.xml').read_bytes(),
             }
+            qualcomm = root / 'out/bionic/qualcomm'
+            additions = {f'gow3port/arm64/lib/{name}': ((qualcomm / name).read_bytes(), 0o755)
+                         for name in QUALCOMM_LIBRARIES}
+            license_name = 'libadrenotools-LICENSE.txt'
+            additions[f'gow3port/licenses/{license_name}'] = (
+                (qualcomm / license_name).read_bytes(), 0o644)
             with tarfile.open(assets / 'runtime.payload', 'w:gz', compresslevel=6) as target:
                 for member in source:
+                    if member.name in additions:
+                        raise ValueError(f'Baseline already contains {member.name}')
                     if member.name in replacements:
                         data = replacements.pop(member.name)
                         member.size = len(data)
                         target.addfile(member, io.BytesIO(data))
                     else:
                         target.addfile(member, source.extractfile(member) if member.isfile() else None)
+                for name, (data, mode) in additions.items():
+                    member = tarfile.TarInfo(name)
+                    member.size = len(data)
+                    member.mode = mode
+                    target.addfile(member, io.BytesIO(data))
             if replacements:
                 raise ValueError(f'Baseline payload is missing entries: {sorted(replacements)}')
         digest = sha256((assets / 'runtime.payload').read_bytes())

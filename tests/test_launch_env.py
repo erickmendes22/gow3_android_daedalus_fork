@@ -88,6 +88,30 @@ class LaunchEnvReasonTests(unittest.TestCase):
         desktop = self._plan()
         self.assertNotIn('Disable SSAO', desktop['patch_names'])
 
+    def test_retail_0100_launches_with_selected_resolution_and_engine_fps(self):
+        sfo = {'TITLE_ID': 'CUSA01623', 'APP_VER': '01.00'}
+        env = {'GOW3_ANDROID_PORT': '1', 'GOW3_DEVICE_MEM_MB': '11600',
+               'GOW3_PATCHES_ONLY': '1'}
+        self.config.write_text(
+            'render_resolution=360p\nengine_fps=120\npatch_startup_black_screen=0\n'
+            'patch_disable_ssao=1\neffect_dynamic_shadows=0\n')
+        with mock.patch.object(patches, 'game_sfo', return_value=sfo):
+            with mock.patch.object(patches, 'eboot_sha256', return_value=patches.REFERENCE_SHA256):
+                plan = derive(self.dir / 'game', self.config, self.state, env)
+            with mock.patch.object(patches, 'eboot_sha256', return_value='unknown'):
+                unsupported = derive(self.dir / 'game', self.config, self.state, env)
+
+        self.assertEqual(plan['updates']['GOW3_PATCH_STATUS'], 'validated')
+        self.assertEqual(plan['updates']['GOW3_PATCH_INPUT_RES'], '640x360')
+        self.assertEqual(plan['vblank'], 120)
+        self.assertEqual(set(plan['patch_names']), {
+            'Resolution Patch - 720p', 'Frame Rate Patch - 120 FPS',
+            'Disable SSAO', 'Disable Dynamic Shadows',
+        })
+        self.assertEqual(unsupported['updates']['GOW3_PATCH_STATUS'], 'unsupported-app-version')
+        self.assertNotIn('GOW3_PATCH_INPUT_RES', unsupported['updates'])
+        self.assertIsNone(unsupported['vblank'])
+
     def test_player_files_remain_byte_identical(self):
         game = self.dir / 'game'
         (game / 'sce_sys').mkdir(parents=True)

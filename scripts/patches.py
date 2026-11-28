@@ -234,10 +234,9 @@ def patch_profile_status(game):
     and why the patches would be skipped. Never treats an unknown title or an unreadable eboot as
     patchable, so launch_env.py can gate on it.
 
-    The patch sites are located by signature (Pattern/At) in any build whose code matches, so
-    unlike the pre-signature design this does not compare eboot.bin against a reference hash:
-    'validated' means "a known title at the version the built-in XML is tagged with, and the
-    eboot is readable". compile_patches() proves each individual site when it builds patches.bin
+    The built-in patch sites are located by signature (Pattern/At). The launcher
+    accepts the catalog version or the byte-exact 01.00 reference.
+    compile_patches() proves each individual site when it builds patches.bin
     and reports the ones it could not find through 'skipped'.
     """
     title=game_title_id(game)
@@ -251,7 +250,8 @@ def patch_profile_status(game):
         return result
     if not profile:
         result['reason']='unsupported-title'
-    elif version!=profile[2]:
+    elif version!=profile[2] and not (
+            version == '01.00' and result['eboot_sha256'] == REFERENCE_SHA256):
         result['reason']='unsupported-app-version'
     else:
         result['eboot_matches']=True
@@ -375,20 +375,26 @@ CUSA01715_0102_SITES = (0x005f0c5b, 0x005f0c63, 0x005f0c6c, 0x005f0c73,
                          0x005643e3, 0x005643f0, 0x005ff889, 0x005ff88f)
 CUSA01715_0102_FIELDS = ('width', 'height', 'width', 'height',
                           'height', 'width', 'width', 'height')
+ANDROID_DIRECT_SITES = {
+    CUSA01715_0102_ANDROID_SHA: CUSA01715_0102_SITES,
+    REFERENCE_SHA256: (0x005f0b3b, 0x005f0b43, 0x005f0b4c, 0x005f0b53,
+                       0x005643f3, 0x00564400, 0x005ff769, 0x005ff76f),
+}
 
 
 def android_native_resolution_writes(xml, image, segments, sha, render_res, patch_names):
-    """Return exact-byte-verified CUSA01715 startup-resize overrides for this ELF.
+    """Return exact-byte-verified startup-resize overrides for this ELF.
 
-    Applies ONLY to the supplied 01.02 executable, and never silently treats
-    a selected '720p' setting as an actually applied 640x360 scene. All eight
-    dimensions were checked in disassembly; the ninth XML write adjusts DMEM
-    and is deliberately left untouched. No Bloodborne offsets are used.
+    Applies only to the verified 01.00 and 01.02 executables, and never silently treats
+    a selected '720p' setting as an actually applied 640x360 scene. Eight
+    operands set the dimensions and two set the half-resolution post-process
+    table. The DMEM write is deliberately left untouched.
     """
     if not render_res:
         return {}, None
-    if sha != CUSA01715_0102_ANDROID_SHA:
-        raise ValueError('Direct resolution requires verified CUSA01715 01.02 eboot.bin')
+    sites = ANDROID_DIRECT_SITES.get(sha)
+    if sites is None:
+        raise ValueError('Direct resolution requires a verified 01.00 or 01.02 eboot.bin')
     if 'Resolution Patch - 720p' not in patch_names:
         raise ValueError('Direct resolution requires verified 720p patch template')
     match = re.fullmatch(r'([0-9]{2,4})x([0-9]{2,4})', render_res)
@@ -405,7 +411,7 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
     overrides = {}
     for i, (offset, patched) in enumerate(template[:8]):
         address = offset + EBOOT_BASE
-        expected_address = CUSA01715_0102_SITES[i]
+        expected_address = sites[i]
         if address != expected_address:
             raise ValueError(f'Resolution operand {i}: got {address:#x}, expected {expected_address:#x}')
         field = CUSA01715_0102_FIELDS[i]
@@ -418,7 +424,6 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
     # Upstream SpartanPort #613: this independent post-process table must be
     # exactly half the requested guest output. The old 960x540 allocation is
     # incompatible with patched 720p and lower-size scene surfaces.
-    # Check actual CUSA01715 01.02 instruction/data bytes before writing.
     for i, (offset, patched) in enumerate(template[8:10]):
         address = offset + EBOOT_BASE
         expected_address = (0x007f2a3c, 0x007f2a40)[i]
@@ -433,7 +438,7 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
         overrides[offset] = ((width if i == 0 else height) // 2).to_bytes(4, 'little')
     return overrides, {'render': f'{width}x{height}', 'output': f'{width}x{height}',
                        'verified_eboot_sha256': sha,
-                       'verified_sites': [hex(site) for site in CUSA01715_0102_SITES]}
+                       'verified_sites': [hex(site) for site in sites]}
 
 
 def write_patches(out, writes):
@@ -490,7 +495,7 @@ def main():
         if unmatched:
             raise ValueError(f'direct resolution overrides missing from patch stream: {sorted(unmatched)}')
         writes=remapped
-        print(f"Patches: verified CUSA01715 DIRECT render {native_info['render']} "
+        print(f"Patches: verified DIRECT render {native_info['render']} "
               f"({len(overrides)} operand writes)")
     # 8K is explicitly experimental but NEVER unverified. The sole upstream
     # target is the byte-exact CUSA01715 01.02 eboot. Signature mismatches are

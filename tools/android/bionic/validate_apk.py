@@ -83,7 +83,7 @@ def main():
     p.add_argument('--ubo-test', action='store_true')
     a=p.parse_args()
     badging=subprocess.check_output([a.aapt,'dump','badging',str(a.apk)],text=True)
-    package = 'com.gow3.android.bionic.ubo' if a.ubo_test else 'com.gow3.android.bionic'
+    package = 'com.gow3.android.bionic.ub2' if a.ubo_test else 'com.gow3.android.bionic'
     for expected in [f"name='{package}'","sdkVersion:'30'","targetSdkVersion:'28'",
                      "native-code: 'arm64-v8a'","versionName='2.1.8-bionic'"]:
         if expected not in badging:raise ValueError('APK identity mismatch: '+expected)

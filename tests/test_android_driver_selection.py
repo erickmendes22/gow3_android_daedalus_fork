@@ -19,13 +19,18 @@ class DriverSelectionTests(unittest.TestCase):
             bundled=root/'runtime/drivers/gen8/libvulkan_freedreno.so'
             adreno7xx=root/'runtime/drivers/adreno7xx/libvulkan_freedreno.so'
             custom=root/'gpu-drivers'/('a'*64)/'libcustom.so'
-            for p in [bundled,adreno7xx,custom]:p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'fixture')
+            qualcomm=custom.with_name('vulkan.adr891.so')
+            wrapper=root/'runtime/lib/libgow3qualcommvulkan.so'
+            for p in [bundled,adreno7xx,custom,qualcomm,wrapper]:
+                p.parent.mkdir(parents=True,exist_ok=True)
+                p.write_bytes(b'fixture')
             def run(selection,chip='0x44050001',library=custom):
                 env=dict(os.environ,GOW3_BIONIC_DRIVER=selection,GOW3_CUSTOM_VULKAN_DRIVER=str(library),
                          GOW3_VULKAN_DRIVER='/stale/driver.so',VK_DRIVER_FILES='/stale/icd.json',
                          FIXTURE_ROOT=str(root),FIXTURE_CHIP=chip)
                 return subprocess.run(['sh','-c','set -eu\nfiles="$FIXTURE_ROOT"\nruntime="$files/runtime"\nLD_LIBRARY_PATH=/runtime/lib\nchip="$FIXTURE_CHIP"\n'+block+
                     '\nprintf "RESULT=%s|%s|%s" "$turnip" "${GOW3_VULKAN_DRIVER:-system}" "$LD_LIBRARY_PATH"\n'+
+                    'printf "\\nQUALCOMM=%s|%s" "${GOW3_QUALCOMM_VULKAN_DRIVER:-}" "${GOW3_QUALCOMM_HOOK_DIR:-}"\n'+
                     '[ -z "${VK_DRIVER_FILES:-}" ]'],env=env,text=True,capture_output=True)
             for selection,expected in [('system','system|system|/runtime/lib'),('gen8','gen8|'+str(bundled)+'|/runtime/lib'),
                                        ('adreno7xx','adreno7xx|'+str(adreno7xx)+'|/runtime/lib'),
@@ -42,6 +47,13 @@ class DriverSelectionTests(unittest.TestCase):
                 self.assertIn('RESULT=system|system|',run('auto',chip=chip).stdout)
             self.assertNotEqual(run('bad').returncode,0)
             self.assertNotEqual(run('custom',library=root/'elsewhere/driver.so').returncode,0)
+            result=run('custom', library=qualcomm)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn(f'RESULT=custom|{wrapper}|/runtime/lib:{qualcomm.parent}',result.stdout)
+            self.assertIn(f'QUALCOMM={qualcomm}|{wrapper.parent}',result.stdout)
+            self.assertIn(f'Bionic Vulkan selection: custom ({qualcomm})',result.stdout)
+            wrapper.unlink()
+            self.assertNotEqual(run('custom',library=qualcomm).returncode,0)
             custom.unlink()
             self.assertNotEqual(run('custom').returncode,0)  # no silent fallback
             self.assertIn('RESULT=system|system|',run('system').stdout)
