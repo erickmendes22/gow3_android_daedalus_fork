@@ -73,6 +73,7 @@ public:
     void UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
                      std::span<const vk::BufferImageCopy> upload_copies);
     u64 CurrentUploadBatchBytes() const;
+    void CountUploadWork(u64 bytes);
     void ResetUploadBatchBytes() { texture_upload_batch_bytes = 0; }
     void DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
                        std::span<const vk::BufferImageCopy> download_copies);

@@ -258,4 +258,17 @@ class R10Priorities(unittest.TestCase):
                             "-I"+str(R/"gpu/shadps4"),str(R/"tests/test_mali_dma_arena_chunk.cpp"),
                             "-o",str(out)],check=True)
             subprocess.run([str(out)],check=True,timeout=10)
+    def test_mali_save_overlay_preserves_original_and_frame_ownership(self):
+        p=(V/"vk_presenter.cpp").read_text()
+        body=p.split("void Presenter::Present(Frame*",1)[1].split("// gow3: the game frame is blitted",1)[0]
+        self.assertIn("Gow3Overlay::Visible()",body)
+        self.assertLess(body.index("cmdbuf.copyImage(frame->image"),body.index("Gow3Overlay::Render(cmdbuf, ui->image_view"))
+        self.assertLess(body.index("Gow3Overlay::Render(cmdbuf, ui->image_view"),body.index("cmdbuf.copyImageToBuffer(readback_image"))
+        self.assertIn("readback_image = ui->image",body)
+        reuse=p.split("Frame* Presenter::PrepareLastFrame()",1)[1].split("static vk::Format",1)[0]
+        self.assertIn("if (!claimed) return nullptr",reuse)
+        self.assertIn("if (swapchain.UsesCpuPresentation()) return frame;",reuse)
+        self.assertIn("PublishReadbackRows(entry.download.guest_address",C)
+        self.assertIn("CountUploadWork(copy.size)",RT)
+        self.assertIn("CountUploadWork(info.guest_size)",(T/"tile_manager.cpp").read_text())
 if __name__=="__main__": unittest.main()

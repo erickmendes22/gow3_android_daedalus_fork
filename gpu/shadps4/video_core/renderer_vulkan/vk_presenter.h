@@ -10,6 +10,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <memory>
 #include <thread>
 
 #include "core/libraries/videoout/buffer.h"

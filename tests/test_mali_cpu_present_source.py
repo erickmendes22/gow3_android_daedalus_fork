@@ -26,7 +26,7 @@ class MaliCpuPresentContract(unittest.TestCase):
         self.assertIn("if (cpu_present) return;", SWAPCHAIN)
 
     def test_raw_rgba8_gpu_readback_and_frame_diagnostic(self):
-        self.assertIn("cmdbuf.copyImageToBuffer(frame->image", PRESENTER)
+        self.assertIn("cmdbuf.copyImageToBuffer(readback_image", PRESENTER)
         self.assertIn("vmaInvalidateAllocation(", PRESENTER)
         self.assertIn("instance.GetDevice().waitIdle()", PRESENTER)
         self.assertIn("MALI_CPU_PRESENT_SOURCE frame=", PRESENTER)
@@ -35,13 +35,12 @@ class MaliCpuPresentContract(unittest.TestCase):
         self.assertIn("ReportPresented(", PRESENTER)
 
     def test_panvk_frame_fence_wait_not_device_wide_idle(self):
-        start = PRESENTER.index("if (swapchain.UsesCpuPresentation())")
-        end = PRESENTER.index("// gow3: the game frame is blitted", start)
-        section = PRESENTER[start:end]
+        complete = PRESENTER.split("void Presenter::CompleteMaliCpuPresentation(",1)[1].split("bool Presenter::IsVideoOutSurface",1)[0]
+        section = PRESENTER.split("void Presenter::Present(Frame*",1)[1].split("// gow3: the game frame is blitted",1)[0]
         self.assertIn("cpu_info.AddSignal(frame->present_done);", section)
-        self.assertIn("waitForFences(frame->present_done, true, ~0ull)", section)
-        self.assertLess(section.index("waitForFences("), section.index("vmaInvalidateAllocation("))
-        self.assertNotIn("const auto done = instance.GetDevice().waitIdle()", section)
+        self.assertIn("waitForFences(frame->present_done, true, ~0ull)", complete)
+        self.assertLess(complete.index("waitForFences("), complete.index("vmaInvalidateAllocation("))
+        self.assertNotIn("const auto done = instance.GetDevice().waitIdle()", complete)
 
     def test_game_rgb_is_forced_opaque_for_android_compositor(self):
         # The PS4 framebuffer's alpha need not represent visual opacity.

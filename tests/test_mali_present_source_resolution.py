@@ -25,7 +25,7 @@ class MaliPresentSourceResolution(unittest.TestCase):
         self.assertIn("const vk::Extent2D output = swapchain.GetExtent()", PRES)
         self.assertIn("verified_patch.width <= output.width", PRES)
         self.assertIn("verified_patch.height <= output.height", PRES)
-        self.assertIn("cmdbuf.copyImageToBuffer(frame->image,", PRES)
+        self.assertIn("cmdbuf.copyImageToBuffer(readback_image,", PRES)
         self.assertIn("waitForFences(frame->present_done, true, ~0ull)", PRES)
         self.assertIn("swapchain.PresentCpuPixels(", PRES)
 

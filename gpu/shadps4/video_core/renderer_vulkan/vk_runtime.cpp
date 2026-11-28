@@ -720,6 +720,8 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
     }
     scheduler.EndRendering();
 
+    if (split_image_buffer_barriers)
+        for (const auto& copy : copies) CountUploadWork(copy.size);
     // gow3: many regions (HLE copy shaders) are tracked as one bounding range per buffer:
     // conservative for barriers, and two tree lookups instead of two per region.
     const bool bounded = copies.size() > 4;
@@ -772,6 +774,9 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
 }
 
 void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32 value) {
+    ASSERT_MSG(size && offset <= dst->SizeBytes() && size <= dst->SizeBytes() - offset,
+               "Invalid buffer fill offset={} size={} capacity={}", offset, size, dst->SizeBytes());
+    if (split_image_buffer_barriers) CountUploadWork(size);
     scheduler.EndRendering();
 
     if (IsBufferAccessed(dst, offset, size, true)) {
@@ -874,17 +879,20 @@ u64 Runtime::CurrentUploadBatchBytes() const {
     return texture_upload_batch_tick == scheduler.CurrentTick() ? texture_upload_batch_bytes : 0;
 }
 
-void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
-                          std::span<const vk::BufferImageCopy> upload_copies) {
-    // Count every actual recorded image upload, not just texture refreshes.
-    // Submit only at the safe draw/dispatch boundary, never inside binding.
+void Runtime::CountUploadWork(u64 bytes) {
     const auto tick = scheduler.CurrentTick();
     if (texture_upload_batch_tick != tick) {
         texture_upload_batch_tick = tick;
         texture_upload_batch_bytes = 0;
     }
+    texture_upload_batch_bytes += bytes;
+}
+
+void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
+                          std::span<const vk::BufferImageCopy> upload_copies) {
+    // Count work here; submit only at the safe draw/dispatch boundary.
     for (const auto& copy : upload_copies)
-        texture_upload_batch_bytes += BufferImageCopySize(copy, dst->info.pixel_format);
+        CountUploadWork(BufferImageCopySize(copy, dst->info.pixel_format));
     SetBackingSamples(dst, dst->info.num_samples, false);
     scheduler.EndRendering();
     const TransferMark mark{*this, "image upload", *dst};

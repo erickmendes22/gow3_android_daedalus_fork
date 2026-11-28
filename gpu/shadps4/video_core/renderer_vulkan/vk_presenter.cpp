@@ -470,15 +470,14 @@ void Presenter::CompleteMaliCpuPresentation(const MaliCpuPresentJob& job) {
                 frame->mali_trace_source_uid, frame->width, frame->height, sent);
         }
 
-    // Fence completion, invalidate and AHB delivery must precede frame reuse.
-    if (!job.is_reusing_frame) {
+    // Both fresh and CPU redraw frames were exclusively removed from the
+    // free queue. Publish only after the fence and Android copy complete.
+    {
+        std::scoped_lock lock{free_mutex};
         last_submit_frame.store(frame, std::memory_order_release);
-        {
-            std::scoped_lock lock{free_mutex};
-            free_queue.push(frame);
-        }
-        free_cv.notify_one();
+        free_queue.push(frame);
     }
+    free_cv.notify_one();
     if (!mali_cpu_async && !job.is_reusing_frame && job.is_game_frame)
         DebugState.IncFlipFrameNum();
 }
@@ -558,6 +557,25 @@ Frame* Presenter::PrepareLastFrame() {
     }
 
     Frame* frame = last_submit_frame;
+#ifdef __ANDROID__
+    if (swapchain.UsesCpuPresentation()) {
+        // Atomically claim a free completed frame, or skip this host redraw.
+        // A guest flip may have taken the same pointer since it was published.
+        std::scoped_lock lock{free_mutex};
+        frame = last_submit_frame.load(std::memory_order_acquire);
+        if (!frame) return nullptr;
+        bool claimed = false;
+        const auto count = free_queue.size();
+        for (size_t i = 0; i < count; ++i) {
+            auto* candidate = free_queue.front();
+            free_queue.pop();
+            if (!claimed && candidate == frame) claimed = true;
+            else free_queue.push(candidate);
+        }
+        if (!claimed) return nullptr;
+        last_submit_frame.store(nullptr, std::memory_order_release);
+    }
+#endif
 
     while (true) {
         vk::Result result = instance.GetDevice().waitForFences(frame->present_done, false,
@@ -1121,16 +1139,18 @@ void Presenter::PresentLoadingFrame() {
     if (window.GetWidth() == 0 || window.GetHeight() == 0) {
         return;
     }
-    swapchain.UpdateVsync();
-    if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
-        swapchain.Recreate(window.GetWidth(), window.GetHeight());
-    }
 #ifdef __ANDROID__
     if (swapchain.UsesCpuPresentation()) {
+        // Present owns resize and AHB acquisition synchronization.
+        SetExpectedGameSize(window.GetWidth(), window.GetHeight());
         if (auto* frame = PrepareBlankFrame(true)) Present(frame, false, false);
         return;
     }
 #endif
+    swapchain.UpdateVsync();
+    if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
+        swapchain.Recreate(window.GetWidth(), window.GetHeight());
+    }
     if (!swapchain.AcquireNextImage()) {
         return;
     }
@@ -1185,10 +1205,15 @@ void Presenter::PresentLoadingFrame() {
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
     // Free the frame for reuse
+    if (!frame) return;
     const auto free_frame = [&] {
-        if (!is_reusing_frame) {
-            last_submit_frame = frame;
+        bool return_frame = !is_reusing_frame;
+#ifdef __ANDROID__
+        return_frame |= swapchain.UsesCpuPresentation();
+#endif
+        if (return_frame) {
             std::scoped_lock fl{free_mutex};
+            last_submit_frame = frame;
             free_queue.push(frame);
             free_cv.notify_one();
         }
@@ -1993,6 +2018,10 @@ Frame* Presenter::GetRenderFrame(bool from_guest_flip) {
         // Take the frame from the queue
         frame = free_queue.front();
         free_queue.pop();
+#ifdef __ANDROID__
+        if (swapchain.UsesCpuPresentation() && last_submit_frame.load() == frame)
+            last_submit_frame.store(nullptr, std::memory_order_release);
+#endif
     }
 
     const vk::Device device = instance.GetDevice();

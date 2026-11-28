@@ -2366,9 +2366,9 @@ void TextureCache::GarbageCollectImages() {
         // Preserve GC traversal order and synchronous guest-memory visibility.
         for (const auto& entry : gc_pending) {
             entry.download.staging.Invalidate();
-            Core::Memory::Instance()->TryWriteBacking(
-                std::bit_cast<u8*>(entry.download.guest_address),
-                entry.download.staging.mapped, entry.download.size);
+            PublishReadbackRows(entry.download.guest_address, entry.download.staging,
+                                entry.download.size, entry.download.row_bytes,
+                                entry.download.row_pitch);
             runtime.GetStagingPool().FreeDeferred(entry.download.staging);
             ++gc_downloads;
             ++gc_evictions;
@@ -2427,9 +2427,7 @@ void TextureCache::GarbageCollectImages() {
             // copy. For other shapes, overlap checks are bounded to 16 entries.
             const VAddr start = image.info.guest_address;
             const u64 end = start + image.info.guest_size;
-            const u64 bytes = u64{image.info.pitch} * image.info.size.height *
-                              image.info.size.depth * image.info.resources.layers *
-                              (image.info.num_bits / 8);
+            const u64 bytes = ImageDownloadBytes(image.info, mali_exact_readback_ranges);
             bool overlap = false;
             for (const auto& previous : gc_pending) {
                 if (start < previous.image_end && previous.image_address < end) {

@@ -25,7 +25,7 @@ class TestMaliGcBatchDownload(unittest.TestCase):
         positions=[fn.index(x) for x in (
             "scheduler.Finish();",
             "entry.download.staging.Invalidate();",
-            "Core::Memory::Instance()->TryWriteBacking(",
+            "PublishReadbackRows(entry.download.guest_address,",
             "runtime.GetStagingPool().FreeDeferred(entry.download.staging);",
             "FreeImage(entry.image_id);"
         )]
