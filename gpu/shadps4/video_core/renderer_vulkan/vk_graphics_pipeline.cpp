@@ -448,12 +448,14 @@ GraphicsPipeline::GraphicsPipeline(
     // In practice, we use dynamic state for all of it.
     constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil_info = {};
 
-    const vk::PipelineFragmentShadingRateStateCreateInfoKHR shading_rate_ci = {
-        .pNext = &pipeline_rendering_ci,
-        .fragmentSize = {1, 1},
-        .combinerOps = {vk::FragmentShadingRateCombinerOpKHR::eKeep,
-                        vk::FragmentShadingRateCombinerOpKHR::eKeep},
-    };
+    // Vulkan-Hpp's ArrayWrapper1D does not accept two scalar arguments.
+    // Initialize via indexed assignment (supported by both std::array and
+    // ArrayWrapper1D) rather than aggregate-initializing its wrapper.
+    vk::PipelineFragmentShadingRateStateCreateInfoKHR shading_rate_ci{};
+    shading_rate_ci.pNext = &pipeline_rendering_ci;
+    shading_rate_ci.fragmentSize = vk::Extent2D{1, 1};
+    shading_rate_ci.combinerOps[0] = vk::FragmentShadingRateCombinerOpKHR::eKeep;
+    shading_rate_ci.combinerOps[1] = vk::FragmentShadingRateCombinerOpKHR::eKeep;
     const vk::GraphicsPipelineCreateInfo pipeline_info = {
         .pNext = instance.IsUb2VrsSupported() ? static_cast<const void*>(&shading_rate_ci)
                                              : static_cast<const void*>(&pipeline_rendering_ci),
