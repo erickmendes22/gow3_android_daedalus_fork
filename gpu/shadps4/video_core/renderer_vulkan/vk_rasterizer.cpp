@@ -2423,7 +2423,37 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                               bool& barrier, bool on_helper) {
     const u32 first_image_idx = image_infos.size();
     TextureSet* set_slot = nullptr;
-    if (!on_helper && BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
+    // The memo previously required worker-prepared sharps, excluding Android's
+    // default zero-worker path. Snapshot only the read-only image descriptors.
+    std::array<AmdGpu::Image, TextureSet::MaxImages> serial_sharps;
+    std::array<u64, TextureSet::MaxImages> serial_hashes;
+    PreparedStage serial_images{};
+    const PreparedStage* image_prepared = prepared;
+#ifdef __ANDROID__
+    if (!on_helper && !prepared && !stage.images.empty() &&
+        stage.images.size() <= TextureSet::MaxImages &&
+        !Gow3Toggle::Disabled(Gow3Toggle::TextureSetMemo) && !FrameCapture::Active()) {
+        bool eligible = true;
+        for (const auto& image : stage.images) {
+            if (image.is_written ||
+                image.mip_fallback_mode != Shader::MipStorageFallbackMode::None) {
+                eligible = false;
+                break;
+            }
+        }
+        if (eligible) {
+            for (size_t i = 0; i < stage.images.size(); ++i) {
+                serial_sharps[i] = stage.images[i].GetSharp(stage);
+                serial_hashes[i] = ImageDescHash(serial_sharps[i], stage.images[i]);
+            }
+            serial_images.image_sharps = serial_sharps.data();
+            serial_images.image_hashes = serial_hashes.data();
+            serial_images.num_images = static_cast<u32>(stage.images.size());
+            image_prepared = &serial_images;
+        }
+    }
+#endif
+    if (!on_helper && BindTexturesFromSet(stage, image_prepared, first_image_idx, barrier, set_slot)) {
         // Descriptor writes: one per image (no mip arrays in a memoized set).
         for (u32 i = 0; i < stage.images.size(); ++i) {
             auto& set_write = set_writes[write_index++];
@@ -2456,7 +2486,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
         const auto& image_desc = stage.images[image_index];
         const auto tsharp =
-            prepared ? prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
+            image_prepared ? image_prepared->image_sharps[image_index] : image_desc.GetSharp(stage);
         // gow3: a hash lookup per texture per draw for a diagnostic only.
         static const bool warn_meta = std::getenv("GOW3_WARN_META_TEXTURE") != nullptr;
         if (warn_meta && texture_cache.IsMeta(tsharp.Address())) {
@@ -2498,8 +2528,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                                      mip_fallback_mode == Shader::MipStorageFallbackMode::None;
 
         auto& desc_entry =
-            prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
-                     : CachedImageDescEntry(tsharp, image_desc);
+            image_prepared
+                ? CachedImageDescEntry(tsharp, image_desc, image_prepared->image_hashes[image_index])
+                : CachedImageDescEntry(tsharp, image_desc);
         // GOW3_SCENE_DEBUG: proxied scene targets this binding reads at the native size, and why.
         const auto debug_native = [&](const VideoCore::Image& image) {
             if (!scene_debug_frame || proxy_candidate || !image.scene_proxy) return;
