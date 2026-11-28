@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <cstring>
+#include <xxhash.h>
 #include <vector>
 #include <magic_enum/magic_enum.hpp>
 #include "gow3_copy.h"
@@ -373,6 +375,35 @@ void PrintBufferStats() {
 }
 } // namespace
 
+u64 BufferCache::CopyImmutableConstants(const void* data, u32 size, u64 alignment) {
+    static const bool enabled = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    if (!enabled || !size || size > 256)
+        return stream_buffer.Copy(data, size, alignment);
+    const u64 hash = XXH3_64bits(data, size);
+    auto& entry = immutable_constants[hash % immutable_constants.size()];
+    const u64 tick = scheduler.CurrentTick();
+    ++immutable_constant_calls;
+    if (entry.tick == tick && entry.size == size &&
+        (!alignment || entry.offset % alignment == 0) &&
+        std::memcmp(entry.bytes.data(), data, size) == 0) {
+        ++immutable_constant_hits;
+        if ((immutable_constant_calls & 65535u) == 0)
+            std::printf("GOW3_MALI_IMMUTABLE_UBO calls=%llu hits=%llu\n",
+                        (unsigned long long)immutable_constant_calls,
+                        (unsigned long long)immutable_constant_hits);
+        return entry.offset;
+    }
+    const u64 offset = stream_buffer.Copy(data, size, alignment);
+    // Copy() may submit while wrapping; use the tick of the actual allocation.
+    // The stream allocator cannot overwrite this offset before that tick retires.
+    entry.tick = scheduler.CurrentTick();
+    entry.offset = offset;
+    entry.size = size;
+    std::memcpy(entry.bytes.data(), data, size);
+    return offset;
+}
+
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
     texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
@@ -389,6 +420,15 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             auto& region = Stats().regions[RegionKey(device_addr)];
             ++region.stream_count;
             region.stream_bytes += size;
+        }
+        // Use a fresh, CPU-authoritative snapshot, not guest address identity.
+        // Limit to small, non-texel read-only buffers; preserve all GPU-written paths.
+        if (resolved_backing && size && size <= 256 && !is_texel_buffer &&
+            !stream_buffer.mapped_data.empty()) {
+            std::array<u8, 256> snapshot;
+            memory->CopyResolvedImageBacking(device_addr, snapshot.data(), size);
+            return {&stream_buffer, CopyImmutableConstants(snapshot.data(), size,
+                                                           instance.UniformMinAlignment())};
         }
         // gow3: the guest data is copied on a copy thread, started now; submission and
         // guest-visible fences wait for it (Scheduler::WaitHostCopies).

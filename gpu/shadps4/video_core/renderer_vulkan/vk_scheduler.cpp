@@ -116,6 +116,21 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
             }
             effective_state.width = u16(std::min<u32>(effective_state.width, right));
             effective_state.height = u16(std::min<u32>(effective_state.height, bottom));
+            if (is_rendering && !render_state.depth_stencil_attachment.has_depth &&
+                !render_state.depth_stencil_attachment.has_stencil &&
+                effective_state.width <= render_state.width &&
+                effective_state.height <= render_state.height &&
+                render_state.width <= new_state.width && render_state.height <= new_state.height) {
+                bool previous_has_color = false;
+                for (u32 cb = 0; cb < render_state.num_color_attachments; ++cb)
+                    previous_has_color |= bool(render_state.color_attachments[cb].image_view);
+                if (!previous_has_color) {
+                    // The current scissor still bounds all fragment work.
+                    // Shrinking the render area would only force a tile split.
+                    effective_state.width = render_state.width;
+                    effective_state.height = render_state.height;
+                }
+            }
         }
     }
 #endif
@@ -760,7 +775,14 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
     const auto* push_bytes = static_cast<const u8*>(push_data);
     const auto write_count = writes.size();
     append(&write_count, sizeof(write_count));
+    bool unique_writes = true;
+    u32 previous_binding = 0;
+    bool first_binding = true;
     for (const auto& w : writes) {
+        unique_writes &= w.descriptorCount == 1 && w.dstArrayElement == 0 &&
+                         (first_binding || w.dstBinding > previous_binding);
+        previous_binding = w.dstBinding;
+        first_binding = false;
         if (w.pNext) { cacheable = false; break; }
         append(&w.dstBinding, sizeof(w.dstBinding));
         append(&w.dstArrayElement, sizeof(w.dstArrayElement));
@@ -821,8 +843,8 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
     if (!same_descriptors && !writes.empty()) {
         auto& changed = graphics_changed_writes;
         changed.clear();
-        if (same_layout && ends.size() == writes.size() &&
-            last_graphics_write_ends.size() == ends.size()) {
+        if (same_layout && unique_writes && last_graphics_unique_writes &&
+            ends.size() == writes.size() && last_graphics_write_ends.size() == ends.size()) {
             size_t begin = sizeof(write_count), old_begin = sizeof(write_count);
             for (size_t i = 0; i < writes.size(); ++i) {
                 const size_t end = ends[i], old_end = last_graphics_write_ends[i];
@@ -843,6 +865,7 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
     }
     last_graphics_resource_layout = cacheable ? layout : vk::PipelineLayout{};
     last_graphics_resource_stages = stages;
+    last_graphics_unique_writes = cacheable && unique_writes;
     if (cacheable) {
         if (!same_descriptors) {
             last_graphics_resource_key.swap(key);
@@ -935,7 +958,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                !(opt_out && opt_out[0] == '1');
     }();
     const auto wait_for_capacity = [&] {
-    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
+    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions &&
+        !work_semaphore.IsFree(signal_value - MaxAndroidInFlightSubmissions)) {
         // Every forced wait is measured: this is precisely the suspected
         // 60->5 FPS menu bottleneck, unlike AHB copy timing. The readback,
         // guest-memory and presentation fences remain intact.

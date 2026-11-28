@@ -77,6 +77,9 @@ public:
         return stream_buffer;
     }
 
+    /// Byte-exact, immutable read-only snapshots, reused within the same submission.
+    u64 CopyImmutableConstants(const void* data, u32 size, u64 alignment);
+
     /// Returns minimum granularity of a sparse memory bind.
     u32 GetSparsePageShift() const noexcept {
         return block_shift;
@@ -172,6 +175,13 @@ private:
     std::unique_ptr<MemoryTracker> memory_tracker;
 
     StreamBuffer stream_buffer;
+    struct ImmutableConstant {
+        u64 tick{}, offset{};
+        u32 size{};
+        std::array<u8, 256> bytes{};
+    };
+    std::array<ImmutableConstant, 128> immutable_constants{};
+    u64 immutable_constant_hits{}, immutable_constant_calls{};
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
 

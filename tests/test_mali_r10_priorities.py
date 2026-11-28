@@ -217,4 +217,14 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("partial_writes_skipped",S)
         self.assertIn("FlushNativeDrawBatch(current_cmdbuf)",S.split("void Scheduler::SyncRecording()",1)[1].split("void Scheduler::RecorderThread",1)[0])
         self.assertIn("scheduler.RecordGraphicsOrdered([this, image = src->GetImage()",RT)
+    def test_r15_immutable_constants_and_attachmentless_area(self):
+        bc=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
+        immutable=bc.split("u64 BufferCache::CopyImmutableConstants",1)[1].split("BufferCache::ObtainBuffer(",1)[0]
+        self.assertIn("entry.tick == tick",immutable)
+        self.assertIn("std::memcmp(entry.bytes.data(), data, size) == 0",immutable)
+        self.assertIn("entry.tick = scheduler.CurrentTick()",immutable)
+        self.assertIn("size <= 256 && !is_texel_buffer",bc)
+        self.assertIn("unique_writes && last_graphics_unique_writes",S)
+        self.assertIn("effective_state.width <= render_state.width",S)
+        self.assertIn("!work_semaphore.IsFree(signal_value - MaxAndroidInFlightSubmissions)",S)
 if __name__=="__main__": unittest.main()
