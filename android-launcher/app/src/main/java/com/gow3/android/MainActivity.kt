@@ -70,6 +70,14 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java))
                         }
                     },
+                    onCompileAot = {
+                        if (!hasStoragePermission()) {
+                            ensureInitialStorage()
+                        } else if (gameFolderManager.hasGameFolder()) {
+                            startActivity(Intent(this, ro.cobrabm.fexdroid.GameActivity::class.java)
+                                .putExtra("action", ro.cobrabm.fexdroid.GameActivity.ACTION_COMPILE_AOT))
+                        }
+                    },
                     onChooseGameFolder = { gameFolderManager.chooseGameFolder() },
                     onChooseUpdateFolder = { gameFolderManager.chooseUpdateFolder() },
                     onInstallBasePkg = { pkgInstallManager.pickBasePkg() },

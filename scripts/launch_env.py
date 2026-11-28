@@ -43,19 +43,23 @@ def derive(game, config, state_path, env):
     # Upgrade previous duplicated pixel-size entries before preparing the launch
     # state, so both launchers and the persisted ini agree on one canonical name.
     old_ini = graphics_options.read_ini(config)
+    compile_only = env.get('GOW3_AOT_COMPILE_ONLY') == '1'
     previous = old_ini.get('render_resolution')
-    if previous is not None:
+    if not compile_only and previous is not None:
         canonical = graphics_options.canonical_resolution(previous)
         if canonical != previous:
             graphics_options.write_keys(config, {'render_resolution': canonical})
-    graphics, reverted = graphics_options.prepare(config, state_path)
+    if compile_only:
+        graphics, reverted = graphics_options.startup_options(old_ini), False
+    else:
+        graphics, reverted = graphics_options.prepare(config, state_path)
     android_port = env.get('GOW3_ANDROID_PORT') == '1'
     ini = graphics_options.read_ini(config)
     # Earlier Android builds wrote no frames_queued key and silently used one
     # in-flight frame, forcing the CPU submission thread to wait for the GPU
     # once each frame. Use two only when that key is absent; explicit 1/2/0
     # choices remain untouched. The in-game setting still controls latency.
-    if android_port and 'frames_queued' not in ini:
+    if android_port and not compile_only and 'frames_queued' not in ini:
         graphics_options.write_keys(config, {'frames_queued': '2'})
         ini = graphics_options.read_ini(config)
     # Bionic opt-in Snapdragon GSR2: unlike the broken old FSR3 Android route,

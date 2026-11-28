@@ -3,7 +3,6 @@
 """Compile a user's linked GoW III image locally for the Android AOT runtime."""
 import argparse
 from bisect import bisect_left
-import ctypes
 import fcntl
 import hashlib
 import json
@@ -119,14 +118,33 @@ def verify_units(library, stats):
     return meta['unit_count']
 
 
-def exit_with_parent():
-    parent = os.getppid()
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(1, signal.SIGTERM, 0, 0, 0) != 0 or os.getppid() != parent or parent == 1:
-        raise OSError('AOT compiler could not attach to the launcher process')
+def run_compiler(command, parent):
+    if parent is None:
+        subprocess.run(command, stdout=sys.stderr, stderr=sys.stderr, check=True)
+        return
+    if parent == 1 or os.getppid() != parent:
+        raise OSError('AOT launcher is no longer running')
+    with subprocess.Popen(command, stdout=sys.stderr, stderr=sys.stderr,
+                          start_new_session=True) as compiler:
+        while True:
+            try:
+                result = compiler.wait(timeout=0.5)
+                if result:
+                    raise subprocess.CalledProcessError(result, command)
+                return
+            except subprocess.TimeoutExpired:
+                if os.getppid() == parent:
+                    continue
+                try:
+                    os.killpg(compiler.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                compiler.wait()
+                raise OSError('AOT compilation cancelled')
 
 
 def compile_local(args):
+    parent = os.getppid() if args.android else None
     identity = patch_profile_status(args.game)
     version = identity['app_version']
     if (identity['title_id'] not in {'CUSA01623', 'CUSA01715'} or
@@ -143,7 +161,7 @@ def compile_local(args):
     report = work / 'aot-report.json'
     stats = work / 'compile.txt'
     with (work / 'compile.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
             recorded = json.loads(report.read_text())
             ready = (recorded['profile'] == key and recorded['boot_sha256'] == digest(native) and
@@ -159,11 +177,9 @@ def compile_local(args):
                 stream.write(b'BBPROBE5')
             print('AOT: compiling locally on Android, ARM64, TSO off', file=sys.stderr, flush=True)
             try:
-                subprocess.run([str(args.compiler), '--boot', str(bb_boot), '--game-dir', str(args.game),
-                                '--so', str(library), '--stats', str(stats), '--bundle-dir', str(args.bundle),
-                                '--jobs', '2', '--shards', '64', *FLAGS],
-                               stdout=sys.stderr, stderr=sys.stderr, check=True,
-                               preexec_fn=exit_with_parent if args.android else None)
+                run_compiler([str(args.compiler), '--boot', str(bb_boot), '--game-dir', str(args.game),
+                              '--so', str(library), '--stats', str(stats), '--bundle-dir', str(args.bundle),
+                              '--jobs', '2', '--shards', '64', *FLAGS], parent)
                 units = verify_units(library, stats)
                 status = {'profile': key, 'revision': version, 'units': units, 'tso': 'off',
                           'boot_sha256': digest(native), 'library_sha256': digest(library)}
@@ -182,8 +198,6 @@ def main():
     parser.add_argument('--android', action='store_true')
     args = parser.parse_args()
     try:
-        if args.android:
-            exit_with_parent()
         compile_local(args)
     except (OSError, ValueError, struct.error, subprocess.SubprocessError) as error:
         print(f'AOT: {error}', file=sys.stderr)

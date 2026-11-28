@@ -1,0 +1,29 @@
+name: GoW III UB2 AOT launcher fix
+
+on:
+  push:
+    branches: [fix/gow3-ub2-aot-compile-entry]
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-37.0 build-tools;36.0.0'
+      - name: Build the Android launcher
+        run: bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gow3-ub2-aot-launcher-fix
+          path: android-launcher/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

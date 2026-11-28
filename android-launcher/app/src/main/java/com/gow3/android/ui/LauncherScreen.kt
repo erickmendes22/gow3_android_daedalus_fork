@@ -48,6 +48,7 @@ private enum class LauncherTab { HOME, MODS, SETTINGS, ABOUT }
 @Composable
 internal fun LauncherScreen(
     onStartGame: () -> Unit,
+    onCompileAot: () -> Unit,
     onChooseGameFolder: () -> Unit,
     onChooseUpdateFolder: () -> Unit,
     onInstallBasePkg: () -> Unit,
@@ -83,7 +84,9 @@ internal fun LauncherScreen(
                     .background(Brush.radialGradient(listOf(LauncherColors.backgroundTop.copy(alpha = 0.55f), LauncherColors.backgroundBottom.copy(alpha = 0.85f)), radius = 950f)),
             )
             when (tab) {
-                LauncherTab.HOME -> HomeScreen(onStartGame, onChooseGameFolder, onChooseUpdateFolder, onInstallBasePkg, onInstallUpdatePkg, pkgInstallBusy, pkgInstallMessage, pkgGeneration, onChangeLanguage)
+                LauncherTab.HOME -> HomeScreen(onStartGame, onCompileAot, onChooseGameFolder,
+                    onChooseUpdateFolder, onInstallBasePkg, onInstallUpdatePkg, pkgInstallBusy,
+                    pkgInstallMessage, pkgGeneration, onChangeLanguage)
                 LauncherTab.MODS -> ModsScreen()
                 LauncherTab.SETTINGS -> GeneralSettingsScreen(saves, logs, onChangeLanguage)
                 LauncherTab.ABOUT -> AboutScreen(saves, logs, onChangeLanguage)

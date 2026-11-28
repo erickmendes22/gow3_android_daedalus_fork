@@ -14,6 +14,10 @@ export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/" FEX_APP_DATA_LOCATION="$HOME/.f
 export GOW3_BIONIC_RUNNER="$base/run-bionic.sh"
 export GOW3_CONFIG="$base/gow3.ini"
 unset BB_AOT BB_AOT_MISS_LOG
+mode=${1:-game}
+if [ "$mode" = aot-compile ]; then
+    export GOW3_AOT_COMPILE_ONLY=1 GOW3_BIONIC_DRIVER=system
+fi
 mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/logs"
 # The in-game capture menu writes this trigger. The renderer dumps 6 actual
 # consecutive GSR2 VideoOut dispatches (raw scene/depth/motion/output) here.
@@ -109,7 +113,9 @@ trap '
 ' EXIT
 echo "Mods: load_mods=$mods_on game_view=$game"
 vulkan_status=ok
-"$probe" --vulkan-only || { echo 'Bionic Vulkan driver initialization failed' >&2; exit 4; }
+if [ "$mode" != aot-compile ]; then
+    "$probe" --vulkan-only || { echo 'Bionic Vulkan driver initialization failed' >&2; exit 4; }
+fi
 "$runtime/bin/gow3-prepare" "$game" "$out"
 # Graphics options, patch selection and the direct memory (DMEM)/VBlank the selected patches need.
 # GOW3_DEVICE_MEM_MB lets launch_env.py gate the patches by the device's RAM (insufficient-memory-budget).
@@ -142,7 +148,8 @@ unset GOW3_ANDROID_FSR_FIXED_OUTPUT GOW3_RENDER_RES GOW3_PATCH_INPUT_RES
 export GOW3_UPSCALER=none
 export GOW3_FSR1=0
 export GOW3_RCAS=0
-eval "$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)"
+launch_env=$("$python" "$base/scripts/launch_env.py" --game "$game" --config "$GOW3_CONFIG" --state "$out/graphics_state.json" --shell)
+eval "$launch_env"
 if [ "${GOW3_ANDROID_8GB_MEMORY:-0}" = 1 ]; then
     echo "GPU memory policy: 8gb-low-memory (physical=${GOW3_DEVICE_MEM_MB:-unknown} MiB, stream=128 MiB, staging-retain=${GOW3_STAGING_KEEP_MB:-32} MiB per host ring)"
 fi
@@ -216,18 +223,19 @@ case "$present_size" in
 esac
 
 cd "$base"
-echo "Bionic: driver=$turnip chip=$chip; starting God of War III"
 set -- "$out/boot-linked.bin" --patches "$out/patches.bin"
-if [ "${GOW3_CPU_AOT:-0}" = 1 ]; then
-    compiler="${GOW3_AOT_COMPILER:-}"
+if [ "$mode" = aot-compile ] || [ "${GOW3_CPU_AOT:-0}" = 1 ]; then
+    compiler="$runtime/aot/bin/libbbrecomp.so"
     [ -x "$compiler" ] || { echo 'AOT: Android compiler unavailable' >&2; exit 5; }
     aot=$(exec "$python" "$base/scripts/aot_local.py" --android --game "$game" \
         --boot "$out/boot-linked.bin" --patches "$out/patches.bin" \
         --out "$files/gow3-aot" --compiler "$compiler" --bundle "$runtime/aot/bundle") || exit 5
+    echo 'AOT: local ARM64 code ready (TSO off)'
+    if [ "$mode" = aot-compile ]; then exit 0; fi
     export LD_LIBRARY_PATH="$runtime/aot/backend:$LD_LIBRARY_PATH"
     export BB_AOT="$aot/libgow3aot.so" BB_AOT_MISS_LOG="$base/logs/aot-misses.log"
-    echo 'AOT: local ARM64 code ready (TSO off)'
     set -- "$aot/boot-native.bin"
 fi
+echo "Bionic: driver=$turnip chip=$chip; starting God of War III"
 "$probe" "$@" --content-profile "$out/content.bin" \
     --app0 "$game" --user "$base/user" --timeout "${GOW3_TIMEOUT:-0}"

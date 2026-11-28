@@ -45,6 +45,8 @@ import java.util.regex.Pattern;
 
 /** God of War III-only Android player. Keeps the game surface alive beneath its sliding drawer. */
 public final class GameActivity extends Activity {
+    public static final String ACTION_COMPILE_AOT = "compile-aot";
+    private boolean compileOnly;
     /** The app's files (application id com.gow3.android), its Linux rootfs and gow3port runtime.
      *  Rootfs programs are launched through the in-tree loader when their PT_INTERP slot cannot
      *  hold the app-private path. */
@@ -102,6 +104,11 @@ public final class GameActivity extends Activity {
         gameDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("game_dir",null);
         updateDir=getSharedPreferences("gow3",MODE_PRIVATE).getString("update_dir",null);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        compileOnly=ACTION_COMPILE_AOT.equals(getIntent().getStringExtra("action"));
+        if (compileOnly) {
+            showAotCompilation();
+            return;
+        }
         if (Build.VERSION.SDK_INT>=28) {
             WindowManager.LayoutParams attrs=getWindow().getAttributes();
             attrs.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -277,7 +284,7 @@ public final class GameActivity extends Activity {
 
         section("Game");
         resume=menuItem("ic_play","Resume game",null,() -> closeDrawer());
-        if (bionicRuntime() && aotCompiler().canExecute()) {
+        if ("com.gow3.android.bionic.ub2".equals(getPackageName())) {
             menuItem("ic_settings","CPU mode",null,this::showCpuMode);
         }
         /* Game settings 与 Cheats 两个入口已隐藏（对应 SettingsDialog.showGame()/showCheats() 也已
@@ -399,8 +406,29 @@ public final class GameActivity extends Activity {
         worker.execute(() -> { stopGame(); startGame(); });
     }
 
-    private File aotCompiler() {
-        return new File(getApplicationInfo().nativeLibraryDir,"libbbrecomp.so");
+    private void showAotCompilation() {
+        LinearLayout content=new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
+        content.setPadding(dp(24),dp(24),dp(24),dp(24));
+        content.setBackgroundColor(0xff121318);
+        status=text("Preparing local ARM64 compilation…",18,0xffc6ad76);
+        status.setGravity(Gravity.CENTER);
+        content.addView(status,new LinearLayout.LayoutParams(-1,-2));
+        android.widget.Button back=new android.widget.Button(this);
+        back.setText(UiText.get(this,"Return"));
+        back.setOnClickListener(v -> finish());
+        content.addView(back);
+        setContentView(content);
+        worker.execute(() -> {
+            try {
+                RuntimeInstaller.ensure(this,new File(FILES),
+                    message -> main.post(() -> status.setText(UiText.get(this,message))));
+                startGame();
+            } catch (Exception ex) {
+                error(ex.toString());
+            }
+        });
     }
 
     private void showCpuMode() {
@@ -577,9 +605,13 @@ public final class GameActivity extends Activity {
         super.onWindowFocusChanged(focus);
         if (focus) immersive(); else if (pad!=null) pad.reset();
     }
-    @Override public void onBackPressed() { if (drawerOpen) closeDrawer(); else openDrawer(); }
+    @Override public void onBackPressed() {
+        if (compileOnly) { finish(); return; }
+        if (drawerOpen) closeDrawer(); else openDrawer();
+    }
 
     @Override public boolean dispatchTouchEvent(MotionEvent e) {
+        if (compileOnly) return super.dispatchTouchEvent(e);
         if (e.getActionMasked()==MotionEvent.ACTION_DOWN) {
             swipeConsumed=false;
             touchX=e.getX(); touchY=e.getY();
@@ -605,6 +637,7 @@ public final class GameActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (compileOnly) return super.dispatchKeyEvent(e);
         int code=e.getKeyCode();
         if (code==KeyEvent.KEYCODE_BACK || code==KeyEvent.KEYCODE_BUTTON_MODE) {
             if (e.getAction()==KeyEvent.ACTION_UP) onBackPressed(); return true;
@@ -627,6 +660,7 @@ public final class GameActivity extends Activity {
         return super.dispatchKeyEvent(e);
     }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (compileOnly) return super.dispatchGenericMotionEvent(e);
         if (drawerOpen && e.isFromSource(android.view.InputDevice.SOURCE_JOYSTICK)) return true;
         return pad.motion(e) || super.dispatchGenericMotionEvent(e);
     }
@@ -660,10 +694,9 @@ public final class GameActivity extends Activity {
         if (gameDir!=null) env.put("GOW3_GAME_DIR",gameDir);
         if (updateDir!=null) env.put("GOW3_PATCH_DIR",updateDir);
         if (bionicRuntime()) {
-            GpuDriverManager.configureEnvironment(this,env);
+            if (!compileOnly) GpuDriverManager.configureEnvironment(this,env);
             if (getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("cpu_aot",false)) {
                 env.put("GOW3_CPU_AOT","1");
-                env.put("GOW3_AOT_COMPILER",aotCompiler().getAbsolutePath());
             }
             env.put("GOW3_SCREEN_W","1280"); env.put("GOW3_SCREEN_H","720");
             env.put("PATH","/system/bin"); env.put("TMPDIR",BASE+"/tmp"); env.put("XDG_RUNTIME_DIR",BASE+"/tmp");
@@ -1067,7 +1100,8 @@ public final class GameActivity extends Activity {
         hadError=false;
         new File(BASE,"ime.request").delete(); new File(BASE,"ime.request.result").delete();
         try {
-            Process launched=bionicRuntime() ? process("/system/bin/sh",BASE+"/run-bionic.sh","game")
+            Process launched=bionicRuntime() ? process("/system/bin/sh",BASE+"/run-bionic.sh",
+                    compileOnly ? "aot-compile" : "game")
                 : process(ROOT+"/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
                     ROOT+"/bin/sh",BASE+"/run-gow3.sh","game"); game=launched;
             Thread log=new Thread(() -> {
@@ -1090,7 +1124,12 @@ public final class GameActivity extends Activity {
                         // run-gow3.sh exits 4 when Vulkan/Turnip cannot initialize: the driver
                         // failure must not be reported as validated texture integrity.
                         if (code==4) error("Graphics initialization failed (Vulkan/Turnip). See logs/android-game.log.");
-                        else if (code==5) error("Local ARM64 compilation failed. See logs/android-game.log.");
+                        else if (compileOnly && code==0) main.post(() -> {
+                            if (destroyed) return;
+                            getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("cpu_aot",true).apply();
+                            status.setText(UiText.get(this,"Local ARM64 compilation complete. AOT is enabled for Play."));
+                        });
+                        else if (compileOnly || code==5) error("Local ARM64 compilation failed. See logs/android-game.log.");
                         else error("Game stopped ("+code+"). Open the menu to restart.");
                     }
                 } catch (Exception ex) {
@@ -1112,8 +1151,13 @@ public final class GameActivity extends Activity {
     }
     @Override protected void onDestroy() {
         destroyed=true; if (perfHud!=null) perfHud.release();
-        pad.reset(); audio.stop(); main.removeCallbacksAndMessages(null);
-        if (bionicRuntime()) Gow3Present.stop(); else DisplayBridge.stop(); stopGame(); if (xvfb!=null) xvfb.destroyForcibly();
+        if (pad!=null) pad.reset();
+        if (audio!=null) audio.stop();
+        main.removeCallbacksAndMessages(null);
+        if (!compileOnly) {
+            if (bionicRuntime()) Gow3Present.stop(); else DisplayBridge.stop();
+        }
+        stopGame(); if (xvfb!=null) xvfb.destroyForcibly();
         worker.shutdownNow(); super.onDestroy();
     }
 }

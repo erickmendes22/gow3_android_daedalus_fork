@@ -46,6 +46,7 @@ import java.io.File
 @Composable
 internal fun HomeScreen(
     onStartGame: () -> Unit,
+    onCompileAot: () -> Unit,
     onChooseGameFolder: () -> Unit,
     onChooseUpdateFolder: () -> Unit,
     onInstallBasePkg: () -> Unit,
@@ -96,6 +97,10 @@ internal fun HomeScreen(
             color = LauncherColors.textMuted, fontSize = 12.sp, maxLines = 1)
         HomeSection {
             LaunchButton(onStartGame)
+            if (context.packageName == "com.gow3.android.bionic.ub2") {
+                HomeAction(stringResource(R.string.home_compile_aot), enabled = !pkgInstallBusy,
+                    onClick = onCompileAot)
+            }
             HomeAction(stringResource(R.string.home_select_game), onClick = onChooseGameFolder)
             HomeAction(stringResource(R.string.home_select_update), onClick = onChooseUpdateFolder)
             HomeAction(stringResource(R.string.home_install_pkg), enabled = !pkgInstallBusy, onClick = onInstallBasePkg)
