@@ -107,8 +107,10 @@ def derive(game, config, state_path, env):
     resolution = graphics['render_resolution']
     if android_port and resolution in graphics_options.DIRECT_RESOLUTIONS:
         if (identity_check['title_id'] in ('CUSA01623', 'CUSA01715') and
-            identity_check['app_version'] == '01.02' and
-            identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA and
+            ((identity_check['app_version'] == '01.02' and
+              identity_check['eboot_sha256'] == CUSA01715_0102_ANDROID_SHA) or
+             (identity_check['title_id'] == 'CUSA01623' and
+              identity_check['app_version'] == '01.00')) and
             identity_check['reason'] == 'validated'):
             updates['GOW3_PATCH_INPUT_RES'] = graphics_options.DIRECT_PIXEL_RESOLUTIONS[resolution]
             updates['GOW3_RESOLUTION_STATUS'] = 'verified-direct-game-patch'
