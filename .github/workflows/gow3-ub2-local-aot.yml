@@ -1,0 +1,76 @@
+name: GoW III UB2 local AOT integration
+
+on:
+  push:
+    branches: [perf/gow3-ub2-local-aot]
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      GOW3_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;29.0.14206865'
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Compile the renderer and probe
+        shell: bash -el {0}
+        run: |
+          set -eo pipefail
+          export GOW3_NDK="$ANDROID_HOME/ndk/29.0.14206865"
+          export GOW3_BIONIC_HEADERS="$CONDA_PREFIX"
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh
+          mkdir -p out/bionic/lib
+          curl -fLsS --retry 4 --retry-all-errors --max-time 100 \
+            https://github.com/erickmendes22/gow3_android_daedalus_fork/releases/download/v2.1.8-daedalus-bionic/God-of-War-III-Daedalus-Fork-v2.1.8-bionic-arm64.apk \
+            -o out/baseline.apk
+          echo 'bffc0edf6e70738423963ede8a76a2a0274320f6e18671302a0a589a6dcc879f  out/baseline.apk' | sha256sum -c -
+          unzip -p out/baseline.apk assets/runtime.payload | tar -xOzf - gow3port/arm64/lib/libgow3cpu.so > out/bionic/lib/libgow3cpu.so
+          bash tools/android/bionic/build_runtime.sh --probe-only
+          llvm="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$llvm/llvm-strip" --strip-unneeded out/bionic/lib/libgow3gpu.so out/bionic/bin/gow3-probe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gow3-ub2-aot-runtime
+          path: |
+            out/bionic/lib/libgow3gpu.so
+            out/bionic/bin/gow3-probe
+          if-no-files-found: error
+
+  launcher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-37.0 build-tools;36.0.0'
+      - name: Build the Android launcher
+        run: bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gow3-ub2-aot-launcher
+          path: android-launcher/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

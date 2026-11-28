@@ -50,21 +50,28 @@ public:
         static WaitDiagnostics stats;
         return stats;
     }
+    static WaitDiagnostics& HostCopies() {
+        static WaitDiagnostics stats;
+        return stats;
+    }
     static void Report() {
         if (!Enabled()) return;
-        auto rows = Get().Take();
+        ReportRows(Get().Take(), "Wait profile", "semaphore wait");
+        ReportRows(HostCopies().Take(), "Host copy wait", "copy completion");
+    }
+private:
+    static void ReportRows(std::array<Entry, 64> rows, const char* label, const char* wait_label) {
         std::sort(rows.begin(), rows.end(), [](const Entry& a, const Entry& b) {
             return a.submit_ns + a.wait_ns > b.submit_ns + b.wait_ns;
         });
         for (const auto& row : rows) {
             if (!row.calls) continue;
             const auto filename = row.file.substr(row.file.find_last_of("/\\") + 1);
-            std::printf("Wait profile: %.*s:%u; %u calls, CPU submit %.3f ms, semaphore wait %.3f ms, max wait %.3f ms\n",
-                        int(filename.size()), filename.data(), row.line, row.calls,
-                        row.submit_ns / 1e6, row.wait_ns / 1e6, row.max_wait_ns / 1e6);
+            std::printf("%s: %.*s:%u; %u calls, CPU submit %.3f ms, %s %.3f ms, max wait %.3f ms\n",
+                        label, int(filename.size()), filename.data(), row.line, row.calls,
+                        row.submit_ns / 1e6, wait_label, row.wait_ns / 1e6, row.max_wait_ns / 1e6);
         }
     }
-private:
     std::mutex mutex;
     std::array<Entry, 64> entries{};
 };

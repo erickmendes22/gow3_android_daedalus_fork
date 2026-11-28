@@ -10,7 +10,7 @@ api=${GOW3_BIONIC_API:-30}
 llvm=$ndk/toolchains/llvm/prebuilt/linux-x86_64
 out=$PWD/out/bionic
 prefix=$PWD/.local-deps/android/bionic-prefix
-if [[ ${1:-} != --link-only ]]; then
+if [[ ${1:-} != --link-only && ${1:-} != --probe-only ]]; then
     bash tools/android/bionic/build_deps.sh
     bash tools/android/bionic/build_gpu.sh --configure-only
     bash tools/android/bionic/build_cpu.sh
@@ -33,6 +33,7 @@ done
     "$prefix/lib/libavformat.a" "$prefix/lib/libavcodec.a" "$prefix/lib/libswscale.a" \
     "$prefix/lib/libswresample.a" "$prefix/lib/libavutil.a" -L"$out/lib" -lgow3gpu -lgow3cpu -lc++_shared \
     -lm -ldl -pthread -Wl,--exclude-libs,libavcodec.a:libavformat.a:libavutil.a:libswscale.a:libswresample.a -rdynamic -pie -Wl,-rpath,'$ORIGIN/../lib' -o "$out/bin/gow3-probe"
+if [[ ${1:-} == --probe-only ]]; then exit 0; fi
 "${cc[@]}" -std=c11 -O2 -Wall -Wextra -Werror -pie tools/android/build/kgsl_chip_id.c -o "$out/bin/kgsl-chip-id"
 "${cc[@]}" -std=c11 -O2 -g -Wall -Wextra -Werror -fPIC -shared -Itools/android/present \
     tools/android/bionic/present/gow3present.c -lnativewindow -landroid -llog -ldl -o "$out/lib/libgow3present.so"

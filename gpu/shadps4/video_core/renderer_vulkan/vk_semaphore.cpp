@@ -29,6 +29,11 @@ Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
 Semaphore::~Semaphore() = default;
 
 void Semaphore::Refresh() {
+    // The recording tick has not been submitted. If all older ticks are
+    // already known complete, a driver query cannot retire useful work.
+    if (KnownGpuTick() >= CurrentTick() - 1) {
+        return;
+    }
     u64 this_tick{};
     u64 counter{};
     do {

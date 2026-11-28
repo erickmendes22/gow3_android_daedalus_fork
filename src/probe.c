@@ -817,6 +817,7 @@ int main(int argc, char **argv) {
         return 2;
     }
 #endif
+    if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
 #ifndef _WIN32
     /* Keep host heap objects handed to the guest (thread handles, TLS) in the
        non-PIE brk heap, i.e. below 1 TiB: the guest packs pointers into 40 bits. */
@@ -832,7 +833,6 @@ int main(int argc, char **argv) {
      * 1 TiB). No-op on x86-64 hosts (src/runtime_cpu.c). */
     guest_cpu_init(runtime_low_map);
 #endif
-    if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
 #ifdef _WIN32
     /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
      * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
@@ -1084,8 +1084,10 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_actor_watch(app0, segments, ns, size);
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
 #else
-    if (gpu_enabled) install_cheats_fex(app0, segments, ns, size);
-    if (gpu_enabled) install_auto_qte_fex(segments, ns, size);
+    if (gpu_enabled && !getenv("BB_AOT")) {
+        install_cheats_fex(app0, segments, ns, size);
+        install_auto_qte_fex(segments, ns, size);
+    }
 #endif
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));

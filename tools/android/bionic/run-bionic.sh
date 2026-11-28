@@ -13,6 +13,7 @@ export PYTHONHOME="$runtime/python" PYTHONPATH="$base/scripts" PYTHONUTF8=1
 export FEX_APP_CONFIG_LOCATION="$HOME/.fex-emu/" FEX_APP_DATA_LOCATION="$HOME/.fex-emu/" FEX_APP_CACHE_LOCATION="$HOME/.cache/fex-emu/"
 export GOW3_BIONIC_RUNNER="$base/run-bionic.sh"
 export GOW3_CONFIG="$base/gow3.ini"
+unset BB_AOT BB_AOT_MISS_LOG
 mkdir -p "$TMPDIR" "$HOME/.fex-emu" "$HOME/.cache/fex-emu" "$base/user" "$base/logs"
 # The in-game capture menu writes this trigger. The renderer dumps 6 actual
 # consecutive GSR2 VideoOut dispatches (raw scene/depth/motion/output) here.
@@ -216,5 +217,17 @@ esac
 
 cd "$base"
 echo "Bionic: driver=$turnip chip=$chip; starting God of War III"
-"$probe" "$out/boot-linked.bin" --content-profile "$out/content.bin" --patches "$out/patches.bin" \
- --app0 "$game" --user "$base/user" --timeout "${GOW3_TIMEOUT:-0}"
+set -- "$out/boot-linked.bin" --patches "$out/patches.bin"
+if [ "${GOW3_CPU_AOT:-0}" = 1 ]; then
+    compiler="${GOW3_AOT_COMPILER:-}"
+    [ -x "$compiler" ] || { echo 'AOT: Android compiler unavailable' >&2; exit 5; }
+    aot=$(exec "$python" "$base/scripts/aot_local.py" --android --game "$game" \
+        --boot "$out/boot-linked.bin" --patches "$out/patches.bin" \
+        --out "$files/gow3-aot" --compiler "$compiler" --bundle "$runtime/aot/bundle") || exit 5
+    export LD_LIBRARY_PATH="$runtime/aot/backend:$LD_LIBRARY_PATH"
+    export BB_AOT="$aot/libgow3aot.so" BB_AOT_MISS_LOG="$base/logs/aot-misses.log"
+    echo 'AOT: local ARM64 code ready (TSO off)'
+    set -- "$aot/boot-native.bin"
+fi
+"$probe" "$@" --content-profile "$out/content.bin" \
+    --app0 "$game" --user "$base/user" --timeout "${GOW3_TIMEOUT:-0}"

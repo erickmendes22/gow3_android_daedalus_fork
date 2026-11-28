@@ -277,6 +277,9 @@ public final class GameActivity extends Activity {
 
         section("Game");
         resume=menuItem("ic_play","Resume game",null,() -> closeDrawer());
+        if (bionicRuntime() && aotCompiler().canExecute()) {
+            menuItem("ic_settings","CPU mode",null,this::showCpuMode);
+        }
         /* Game settings 与 Cheats 两个入口已隐藏（对应 SettingsDialog.showGame()/showCheats() 也已
          * 注释掉）：它们写的 ini 键在本仓库的启动链路里没有消费方，作弊更是根本没装 hook——Android
          * 走 FEXCore JIT，probe.c 的 install_cheats() 被 `#if defined(GUEST_CPU_NATIVE)` 编译掉了。
@@ -394,6 +397,31 @@ public final class GameActivity extends Activity {
         closeDrawer(); status.setText(UiText.get(this, "Restarting God of War III…")); status.setVisibility(View.VISIBLE);
         if (!runtimeReady) { startPending(); return; }
         worker.execute(() -> { stopGame(); startGame(); });
+    }
+
+    private File aotCompiler() {
+        return new File(getApplicationInfo().nativeLibraryDir,"libbbrecomp.so");
+    }
+
+    private void showCpuMode() {
+        closeDrawer();
+        boolean active=getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("cpu_aot",false);
+        new AlertDialog.Builder(this)
+            .setTitle(UiText.get(this,"CPU mode"))
+            .setSingleChoiceItems(new String[]{
+                "FEX", UiText.get(this,"ARM64 AOT (no TSO, experimental)")
+            },active ? 1 : 0,(dialog,index) -> {
+                dialog.dismiss();
+                new AlertDialog.Builder(this)
+                    .setMessage(UiText.get(this,index==1
+                        ? "The game restarts and compiles locally. This may take several minutes."
+                        : "Restarting the game loses unsaved progress."))
+                    .setNegativeButton(UiText.get(this,"Cancel"),null)
+                    .setPositiveButton(UiText.get(this,"Restart"),(confirm,which) -> {
+                        getSharedPreferences("gow3",MODE_PRIVATE).edit().putBoolean("cpu_aot",index==1).apply();
+                        restartGame();
+                    }).show();
+            }).setNegativeButton(UiText.get(this,"Cancel"),null).show();
     }
 
     /** A small gold heading above a group of menu rows. */
@@ -633,6 +661,10 @@ public final class GameActivity extends Activity {
         if (updateDir!=null) env.put("GOW3_PATCH_DIR",updateDir);
         if (bionicRuntime()) {
             GpuDriverManager.configureEnvironment(this,env);
+            if (getSharedPreferences("gow3",MODE_PRIVATE).getBoolean("cpu_aot",false)) {
+                env.put("GOW3_CPU_AOT","1");
+                env.put("GOW3_AOT_COMPILER",aotCompiler().getAbsolutePath());
+            }
             env.put("GOW3_SCREEN_W","1280"); env.put("GOW3_SCREEN_H","720");
             env.put("PATH","/system/bin"); env.put("TMPDIR",BASE+"/tmp"); env.put("XDG_RUNTIME_DIR",BASE+"/tmp");
             env.put("LD_LIBRARY_PATH",BASE+"/arm64/lib:"+BASE+"/arm64/python/lib");
@@ -1041,13 +1073,24 @@ public final class GameActivity extends Activity {
             Thread log=new Thread(() -> {
                 try (BufferedReader r=new BufferedReader(new InputStreamReader(launched.getInputStream()));
                      PrintWriter out=new PrintWriter(new File(BASE,"logs/android-game.log"))) {
-                    String line; while ((line=r.readLine())!=null) { out.println(line); out.flush(); }
+                    String line; while ((line=r.readLine())!=null) {
+                        out.println(line); out.flush();
+                        if (line.startsWith("AOT: compiling locally")) {
+                            main.post(() -> {
+                                if (!destroyed && game==launched) {
+                                    status.setText(UiText.get(this,"Compiling ARM64 on this device…"));
+                                    status.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
+                    }
                     int code=launched.waitFor();
                     if (game==launched) {
                         game=null;
                         // run-gow3.sh exits 4 when Vulkan/Turnip cannot initialize: the driver
                         // failure must not be reported as validated texture integrity.
                         if (code==4) error("Graphics initialization failed (Vulkan/Turnip). See logs/android-game.log.");
+                        else if (code==5) error("Local ARM64 compilation failed. See logs/android-game.log.");
                         else error("Game stopped ("+code+"). Open the menu to restart.");
                     }
                 } catch (Exception ex) {

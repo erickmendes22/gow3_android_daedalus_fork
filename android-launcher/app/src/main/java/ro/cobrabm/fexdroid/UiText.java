@@ -68,6 +68,14 @@ final class UiText {
         PT.put("Edit controller layout", "Editar layout dos controles");
         PT.put("Drag and resize the buttons", "Arraste e redimensione os botões");
         PT.put("Reset controller layout", "Restaurar layout dos controles");
+        PT.put("CPU mode", "Modo de CPU");
+        PT.put("ARM64 AOT (no TSO, experimental)", "ARM64 AOT (sem TSO, experimental)");
+        PT.put("The game restarts and compiles locally. This may take several minutes.",
+               "O jogo reinicia e compila neste aparelho. Isso pode levar vários minutos.");
+        PT.put("Restarting the game loses unsaved progress.", "Reiniciar descarta o progresso não salvo.");
+        PT.put("Compiling ARM64 on this device…", "Compilando ARM64 neste aparelho…");
+        PT.put("Local ARM64 compilation failed. See logs/android-game.log.",
+               "A compilação ARM64 local falhou. Consulte logs/android-game.log.");
         PT.put("Exit", "Saída");
         PT.put("Return to launcher", "Voltar ao menu inicial");
         PT.put("Return to launcher?", "Voltar ao menu inicial?");

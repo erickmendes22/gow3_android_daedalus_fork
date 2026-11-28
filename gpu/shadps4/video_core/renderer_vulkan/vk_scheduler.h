@@ -798,7 +798,7 @@ public:
     /// copy threads (Gow3Copy::Async) must be done before the guest learns the GPU is past them
     /// (it may then rewrite the memory, e.g. UI vertices: flickering) and before the
     /// submission that reads them. Waits for all.
-    void WaitHostCopies();
+    void WaitHostCopies(std::source_location caller = std::source_location::current());
 
     /// Runs `copy` on the recording thread in order with the commands (the thread spins for
     /// work anyway, so small copies cost no wakeup); WaitHostCopies() covers it.

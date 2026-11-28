@@ -219,13 +219,23 @@ void Scheduler::WaitDeferredSignals() {
     }
 }
 
-void Scheduler::WaitHostCopies() {
+void Scheduler::WaitHostCopies(std::source_location caller) {
     const u64 issued = host_copies_issued;
     if (host_copies_done.load(std::memory_order_acquire) < issued) {
         Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
         Gow3Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
+        const bool profile = WaitDiagnostics::Enabled();
+        using Clock = std::chrono::steady_clock;
+        const auto start = profile ? Clock::now() : Clock::time_point{};
         KickRecording(true);
+        const auto queued = profile ? Clock::now() : Clock::time_point{};
         Detail::WaitForHostCopySequence(host_copies_done, issued);
+        if (profile) {
+            using Ns = std::chrono::nanoseconds;
+            WaitDiagnostics::HostCopies().Add(caller.file_name(), caller.line(),
+                std::chrono::duration_cast<Ns>(queued - start).count(),
+                std::chrono::duration_cast<Ns>(Clock::now() - queued).count());
+        }
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::copy_threads_wait_ns};
     Gow3Copy::WaitAsync();
@@ -245,14 +255,21 @@ void Scheduler::KickRecording(bool force) {
     if (full_chunks.empty() && CurrentChunk().Empty()) {
         return;
     }
-    // Acquire the replacement before handing over the current chunk. This mirrors Bloodborne's
-    // issue #100 fix: record_chunk remains valid throughout the handover, including if another
-    // recording path is entered while the queue lock is held.
-    std::unique_ptr<RecordChunk> next_record =
-        CurrentChunk().Empty() ? nullptr : AcquireChunk();
     bool wake;
     {
-        std::scoped_lock lk{recorder_mutex};
+        std::unique_lock lk{recorder_mutex};
+        std::unique_ptr<RecordChunk> next_record;
+        if (!CurrentChunk().Empty()) {
+            if (!free_chunks.empty()) {
+                next_record = std::move(free_chunks.back());
+                free_chunks.pop_back();
+            } else {
+                // Keep the current chunk valid during allocation and handover.
+                lk.unlock();
+                next_record = std::make_unique<RecordChunk>();
+                lk.lock();
+            }
+        }
         for (auto& chunk : full_chunks) {
             recorder_queue.push_back(std::move(chunk));
         }
