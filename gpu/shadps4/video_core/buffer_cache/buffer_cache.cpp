@@ -128,7 +128,15 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
     if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
-        scheduler.RecordHostCopy([item] { item.run(item); });
+#ifdef __ANDROID__
+        static const bool batch = [] {
+            const char* e = std::getenv("GOW3_HOST_COPY_BATCH");
+            return !(e && e[0] == '0' && e[1] == '\0');
+        }();
+        if (batch) scheduler.RecordHostCopyItem(item);
+        else
+#endif
+            scheduler.RecordHostCopy([item] { item.run(item); });
         return;
     }
     Gow3Copy::QueueCopy(item);
