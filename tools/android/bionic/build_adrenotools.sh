@@ -24,6 +24,10 @@ from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text()
+old='#define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__)'
+new='#define LOGI(fmt, ...) do { __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__); std::fprintf(stderr, "GOW3_QUALCOMM_HOOK " fmt "\\n", ##__VA_ARGS__); } while (0)'
+assert s.count(old)==1
+s=s.replace(old,new)
 old='LOGI("hook_android_dlopen_ext: falling back!");'
 new='''LOGI("hook_android_dlopen_ext: falling back!");
         if (hook_params->featureFlags & ADRENOTOOLS_DRIVER_CUSTOM) {
@@ -34,6 +38,14 @@ assert s.count(old)==1
 s=s.replace(old,new)
 old='return handle;\n    } else {'
 new='std::fprintf(stderr, "GoW III imported Qualcomm: custom ICD loaded: %s%s\\n", hook_params->customDriverDir.c_str(), hook_params->customDriverName.c_str());\n        return handle;\n    } else {'
+assert s.count(old)==1
+s=s.replace(old,new)
+old='if (!hookImpl)\n        return nullptr;'
+new='if (!hookImpl) { LOGI("child hook_impl load failed: %s", dlerror()); return nullptr; }'
+assert s.count(old)==1
+s=s.replace(old,new)
+old='if (!initHookParam)\n        return nullptr;'
+new='if (!initHookParam) { LOGI("child init_hook_param missing: %s", dlerror()); return nullptr; }'
 assert s.count(old)==1
 p.write_text(s.replace(old,new))
 PY

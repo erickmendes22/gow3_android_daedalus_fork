@@ -19,6 +19,17 @@ extern "C" std::uint64_t runtime_disabled_optimizations;
 extern "C" __thread sigjmp_buf* runtime_fault_recover;
 
 namespace Gow3Toggle {
+inline bool SnapdragonFastPaths() {
+#ifdef __ANDROID__
+    static const bool enabled = [] {
+        const char* value = std::getenv("GOW3_SNAPDRAGON_FAST_PATHS");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+#else
+    return false;
+#endif
+}
 enum : std::uint64_t {
     RegionCache = 1,
     FetchShaderCache = 2,

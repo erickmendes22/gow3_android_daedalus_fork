@@ -55,6 +55,9 @@ def main():
 
         with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as source:
             work = Path(work)
+            # Same C++ runtime for the external driver hook child namespace.
+            (apk_jni / 'libc++_shared.so').write_bytes(
+                source.extractfile('gow3port/arm64/lib/libc++_shared.so').read())
             old_gpu = work / 'libgow3gpu-original.so'
             old_gpu.write_bytes(source.extractfile(GPU).read())
             new_gpu = work / 'libgow3gpu.so'

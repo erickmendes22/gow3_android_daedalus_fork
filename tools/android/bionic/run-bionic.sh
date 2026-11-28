@@ -45,7 +45,13 @@ elif [ "$turnip" = custom ]; then
  [ -f "$custom" ] || { echo 'Selected custom driver is missing; select a driver on Home' >&2; exit 2; }
  export GOW3_VULKAN_DRIVER="$custom"
  # Companion libraries supplied in the package resolve beside the selected driver.
- export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${custom%/*}"
+ if [ "${GOW3_EXTERNAL_QUALCOMM_DRIVER:-0}" = 1 ]; then
+    [ -d "${GOW3_ADRENOTOOLS_HOOK_DIR:-}" ] || { echo "Qualcomm hook directory missing" >&2; exit 4; }
+    export LD_LIBRARY_PATH="${custom%/*}:$GOW3_ADRENOTOOLS_HOOK_DIR:$LD_LIBRARY_PATH"
+    echo "GOW3_QUALCOMM_LINKER hook_dir=$GOW3_ADRENOTOOLS_HOOK_DIR driver_dir=${custom%/*}"
+ else
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${custom%/*}"
+ fi
 else unset GOW3_VULKAN_DRIVER; fi
 echo "Bionic Vulkan selection: $turnip${GOW3_VULKAN_DRIVER:+ ($GOW3_VULKAN_DRIVER)}"
 export GOW3_ANDROID_INPUT=1 GOW3_PAD_FILE="$base/android-pad.state" GOW3_PAD_QUIET=1
@@ -53,6 +59,9 @@ export GOW3_IME_FILE="$base/ime.request" GOW3_AUDIO_FIFO="$base/audio.fifo"
 export GOW3_PRESENT_SOCKET="$base/present.sock"
 export GOW3_READBACK_LINEAR=1
 export GOW3_COPY_GPU_BUFFERS=1
+export GOW3_FRAME_STATS=${GOW3_FRAME_STATS:-1}
+export GOW3_SNAPDRAGON_FAST_PATHS=${GOW3_SNAPDRAGON_FAST_PATHS:-0}
+echo "GOW3_SNAPDRAGON_FAST_PATHS=$GOW3_SNAPDRAGON_FAST_PATHS GOW3_FRAME_STATS=$GOW3_FRAME_STATS"
 probe="$runtime/bin/gow3-probe"
 case ${1:-game} in vulkan) exec "$probe" --vulkan-only ;; esac
 out="$base/out"

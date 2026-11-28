@@ -661,9 +661,16 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // and the uncapped presets keep their fixed limit.
     const bool fixed_limit = std::getenv("GOW3_FPS_LIMIT") || EmulatorSettings.GetVblankFrequency() == 480;
     const auto current_limit = [&] {
-        return fixed_limit ? EmulatorSettings.GetFrameLimit()
-                           : u32(Gow3Graphics::PresentLimit(Gow3Settings::Get().fps_limit.load(),
-                                                            Gow3Settings::Get().applied_engine_fps.load()));
+        if (fixed_limit) return EmulatorSettings.GetFrameLimit();
+        const auto& settings = Gow3Settings::Get();
+        const auto limit = settings.fps_limit.load();
+        const auto engine = settings.applied_engine_fps.load();
+#ifdef __ANDROID__
+        // Do not add a host cap at the engine maximum with VSync off.
+        // Explicit lower limits still apply.
+        if (!settings.vsync.load() && (limit == 0 || limit >= engine)) return 0u;
+#endif
+        return u32(Gow3Graphics::PresentLimit(limit, engine));
     };
     u32 frame_limit = current_limit();
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)

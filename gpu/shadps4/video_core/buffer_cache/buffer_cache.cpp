@@ -131,7 +131,7 @@ void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
 #ifdef __ANDROID__
         static const bool batch = [] {
             const char* e = std::getenv("GOW3_HOST_COPY_BATCH");
-            return !(e && e[0] == '0' && e[1] == '\0');
+            return Gow3Toggle::SnapdragonFastPaths() && !(e && e[0] == '0' && e[1] == '\0');
         }();
         if (batch) scheduler.RecordHostCopyItem(item);
         else

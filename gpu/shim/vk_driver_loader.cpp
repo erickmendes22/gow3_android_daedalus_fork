@@ -28,6 +28,9 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#ifdef __ANDROID__
+#include <sys/stat.h>
+#endif
 
 namespace {
 
@@ -174,6 +177,50 @@ Gow3VkGetInstanceProcAddr OpenHal(void* hmi, const char* driver) {
 }
 
 #ifdef __ANDROID__
+Gow3VkGetInstanceProcAddr g_vendor_gipa = nullptr;
+bool SelectedVendorMapped() {
+    const char* selected = std::getenv("GOW3_VULKAN_DRIVER");
+    if (!selected || !*selected) return false;
+    struct stat expected{};
+    if (stat(selected, &expected) != 0) return false;
+    FILE* maps = std::fopen("/proc/self/maps", "r");
+    if (!maps) return false;
+    char line[4096];
+    bool found = false;
+    while (std::fgets(line, sizeof(line), maps)) {
+        char* path = std::strchr(line, '/');
+        if (!path) continue;
+        path[std::strcspn(path, "\r\n")] = '\0';
+        struct stat actual{};
+        if (stat(path, &actual) == 0 && actual.st_dev == expected.st_dev &&
+            actual.st_ino == expected.st_ino) { found = true; break; }
+    }
+    std::fclose(maps);
+    if (found) std::fprintf(stderr, "GoW III Qualcomm: verified selected ICD mapped: %s\n", selected);
+    else std::fprintf(stderr, "GoW III Qualcomm: selected ICD NOT mapped: %s\n", selected);
+    return found;
+}
+int32_t CheckedVendorCreateInstance(const void* info, const void* allocator, void** instance) {
+    using Create = int32_t (*)(const void*, const void*, void**);
+    const auto create = reinterpret_cast<Create>(g_vendor_gipa(nullptr, "vkCreateInstance"));
+    if (!create) return -3;
+    const int32_t result = create(info, allocator, instance);
+    if (result == 0 && !SelectedVendorMapped()) {
+        using Destroy = void (*)(void*, const void*);
+        if (instance && *instance) {
+            const auto destroy = reinterpret_cast<Destroy>(g_vendor_gipa(*instance, "vkDestroyInstance"));
+            if (destroy) destroy(*instance, allocator);
+            *instance = nullptr;
+        }
+        return -3;
+    }
+    return result;
+}
+Gow3VkVoidFunction CheckedVendorGipa(void* instance, const char* name) {
+    if (!instance && name && std::strcmp(name, "vkCreateInstance") == 0)
+        return reinterpret_cast<Gow3VkVoidFunction>(&CheckedVendorCreateInstance);
+    return g_vendor_gipa(instance, name);
+}
 bool IsExternalVendorVulkan(const char* path) {
     // Qualcomm packages use names like vulkan.adr891.so and vulkan.adreno.so.
     // Mesa Turnip names are libvulkan_freedreno.so and must NEVER be silently
@@ -238,7 +285,9 @@ Gow3VkGetInstanceProcAddr Load() {
         }
         auto gipa=reinterpret_cast<Gow3VkGetInstanceProcAddr>(dlsym(loader,"vkGetInstanceProcAddr"));
         std::fprintf(stderr,"Vulkan: imported Qualcomm isolated loader for %s (%s)\n",driver,gipa?"ready":"no GIPA");
-        return gipa;
+        if (!gipa) return nullptr;
+        g_vendor_gipa = gipa;
+        return &CheckedVendorGipa;
     }
 #endif
     void* lib = dlopen(driver, RTLD_NOW | RTLD_LOCAL);

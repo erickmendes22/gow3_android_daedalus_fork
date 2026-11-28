@@ -195,7 +195,7 @@ void Scheduler::SignalAfterHostCopies(std::function<void()> signal) {
             signal();
             done->fetch_add(1, std::memory_order_release);
 #ifdef __ANDROID__
-            done->notify_all();
+            if (Gow3Toggle::SnapdragonFastPaths()) done->notify_all();
 #endif
         });
     });
@@ -211,7 +211,7 @@ void Scheduler::WaitDeferredSignals() {
     Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
     KickRecording(true);
 #ifdef __ANDROID__
-    if (Gow3Copy::Enabled()) {
+    if (Gow3Toggle::SnapdragonFastPaths() && Gow3Copy::Enabled()) {
         // Only the captured fence is required. The recorder's AfterCopies
         // callback publishes it after every preceding copy, in registration order.
         for (u64 done = deferred_signals_done->load(std::memory_order_acquire); done < issued;
@@ -234,6 +234,7 @@ void Scheduler::WaitHostCopies() {
         KickRecording(true);
         const u64 target = host_copies_issued;
 #ifdef __ANDROID__
+        if (Gow3Toggle::SnapdragonFastPaths()) {
         // As in TLOU, wait for the required copy sequence, not repeated CPU yields.
         // Release/acquire ordering remains unchanged; the recorder notifies after copying.
         for (unsigned spin = 0; spin < 32 &&
@@ -244,11 +245,13 @@ void Scheduler::WaitHostCopies() {
              done = host_copies_done.load(std::memory_order_acquire)) {
             host_copies_done.wait(done, std::memory_order_acquire);
         }
-#else
-        while (host_copies_done.load(std::memory_order_acquire) < target) {
-            std::this_thread::yield();
-        }
+        } else
 #endif
+        {
+            while (host_copies_done.load(std::memory_order_acquire) < target) {
+                std::this_thread::yield();
+            }
+        }
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::copy_threads_wait_ns};
     Gow3Copy::WaitAsync();
@@ -465,6 +468,10 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                !(opt_out && opt_out[0] == '1');
     }();
+    if (!Gow3Toggle::SnapdragonFastPaths() && bounded_submit &&
+        signal_value > MaxAndroidInFlightSubmissions) {
+        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+    }
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
     if (profiler_ctx) {
@@ -516,7 +523,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     ImGui::Core::TextureManager::Submit();
     // Keep the same in-flight cap and exact previously submitted tick, but
     // overlap the recorder and staging work with GPU execution before waiting.
-    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
+    if (Gow3Toggle::SnapdragonFastPaths() && bounded_submit &&
+        signal_value > MaxAndroidInFlightSubmissions) {
         work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
     }
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);

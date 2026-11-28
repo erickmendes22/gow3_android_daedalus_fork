@@ -2430,7 +2430,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     PreparedStage serial_images{};
     const PreparedStage* image_prepared = prepared;
 #ifdef __ANDROID__
-    if (!on_helper && !prepared && !stage.images.empty() &&
+    if (Gow3Toggle::SnapdragonFastPaths() && !on_helper && !prepared && !stage.images.empty() &&
         stage.images.size() <= TextureSet::MaxImages &&
         !Gow3Toggle::Disabled(Gow3Toggle::TextureSetMemo) && !FrameCapture::Active()) {
         bool eligible = true;

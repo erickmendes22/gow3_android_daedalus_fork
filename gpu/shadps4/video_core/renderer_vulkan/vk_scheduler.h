@@ -862,7 +862,7 @@ public:
             copy();
             host_copies_done.store(seq, std::memory_order_release);
 #ifdef __ANDROID__
-            host_copies_done.notify_all();
+            if (Gow3Toggle::SnapdragonFastPaths()) host_copies_done.notify_all();
 #endif
         });
     }

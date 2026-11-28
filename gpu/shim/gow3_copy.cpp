@@ -59,7 +59,7 @@ public:
             async_tasks.push_back({std::move(task), epoch});
         }
         cv.notify_one();
-        done_cv.notify_all();
+        if (Gow3Toggle::SnapdragonFastPaths()) done_cv.notify_all();
     }
 
     void AfterCopies(std::function<void()> callback) {
@@ -76,6 +76,21 @@ public:
     }
 
     void WaitAll() {
+        if (!Gow3Toggle::SnapdragonFastPaths()) {
+            while (true) {
+                Task task;
+                {
+                    std::scoped_lock lk{mutex};
+                    if (pending == 0 && epochs.size() == 1 && !draining) return;
+                    if (!async_tasks.empty()) {
+                        task = std::move(async_tasks.front());
+                        async_tasks.pop_front();
+                    }
+                }
+                if (task.run) RunAsync(task);
+                else std::this_thread::yield();
+            }
+        }
         // TLOU: help pending copies, but park instead of repeatedly yielding
         // if the only remaining work is already executing on another thread.
         while (true) {
@@ -172,7 +187,7 @@ private:
             lk.lock();
         }
         draining = false;
-        if (pending == 0 && epochs.size() == 1) {
+        if (Gow3Toggle::SnapdragonFastPaths() && pending == 0 && epochs.size() == 1) {
             done_cv.notify_all();
         }
     }
