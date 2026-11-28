@@ -1,4 +1,4 @@
-name: GoW3 Mali R14 - combat and exposure stability plus state reuse
+name: GoW3 Mali R15 - padded readbacks and descriptor reuse
 
 on:
   push:

@@ -1017,6 +1017,9 @@ private:
     vk::PipelineLayout last_graphics_resource_layout{};
     vk::ShaderStageFlags last_graphics_resource_stages{};
     std::vector<u8> last_graphics_resource_key, graphics_resource_scratch;
+    std::vector<size_t> last_graphics_write_ends, graphics_write_ends;
+    std::vector<vk::WriteDescriptorSet> graphics_changed_writes;
+    u64 graphics_partial_skips = 0;
     std::vector<u8> last_graphics_push_key;
     u64 graphics_descriptor_skips = 0, graphics_push_skips = 0, graphics_state_calls = 0;
     vk::CommandBuffer last_vertex_buffer_cmd{}, last_index_buffer_cmd{};

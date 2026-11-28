@@ -1304,7 +1304,7 @@ bool PipelineCache::StartSafeMaliWarmUp(bool prepare_cached) {
 void PipelineCache::PrepareCachedMaliPipelines(const std::function<void(u32,u32)>& progress) {
     StartSafeMaliWarmUp(true);
     if (!background) return;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
     auto next_report = std::chrono::steady_clock::now();
     while (background && !background->finished &&
            std::chrono::steady_clock::now() < deadline) {

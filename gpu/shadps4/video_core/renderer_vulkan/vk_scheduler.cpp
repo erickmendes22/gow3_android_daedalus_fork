@@ -385,6 +385,7 @@ void Scheduler::SyncRecording() {
     Gow3Stats::WaitTimer timer{Gow3Stats::sync_recording_ns};
     std::unique_lock lk{recorder_mutex};
     recorder_idle_cv.wait(lk, [this] { return recorder_queue.empty() && !recorder_busy; });
+    FlushNativeDrawBatch(current_cmdbuf);
 }
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
@@ -420,7 +421,9 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
         }
         // current_cmdbuf only changes after SyncRecording(), which waits for this thread.
         chunk->Execute(current_cmdbuf);
-        FlushNativeDrawBatch(current_cmdbuf);
+        // Pending native draws contain only copied scalar parameters; they
+        // do not reference chunk storage. Keep them across chunk boundaries.
+        // SyncRecording, state changes and submission still flush them.
         {
             std::scoped_lock lk{recorder_mutex};
             free_chunks.push_back(std::move(chunk));
@@ -745,6 +748,8 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
     std::span<const vk::WriteDescriptorSet> writes, const void* push_data, size_t push_size) {
     auto& key = graphics_resource_scratch;
     key.clear();
+    auto& ends = graphics_write_ends;
+    ends.clear();
     const auto append = [&](const void* data, size_t size) {
         if (!size) return;
         const size_t old = key.size();
@@ -796,6 +801,7 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
         default: cacheable = false; break;
         }
         if (!cacheable) break;
+        ends.push_back(key.size());
     }
     const bool same_layout = cacheable && last_graphics_resource_layout == layout &&
                              last_graphics_resource_stages == stages;
@@ -805,18 +811,43 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
     graphics_push_skips += same_push;
     graphics_descriptor_skips += same_descriptors;
     if ((++graphics_state_calls & 65535u) == 0)
-        std::printf("GOW3_MALI_GRAPHICS_STATE calls=%llu push_skips=%llu descriptor_skips=%llu\n",
+        std::printf("GOW3_MALI_GRAPHICS_STATE calls=%llu push_skips=%llu descriptor_skips=%llu partial_writes_skipped=%llu\n",
             (unsigned long long)graphics_state_calls, (unsigned long long)graphics_push_skips,
-            (unsigned long long)graphics_descriptor_skips);
+            (unsigned long long)graphics_descriptor_skips,
+            (unsigned long long)graphics_partial_skips);
     if (same_push && same_descriptors) return;
     FlushNativeDrawBatch(cmdbuf);
     if (!same_push) cmdbuf.pushConstants(layout, stages, 0u, static_cast<u32>(push_size), push_data);
-    if (!same_descriptors && !writes.empty())
-        cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+    if (!same_descriptors && !writes.empty()) {
+        auto& changed = graphics_changed_writes;
+        changed.clear();
+        if (same_layout && ends.size() == writes.size() &&
+            last_graphics_write_ends.size() == ends.size()) {
+            size_t begin = sizeof(write_count), old_begin = sizeof(write_count);
+            for (size_t i = 0; i < writes.size(); ++i) {
+                const size_t end = ends[i], old_end = last_graphics_write_ends[i];
+                if (end - begin != old_end - old_begin ||
+                    !std::equal(key.begin() + begin, key.begin() + end,
+                                last_graphics_resource_key.begin() + old_begin))
+                    changed.push_back(writes[i]);
+                else
+                    ++graphics_partial_skips;
+                begin = end;
+                old_begin = old_end;
+            }
+            if (!changed.empty())
+                cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, changed);
+        } else {
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eGraphics, layout, 0, writes);
+        }
+    }
     last_graphics_resource_layout = cacheable ? layout : vk::PipelineLayout{};
     last_graphics_resource_stages = stages;
     if (cacheable) {
-        if (!same_descriptors) last_graphics_resource_key.swap(key);
+        if (!same_descriptors) {
+            last_graphics_resource_key.swap(key);
+            last_graphics_write_ends.swap(ends);
+        }
         if (!same_push) last_graphics_push_key.assign(push_bytes, push_bytes + push_size);
     }
 }

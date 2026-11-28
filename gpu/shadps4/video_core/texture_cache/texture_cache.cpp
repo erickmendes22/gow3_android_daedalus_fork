@@ -46,6 +46,32 @@ static u32 ImageDownloadBytes(const ImageInfo& i, bool mali) {
     return i.pitch * i.size.height * i.size.depth * i.resources.layers * (i.num_bits / 8);
 }
 
+// The Vulkan copy leaves row padding undefined. Preserve it in guest memory.
+// Restrict the new row publication to ordinary uncompressed 2D color copies;
+// the existing tiny tiled readback convention is retained, not retiled here.
+static u32 DefinedReadbackRowBytes(const ImageInfo& i, bool mali) {
+    if (!mali || i.props.is_depth || i.num_samples != 1 ||
+        i.resources.layers != 1 || i.size.depth != 1 || i.pitch <= i.size.width ||
+        IsMaliExposureReadback(i)) return 0;
+    const auto block = vk::blockExtent(i.pixel_format);
+    if (block[0] != 1 || block[1] != 1 || vk::blockSize(i.pixel_format) != i.num_bits / 8)
+        return 0;
+    return i.size.width * (i.num_bits / 8);
+}
+
+static void PublishReadbackRows(VAddr address, const Vulkan::StagingBufferRef& staging,
+                                u64 size, u32 row_bytes, u32 row_pitch) {
+    auto* memory = Core::Memory::Instance();
+    if (!row_bytes || !row_pitch) {
+        memory->TryWriteBacking(std::bit_cast<u8*>(address), staging.mapped, size);
+        return;
+    }
+    ASSERT(row_bytes <= row_pitch && size % row_pitch == 0);
+    for (u64 offset = 0; offset < size; offset += row_pitch)
+        memory->TryWriteBacking(std::bit_cast<u8*>(address + offset),
+                                staging.mapped + offset, row_bytes);
+}
+
 TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
                            Vulkan::Runtime& runtime_, AmdGpu::Liverpool* liverpool_,
                            BufferCache& buffer_cache_, PageManager& tracker_)
@@ -152,8 +178,8 @@ void TextureCache::RetireReadbacks(bool refresh) {
                             value, (unsigned long long)n);
                     }
                 }
-                Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(entry.address),
-                    entry.payload.mapped, entry.size);
+                PublishReadbackRows(entry.address, entry.payload, entry.size,
+                                    entry.row_bytes, entry.row_pitch);
                 if (entry.watched) WatchReadback<false>(entry.address, entry.size);
                 ++readbacks_completed;
             }
@@ -518,15 +544,16 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     // oversized copy. Its completed staging is safe to reuse.
                     RetireReadbacks();
                     copy->staging.Invalidate();
-                    Core::Memory::Instance()->TryWriteBacking(
-                        std::bit_cast<u8*>(copy->guest_address), copy->staging.mapped, copy->size);
+                    PublishReadbackRows(copy->guest_address, copy->staging, copy->size,
+                                        copy->row_bytes, copy->row_pitch);
                     runtime.GetStagingPool().FreeDeferred(copy->staging, scheduler.CurrentTick() - 1);
                 } else {
                     // Publish the queue entry before installing the watcher:
                     // a fault raised while protecting a page must find its tick.
                     pending_readbacks.Push(copy->guest_address, copy->size,
                         copy_tick, copy->staging,
-                        image.image_uid, image.alias_generation, image.gpu_write_epoch);
+                        image.image_uid, image.alias_generation, image.gpu_write_epoch,
+                        copy->row_bytes, copy->row_pitch);
                     has_pending_readbacks.store(true, std::memory_order_release);
                     WatchReadback<true>(copy->guest_address, copy->size);
                     if (Vulkan::WaitDiagnostics::TickProfileEnabled()) {
@@ -612,8 +639,8 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
     scheduler.Finish();
     for (const PendingDownload& download : pending) {
         download.staging.Invalidate();
-        Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(download.guest_address),
-                                                  download.staging.mapped, download.size);
+        PublishReadbackRows(download.guest_address, download.staging, download.size,
+                            download.row_bytes, download.row_pitch);
         runtime.GetStagingPool().FreeDeferred(download.staging);
     }
 }
@@ -635,7 +662,9 @@ void TextureCache::SubmitPendingReadbacks(bool tiny_only) {
             return opt && opt[0] == '1';
         }();
         if (needs_submit && coalesce && pending_readbacks.Bytes() < 8_MB &&
-            !pending_readbacks.HasSmallReadback(scheduler.CurrentTick(), 64)) {
+            !pending_readbacks.HasSmallReadback(scheduler.CurrentTick(), 64) &&
+            !(mali_exact_readback_ranges &&
+              pending_readbacks.HasLargeReadback(scheduler.CurrentTick(), 128_KB))) {
             // Ordinary submission or actual CPU demand flushes these copies.
             // Keep every GPU copy, watched page and required guest value.
             needs_submit = false;
@@ -684,7 +713,16 @@ std::optional<TextureCache::PendingDownload> TextureCache::RecordImageDownload(I
                 (unsigned long long)image.info.guest_address, image.info.pitch, download_size,
                 (unsigned long long)copies);
     }
-    return PendingDownload{image.info.guest_address, download_size, download};
+    const u32 row_bytes = DefinedReadbackRowBytes(image.info, mali_exact_readback_ranges);
+    const u32 row_pitch = row_bytes ? image.info.pitch * (image.info.num_bits / 8) : 0;
+    if (row_bytes) {
+        static u64 samples = 0;
+        if (++samples <= 4 || (samples & 1023u) == 0)
+            std::printf("GOW3_MALI_PADDED_READBACK addr=%llx row=%u pitch_bytes=%u height=%u count=%llu\n",
+                        (unsigned long long)image.info.guest_address, row_bytes, row_pitch,
+                        image.info.size.height, (unsigned long long)samples);
+    }
+    return PendingDownload{image.info.guest_address, download_size, download, row_bytes, row_pitch};
 }
 
 void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
@@ -715,6 +753,8 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
         .imageExtent = {image.info.size.width, image.info.size.height, image.info.size.depth},
     };
     runtime.DownloadImage(&image, download.buffer, std::span{&image_download, 1});
+    const u32 row_bytes = DefinedReadbackRowBytes(image.info, mali_exact_readback_ranges);
+    const u32 row_pitch = row_bytes ? image.info.pitch * (image.info.num_bits / 8) : 0;
     if (sync) {
         // A dirty-texture writeback always synchronizes the GPU: measure every
         // occurrence, not just 1/32, without a profiler thread or per-call log.
@@ -723,17 +763,15 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
                                                   : Vulkan::MaliPerfStats::TimePoint{};
         scheduler.Finish();
         download.Invalidate();
-        Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image.info.guest_address),
-                                                  download.mapped, download_size);
+        PublishReadbackRows(image.info.guest_address, download, download_size, row_bytes, row_pitch);
         if (perf_download)
             Vulkan::MaliPerfStats::Record(
                 Vulkan::MaliPerfStats::Stage::SyncTextureDownload, download_start);
     } else {
         scheduler.DeferPriorityOperation(
-            [this, device_addr = image.info.guest_address, download, download_size] {
+            [this, device_addr = image.info.guest_address, download, download_size, row_bytes, row_pitch] {
                 download.Invalidate();
-                Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(device_addr),
-                                                          download.mapped, download_size);
+                PublishReadbackRows(device_addr, download, download_size, row_bytes, row_pitch);
                 runtime.GetStagingPool().FreeDeferred(download);
             });
     }

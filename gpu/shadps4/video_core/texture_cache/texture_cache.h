@@ -390,6 +390,7 @@ private:
         VAddr guest_address;
         u32 size;
         Vulkan::StagingBufferRef staging;
+        u32 row_bytes{}, row_pitch{};
     };
     /// Records the copy of a GPU-modified image into a deferred staging allocation.
     std::optional<PendingDownload> RecordImageDownload(ImageId image_id);

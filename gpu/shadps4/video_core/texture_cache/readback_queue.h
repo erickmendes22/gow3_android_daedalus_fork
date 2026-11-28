@@ -17,6 +17,7 @@ public:
         bool valid = true;
         bool watched = true; ///< still protects its pages (see ReleaseOutside)
         std::uint64_t image_uid = 0, version = 0, write_epoch = 0;
+        std::uint32_t row_bytes = 0, row_pitch = 0;
     };
     bool CanFit(std::uint64_t size) const {
         return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
@@ -26,6 +27,11 @@ public:
     bool HasSmallReadback(std::uint64_t tick, std::uint64_t limit) const {
         for (const auto& e : entries)
             if (e.valid && e.watched && e.tick == tick && e.size <= limit) return true;
+        return false;
+    }
+    bool HasLargeReadback(std::uint64_t tick, std::uint64_t minimum) const {
+        for (const auto& e : entries)
+            if (e.valid && e.tick == tick && e.size >= minimum) return true;
         return false;
     }
     // Smallest in-order prefix that makes room. Oversized copies use the
@@ -43,9 +49,11 @@ public:
         return 0;
     }
     void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload,
-              std::uint64_t uid = 0, std::uint64_t version = 0, std::uint64_t write_epoch = 0) {
+              std::uint64_t uid = 0, std::uint64_t version = 0, std::uint64_t write_epoch = 0,
+              std::uint32_t row_bytes = 0, std::uint32_t row_pitch = 0) {
         assert(CanFit(size));
-        entries.push_back({address, size, tick, std::move(payload), true, true, uid, version, write_epoch});
+        entries.push_back({address, size, tick, std::move(payload), true, true, uid, version, write_epoch,
+                           row_bytes, row_pitch});
         bytes += size;
     }
     // Last overlapping snapshot must be this exact version. Never skip after

@@ -736,7 +736,7 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
         FlushBarriers();
     }
 
-    scheduler.Record([this, src_handle = src->Handle(), dst_handle = dst->Handle(),
+    scheduler.RecordGraphicsOrdered([this, src_handle = src->Handle(), dst_handle = dst->Handle(),
                       regions = scheduler.RecordData(copies)](vk::CommandBuffer cmdbuf) {
         if (scheduler.SubmitHistoryEnabled()) {
             for (const auto& region : regions)
@@ -893,7 +893,7 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
     const auto record_upload = [&](std::span<const vk::BufferImageCopy> regions) {
         u64 trace_bytes = 0;
         for (const auto& copy : regions) trace_bytes += BufferImageCopySize(copy, dst->info.pixel_format);
-        scheduler.Record([this, src_handle = src->Handle(), image = dst->GetImage(),
+        scheduler.RecordGraphicsOrdered([this, src_handle = src->Handle(), image = dst->GetImage(),
                           addr = dst->info.guest_address, uid = dst->image_uid, trace_bytes,
                           copies = scheduler.RecordData(regions)](vk::CommandBuffer cmdbuf) {
             scheduler.TraceWork(2, addr, uid, trace_bytes);
@@ -1040,7 +1040,7 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
 
     u64 trace_bytes = 0;
     for (const auto& copy : download_copies) trace_bytes += BufferImageCopySize(copy, src->info.pixel_format);
-    scheduler.Record([this, image = src->GetImage(), buffer = dst->Handle(),
+    scheduler.RecordGraphicsOrdered([this, image = src->GetImage(), buffer = dst->Handle(),
                       addr = src->info.guest_address, uid = src->image_uid, trace_bytes,
                       regions = scheduler.RecordData(download_copies)](vk::CommandBuffer cmdbuf) {
         scheduler.TraceWork(3, addr, uid, trace_bytes);
