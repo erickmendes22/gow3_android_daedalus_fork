@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   build:
+    # Hold APK generation until reported combat regression is resolved.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
