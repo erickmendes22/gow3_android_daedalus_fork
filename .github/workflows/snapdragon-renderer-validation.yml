@@ -1,0 +1,58 @@
+name: Snapdragon Vulkan renderer validation
+on:
+  push:
+    branches: [perf/gow3-snapdragon-timeline-hostcopy-20261127]
+    paths: ['.github/workflows/snapdragon-renderer-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GOW3_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865'
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Configure pinned Android toolchain
+        shell: bash -el {0}
+        run: |
+          bash ci/setup-deps.sh "$CONDA_PREFIX"
+          echo "GOW3_BIONIC_HEADERS=$CONDA_PREFIX" >> "$GITHUB_ENV"
+          echo "GOW3_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Compile Vulkan renderer
+        shell: bash -el {0}
+        run: |
+          bash tools/android/bionic/build_deps.sh
+          bash tools/android/bionic/build_gpu.sh --configure-only
+          bash tools/android/bionic/build_gpu.sh
+          git rev-parse HEAD > out/bionic/lib/snapdragon-source.txt
+          test -s out/bionic/lib/libgow3gpu.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snapdragon-renderer-native-checkpoint-NOT-APK
+          path: |
+            out/bionic/lib/libgow3gpu.so
+            out/bionic/lib/snapdragon-source.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Snapdragon-renderer-build-errors
+          path: |
+            .local-deps/android/bionic-build/**/*.log
+            out/bionic/gpu/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
