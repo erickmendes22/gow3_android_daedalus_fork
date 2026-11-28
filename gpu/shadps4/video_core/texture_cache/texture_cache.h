@@ -402,6 +402,7 @@ private:
     };
     std::optional<TinyPrefetch> tiny_prefetch; // guarded by readback_mutex
     u64 tiny_prefetch_attempts{}, tiny_prefetch_submits{}, tiny_prefetch_reuses{}, tiny_prefetch_rejects{};
+    std::array<u64, 6> tiny_prefetch_filter{};
     std::optional<PendingDownload> TakeTinyPrefetch(const Image& image, u64 size, u64& tick);
 
     /// Thread function for copying downloaded images out to CPU memory.

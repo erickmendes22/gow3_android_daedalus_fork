@@ -315,13 +315,30 @@ void TextureCache::PrefetchTinyReadback(ImageId image_id) {
         ++tiny_prefetch_attempts;
         const auto& image = slot_images[image_id];
         const auto& i = image.info;
-        // Only the observed RG16F exposure class, not arbitrary render targets.
-        if (i.size.width != 1 || i.size.height != 1 || i.size.depth != 1 ||
-            i.resources.layers != 1 || i.resources.levels != 1 || i.num_samples != 1 ||
-            i.pixel_format != vk::Format::eR16G16Sfloat || i.pitch != 1 || !i.guest_address ||
-            !image.alias_generation || !image.gpu_write_epoch ||
-            True(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) ||
-            False(image.flags & ImageFlagBits::GpuModified)) return;
+        // EOP downloads mip zero of this exact physical image, even for an
+        // aliased guest address. Alias membership alone does not change that
+        // physical version; a later copy/write advances gpu_write_epoch.
+        // Keep actual CPU/GPU dirty writes excluded. A MaybeCpuDirty flag
+        // only records a page access outside the image: a real overlapping
+        // invalidation clears alias_generation. Take revalidates the flags.
+        const bool shape = i.size.width == 1 && i.size.height == 1 && i.size.depth == 1 &&
+            i.resources.layers == 1 && i.resources.levels >= 1 && i.num_samples == 1 &&
+            i.pixel_format == vk::Format::eR16G16Sfloat && i.pitch == 1 && i.guest_address;
+        const u32 reason = !shape ? 1 : !image.alias_generation ? 2 :
+            !image.gpu_write_epoch ? 3 :
+            True(image.flags & (ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty)) ? 4 :
+            False(image.flags & ImageFlagBits::GpuModified) ? 5 : 0;
+        if (reason) {
+            ++tiny_prefetch_filter[reason];
+            static u64 filter_samples = 0;
+            if (++filter_samples <= 4 || (filter_samples & 511u) == 0)
+                std::printf("GOW3_MALI_TINY_FILTER reason=%u addr=%llx extent=%ux%ux%u pitch=%u levels=%u layers=%u samples=%u fmt=%u flags=%x generation=%llu epoch=%llu\n",
+                    reason, (unsigned long long)i.guest_address, i.size.width, i.size.height,
+                    i.size.depth, i.pitch, i.resources.levels, i.resources.layers, i.num_samples,
+                    u32(i.pixel_format), u32(image.flags),
+                    (unsigned long long)image.alias_generation, (unsigned long long)image.gpu_write_epoch);
+            return;
+        }
         const u64 backing = std::bit_cast<u64>(image.GetImage());
         if (tiny_prefetch && tiny_prefetch->valid &&
             tiny_prefetch->uid == image.image_uid && tiny_prefetch->generation == image.alias_generation &&
@@ -331,8 +348,10 @@ void TextureCache::PrefetchTinyReadback(ImageId image_id) {
             tiny_prefetch.reset();
         }
         if (auto copy = RecordImageDownload(image_id)) {
+            // DownloadImage may select a different backing; store the actual
+            // post-transition identity, not the pre-transition handle.
             tiny_prefetch = TinyPrefetch{*copy, scheduler.CurrentTick(), image.image_uid,
-                image.alias_generation, image.gpu_write_epoch, backing, true};
+                image.alias_generation, image.gpu_write_epoch, std::bit_cast<u64>(image.GetImage()), true};
             ++tiny_prefetch_submits;
             submit = true;
         }
@@ -353,7 +372,8 @@ std::optional<TextureCache::PendingDownload> TextureCache::TakeTinyPrefetch(
     if (!pre.valid || pre.copy.size != size || pre.uid != image.image_uid ||
         pre.generation != image.alias_generation || pre.epoch != image.gpu_write_epoch ||
         pre.backing != std::bit_cast<u64>(image.GetImage()) ||
-        True(image.flags & (ImageFlagBits::Aliased | ImageFlagBits::Dirty)) ||
+        True(image.flags & (ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty)) ||
+        False(image.flags & ImageFlagBits::GpuModified) ||
         pending_readbacks.NewestTick() > pre.tick) {
         // Keep the old allocation GPU-live until a later confirmed tick.
         // Fall back to the ordinary, current-version EOP copy.
@@ -525,6 +545,11 @@ void TextureCache::ProcessDownloadImages(bool tiny_only) {
                     std::printf("GOW3_MALI_TINY_PREFETCH attempts=%llu submits=%llu reused=%llu rejected=%llu\n",
                         (unsigned long long)tiny_prefetch_attempts, (unsigned long long)tiny_prefetch_submits,
                         (unsigned long long)tiny_prefetch_reuses, (unsigned long long)tiny_prefetch_rejects);
+                    std::printf("GOW3_MALI_TINY_FILTER_SUMMARY shape=%llu generation=%llu epoch=%llu dirty=%llu not_modified=%llu\n",
+                        (unsigned long long)tiny_prefetch_filter[1], (unsigned long long)tiny_prefetch_filter[2],
+                        (unsigned long long)tiny_prefetch_filter[3], (unsigned long long)tiny_prefetch_filter[4],
+                        (unsigned long long)tiny_prefetch_filter[5]);
+                    tiny_prefetch_filter = {};
                     tiny_prefetch_attempts = tiny_prefetch_submits = tiny_prefetch_reuses = tiny_prefetch_rejects = 0;
                 }
                 readback_sources.Report(stdout);

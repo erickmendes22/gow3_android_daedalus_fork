@@ -745,6 +745,7 @@ public:
     bool SubmitHistoryEnabled() const noexcept { return work_semaphore.TraceEnabled(); }
 
     bool NativeDrawBatchEnabled() const noexcept { return native_draw_batch_limit > 1; }
+    bool GraphicsResourceCacheEnabled() const noexcept { return graphics_resource_cache_enabled; }
     void FlushNativeDrawBatch(vk::CommandBuffer cmdbuf);
     void QueueNativeDraw(vk::CommandBuffer cmdbuf, bool indexed, u32 count,
                          u32 instances, u32 first_index, s32 first_vertex, u32 first_instance);
@@ -781,7 +782,7 @@ public:
     /// everything it uses (capture by value): it may run later on the recording thread.
     template <typename Func>
     void Record(Func&& func) {
-        if (!NativeDrawBatchEnabled()) {
+        if (!NativeDrawBatchEnabled() && !GraphicsResourceCacheEnabled()) {
             RecordBatchState(std::forward<Func>(func));
             return;
         }
@@ -796,7 +797,7 @@ public:
 
     template <typename Func>
     void RecordGraphicsOrdered(Func&& func) {
-        if (!NativeDrawBatchEnabled()) {
+        if (!NativeDrawBatchEnabled() && !GraphicsResourceCacheEnabled()) {
             Record(std::forward<Func>(func));
             return;
         }
@@ -1004,6 +1005,7 @@ private:
     std::array<VkMultiDrawIndexedInfoEXT, 32> native_indexed_draws{};
     u64 native_draws_saved = 0, native_batches = 0;
     Semaphore::SubmitRecord submit_history{};
+    bool graphics_resource_cache_enabled{};
     vk::PipelineLayout last_graphics_resource_layout{};
     vk::ShaderStageFlags last_graphics_resource_stages{};
     std::vector<u8> last_graphics_resource_key, graphics_resource_scratch;

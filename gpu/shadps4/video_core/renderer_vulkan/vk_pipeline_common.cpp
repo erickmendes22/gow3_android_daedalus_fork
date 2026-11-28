@@ -36,10 +36,10 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
     // This retains every descriptor update and every constant write; only
     // the host-side command/queue allocation is removed.
     if (uses_push_descriptors && (!set_writes.empty() ||
-        (!IsCompute() && scheduler.NativeDrawBatchEnabled()))) {
+        (!IsCompute() && (scheduler.GraphicsResourceCacheEnabled() || scheduler.NativeDrawBatchEnabled())))) {
         if (!scheduler.IsRecordingDeferred()) {
             // The nondeferred Record() executes immediately; set_writes remains valid.
-            if (!IsCompute() && scheduler.NativeDrawBatchEnabled()) {
+            if (!IsCompute() && (scheduler.GraphicsResourceCacheEnabled() || scheduler.NativeDrawBatchEnabled())) {
                 scheduler.RecordBatchState([&](vk::CommandBuffer cmdbuf) {
                     scheduler.BindGraphicsResourcesCached(cmdbuf, layout, stage_flags, set_writes,
                                                          &push_data, sizeof(push_data));
@@ -79,7 +79,7 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
                     scheduler.RecordData(std::span{write.pTexelBufferView, write.descriptorCount}).data();
             }
         }
-        if (!IsCompute() && scheduler.NativeDrawBatchEnabled()) {
+        if (!IsCompute() && (scheduler.GraphicsResourceCacheEnabled() || scheduler.NativeDrawBatchEnabled())) {
             scheduler.RecordBatchState([this, layout, writes, stage_flags, push_data](vk::CommandBuffer cmdbuf) {
                 scheduler.BindGraphicsResourcesCached(cmdbuf, layout, stage_flags, writes,
                                                      &push_data, sizeof(push_data));

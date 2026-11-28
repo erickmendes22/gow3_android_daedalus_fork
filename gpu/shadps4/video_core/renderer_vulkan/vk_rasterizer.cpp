@@ -1389,7 +1389,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                           first_index, s32(first_vertex), first_instance);
             });
         } else {
-        scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+        // Draws and conditional/query begin/end do not update graphics
+        // descriptors or push constants. The ordered path still flushes
+        // all pending native draws before these commands.
+        scheduler.RecordGraphicsOrdered([=, this](vk::CommandBuffer cmdbuf) {
         scheduler.TraceWork(1, trace_vs_hash, trace_ps_hash, num_indices);
         const auto draw = [&] {
             if (is_indexed) {
@@ -1615,7 +1618,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const u64 indirect_vs = pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash;
     const auto* indirect_ps_info = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
     const u64 indirect_ps = indirect_ps_info ? indirect_ps_info->pgm_hash : 0;
-    scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
+    scheduler.RecordGraphicsOrdered([=, this](vk::CommandBuffer cmdbuf) {
         scheduler.TraceWork(11, indirect_vs, indirect_ps, max_count);
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         for (const vk::Pipeline bound : {handle, square}) {
@@ -2297,7 +2300,8 @@ void Rasterizer::BindIndexBuffer(u32 index_offset) {
 }
 
 void Rasterizer::EmitIndexBuffer() {
-    scheduler.Record([this, handle = index_bind.handle, offset = index_bind.offset,
+    // The cached index bind flushes queued draws itself, only when changed.
+    scheduler.RecordBatchState([this, handle = index_bind.handle, offset = index_bind.offset,
                       type = index_bind.type](vk::CommandBuffer cmdbuf) {
         scheduler.BindIndexBufferCached(cmdbuf, handle, offset, type);
     });

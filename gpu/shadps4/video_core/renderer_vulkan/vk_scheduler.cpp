@@ -37,6 +37,10 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
         instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
         unlocked_throttle && unlocked_throttle[0] == '1';
     native_draw_batch_limit = instance.NativeDrawBatchLimit();
+    const char* resource_cache = std::getenv("GOW3_MALI_GRAPHICS_RESOURCE_CACHE");
+    graphics_resource_cache_enabled = std::getenv("GOW3_ANDROID_PORT") &&
+        instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5 &&
+        (!resource_cache || resource_cache[0] != '0');
     // Per-renderer bind cache (never global across Vulkan command buffers).
     // GOW3_MALI_PIPELINE_BIND_CACHE=0 restores all legacy vkCmdBindPipeline calls.
     const char* bind_cache = std::getenv("GOW3_MALI_PIPELINE_BIND_CACHE");
@@ -748,7 +752,7 @@ void Scheduler::BindGraphicsResourcesCached(vk::CommandBuffer cmdbuf,
         key.resize(old + size);
         std::memcpy(key.data() + old, data, size);
     };
-    bool cacheable = NativeDrawBatchEnabled();
+    bool cacheable = GraphicsResourceCacheEnabled() || NativeDrawBatchEnabled();
     const auto* push_bytes = static_cast<const u8*>(push_data);
     const auto write_count = writes.size();
     append(&write_count, sizeof(write_count));

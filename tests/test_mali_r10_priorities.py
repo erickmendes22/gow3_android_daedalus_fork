@@ -92,4 +92,21 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("GOW3_MALI_BLACK_AHB",a)
         self.assertIn("GOW3_MALI_BLACK_DELIVERY",a)
         self.assertIn("mali_perf_sample, visual_sample",p)
+    def test_r12_physical_prefetch_and_graphics_cache(self):
+        pre=C.split("void TextureCache::PrefetchTinyReadback",1)[1].split("TextureCache::TakeTinyPrefetch",1)[0]
+        take=C.split("TextureCache::TakeTinyPrefetch",1)[1].split("void TextureCache::ProcessDownloadImages",1)[0]
+        self.assertIn("i.resources.levels >= 1",pre)
+        self.assertIn("ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty",pre)
+        self.assertIn("ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty",take)
+        self.assertIn("pre.uid != image.image_uid",take)
+        self.assertIn("pre.generation != image.alias_generation",take)
+        self.assertIn("pre.epoch != image.gpu_write_epoch",take)
+        self.assertIn("pre.backing != std::bit_cast<u64>(image.GetImage())",take)
+        self.assertIn("tiny_prefetch_filter[reason]",pre)
+        self.assertNotIn("WatchReadback<true>",pre)
+        self.assertIn("GraphicsResourceCacheEnabled() || NativeDrawBatchEnabled()",S)
+        self.assertIn("!NativeDrawBatchEnabled() && !GraphicsResourceCacheEnabled()",H)
+        self.assertIn("scheduler.GraphicsResourceCacheEnabled()", (V/"vk_pipeline_common.cpp").read_text())
+        self.assertIn("scheduler.RecordBatchState",D.split("void Rasterizer::EmitIndexBuffer()",1)[1].split("void Rasterizer::ResolveIndexBuffer",1)[0])
+        self.assertIn("scheduler.RecordGraphicsOrdered([=, this]",D)
 if __name__=="__main__": unittest.main()
