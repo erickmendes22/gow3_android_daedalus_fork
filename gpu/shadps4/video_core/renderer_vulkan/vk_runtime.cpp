@@ -721,8 +721,8 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
 
     bool needs_flush{};
     if (bounded) {
-        needs_flush = IsBufferAccessed(src, src_min, src_max - src_min) ||
-                      IsBufferAccessed(dst, dst_min, dst_max - dst_min, true);
+        needs_flush = IsBufferAccessed(src, src_min, src_max - src_min);
+        needs_flush |= IsBufferAccessed(dst, dst_min, dst_max - dst_min, true);
     } else {
         for (const auto& copy : copies) {
             needs_flush |= IsBufferAccessed(src, copy.srcOffset, copy.size);
@@ -1576,6 +1576,7 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
 
 bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 size,
                                bool check_read_access) {
+    if (!size) return false;
     const AddressRange range = {
         .resource = reinterpret_cast<u64>(handle),
         .range_start = offset,
@@ -1597,6 +1598,7 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
 
 void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size,
                            vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access) {
+    if (!size) return;
     AddressRange range = {
         .resource = reinterpret_cast<u64>(handle),
         .range_start = offset,

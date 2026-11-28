@@ -1,4 +1,4 @@
-name: GoW3 Mali R12 - exposure prefetch and graphics state reuse
+name: GoW3 Mali R13 - cached pipelines and transfer dependency cleanup
 
 on:
   push:

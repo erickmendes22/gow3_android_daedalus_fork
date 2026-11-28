@@ -217,7 +217,6 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
 
     if (!recording_threaded) {
         FlushNativeDrawBatch(current_cmdbuf);
-        last_graphics_resource_layout = vk::PipelineLayout{};
         current_cmdbuf.beginRendering(rendering_info);
         return;
     }

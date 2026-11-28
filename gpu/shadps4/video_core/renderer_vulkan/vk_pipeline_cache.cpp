@@ -801,6 +801,21 @@ bool PipelineCache::AsyncCompilation() const {
            Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
+void PipelineCache::SeedMaliWarmupCache(vk::PipelineCache cache) {
+    std::unique_lock<std::mutex> driver_lock;
+    if (driver_cache) driver_lock = std::unique_lock{driver_cache->mutex};
+    const auto result = instance.GetDevice().mergePipelineCaches(cache, *pipeline_cache);
+    std::printf("GOW3_MALI_WARMUP_SEED accepted=%u\n", unsigned(result == vk::Result::eSuccess));
+}
+
+void PipelineCache::MergeMaliWarmupCache(vk::PipelineCache cache) {
+    std::unique_lock<std::mutex> driver_lock;
+    if (driver_cache) driver_lock = std::unique_lock{driver_cache->mutex};
+    const auto result = instance.GetDevice().mergePipelineCaches(*pipeline_cache, cache);
+    if (result != vk::Result::eSuccess)
+        LOG_WARNING(Render_Vulkan, "Mali warmup Vulkan cache merge failed");
+}
+
 void PipelineCache::SeedWorkerCaches() {
     if (!compiler || worker_caches_seeded) {
         return;
@@ -885,6 +900,10 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         return nullptr;
     }
+    // A finished background result can be waiting in the inbox for the
+    // next 4 ms batch. Publish it before duplicating a live compilation.
+    if (mali_sync_draws && !graphics_pipelines.contains(sel.graphics_key))
+        PumpWarmUp(true);
     if (AsyncCompilation() && !sel.regs->stage_enable.hs_en && !EmulatorSettings.IsShaderCollect()) {
         const auto found = graphics_pipelines.find(sel.graphics_key);
         if (found != graphics_pipelines.end()) {
@@ -969,6 +988,8 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     if (!RefreshComputeKey()) {
         return nullptr;
     }
+    if (mali_sync_draws && !compute_pipelines.contains(compute_key))
+        PumpWarmUp(true);
     const auto [it, is_new] = compute_pipelines.try_emplace(compute_key);
     if (is_new) {
         const MaliPerfStats::Scoped mali_pipeline_build{

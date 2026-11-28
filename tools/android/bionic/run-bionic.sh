@@ -329,6 +329,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       # =1 enables worker compile with strict no-skipped-draw waiting.
       export GOW3_MALI_ASYNC_DRAW_WAIT=${GOW3_MALI_ASYNC_DRAW_WAIT:-0}
       export GOW3_BACKGROUND_WARMUP=${GOW3_BACKGROUND_WARMUP:-1}
+      export GOW3_MALI_PREPARE_CACHED_PIPELINES=${GOW3_MALI_PREPARE_CACHED_PIPELINES:-1}
       # The measured submit_throttle total was <1 ms over several seconds
       # even with cap=4. Restore the proven cap=2 to avoid changing two
       # variables while verifying parallel GPU draw preparation.
@@ -385,7 +386,7 @@ case "${GOW3_VULKAN_DRIVER:-}" in
       export GOW3_MALI_TINY_READBACK_FIRST=${GOW3_MALI_TINY_READBACK_FIRST:-1}
       export GOW3_MALI_READBACK_VERSION_DEDUP=${GOW3_MALI_READBACK_VERSION_DEDUP:-1}
       export GOW3_MALI_UPLOAD_STRIPES=${GOW3_MALI_UPLOAD_STRIPES:-1}
-      echo "Mali R12: submit_history=$GOW3_MALI_SUBMIT_HISTORY tiny_first=$GOW3_MALI_TINY_READBACK_FIRST version_dedup=$GOW3_MALI_READBACK_VERSION_DEDUP upload_stripes=$GOW3_MALI_UPLOAD_STRIPES producer_prefetch=$GOW3_MALI_TINY_PRODUCER_PREFETCH"
+      echo "Mali R13: submit_history=$GOW3_MALI_SUBMIT_HISTORY tiny_first=$GOW3_MALI_TINY_READBACK_FIRST version_dedup=$GOW3_MALI_READBACK_VERSION_DEDUP upload_stripes=$GOW3_MALI_UPLOAD_STRIPES producer_prefetch=$GOW3_MALI_TINY_PRODUCER_PREFETCH"
       echo "Mali R9: native_draw_batch=$GOW3_MALI_NATIVE_DRAW_BATCH coalesce_eop=$GOW3_MALI_COALESCE_EOP_READBACK"
       export GOW3_MALI_TEXTURE_BATCH_MIB=${GOW3_MALI_TEXTURE_BATCH_MIB:-16}
       echo "Mali texture-cache safety: early_readback_submit=$GOW3_MALI_EARLY_READBACK_SUBMIT texture_batch_mib=$GOW3_MALI_TEXTURE_BATCH_MIB exact_pool_only=$([ "$GOW3_MALI_REBIND_RETIRED_MEMORY" = 0 ] && echo yes || echo no)"

@@ -194,7 +194,7 @@ private:
     struct WarmStage;
     void ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data);
     bool MergeWarmStage(WarmStage& stage);
-    void PumpWarmUp();
+    void PumpWarmUp(bool publish_ready_now = false);
     void StopWarmUp();
     bool AsyncCompilation() const;
     bool RefreshGraphicsKey(PipelineSelection& sel);
@@ -228,6 +228,8 @@ private:
     void StartDriverCache();
     void StopDriverCache();
     void SaveDriverCache();
+    void SeedMaliWarmupCache(vk::PipelineCache cache);
+    void MergeMaliWarmupCache(vk::PipelineCache cache);
     vk::UniquePipelineLayout pipeline_layout;
     Shader::Profile profile{};
     Shader::Pools pools;

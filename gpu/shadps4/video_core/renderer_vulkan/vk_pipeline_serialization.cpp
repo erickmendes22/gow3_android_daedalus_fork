@@ -1266,9 +1266,25 @@ bool PipelineCache::StartSafeMaliWarmUp(bool prepare_cached) {
     // the background worker has its own VkPipelineCache and preserves every draw.
     // CheckCacheProfile rejects stale SPIR-V after an emulator/driver change.
     const bool compatible = CheckCacheProfile();
-    if (compatible && !prepare_cached && IndexMaliDiskShaders()) {
+    const bool indexed = compatible && IndexMaliDiskShaders();
+    const bool has_keys = compatible &&
+        Storage::DataBase::Instance().CountBlobs(Storage::BlobType::PipelineKey) != 0;
+    // Shader modules and Vulkan graphics/compute pipelines are different.
+    // An index of even one shader must not suppress all known pipeline keys.
+    if (!has_keys && indexed) {
         Storage::DataBase::Instance().FinishPreload();
-        std::printf("GOW3_MALI_PIPELINE_PREPASS status=disk-on-demand\n");
+        std::printf("GOW3_MALI_PIPELINE_PREPASS status=disk-on-demand reason=no-pipeline-keys\n");
+        return true;
+    }
+    if (!has_keys) {
+        Storage::DataBase::Instance().FinishPreload();
+        std::printf("GOW3_MALI_PIPELINE_PREPASS status=record-only reason=no-pipeline-keys\n");
+        return true;
+    }
+    // Preserve the explicit on-demand override for bisecting drivers.
+    const char* ondemand = std::getenv("GOW3_MALI_PIPELINE_ON_DEMAND");
+    if (!prepare_cached && ondemand && ondemand[0] == '1') {
+        Storage::DataBase::Instance().FinishPreload();
         return true;
     }
     if (!Storage::DataBase::Instance().ConcurrentReads() || !compatible) {
@@ -1337,6 +1353,9 @@ bool PipelineCache::StartBackgroundWarmUp() {
             Storage::DataBase::Instance().FinishPreload();
             return true;
         }
+        // Seed once from the already validated live cache. Creating a fresh
+        // empty VkPipelineCache here discarded the restored driver work.
+        SeedMaliWarmupCache(*private_cache);
         warm.mali_worker_cache = std::move(private_cache);
     }
     warm.pool = std::make_unique<WarmupPool>(warm.threads, true);
@@ -1487,7 +1506,7 @@ bool PipelineCache::MergeWarmStage(WarmStage& stage) {
     return true;
 }
 
-void PipelineCache::PumpWarmUp() {
+void PipelineCache::PumpWarmUp(bool publish_ready_now) {
     if (!background || background->finished) {
         return;
     }
@@ -1499,7 +1518,7 @@ void PipelineCache::PumpWarmUp() {
     // pipelines in a single draw, competing with the PM4 thread.
     // Mali batches both ready publications and stage merges every 4 ms.
     // Desktop retains its previous eager pipeline publication behavior.
-    if (warm.mali && pump_started - warm.last_batch < 4ms) {
+    if (warm.mali && pump_started - warm.last_batch < 4ms && !publish_ready_now) {
         return;
     }
     if (warm.last_pump.time_since_epoch().count()) {
@@ -1531,6 +1550,7 @@ void PipelineCache::PumpWarmUp() {
         warm.done.fetch_add(1, std::memory_order_relaxed);
     }
 
+    if (publish_ready_now) return;
     const auto now = std::chrono::steady_clock::now();
     if (now - warm.last_batch < 4ms) {
         return;
@@ -1649,10 +1669,7 @@ void PipelineCache::PumpWarmUp() {
     // Worker queue is idle and all Vulkan creations completed; merge on the
     // GPU thread so the saved driver cache also contains warmed pipelines.
     if (warm.mali_worker_cache) {
-        const auto result = instance.GetDevice().mergePipelineCaches(
-            *pipeline_cache, *warm.mali_worker_cache);
-        if (result != vk::Result::eSuccess)
-            LOG_WARNING(Render_Vulkan, "Mali warmup Vulkan cache merge failed");
+        MergeMaliWarmupCache(*warm.mali_worker_cache);
     }
     std::printf("Pipeline warm-up: %u of %u pipelines in %.2f s in the background (%u threads)\n",
                 warm.loaded, warm.total.load(),
