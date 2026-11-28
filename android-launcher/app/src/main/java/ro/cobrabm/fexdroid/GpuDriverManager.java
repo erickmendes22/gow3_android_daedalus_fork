@@ -179,6 +179,7 @@ public final class GpuDriverManager {
     public static void configureEnvironment(Context context,Map<String,String> environment) throws IOException {
         String selection=exynosDevice() ? "system" : selected(context);
         environment.remove("GOW3_CUSTOM_VULKAN_DRIVER"); environment.remove("GOW3_VULKAN_DRIVER");
+        environment.remove("GOW3_ADRENOTOOLS_HOOK_DIR"); environment.remove("GOW3_EXTERNAL_QUALCOMM_DRIVER");
         // Automatic Mali selects PanVK only when Android 15+ is available.
         // Manual selections never get silently replaced with a different driver.
         if ("panvk".equals(selection) || ("auto".equals(selection) && maliCandidate())) {
@@ -206,6 +207,11 @@ public final class GpuDriverManager {
             DriverArchive.validateLibrary(driver.library);
             environment.put("GOW3_BIONIC_DRIVER","custom");
             environment.put("GOW3_CUSTOM_VULKAN_DRIVER",driver.library.getAbsolutePath());
+            String basename=driver.library.getName().toLowerCase(java.util.Locale.ROOT);
+            if (basename.startsWith("vulkan.adr") || basename.startsWith("vulkan.qcom")) {
+                environment.put("GOW3_ADRENOTOOLS_HOOK_DIR",context.getApplicationInfo().nativeLibraryDir);
+                environment.put("GOW3_EXTERNAL_QUALCOMM_DRIVER","1");
+            }
         } else {
             if (!Arrays.asList("auto","gen8","adreno7xx","system").contains(selection)) throw new IOException("Invalid driver selection");
             // Old preferences must never force an Adreno HAL onto Exynos/Mali.
