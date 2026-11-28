@@ -122,9 +122,7 @@ void FaultManager::ResolveFaultArea(u32 area) {
         LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
     }
     fault_ranges.ForEach([&](VAddr start, VAddr end) {
-        ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
-                   "Buffer size is too large");
-        (void)buffer_cache.ObtainBuffer(start, end - start, false);
+        buffer_cache.PopulateFaultRange(start, end);
     });
     fault_areas[area] = 0;
 }

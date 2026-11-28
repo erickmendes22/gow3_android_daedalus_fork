@@ -118,6 +118,7 @@ public:
 
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();
+    void PopulateFaultRange(VAddr start, VAddr end);
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);

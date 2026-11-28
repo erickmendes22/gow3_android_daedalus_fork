@@ -238,7 +238,8 @@ class R10Priorities(unittest.TestCase):
         bc=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
         dma=bc.split("void BufferCache::SynchronizeDmaBuffers()",1)[1].split("const Buffer* BufferCache::GetArena",1)[0]
         self.assertIn("while (addr < end)",dma)
-        self.assertIn("arena->SizeBytes() - (addr - arena->cpu_addr)",dma)
+        self.assertIn("DmaArenaChunk(addr, end, arena->cpu_addr, arena->SizeBytes(), block_size)",dma)
+        self.assertIn("buffer_cache.PopulateFaultRange(start, end)",(V.parent/"buffer_cache/fault_manager.cpp").read_text())
         self.assertIn("SynchronizeMemory(arena, addr, bytes",dma)
         self.assertIn("addr += bytes",dma)
         self.assertIn("Guest DMA upload outside owning arena",bc)
@@ -248,4 +249,13 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("peer->DumpLocalSubmissionHistory(peer->KnownGpuTick() + 1)",sem)
         self.assertIn("std::unique_lock registry{history_registry_mutex, std::try_to_lock}",sem)
         self.assertIn("std::unique_lock lock{trace_mutex, std::try_to_lock}",sem)
+    def test_dma_arena_chunk_compiles_and_handles_cross_boundary(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out=Path(tmp)/"dma_arena"
+            subprocess.run(["c++","-std=c++20","-Wall","-Wextra","-Werror",
+                            "-I"+str(R/"gpu/shadps4"),str(R/"tests/test_mali_dma_arena_chunk.cpp"),
+                            "-o",str(out)],check=True)
+            subprocess.run([str(out)],check=True,timeout=10)
 if __name__=="__main__": unittest.main()

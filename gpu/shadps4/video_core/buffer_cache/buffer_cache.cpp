@@ -20,6 +20,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/mali_copy_coalescing.h"
+#include "video_core/buffer_cache/dma_arena_chunk.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -567,6 +568,25 @@ void BufferCache::DrainCompletedFaults() {
     fault_manager->DrainCompletedFaults();
 }
 
+void BufferCache::PopulateFaultRange(VAddr start, VAddr end) {
+    // Fault results are merged guest ranges and can span more than two
+    // arena pages. Populate actual BDA mappings, never a temporary stream
+    // binding. This also avoids unnecessary arena migration on fault drain.
+    ASSERT_MSG(start < end && end <= (u64{1} << ADDRESS_SPACE_BITS) &&
+               start % block_size == 0 && end % block_size == 0,
+               "Invalid GPU fault range {:#x}-{:#x}", start, end);
+    while (start < end) {
+        const u64 page_end = ((start >> arena_page_bits) + 1) << arena_page_bits;
+        const auto* arena = GetArena(start >> block_shift, start >> block_shift);
+        const auto bytes = DmaArenaChunk(start, std::min<u64>(end,page_end),
+                                         arena->cpu_addr, arena->SizeBytes(), block_size);
+        ASSERT(bytes != 0);
+        EnsureResident(arena, start >> block_shift, (start + bytes - 1) >> block_shift);
+        SynchronizeMemory(arena, start, bytes, false, false);
+        start += bytes;
+    }
+}
+
 void BufferCache::SynchronizeDmaBuffers() {
     for (const auto& range : resident_ranges) {
         // Residency is a guest-address interval, not a VkBuffer interval.
@@ -582,11 +602,7 @@ void BufferCache::SynchronizeDmaBuffers() {
             ASSERT_MSG(arena && addr >= arena->cpu_addr &&
                        addr - arena->cpu_addr < arena->SizeBytes(),
                        "Resident DMA range has no owning arena");
-            const u64 remaining = std::min<u64>(end - addr,
-                arena->SizeBytes() - (addr - arena->cpu_addr));
-            // SynchronizeMemory uses a u32 byte count; retain block alignment.
-            const u64 limit = u64{std::numeric_limits<u32>::max()} & ~(u64{block_size} - 1);
-            const u32 bytes = static_cast<u32>(std::min(remaining, limit));
+            const u32 bytes = DmaArenaChunk(addr, end, arena->cpu_addr, arena->SizeBytes(), block_size);
             ASSERT(bytes != 0);
             SynchronizeMemory(arena, addr, bytes, false, false);
             addr += bytes;
