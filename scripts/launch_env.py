@@ -72,7 +72,7 @@ def derive(game, config, state_path, env):
     # Spatial-only filter is independent of game resolution. Keep the user's
     # original 240p...8K patch selection; never force the old 720p output.
     gsr2_requested = android_port and ini.get('upscaler') == 'gsr2'
-    if android_port and ini.get('upscaler') not in ('off', 'gsr2'):
+    if android_port and not compile_only and ini.get('upscaler') not in ('off', 'gsr2'):
         graphics_options.write_keys(config, {'upscaler': 'off', 'preset': '0',
                                              'fsr1': '0', 'rcas': '0'})
         ini = graphics_options.read_ini(config)
