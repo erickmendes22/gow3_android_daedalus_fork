@@ -173,6 +173,7 @@ Gow3VkGetInstanceProcAddr OpenHal(void* hmi, const char* driver) {
     return &HalGetInstanceProcAddr;
 }
 
+#ifdef __ANDROID__
 bool IsExternalVendorVulkan(const char* path) {
     // Qualcomm packages use names like vulkan.adr891.so and vulkan.adreno.so.
     // Mesa Turnip names are libvulkan_freedreno.so and must NEVER be silently
@@ -185,6 +186,8 @@ bool IsExternalVendorVulkan(const char* path) {
     return std::strncmp(filename, "vulkan.adr", 10) == 0 ||
            std::strncmp(filename, "vulkan.qcom", 11) == 0;
 }
+
+#endif
 
 Gow3VkGetInstanceProcAddr Load() {
     const char* driver = std::getenv("GOW3_VULKAN_DRIVER");

@@ -1,4 +1,4 @@
-name: Daedalus Snapdragon reconstructed Qualcomm and Turnip test APK
+name: Daedalus Snapdragon reconstructed Qualcomm and Turnip test APK r2
 
 on:
   push:

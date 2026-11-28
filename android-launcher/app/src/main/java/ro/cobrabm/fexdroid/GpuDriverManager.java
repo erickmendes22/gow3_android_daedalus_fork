@@ -128,7 +128,7 @@ public final class GpuDriverManager {
     }
 
 
-    public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()); }
+    public static boolean supported(Context context) { return "com.gow3.android.bionic".equals(context.getPackageName()) || "com.gow3.android.bionic.ubo".equals(context.getPackageName()); }
     private static File root(Context context) { return new File(context.getFilesDir(),"gpu-drivers"); }
     public static String selected(Context context) {
         return context.getSharedPreferences("gow3",Context.MODE_PRIVATE).getString("gpu_driver","auto");

@@ -27,6 +27,7 @@ public class Context {
  final File files; public final Prefs prefs=new Prefs();
  public Context(File files) { this.files=files; }
  public File getFilesDir() { return files; }
+ public android.content.pm.ApplicationInfo getApplicationInfo() { return new android.content.pm.ApplicationInfo(); }
  public String getPackageName() { return "com.gow3.android.bionic"; }
  public String getString(int id) { return "fixture error "+id; }
  public Prefs getSharedPreferences(String n,int mode) { return prefs; }
@@ -40,6 +41,7 @@ public class Context {
   public boolean commit() { return true; }
  }
 }''',
+'android/content/pm/ApplicationInfo.java':'package android.content.pm; public class ApplicationInfo { public String nativeLibraryDir="/fixture/native"; }',
 'android/content/ContentResolver.java':'''package android.content;
 public class ContentResolver { public java.io.InputStream openInputStream(android.net.Uri uri) throws java.io.IOException { throw new java.io.IOException("unused"); } }''',
 'android/net/Uri.java':'package android.net; public class Uri {}',

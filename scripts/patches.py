@@ -435,7 +435,8 @@ def android_native_resolution_writes(xml, image, segments, sha, render_res, patc
         overrides[offset] = ((width if i == 0 else height) // 2).to_bytes(4, 'little')
     return overrides, {'render': f'{width}x{height}', 'output': f'{width}x{height}',
                        'verified_eboot_sha256': sha,
-                       'verified_sites': [hex(offset + EBOOT_BASE) for offset in overrides]}
+                       'verified_sites': [hex(offset + EBOOT_BASE) for offset in list(overrides)[:8]],
+                       'verified_postprocess_sites': [hex(offset + EBOOT_BASE) for offset in list(overrides)[8:]]}
 
 
 def write_patches(out, writes):
