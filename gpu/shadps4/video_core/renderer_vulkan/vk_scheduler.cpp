@@ -221,7 +221,7 @@ void Scheduler::WaitDeferredSignals() {
 
 void Scheduler::WaitHostCopies(std::source_location caller) {
     const u64 issued = host_copies_issued;
-    if (host_copies_done.load(std::memory_order_acquire) < issued) {
+    if (host_copies_done.Value() < issued) {
         Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
         Gow3Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         const bool profile = WaitDiagnostics::Enabled();
@@ -229,7 +229,7 @@ void Scheduler::WaitHostCopies(std::source_location caller) {
         const auto start = profile ? Clock::now() : Clock::time_point{};
         KickRecording(true);
         const auto queued = profile ? Clock::now() : Clock::time_point{};
-        Detail::WaitForHostCopySequence(host_copies_done, issued);
+        host_copies_done.Wait(issued);
         if (profile) {
             using Ns = std::chrono::nanoseconds;
             WaitDiagnostics::HostCopies().Add(caller.file_name(), caller.line(),
@@ -250,7 +250,23 @@ void Scheduler::KickRecording(bool force) {
     direct_mode = false;
     // Batches of tens of KiB keep the queue handoff cheap relative to the work it carries.
     if (!force && full_chunks.empty() && CurrentChunk().Size() < 32 * 1024) {
+#ifdef __ANDROID__
+        // UB2 direct gameplay: the EOP fence spends most of its wait on
+        // recorder-copy completion. Publish at an existing safe draw/dispatch
+        // boundary a little earlier, but only when the recorder has no queued
+        // chunks and these copies are still outstanding. No command or fence
+        // ordering is changed; under backlog retain the established 32 KiB batch.
+        static const bool early_copy_kick = std::getenv("BB_AOT") &&
+            (!std::getenv("GOW3_UB2_EARLY_COPY_KICK") ||
+             std::getenv("GOW3_UB2_EARLY_COPY_KICK")[0] != '0');
+        if (!early_copy_kick || CurrentChunk().Size() < 16 * 1024 ||
+            queued_chunks.load(std::memory_order_acquire) != 0 ||
+            host_copies_done.Value() >= host_copies_issued) {
+            return;
+        }
+#else
         return;
+#endif
     }
     if (full_chunks.empty() && CurrentChunk().Empty()) {
         return;
@@ -299,6 +315,9 @@ void Scheduler::SyncRecording() {
 
 void Scheduler::RecorderThread(std::stop_token stoken) {
     Common::SetCurrentThreadName("gow3:VkRecorder");
+#ifdef __ANDROID__
+    u32 ub2_sample_chunks = 0;
+#endif
     while (true) {
         // Spin briefly before sleeping: the next chunk usually follows within microseconds,
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
@@ -330,6 +349,9 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
         }
         // current_cmdbuf only changes after SyncRecording(), which waits for this thread.
         chunk->Execute(current_cmdbuf);
+#ifdef __ANDROID__
+        if ((++ub2_sample_chunks & 127u) == 0) Gow3Ub2Cpu::SampleThread("VkRecorder");
+#endif
         {
             std::scoped_lock lk{recorder_mutex};
             free_chunks.push_back(std::move(chunk));

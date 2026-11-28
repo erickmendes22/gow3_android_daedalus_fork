@@ -26,6 +26,7 @@
 #include "video_core/amdgpu/regs_primitive.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
+#include "video_core/renderer_vulkan/host_copy_wait.h"
 
 namespace tracy {
 class VkCtxScope;
@@ -807,8 +808,7 @@ public:
         Record([copy = std::forward<Func>(copy), this,
                 seq = ++host_copies_issued](vk::CommandBuffer) {
             copy();
-            host_copies_done.store(seq, std::memory_order_release);
-            host_copies_done.notify_all();
+            host_copies_done.Publish(seq);
         });
     }
 
@@ -941,7 +941,7 @@ private:
     bool recorder_sleeping = false; ///< waiting on recorder_cv (guarded by recorder_mutex)
     bool direct_mode = false; ///< the command buffer is recorded on the caller's thread
     u64 host_copies_issued = 0;
-    std::atomic<u64> host_copies_done{0};
+    Detail::HostCopyCompletion host_copies_done;
     std::atomic<u64> deferred_signals_issued{0}; ///< by the thread recording (A or B)
     std::shared_ptr<std::atomic<u64>> deferred_signals_done =
         std::make_shared<std::atomic<u64>>(0);

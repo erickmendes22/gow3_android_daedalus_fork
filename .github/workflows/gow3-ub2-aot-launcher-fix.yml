@@ -1,4 +1,4 @@
-name: GoW III UB2 CPU direct optimized APK
+name: GoW III UB2 CPU copy completion optimized APK
 
 on:
   push:
@@ -33,6 +33,8 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -I gpu/shim tests/test_ub2_cpu_policy.cpp -o /tmp/ub2-cpu-test
           env -u BB_AOT /tmp/ub2-cpu-test
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread -I gpu/shadps4 tests/test_ub2_host_copy_completion.cpp -o /tmp/ub2-copy-test
+          timeout 30s /tmp/ub2-copy-test
       - name: Recover SHA-pinned release inputs
         run: |
           set -euo pipefail
@@ -72,19 +74,19 @@ jobs:
           bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
           mkdir -p out/ub2-delivery
           bt="$ANDROID_HOME/build-tools/36.0.0"
-          apk=out/ub2-delivery/GoW3-UB2-CPU-Direct-unsigned.apk
+          apk=out/ub2-delivery/GoW3-UB2-CPU-Copy-unsigned.apk
           "$bt/zipalign" -P 16 -f 4 android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk "$apk"
           "$bt/zipalign" -P 16 -c -v 4 "$apk"
           python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt" --ubo-test
           "$bt/aapt" dump badging "$apk" > out/ub2-delivery/badging.txt
-          grep "name='com.gow3.android.bionic.ub2' versionCode='2010808'" out/ub2-delivery/badging.txt
+          grep "name='com.gow3.android.bionic.ub2' versionCode='2010809'" out/ub2-delivery/badging.txt
           unzip -l "$apk" | grep 'lib/arm64-v8a/libbbrecomp.so'
           cp "$bt/lib/apksigner.jar" out/ub2-delivery/apksigner.jar
           git rev-parse HEAD > out/ub2-delivery/source-commit.txt
           (cd out/ub2-delivery && sha256sum *.apk apksigner.jar > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: gow3-ub2-cpu-direct-unsigned
+          name: gow3-ub2-cpu-copy-unsigned
           path: out/ub2-delivery/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

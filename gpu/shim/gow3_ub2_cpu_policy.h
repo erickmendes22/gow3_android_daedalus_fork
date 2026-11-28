@@ -124,6 +124,19 @@ inline unsigned long long Ns(clockid_t clock) {
     if (clock_gettime(clock, &t) != 0) return 0;
     return static_cast<unsigned long long>(t.tv_sec) * 1000000000ULL + t.tv_nsec;
 }
+// Android may restrict these read-only sysfs files. Zero means unavailable,
+// not zero clock speed. Do not alter clocks, governor, thermal or cpusets.
+inline unsigned long long ReadCpuFreq(int cpu, const char* field) {
+    if (cpu < 0) return 0;
+    char path[160];
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/%s", cpu, field);
+    std::FILE* f = std::fopen(path, "r");
+    if (!f) return 0;
+    unsigned long long khz = 0;
+    if (std::fscanf(f, "%llu", &khz) != 1) khz = 0;
+    std::fclose(f);
+    return khz;
+}
 inline void SampleThread(const char* role) {
     if (!std::getenv("BB_AOT")) return;
     static thread_local unsigned long long last_wall = 0, last_cpu = 0;
@@ -131,8 +144,12 @@ inline void SampleThread(const char* role) {
     if (!wall || (last_wall && wall-last_wall < 5000000000ULL)) return;
     const auto cpu = Ns(CLOCK_THREAD_CPUTIME_ID);
     if (last_wall && cpu >= last_cpu) {
-        std::fprintf(stderr, "UB2_CPU_SAMPLE role=%s tid=%d current_cpu=%d thread_cpu_pct=%.1f\n",
-                     role, static_cast<int>(gettid()), sched_getcpu(), 100.0 * (cpu-last_cpu)/(wall-last_wall));
+        const int core = sched_getcpu();
+        const auto freq = ReadCpuFreq(core, "scaling_cur_freq");
+        const auto limit = ReadCpuFreq(core, "scaling_max_freq");
+        std::fprintf(stderr, "UB2_CPU_SAMPLE role=%s tid=%d current_cpu=%d thread_cpu_pct=%.1f freq_khz=%llu limit_khz=%llu\n",
+                     role, static_cast<int>(gettid()), core, 100.0 * (cpu-last_cpu)/(wall-last_wall),
+                     freq, limit);
     }
     last_wall = wall;
     last_cpu = cpu;
