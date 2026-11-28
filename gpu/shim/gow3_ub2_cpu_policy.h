@@ -89,20 +89,22 @@ inline void Report(const char* role, const char* status, const cpu_set_t& mask, 
     std::fprintf(stderr, "UB2_CPU_AFFINITY role=%s status=%s source=%s allowed=%s current_cpu=%d\n",
                  role, status, source, pos ? cpus : "none", sched_getcpu());
 }
-inline void ApplyToCommandProcessor() {
+inline void ApplyPrimeAffinity(const char* role) {
     const auto& p = Get();
     if (!std::getenv("BB_AOT")) return;
     cpu_set_t current{};
     if (sched_getaffinity(0, sizeof(current), &current) != 0) return;
     if (!p.enabled || !SameMask(current, p.allowed)) {
-        Report("GpuComm", "unchanged", current, p.source);
+        Report(role, "unchanged", current, p.source);
         return;
     }
     const int ret = sched_setaffinity(0, sizeof(p.prime), &p.prime);
     cpu_set_t effective = current;
     (void)sched_getaffinity(0, sizeof(effective), &effective);
-    Report("GpuComm", ret == 0 && SameMask(effective, p.prime) ? "prime-pair" : "fallback", effective, p.source);
+    Report(role, ret == 0 && SameMask(effective, p.prime) ? "prime-pair" : "fallback", effective, p.source);
 }
+
+inline void ApplyToCommandProcessor() { ApplyPrimeAffinity("GpuComm"); }
 
 // New named host workers may inherit the command processor's mask. Restore only
 // a matching inherited mask; never change guest PS4 affinity or other masks.
@@ -122,18 +124,19 @@ inline unsigned long long Ns(clockid_t clock) {
     if (clock_gettime(clock, &t) != 0) return 0;
     return static_cast<unsigned long long>(t.tv_sec) * 1000000000ULL + t.tv_nsec;
 }
-inline void SampleCommandProcessor() {
+inline void SampleThread(const char* role) {
     if (!std::getenv("BB_AOT")) return;
     static thread_local unsigned long long last_wall = 0, last_cpu = 0;
     const auto wall = Ns(CLOCK_MONOTONIC);
     if (!wall || (last_wall && wall-last_wall < 5000000000ULL)) return;
     const auto cpu = Ns(CLOCK_THREAD_CPUTIME_ID);
     if (last_wall && cpu >= last_cpu) {
-        std::fprintf(stderr, "UB2_CPU_SAMPLE role=GpuComm tid=%d current_cpu=%d thread_cpu_pct=%.1f\n",
-                     static_cast<int>(gettid()), sched_getcpu(), 100.0 * (cpu-last_cpu)/(wall-last_wall));
+        std::fprintf(stderr, "UB2_CPU_SAMPLE role=%s tid=%d current_cpu=%d thread_cpu_pct=%.1f\n",
+                     role, static_cast<int>(gettid()), sched_getcpu(), 100.0 * (cpu-last_cpu)/(wall-last_wall));
     }
     last_wall = wall;
     last_cpu = cpu;
 }
+inline void SampleCommandProcessor() { SampleThread("GpuComm"); }
 } // namespace Gow3Ub2Cpu
 #endif

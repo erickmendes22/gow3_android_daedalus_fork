@@ -64,6 +64,11 @@ static const char* acb_task_name[] = NAME_ARRAY(ACB_TASK, MAX_NAMES);
 
 std::array<u8, 48_KB> Liverpool::ConstantEngine::constants_heap;
 
+#ifdef __ANDROID__
+// Owned by the command processor. Nested CE/IB coroutines execute on the same
+// thread; a packet completed in any of them counts as forward progress.
+static thread_local u64 ub2_packet_progress = 0;
+#endif
 static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset) {
     if (offset > span.size()) {
         LOG_ERROR(
@@ -75,6 +80,9 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
         return {};
     }
 
+#ifdef __ANDROID__
+    ++ub2_packet_progress;
+#endif
     return span.subspan(offset);
 }
 
@@ -139,6 +147,23 @@ void Liverpool::Process(std::stop_token stoken) {
     gpu_id = std::this_thread::get_id();
 #ifdef __ANDROID__
     bool ub2_placement_applied = false;
+    const bool ub2_backoff = std::getenv("BB_AOT") &&
+        (!std::getenv("GOW3_UB2_PM4_BACKOFF") || std::getenv("GOW3_UB2_PM4_BACKOFF")[0] != '0');
+    u64 stalled_steps = 0, wait_sleeps = 0, wait_ns = 0;
+    u64 report_at = 0;
+    const auto no_progress = [&] {
+        if (!ub2_backoff || num_commands || !num_submits) { stalled_steps = 0; return; }
+        // Eight complete round-robin passes without completing a packet. Do not
+        // park a dependency while another guest graphics/compute queue can run.
+        if (++stalled_steps < 8ULL * num_mapped_queues) return;
+        stalled_steps = 0;
+        const auto before = Gow3Ub2Cpu::Ns(CLOCK_MONOTONIC);
+        const timespec pause{0, 5000};
+        nanosleep(&pause, nullptr); // a bounded retry, never an unbounded fence sleep
+        const auto after = Gow3Ub2Cpu::Ns(CLOCK_MONOTONIC);
+        ++wait_sleeps;
+        if (after >= before) wait_ns += after - before;
+    };
 #endif
 #if defined(__linux__) || defined(_WIN32)
     gpu_tid = gettid();
@@ -164,6 +189,9 @@ void Liverpool::Process(std::stop_token stoken) {
         curr_qid = -1;
 
         while (num_submits || num_commands) {
+            #ifdef __ANDROID__
+            if (num_commands) stalled_steps = 0;
+            #endif
             ProcessCommands();
 
             curr_qid = (curr_qid + 1) % num_mapped_queues;
@@ -173,12 +201,28 @@ void Liverpool::Process(std::stop_token stoken) {
             Task::Handle task{};
             {
                 std::scoped_lock lock{queue.m_access};
-                if (queue.submits.empty()) {
-                    continue;
+                if (!queue.submits.empty()) {
+                    task = queue.submits.front();
                 }
-                task = queue.submits.front();
             }
+            // Never sleep with a queue lock held.
+            if (!task) {
+#ifdef __ANDROID__
+                no_progress();
+#endif
+                continue;
+            }
+#ifdef __ANDROID__
+            const auto progress_before = ub2_packet_progress;
+#endif
             task.resume();
+#ifdef __ANDROID__
+            if (task.done() || ub2_packet_progress != progress_before) {
+                stalled_steps = 0;
+            } else {
+                no_progress();
+            }
+#endif
 
             if (task.done()) {
                 task.destroy();
@@ -226,6 +270,16 @@ void Liverpool::Process(std::stop_token stoken) {
             ub2_placement_applied = true;
         }
         Gow3Ub2Cpu::SampleCommandProcessor();
+        if (ub2_backoff) {
+            const auto now = Gow3Ub2Cpu::Ns(CLOCK_MONOTONIC);
+            if (!report_at) report_at = now;
+            if (now - report_at >= 5000000000ULL) {
+                std::fprintf(stderr, "UB2_PM4_BACKOFF sleeps=%llu parked_ms=%.3f\n",
+                             static_cast<unsigned long long>(wait_sleeps), wait_ns / 1000000.0);
+                wait_sleeps = wait_ns = 0;
+                report_at = now;
+            }
+        }
 #endif
     }
 }

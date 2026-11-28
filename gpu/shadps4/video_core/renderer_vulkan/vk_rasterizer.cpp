@@ -442,12 +442,20 @@ bool Rasterizer::DrawPipeWanted() {
     if (env && env[0]) {
         return env[0] == '1';
     }
-    // BACHATA 025's ordinary Vulkan draw path does not require the GoW3
-    // speculative draw pipeline. The port's draw-pipe speedup was measured
-    // on desktop cores, not a heterogeneous 8-core Android SoC. Prefer the
-    // deterministic direct path for Android; GOW3_DRAW_PIPE=1 (handled above)
-    // enables the existing path for matched-scene A/B measurement.
-    if (std::getenv("GOW3_ANDROID_PORT")) return false;
+    // UB2 AOT logs show the direct command processor at 93.45% CPU in
+    // gameplay even after prime affinity. The existing ordered draw pipe
+    // transfers resource binding and recording to stage B. Only enable
+    // automatically for the measured heterogeneous topology; FEX and other
+    // Android devices retain their established direct path.
+    if (std::getenv("GOW3_ANDROID_PORT")) {
+#ifdef __ANDROID__
+        const bool enabled = Gow3Ub2Cpu::Get().enabled;
+        std::printf("UB2_DRAW_PIPE default=%d (AOT verified prime pair)\n", int(enabled));
+        return enabled;
+#else
+        return false;
+#endif
+    }
     return Gow3Threads::Available() >= 8;
 }
 

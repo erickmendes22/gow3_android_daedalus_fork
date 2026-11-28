@@ -111,6 +111,9 @@ public:
         const u32 slot = reason < NumReasons ? reason : ReasonRasterizer;
         ++drains_by_reason[slot];
         const u64 start = Common::FencedRDTSC();
+#ifdef __ANDROID__
+        WaitConsumedUntil(head);
+#else
         for (u32 spins = 0; consumed.load(std::memory_order_acquire) != head; ++spins) {
             if (spins < 4096) {
                 COMMON_CPU_RELAX();
@@ -118,6 +121,7 @@ public:
                 std::this_thread::yield();
             }
         }
+#endif
         const u64 waited = Common::FencedRDTSC() - start;
         drain_cycles += waited;
         cycles_by_reason[slot] += waited;
@@ -151,14 +155,47 @@ private:
         return (size + 63) & ~63u;
     }
 
+#ifdef __ANDROID__
+    // The producer is unique. The seq_cst flag/load and store/flag pair
+    // prevents lost wakeups without a futex notification for every draw.
+    void WaitConsumedUntil(u64 target) {
+        for (unsigned spin = 0; spin < 128; ++spin) {
+            if (consumed.load(std::memory_order_acquire) >= target) return;
+            COMMON_CPU_RELAX();
+        }
+        producer_waiting.store(true, std::memory_order_seq_cst);
+        for (;;) {
+            const u64 observed = consumed.load(std::memory_order_seq_cst);
+            if (observed >= target) break;
+            consumed.wait(observed, std::memory_order_acquire);
+        }
+        producer_waiting.store(false, std::memory_order_seq_cst);
+    }
+#endif
+    void PublishConsumed(u64 at) {
+#ifdef __ANDROID__
+        consumed.store(at, std::memory_order_seq_cst);
+        if (producer_waiting.load(std::memory_order_seq_cst)) consumed.notify_one();
+#else
+        consumed.store(at, std::memory_order_release);
+#endif
+    }
     void WaitForSpace(u64 at, u64 size) {
+#ifdef __ANDROID__
+        if (at + size > Capacity) WaitConsumedUntil(at + size - Capacity);
+#else
         while (at + size - consumed.load(std::memory_order_acquire) > Capacity) {
             COMMON_CPU_RELAX();
         }
+#endif
     }
 
     void Run(std::stop_token stop) {
         Common::SetCurrentThreadName("gow3:DrawRec");
+#ifdef __ANDROID__
+        Gow3Ub2Cpu::ApplyPrimeAffinity("DrawRec");
+        u32 sample_packets = 0;
+#endif
         on_stage_b = true;
         stage_b_tid.store(static_cast<u32>(gettid()), std::memory_order_release);
         u64 at = 0;
@@ -173,7 +210,11 @@ private:
                     if (const char* env = std::getenv("GOW3_PIPE_SPIN_US")) {
                         return std::max(0, std::atoi(env));
                     }
+#ifdef __ANDROID__
+                    return 6;
+#else
                     return Gow3Threads::Available() >= 12 ? 200 : 50;
+#endif
                 }());
                 const auto spin_until = std::chrono::steady_clock::now() + spin_time;
                 for (u32 spins = 1; available == at; ++spins) {
@@ -196,14 +237,17 @@ private:
             const auto* header = reinterpret_cast<const Header*>(ring.get() + at % Capacity);
             if (header->size == 0) {
                 at += Capacity - at % Capacity;
-                consumed.store(at, std::memory_order_release);
+                PublishConsumed(at);
                 continue;
             }
             const u64 start = Common::FencedRDTSC();
             handler(context, reinterpret_cast<const u8*>(header + 1), header->payload);
             busy_cycles.fetch_add(Common::FencedRDTSC() - start, std::memory_order_relaxed);
             at += header->size;
-            consumed.store(at, std::memory_order_release);
+            PublishConsumed(at);
+#ifdef __ANDROID__
+            if ((++sample_packets & 1023u) == 0) Gow3Ub2Cpu::SampleThread("DrawRec");
+#endif
         }
     }
 
@@ -215,6 +259,9 @@ private:
     u32 pending_size = 0;
     alignas(64) std::atomic<u64> published{0};
     alignas(64) std::atomic<u64> consumed{0};
+#ifdef __ANDROID__
+    alignas(64) std::atomic<bool> producer_waiting{false};
+#endif
     alignas(64) std::atomic<u32> wake{0};
     std::atomic<bool> sleeping{false};
     std::atomic<u32> stage_b_tid{0};
