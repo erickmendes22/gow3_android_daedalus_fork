@@ -28,10 +28,12 @@ public:
         return instance_ptr;
     }
     static void Init(const Instance& instance, Scheduler& scheduler);
+    bool Capturing() const noexcept { return !sampled || sample_active; }
 
     /// Starts a segment labelled `key`; `describe` names it the first time the key is seen.
     template <typename Describe>
     void Mark(u64 key, Describe&& describe) {
+        if (!Capturing()) return;
         if (!described.contains(key)) {
             described.emplace(key, describe());
         }
@@ -44,7 +46,7 @@ public:
     }
     /// Continues the segment of `key` (a label seen before) where a nested one ends.
     void Resume(u64 key) {
-        WriteTimestamp(key);
+        if (Capturing()) WriteTimestamp(key);
     }
 
     /// Whether `other` is the scheduler it records into (the presenter has its own).
@@ -56,7 +58,7 @@ public:
     void BeginFrame();
 
 private:
-    GpuProfiler(const Instance& instance, Scheduler& scheduler);
+    GpuProfiler(const Instance& instance, Scheduler& scheduler, bool sampled_, u32 valid_bits);
     void WriteTimestamp(u64 key);
     void Collect(u32 slice);
     void Print();
@@ -69,6 +71,9 @@ private:
     Scheduler& scheduler;
     vk::UniqueQueryPool pool;
     double period_ns = 1.0;
+    u64 timestamp_mask = ~0ull;
+    bool sampled = false, sample_active = false;
+    u64 sample_frame = 0;
     u32 slice = 0;
     std::array<std::vector<u64>, NumSlices> keys; ///< label of each timestamp but the last
     std::array<u32, NumSlices> used{};

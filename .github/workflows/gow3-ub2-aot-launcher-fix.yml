@@ -1,4 +1,4 @@
-name: GoW III UB2 CPU copy completion optimized APK
+name: GoW III UB2 CPU GPU VRS compatibility APK
 
 on:
   push:
@@ -61,11 +61,10 @@ jobs:
           bash ci/setup-deps.sh "$CONDA_PREFIX"
           bash tools/android/bionic/build_deps.sh
           bash tools/android/bionic/build_gpu.sh
-          mkdir -p out/bionic/lib
-          unzip -p out/baseline/gow3.apk assets/runtime.payload | tar -xOzf - gow3port/arm64/lib/libgow3cpu.so > out/bionic/lib/libgow3cpu.so
+          bash tools/android/bionic/build_cpu.sh
           bash tools/android/bionic/build_runtime.sh --probe-only
           llvm="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          "$llvm/llvm-strip" --strip-unneeded out/bionic/lib/libgow3gpu.so out/bionic/bin/gow3-probe
+          "$llvm/llvm-strip" --strip-unneeded out/bionic/lib/libgow3gpu.so out/bionic/lib/libgow3cpu.so out/bionic/bin/gow3-probe
           bash tools/android/bionic/build_qualcomm.sh
           python3 tools/android/bionic/stage_ubo_runtime.py out/baseline/gow3.apk out/bionic/lib/libgow3gpu.so "$llvm"
           python3 tools/android/bionic/stage_ub2_aot.py out/baseline/tlou.apk out/bionic/bin/gow3-probe out/baseline/gow3.apk
@@ -74,19 +73,19 @@ jobs:
           bash android-launcher/gradlew -p android-launcher :app:assembleRelease -Pgow3Bionic=true -Pgow3BionicUboTest=true --no-daemon --max-workers=2
           mkdir -p out/ub2-delivery
           bt="$ANDROID_HOME/build-tools/36.0.0"
-          apk=out/ub2-delivery/GoW3-UB2-CPU-Copy-unsigned.apk
+          apk=out/ub2-delivery/GoW3-UB2-CPU-GPU-VRS-unsigned.apk
           "$bt/zipalign" -P 16 -f 4 android-launcher/app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk "$apk"
           "$bt/zipalign" -P 16 -c -v 4 "$apk"
           python3 tools/android/bionic/validate_apk.py "$apk" --aapt "$bt/aapt" --ubo-test
           "$bt/aapt" dump badging "$apk" > out/ub2-delivery/badging.txt
-          grep "name='com.gow3.android.bionic.ub2' versionCode='2010809'" out/ub2-delivery/badging.txt
+          grep "name='com.gow3.android.bionic.ub2' versionCode='2010810'" out/ub2-delivery/badging.txt
           unzip -l "$apk" | grep 'lib/arm64-v8a/libbbrecomp.so'
           cp "$bt/lib/apksigner.jar" out/ub2-delivery/apksigner.jar
           git rev-parse HEAD > out/ub2-delivery/source-commit.txt
           (cd out/ub2-delivery && sha256sum *.apk apksigner.jar > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: gow3-ub2-cpu-copy-unsigned
+          name: gow3-ub2-cpu-gpu-vrs-unsigned
           path: out/ub2-delivery/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

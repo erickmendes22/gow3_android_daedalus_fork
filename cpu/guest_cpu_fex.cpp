@@ -35,6 +35,12 @@
 #include <vector>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#ifdef __ANDROID__
+#include <sys/auxv.h>
+#include <sys/prctl.h>
+#include <asm/hwcap.h>
+#include <sched.h>
+#endif
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -58,6 +64,108 @@ static_assert(offsetof(HostResult, v) == 16);
 namespace {
 using FEXCore::Core::CPUState;
 using FEXCore::Core::InternalThreadState;
+
+#ifdef __ANDROID__
+// Older Android kernels do not necessarily emulate every ID_AA64* MRS
+// requested by the pinned FEX revision. Linux auxv advertises instructions
+// usable by EL0, independently of those register emulation interfaces.
+class AndroidHostFeatures final : public FEX::CPUFeatures {
+public:
+    AndroidHostFeatures() {
+        const auto h = getauxval(AT_HWCAP);
+        const auto h2 = getauxval(AT_HWCAP2);
+        using F = FEX::CPUFeatures::Feature;
+#define GOW3_HWCAP(bit, feature) if (h & (bit)) SetFeature(F::feature)
+#define GOW3_HWCAP2(bit, feature) if (h2 & (bit)) SetFeature(F::feature)
+        GOW3_HWCAP(HWCAP_FP, FP);
+        GOW3_HWCAP(HWCAP_ASIMD, ASIMD);
+        GOW3_HWCAP(HWCAP_AES, AES);
+        GOW3_HWCAP(HWCAP_PMULL, PMULL);
+        GOW3_HWCAP(HWCAP_SHA1, SHA1);
+        GOW3_HWCAP(HWCAP_SHA2, SHA2);
+        GOW3_HWCAP(HWCAP_CRC32, CRC32);
+        GOW3_HWCAP(HWCAP_ATOMICS, LSE);
+#ifdef HWCAP_ASIMDDP
+        GOW3_HWCAP(HWCAP_ASIMDDP, DotProd);
+#endif
+#ifdef HWCAP_FCMA
+        GOW3_HWCAP(HWCAP_FCMA, FCMA);
+#endif
+#ifdef HWCAP_LRCPC
+        GOW3_HWCAP(HWCAP_LRCPC, LRCPC);
+#endif
+#ifdef HWCAP_ILRCPC
+        GOW3_HWCAP(HWCAP_ILRCPC, LRCPC2);
+#endif
+#ifdef HWCAP_FLAGM
+        GOW3_HWCAP(HWCAP_FLAGM, FlagM);
+#endif
+#ifdef HWCAP2_FLAGM2
+        GOW3_HWCAP2(HWCAP2_FLAGM2, FlagM2);
+#endif
+#ifdef HWCAP2_RNG
+        GOW3_HWCAP2(HWCAP2_RNG, RNDR);
+#endif
+#ifdef HWCAP2_I8MM
+        GOW3_HWCAP2(HWCAP2_I8MM, I8MM);
+#endif
+#ifdef HWCAP2_FRINT
+        GOW3_HWCAP2(HWCAP2_FRINT, FRINTTS);
+#endif
+#ifdef HWCAP2_AFP
+        GOW3_HWCAP2(HWCAP2_AFP, AFP);
+#endif
+#ifdef HWCAP2_RPRES
+        GOW3_HWCAP2(HWCAP2_RPRES, RPRES);
+#endif
+#ifdef HWCAP2_WFXT
+        GOW3_HWCAP2(HWCAP2_WFXT, WFxt);
+#endif
+#ifdef HWCAP2_CSSC
+        GOW3_HWCAP2(HWCAP2_CSSC, CSSC);
+#endif
+#ifdef HWCAP2_MOPS
+        GOW3_HWCAP2(HWCAP2_MOPS, MOPS);
+#endif
+#ifdef HWCAP2_ECV
+        GOW3_HWCAP2(HWCAP2_ECV, ECV);
+#endif
+#if defined(HWCAP_SVE) && defined(HWCAP2_SVE2) && defined(PR_SVE_GET_VL) && defined(PR_SVE_VL_LEN_MASK)
+        if ((h & HWCAP_SVE) && (h2 & HWCAP2_SVE2)) {
+            const int vl = prctl(PR_SVE_GET_VL, 0, 0, 0, 0);
+            if (vl > 0 && (vl & PR_SVE_VL_LEN_MASK) >= 16) {
+                SetFeature(F::SVE);
+                SetFeature(F::SVE2);
+                SVEVL.SetReg(static_cast<uint64_t>(vl & PR_SVE_VL_LEN_MASK) * 8);
+#ifdef HWCAP2_SVEBITPERM
+                GOW3_HWCAP2(HWCAP2_SVEBITPERM, SVE_BitPerm);
+#endif
+            }
+        }
+#endif
+#undef GOW3_HWCAP2
+#undef GOW3_HWCAP
+        // Do not assume DC ZVA is usable or its granule is 64 bytes.
+        DCZID.SetReg(0x10);
+        std::printf("UB2_FEX_FEATURES source=auxv hwcap=%#lx hwcap2=%#lx sve_bits=%llu\n",
+                    h, h2, static_cast<unsigned long long>(GetSVEVectorLengthInBits()));
+    }
+};
+static FEXCore::HostFeatures FetchAndroidHostFeatures() {
+    AndroidHostFeatures features;
+    FEXCore::HostFeatures host{};
+    FEX::FillMIDRInformationViaLinux(&host);
+    const int cpu = sched_getcpu();
+    const uint64_t midr = cpu >= 0 && static_cast<size_t>(cpu) < host.CPUMIDRs.size()
+                              ? host.CPUMIDRs[cpu] : 0;
+    // A zero CTR selects FEX's conservative 64-byte cache line default.
+    FEX::FetchHostFeatures(features, host, true, 0, midr);
+    host.SupportsCPUIndexInTPIDRRO = false;
+    host.HostType = FEXCore::HostFeatures::HostTypeEnum::Linux;
+    host.ProcessPID = getpid();
+    return host;
+}
+#endif
 
 [[noreturn]] void Fatal(const char* message, uint64_t a = 0, uint64_t b = 0) {
     std::fprintf(stderr, "STOP: guest CPU: %s (%#llx, %#llx)\n", message, (unsigned long long)a, (unsigned long long)b);
@@ -310,13 +418,22 @@ void guest_cpu_init(void* (*map)(size_t size, int prot)) {
     // Preserve FEX's default TSO barriers for guest threading correctness.
     const bool dynamic_l1 = [] {
         const char* value = std::getenv("GOW3_FEX_DYNAMIC_L1");
-        return value && value[0] == '1';
+        if (value) return value[0] == '1';
+#ifdef __ANDROID__
+        return std::getenv("GOW3_ANDROID_8GB_MEMORY") != nullptr;
+#else
+        return false;
+#endif
     }();
     FEXCore::Config::Set(FEXCore::Config::CONFIG_DYNAMICL1CACHE,
                          dynamic_l1 ? "1" : "0");
     std::printf("GOW3_FEX_CACHE dynamic_l1=%d disk_cache=unchanged tso=unchanged\n",
                 int(dynamic_l1));
+#ifdef __ANDROID__
+    const auto features = FetchAndroidHostFeatures();
+#else
     const auto features = FEX::FetchHostFeatures();
+#endif
     wide_xmm = features.SupportsAVX && features.SupportsSVE256;
     ctx = FEXCore::Context::Context::CreateNewContext(features).release();
     ctx->SetSignalDelegator(&delegator);

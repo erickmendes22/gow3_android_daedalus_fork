@@ -27,7 +27,7 @@ android {
             manifestPlaceholders["appLabel"] = "God of War III — Daedalus Fork"
             if (bionicUboTest) {
                 applicationId = "com.gow3.android.bionic.ub2"
-                versionCode = 2010809
+                versionCode = 2010810
                 manifestPlaceholders["appLabel"] = "God of War III — Daedalus UB2 Test"
             }
         }

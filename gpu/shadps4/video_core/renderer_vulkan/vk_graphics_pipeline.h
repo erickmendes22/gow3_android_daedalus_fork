@@ -110,6 +110,8 @@ public:
         return key;
     }
 
+    bool IsUb2VrsShaderSafe() const { return ub2_vrs_shader_safe; }
+
     u16 UniformBufferMask(Shader::SwStage stage) const {
         return uniform_buffer_masks[u32(stage)];
     }
@@ -131,6 +133,7 @@ private:
 
 private:
     GraphicsPipelineKey key;
+    bool ub2_vrs_shader_safe = false;
     std::array<u16, MaxShaderStages> uniform_buffer_masks{};
     std::optional<const Shader::Gcn::FetchShaderData> fetch_shader{};
     vk::UniquePipeline square_pipeline;

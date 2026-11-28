@@ -75,6 +75,7 @@ def main():
 
             replacements = {
                 GPU: new_gpu.read_bytes(),
+                'gow3port/arm64/lib/libgow3cpu.so': (root / 'out/bionic/lib/libgow3cpu.so').read_bytes(),
                 'gow3port/run-bionic.sh': (root / 'tools/android/bionic/run-bionic.sh').read_bytes(),
                 'gow3port/scripts/launch_env.py': (root / 'scripts/launch_env.py').read_bytes(),
                 'gow3port/scripts/patches.py': (root / 'scripts/patches.py').read_bytes(),

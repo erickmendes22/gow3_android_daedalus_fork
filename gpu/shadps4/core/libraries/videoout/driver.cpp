@@ -514,6 +514,12 @@ void VideoOutDriver::Flip(const Request& req) {
                         Gow3Stats::tick_wait_ns.exchange(0) / (window * 1e7),
                         frames ? double(Gow3Stats::reduced_draws.exchange(0)) / frames : 0.0,
                         frames ? double(Gow3Stats::scene_draws.exchange(0)) / frames : 0.0);
+            const auto vrs_total = Gow3Stats::ub2_vrs_total.exchange(0);
+            const auto vrs_coarse = Gow3Stats::ub2_vrs_coarse.exchange(0);
+            if (vrs_total)
+                std::printf("UB2_VRS_DRAWS coarse=%llu total=%llu pct=%.1f\n",
+                    static_cast<unsigned long long>(vrs_coarse),
+                    static_cast<unsigned long long>(vrs_total), 100.0 * vrs_coarse / vrs_total);
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).

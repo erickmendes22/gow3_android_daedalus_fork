@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/static_vector.hpp>
+#include <cstdio>
+#include <cstdlib>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -223,7 +225,8 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE,
         vk::PhysicalDevicePipelineBinaryFeaturesKHR,
         vk::PhysicalDeviceMaintenance5FeaturesKHR,
-        vk::PhysicalDeviceConditionalRenderingFeaturesEXT>();
+        vk::PhysicalDeviceConditionalRenderingFeaturesEXT,
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
     features = feature_chain.get().features;
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
@@ -376,6 +379,37 @@ bool Instance::CreateDevice() {
         LOG_INFO(Render_Vulkan, "- conditionalRendering: {}", conditional_rendering);
     }
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+#ifdef __ANDROID__
+    // UB2: enable only a genuinely advertised pipeline rate and 2x2 at
+    // one sample. Never infer VRS support from the Adreno family alone.
+    const char* vrs_env = std::getenv("GOW3_UB2_VRS");
+    const bool vrs_requested = std::getenv("BB_AOT") && (!vrs_env || vrs_env[0] != '0');
+    const auto& vrs_features = feature_chain.get<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
+    const auto query_rates = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFragmentShadingRatesKHR;
+    const bool rate_extension = std::ranges::find(available_extensions,
+        VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME) != available_extensions.end();
+    if (vrs_requested && rate_extension && vrs_features.pipelineFragmentShadingRate && query_rates) {
+        uint32_t count = 0;
+        const auto physical = static_cast<VkPhysicalDevice>(physical_device);
+        if (query_rates(physical, &count, nullptr) == VK_SUCCESS && count && count <= 64) {
+            std::vector<VkPhysicalDeviceFragmentShadingRateKHR> rates(count);
+            for (auto& rate : rates) rate.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR;
+            if (query_rates(physical, &count, rates.data()) == VK_SUCCESS) {
+                for (uint32_t i = 0; i < count; ++i) {
+                    const auto& rate = rates[i];
+                    if (rate.fragmentSize.width == 2 && rate.fragmentSize.height == 2 &&
+                        (rate.sampleCounts & VK_SAMPLE_COUNT_1_BIT)) {
+                        ub2_vrs_2x2 = add_extension(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    std::printf("UB2_VRS requested=%d extension=%d pipeline_feature=%d supported_2x2=%d\n",
+                int(vrs_requested), int(rate_extension), int(vrs_features.pipelineFragmentShadingRate),
+                int(ub2_vrs_2x2));
+#endif
     // gow3: FSR 4 v07 INT8 (vk_temporal_upscaler): quad derivatives in compute shaders.
     compute_shader_derivatives = add_extension(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
     // gow3: FSR 4.1.1 passes (dot2 of halves accumulated in float, as vkd3d-proton translates them).
@@ -623,6 +657,9 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceConditionalRenderingFeaturesEXT{
             .conditionalRendering = true,
         },
+        vk::PhysicalDeviceFragmentShadingRateFeaturesKHR{
+            .pipelineFragmentShadingRate = true,
+        },
     };
 
     if (!custom_border_color) {
@@ -686,6 +723,9 @@ bool Instance::CreateDevice() {
     if (!conditional_rendering) {
         device_chain.unlink<vk::PhysicalDeviceConditionalRenderingFeaturesEXT>();
     }
+    if (!ub2_vrs_2x2) {
+        device_chain.unlink<vk::PhysicalDeviceFragmentShadingRateFeaturesKHR>();
+    }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
     if (device_result != vk::Result::eSuccess) {
@@ -695,6 +735,10 @@ bool Instance::CreateDevice() {
     device = std::move(dev);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
+    if (ub2_vrs_2x2 && !VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdSetFragmentShadingRateKHR) {
+        ub2_vrs_2x2 = false;
+        std::printf("UB2_VRS fallback=missing-device-command\n");
+    }
     if (pipeline_binaries) {
         const auto& dispatch = VULKAN_HPP_DEFAULT_DISPATCHER;
         const bool callable = dispatch.vkGetPipelineKeyKHR && dispatch.vkCreatePipelineBinariesKHR &&

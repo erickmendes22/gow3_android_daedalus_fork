@@ -193,6 +193,27 @@ GraphicsPipeline::GraphicsPipeline(
         dynamic_states.push_back(vk::DynamicState::eVertexInputBindingStride);
     }
 
+    if (instance.IsUb2VrsSupported()) {
+        dynamic_states.push_back(vk::DynamicState::eFragmentShadingRateKHR);
+        const auto* ps = infos[u32(Shader::SwStage::Fragment)];
+        using A = Shader::IR::Attribute;
+        // Only opaque, single-sample fragment programs without pixel-position
+        // dependence, discard, depth/sample exports, or side effects.
+        ub2_vrs_shader_safe = ps && key.num_samples == 1 && key.num_color_attachments == 1 &&
+            key.mrt_mask == 1 && key.z_format != AmdGpu::DepthBuffer::ZFormat::Invalid &&
+            key.logic_op == AmdGpu::ColorControl::LogicOp::Copy && !key.blend_controls[0].enable &&
+            !key.motion_vectors && !sdata.multisampling.sampleShadingEnable &&
+            !ps->has_discard && !ps->has_storage_images && !ps->uses_dma &&
+            !ps->uses_lane_id && !ps->uses_group_quad && !ps->uses_group_shuffle &&
+            !ps->uses_group_ballot && !ps->uses_shader_clock &&
+            !ps->loads.GetAny(A::FragCoord) && !ps->loads.GetAny(A::SampleIndex) &&
+            !ps->loads.GetAny(A::PackedAncillary) && !ps->loads.GetAny(A::IsHelperInvocation) &&
+            !ps->stores.GetAny(A::Depth) && !ps->stores.GetAny(A::SampleMask) &&
+            !ps->stores.GetAny(A::StencilRef) &&
+            std::ranges::none_of(ps->buffers, [](const auto& b) { return b.is_written; }) &&
+            std::ranges::none_of(ps->images, [](const auto& i) { return i.is_written; });
+    }
+
     const vk::PipelineDynamicStateCreateInfo dynamic_info = {
         .dynamicStateCount = static_cast<u32>(dynamic_states.size()),
         .pDynamicStates = dynamic_states.data(),
@@ -427,8 +448,15 @@ GraphicsPipeline::GraphicsPipeline(
     // In practice, we use dynamic state for all of it.
     constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil_info = {};
 
-    const vk::GraphicsPipelineCreateInfo pipeline_info = {
+    const vk::PipelineFragmentShadingRateStateCreateInfoKHR shading_rate_ci = {
         .pNext = &pipeline_rendering_ci,
+        .fragmentSize = {1, 1},
+        .combinerOps = {vk::FragmentShadingRateCombinerOpKHR::eKeep,
+                        vk::FragmentShadingRateCombinerOpKHR::eKeep},
+    };
+    const vk::GraphicsPipelineCreateInfo pipeline_info = {
+        .pNext = instance.IsUb2VrsSupported() ? static_cast<const void*>(&shading_rate_ci)
+                                             : static_cast<const void*>(&pipeline_rendering_ci),
         .stageCount = static_cast<u32>(shader_stages.size()),
         .pStages = shader_stages.data(),
         .pVertexInputState = !instance.IsVertexInputDynamicState() ? &vertex_input_info : nullptr,

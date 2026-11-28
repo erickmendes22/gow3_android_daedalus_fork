@@ -14,7 +14,7 @@ cmake -S "$fex" -B "$out/fex" -G Ninja \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM="android-$api" -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_FEX_INCLUDE="$PWD/cpu/fex_project.cmake" \
     -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_STEAM_SUPPORT=OFF \
-    -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8.2-a -DTUNE_CPU=generic \
+    -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_ZYDIS=OFF -DTUNE_ARCH=armv8-a -DTUNE_CPU=none \
     -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF
 cmake --build "$out/fex" --target gow3cpu --parallel "${GOW3_JOBS:-2}"
 mkdir -p "$out/lib"

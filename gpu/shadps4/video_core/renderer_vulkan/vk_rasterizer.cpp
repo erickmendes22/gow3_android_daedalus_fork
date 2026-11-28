@@ -34,6 +34,16 @@
 
 namespace Vulkan {
 
+static void Ub2SetShadingRate(vk::CommandBuffer cmdbuf, bool coarse) {
+    const VkExtent2D size{coarse ? 2u : 1u, coarse ? 2u : 1u};
+    const VkFragmentShadingRateCombinerOpKHR ops[2] = {
+        VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+        VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+    };
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdSetFragmentShadingRateKHR(
+        static_cast<VkCommandBuffer>(cmdbuf), &size, ops);
+}
+
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
     // is encountered and implemented in the recompiler.
@@ -1268,6 +1278,17 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
+    const bool vrs_supported = instance.IsUb2VrsSupported();
+    const bool coarse = vrs_supported && pipeline->IsUb2VrsShaderSafe() &&
+        is_indexed && num_indices >= 24 && state.width >= 640 && state.height >= 360 &&
+        !is_display_draw && db_desc.first && state.depth_stencil_attachment.has_depth &&
+        regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
+        !regs.depth_control.stencil_enable && !attachment_feedback_loop &&
+        !pred.predicated && !square && !FrameCapture::Active();
+    if (vrs_supported && Gow3Stats::enabled) {
+        Gow3Stats::ub2_vrs_total.fetch_add(1, std::memory_order_relaxed);
+        if (coarse) Gow3Stats::ub2_vrs_coarse.fetch_add(1, std::memory_order_relaxed);
+    }
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         const auto draw = [&] {
             if (is_indexed) {
@@ -1278,10 +1299,12 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             }
         };
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+        if (vrs_supported) Ub2SetShadingRate(cmdbuf, coarse);
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         draw();
         if (square) [[unlikely]] {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, square);
+            if (vrs_supported) Ub2SetShadingRate(cmdbuf, false);
             draw();
         }
         predication.EndDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
@@ -1414,6 +1437,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const u64 args_offset = base;
     const vk::Buffer counts = count_address != 0 ? count_buffer->Handle() : vk::Buffer{};
     const u64 counts_offset = count_address != 0 ? count_offset : 0;
+    const bool vrs_supported = instance.IsUb2VrsSupported();
+    if (vrs_supported && Gow3Stats::enabled)
+        Gow3Stats::ub2_vrs_total.fetch_add(1, std::memory_order_relaxed);
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         for (const vk::Pipeline bound : {handle, square}) {
@@ -1421,6 +1447,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
                 break;
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
+            if (vrs_supported) Ub2SetShadingRate(cmdbuf, false);
             if (is_indexed) {
                 if (counts) {
                     cmdbuf.drawIndexedIndirectCount(args, args_offset, counts, counts_offset, max_count,
@@ -3846,7 +3873,7 @@ namespace Vulkan {
 
 void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& state) {
     auto* profiler = GpuProfiler::Get();
-    if (!profiler || !scheduler.WillBeginRendering(state)) {
+    if (!profiler || !profiler->Capturing() || !scheduler.WillBeginRendering(state)) {
         return;
     }
     const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);

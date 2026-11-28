@@ -137,7 +137,26 @@ inline unsigned long long ReadCpuFreq(int cpu, const char* field) {
     std::fclose(f);
     return khz;
 }
-inline void SampleThread(const char* role) {
+inline void SampleGpu() {
+    // KGSL exports busy and total time for its own measurement interval.
+    // Permission failures are reported as unavailable, never as idle GPU.
+    unsigned long long busy = 0, total = 0, clock = 0;
+    if (std::FILE* f = std::fopen("/sys/class/kgsl/kgsl-3d0/gpubusy", "r")) {
+        if (std::fscanf(f, "%llu %llu", &busy, &total) != 2) total = 0;
+        std::fclose(f);
+    }
+    if (std::FILE* f = std::fopen("/sys/class/kgsl/kgsl-3d0/gpuclk", "r")) {
+        if (std::fscanf(f, "%llu", &clock) != 1) clock = 0;
+        std::fclose(f);
+    }
+    if (total && busy <= total) {
+        std::fprintf(stderr, "UB2_GPU_SAMPLE source=kgsl busy_pct=%.1f busy=%llu total=%llu clock_hz=%llu\n",
+                     100.0 * busy / total, busy, total, clock);
+    } else {
+        std::fprintf(stderr, "UB2_GPU_SAMPLE source=kgsl busy=unavailable clock_hz=%llu\n", clock);
+    }
+}
+inline void SampleThread(const char* role, unsigned* recorder_spin_us = nullptr) {
     if (!std::getenv("BB_AOT")) return;
     static thread_local unsigned long long last_wall = 0, last_cpu = 0;
     const auto wall = Ns(CLOCK_MONOTONIC);
@@ -147,9 +166,14 @@ inline void SampleThread(const char* role) {
         const int core = sched_getcpu();
         const auto freq = ReadCpuFreq(core, "scaling_cur_freq");
         const auto limit = ReadCpuFreq(core, "scaling_max_freq");
-        std::fprintf(stderr, "UB2_CPU_SAMPLE role=%s tid=%d current_cpu=%d thread_cpu_pct=%.1f freq_khz=%llu limit_khz=%llu\n",
+        const auto hardware = ReadCpuFreq(core, "cpuinfo_max_freq");
+        if (recorder_spin_us && limit && hardware) {
+            *recorder_spin_us = limit * 5 < hardware * 4 ? 8u : 20u;
+        }
+        std::fprintf(stderr, "UB2_CPU_SAMPLE role=%s tid=%d current_cpu=%d thread_cpu_pct=%.1f freq_khz=%llu limit_khz=%llu hardware_khz=%llu spin_us=%u\n",
                      role, static_cast<int>(gettid()), core, 100.0 * (cpu-last_cpu)/(wall-last_wall),
-                     freq, limit);
+                     freq, limit, hardware, recorder_spin_us ? *recorder_spin_us : 0);
+        if (std::strcmp(role, "GpuComm") == 0) SampleGpu();
     }
     last_wall = wall;
     last_cpu = cpu;

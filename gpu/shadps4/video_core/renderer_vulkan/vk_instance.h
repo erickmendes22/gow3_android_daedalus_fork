@@ -125,6 +125,7 @@ public:
     }
 
     /// gow3: true when VK_EXT_conditional_rendering is enabled (IT_SET_PREDICATION).
+    bool IsUb2VrsSupported() const { return ub2_vrs_2x2; }
     bool IsConditionalRenderingSupported() const {
         return conditional_rendering;
     }
@@ -606,6 +607,7 @@ private:
     bool shader_clock{};
     bool compute_shader_derivatives{};
     bool mixed_float_dot_product{}; // gow3: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
+    bool ub2_vrs_2x2{};
     bool conditional_rendering{};   // gow3: VK_EXT_conditional_rendering (IT_SET_PREDICATION)
     bool supports_memory_budget{};
     bool supports_block_texel_view{};

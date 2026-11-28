@@ -35,6 +35,7 @@
 #ifdef __ANDROID__
 #include <unwind.h>
 #include <sys/prctl.h>
+#include <sys/auxv.h>
 #else
 #include <execinfo.h>
 #endif
@@ -806,6 +807,34 @@ void runtime_restart(void) {
 #endif
 }
 
+#if defined(__ANDROID__) && defined(__aarch64__)
+// guest_cpu_init runs before the usual guest-fault handler is installed.
+// Report an early SIGILL without entering uninitialized guest CPU state.
+static uintptr_t boot_probe_base, boot_cpu_base;
+static void boot_hex(char **p, uintptr_t value) {
+    static const char digits[] = "0123456789abcdef";
+    for (int shift = (int)(sizeof(value) * 8) - 4; shift >= 0; shift -= 4)
+        *(*p)++ = digits[(value >> shift) & 15];
+}
+static void early_cpu_sigill(int sig, siginfo_t *info, void *context) {
+    (void)sig;
+    (void)info;
+    ucontext_t *uc = (ucontext_t *)context;
+    char line[160], *p = line;
+    const char *label = "UB2_EARLY_SIGILL pc=0x";
+    while (*label) *p++ = *label++;
+    boot_hex(&p, (uintptr_t)uc->uc_mcontext.pc);
+    label = " probe_base=0x";
+    while (*label) *p++ = *label++;
+    boot_hex(&p, boot_probe_base);
+    label = " cpu_base=0x";
+    while (*label) *p++ = *label++;
+    boot_hex(&p, boot_cpu_base);
+    *p++ = '\n';
+    (void)write(STDERR_FILENO, line, (size_t)(p-line));
+    _exit(132);
+}
+#endif
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef __ANDROID__
@@ -831,7 +860,22 @@ int main(int argc, char **argv) {
 #endif
     /* The guest CPU allocates the memory the guest may hold pointers to through this (below
      * 1 TiB). No-op on x86-64 hosts (src/runtime_cpu.c). */
+#if defined(__ANDROID__) && defined(__aarch64__)
+    Dl_info boot_info;
+    if (dladdr((void *)main, &boot_info)) boot_probe_base = (uintptr_t)boot_info.dli_fbase;
+    if (dladdr((void *)guest_cpu_init, &boot_info)) boot_cpu_base = (uintptr_t)boot_info.dli_fbase;
+    struct sigaction boot_sig = {0}, old_sigill = {0};
+    boot_sig.sa_sigaction = early_cpu_sigill;
+    boot_sig.sa_flags = SA_SIGINFO;
+    sigemptyset(&boot_sig.sa_mask);
+    const int boot_handler = sigaction(SIGILL, &boot_sig, &old_sigill);
+    fprintf(stderr, "UB2_CPU_BOOT backend=%s hwcap=%#lx hwcap2=%#lx\n",
+            getenv("BB_AOT") ? "AOT" : "FEX", getauxval(AT_HWCAP), getauxval(AT_HWCAP2));
+#endif
     guest_cpu_init(runtime_low_map);
+#if defined(__ANDROID__) && defined(__aarch64__)
+    if (boot_handler == 0) sigaction(SIGILL, &old_sigill, NULL);
+#endif
 #endif
 #ifdef _WIN32
     /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest

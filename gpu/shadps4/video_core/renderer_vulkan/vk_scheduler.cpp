@@ -317,13 +317,18 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
     Common::SetCurrentThreadName("gow3:VkRecorder");
 #ifdef __ANDROID__
     u32 ub2_sample_chunks = 0;
+    unsigned ub2_spin_us = Gow3Threads::Available() >= 12 ? 200u : 20u;
 #endif
     while (true) {
         // Spin briefly before sleeping: the next chunk usually follows within microseconds,
         // and a sleeping recorder costs the GPU thread a wake-up syscall per kick. With few
         // hardware threads (Steam Deck: 8) the spin would take time from guest threads.
+#ifdef __ANDROID__
+        const auto spin_time = std::chrono::microseconds(ub2_spin_us);
+#else
         static const auto spin_time = std::chrono::microseconds(
             Gow3Threads::Available() >= 12 ? 200 : 20);
+#endif
         const auto spin_until = std::chrono::steady_clock::now() + spin_time;
         for (u32 spins = 1; queued_chunks.load(std::memory_order_acquire) == 0; ++spins) {
             COMMON_CPU_RELAX();
@@ -350,7 +355,8 @@ void Scheduler::RecorderThread(std::stop_token stoken) {
         // current_cmdbuf only changes after SyncRecording(), which waits for this thread.
         chunk->Execute(current_cmdbuf);
 #ifdef __ANDROID__
-        if ((++ub2_sample_chunks & 127u) == 0) Gow3Ub2Cpu::SampleThread("VkRecorder");
+        if ((++ub2_sample_chunks & 127u) == 0)
+            Gow3Ub2Cpu::SampleThread("VkRecorder", &ub2_spin_us);
 #endif
         {
             std::scoped_lock lk{recorder_mutex};

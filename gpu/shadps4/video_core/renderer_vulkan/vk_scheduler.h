@@ -619,8 +619,8 @@ public:
     void Execute(vk::CommandBuffer cmdbuf) {
         for (CommandBase* command = first; command;) {
             CommandBase* const next = command->next;
-            command->Execute(cmdbuf);
-            command->~CommandBase();
+            if (next) __builtin_prefetch(next, 0, 3);
+            command->run_and_destroy(command, cmdbuf);
             command = next;
         }
         first = last = nullptr;
@@ -641,22 +641,26 @@ private:
     /// transfers instead of stalling on each (RecordPrefetch).
     void PrefetchAhead() const {
         if (!Gow3Toggle::Disabled(Gow3Toggle::RecordPrefetch)) {
-            __builtin_prefetch(storage + used + 384, 1, 3);
-            __builtin_prefetch(storage + used + 448, 1, 3);
+            if (used + 384 < Capacity) __builtin_prefetch(storage + used + 384, 1, 3);
+            if (used + 448 < Capacity) __builtin_prefetch(storage + used + 448, 1, 3);
         }
     }
 
     struct CommandBase {
-        virtual ~CommandBase() = default;
-        virtual void Execute(vk::CommandBuffer cmdbuf) = 0;
+        void (*run_and_destroy)(CommandBase*, vk::CommandBuffer);
         CommandBase* next{};
     };
+    // The producer already knows the closure type. A single typed thunk
+    // executes and destroys it in order, replacing two virtual dispatches
+    // per Vulkan command. Non-trivial captures still get their destructor.
     template <typename Func>
     struct TypedCommand final : CommandBase {
-        explicit TypedCommand(Func&& func_) : func{std::move(func_)} {}
-        explicit TypedCommand(const Func& func_) : func{func_} {}
-        void Execute(vk::CommandBuffer cmdbuf) override {
-            func(cmdbuf);
+        explicit TypedCommand(Func&& func_) : CommandBase{&Run}, func{std::move(func_)} {}
+        explicit TypedCommand(const Func& func_) : CommandBase{&Run}, func{func_} {}
+        static void Run(CommandBase* base, vk::CommandBuffer cmdbuf) {
+            auto* command = static_cast<TypedCommand*>(base);
+            command->func(cmdbuf);
+            std::destroy_at(command);
         }
         Func func;
     };
