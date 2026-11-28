@@ -29,7 +29,13 @@ class MaliCausalCounts(unittest.TestCase):
         self.assertIn("bool IsRendering() const noexcept", scheduler)
         self.assertTrue(runtime.index("MaliPerfStats::CountBarrierFlush(scheduler.IsRendering()") <
                         runtime.index("scheduler.EndRendering();", runtime.index("void Runtime::FlushBarriers(")))
-        self.assertIn("scheduler.Record([memory = memory_barrier", runtime)
+        body = runtime.split("void Runtime::FlushBarriers(", 1)[1]
+        self.assertIn("scheduler.RecordGraphicsOrdered([this, memory = memory_barrier", body)
+        self.assertLess(body.index("scheduler.EndRendering();"),
+                        body.index("scheduler.RecordGraphicsOrdered("))
+        self.assertIn("cmdbuf.pipelineBarrier2(info)", body)
+        ordered = scheduler.split("void RecordGraphicsOrdered(", 1)[1]
+        self.assertIn("FlushNativeDrawBatch(cmdbuf)", ordered)
     def test_compact_heartbeat_not_per_draw_printf(self):
         stats = read("gpu/shadps4/video_core/renderer_vulkan/vk_mali_perf_stats.h")
         self.assertIn("MALI_CAUSAL_COUNTS interval_ms=", stats)

@@ -16,9 +16,7 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
+// CI provisions JDK 25 before Gradle starts; no remote JDK resolver is needed.
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
