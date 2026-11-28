@@ -16,7 +16,9 @@ class MaliWarmupDisabledTests(unittest.TestCase):
         self.assertIn("warm.threads = mali ? 1u", source)
         self.assertIn("vk::UniquePipelineCache mali_worker_cache;", source)
         self.assertIn("warm.mali_worker_cache ? *warm.mali_worker_cache : *pipeline_cache", source)
-        self.assertIn("mergePipelineCaches(", source)
+        self.assertIn("MergeMaliWarmupCache(*warm.mali_worker_cache)", source)
+        cache = (ROOT / "gpu/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+        self.assertIn("mergePipelineCaches(*pipeline_cache, cache)", cache)
         self.assertIn("mali_driver_cache_restored", source)
 
     def test_panfrost_driver_hash_prevents_cross_driver_profile_clears(self):

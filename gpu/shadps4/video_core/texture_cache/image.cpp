@@ -1502,6 +1502,10 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                     state.layout = dst_layout;
                     state.access_mask = dst_mask;
                     state.pl_stage = dst_stage;
+                } else if (mali_read_only_elision) {
+                    state.pl_stage |= dst_stage;
+                    if (!needs_partial_transition)
+                        preserved_read_stages |= state.pl_stage;
                 }
             }
         }
@@ -1522,6 +1526,7 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
         }
         if (last_state.layout == dst_layout && last_state.access_mask == dst_mask &&
             !static_cast<bool>(last_state.access_mask & legacy_hazard_mask)) {
+            if (mali_read_only_elision) last_state.pl_stage |= dst_stage;
             return;
         }
 

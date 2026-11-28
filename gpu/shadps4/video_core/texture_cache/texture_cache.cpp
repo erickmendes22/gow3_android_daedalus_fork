@@ -1858,6 +1858,7 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
     u64 recorded_upload_bytes = 0;
+    u64 first_upload_byte = image.info.guest_size, last_upload_byte = 0;
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
         const u32 width = std::max(image.info.size.width >> m, 1u);
@@ -1879,6 +1880,8 @@ void TextureCache::RefreshImage(Image& image) {
         const u32 extent_width = mip_pitch ? std::min(mip_pitch, width) : width;
         const u32 extent_height = mip_height ? std::min(mip_height, height) : height;
         recorded_upload_bytes += mip_size;
+        first_upload_byte = std::min<u64>(first_upload_byte, mip_offset);
+        last_upload_byte = std::max<u64>(last_upload_byte, u64(mip_offset) + mip_size);
         image_copies.push_back({
             .bufferOffset = mip_offset,
             .bufferRowLength = mip_pitch,
@@ -1901,11 +1904,31 @@ void TextureCache::RefreshImage(Image& image) {
 
     scheduler.EndRendering();
 
+    // For linear images with only a subset of mips changed, do not copy
+    // untouched leading/trailing mips into host staging. Tiled images still
+    // need the full allocation and original offsets for the detile shader.
+    const u64 block_size = vk::blockSize(image.info.pixel_format);
+    const bool partial_linear_upload = mali_exact_readback_ranges &&
+        !image.info.props.is_tiled && !image.transcoded_snorm2101010 &&
+        !image.transcoded_bc_to_etc2 && block_size &&
+        first_upload_byte % std::max<u64>(4, block_size) == 0 &&
+        last_upload_byte <= image.info.guest_size && last_upload_byte > first_upload_byte &&
+        last_upload_byte - first_upload_byte < image.info.guest_size;
+    const u64 source_begin = partial_linear_upload ? first_upload_byte : 0;
+    const u32 source_size = partial_linear_upload ? u32(last_upload_byte - first_upload_byte)
+                                                   : image.info.guest_size;
     const auto [in_buffer, in_offset] =
-        buffer_cache.ObtainBufferForImage(image.info.guest_address, image.info.guest_size);
+        buffer_cache.ObtainBufferForImage(image.info.guest_address + source_begin, source_size);
     const auto [buffer, offset] = tile_manager.DetileImage(in_buffer, in_offset, image.info);
     for (auto& copy : image_copies) {
-        copy.bufferOffset += offset;
+        copy.bufferOffset = copy.bufferOffset - source_begin + offset;
+    }
+    if (partial_linear_upload) {
+        static u64 saved = 0, uploads = 0;
+        saved += image.info.guest_size - source_size;
+        if (++uploads <= 4 || (uploads & 255u) == 0)
+            std::printf("GOW3_MALI_LINEAR_MIP_UPLOAD count=%llu saved_mib=%.2f\n",
+                        (unsigned long long)uploads, saved / 1048576.0);
     }
 
     runtime.UploadImage(&image, buffer, image_copies);

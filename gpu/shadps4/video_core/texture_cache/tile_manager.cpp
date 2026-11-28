@@ -297,6 +297,11 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
     const auto staging = runtime.GetStagingPool().Request(info.guest_size, MemoryType::DeviceLocal);
 
     scheduler.EndRendering();
+    bool needs_flush = runtime.IsBufferAccessed(in_buffer, in_offset, info.guest_size);
+    needs_flush |= runtime.IsBufferAccessed(staging.buffer, staging.offset, info.guest_size, true);
+    // Flush also any previously queued image transition. Preserve the old
+    // unconditional call; the runtime already elides an empty dependency.
+    (void)needs_flush;
     runtime.FlushBarriers();
 
     const vk::DescriptorBufferInfo tiled_buffer_info{
@@ -314,6 +319,9 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
     RecordTilingDispatch(GetTilingPipeline(info, false), tiled_buffer_info, linear_buffer_info,
                          params_buffer_info, dim_x);
 
+    runtime.AccessBuffer(in_buffer, in_offset, info.guest_size,
+                         vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderRead);
     runtime.AccessBuffer(staging.buffer, staging.offset, info.guest_size,
                          vk::PipelineStageFlagBits2::eComputeShader,
                          vk::AccessFlagBits2::eShaderWrite);
@@ -357,6 +365,10 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
     }
 
     runtime.DownloadImage(&in_image, staging.buffer, buffer_copies);
+    // Tile dispatch consumes the preceding image download and writes the
+    // destination buffer; both ranges must participate in the dependency.
+    (void)runtime.IsBufferAccessed(staging.buffer, staging.offset, info.guest_size);
+    (void)runtime.IsBufferAccessed(out_buffer, out_offset, info.guest_size, true);
     runtime.FlushBarriers();
 
     const vk::DescriptorBufferInfo tiled_buffer_info{
@@ -374,6 +386,9 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
     RecordTilingDispatch(GetTilingPipeline(info, true), tiled_buffer_info, linear_buffer_info,
                          params_buffer_info, dim_x);
 
+    runtime.AccessBuffer(staging.buffer, staging.offset, info.guest_size,
+                         vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderRead);
     runtime.AccessBuffer(out_buffer, out_offset, info.guest_size,
                          vk::PipelineStageFlagBits2::eComputeShader,
                          vk::AccessFlagBits2::eShaderWrite);

@@ -798,9 +798,10 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
     // already-completed tick while this command still references its VkImage.
     image->tick_accessed_last = scheduler.CurrentTick();
     if (scene_targets) scene_targets->NativeAccess(*image, dst_access);
-    const size_t prev_num_barriers = static_cast<size_t>(image_barriers.size());
     image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
-    return image_barriers.size() != prev_num_barriers;
+    // A coalesced transition may extend the previous barrier without
+    // increasing the vector size. Never leave that dependency unflushed.
+    return !image_barriers.empty();
 }
 
 Runtime::TransferMark::TransferMark(Runtime& runtime, const char* what,
