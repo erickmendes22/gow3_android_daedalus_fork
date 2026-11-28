@@ -404,21 +404,24 @@ void Presenter::CompleteMaliCpuPresentation(const MaliCpuPresentJob& job) {
         const u64 visual_sample = visual_frame &&
             (visual_frame <= 4 || visual_frame % 120 == 0) ? visual_frame : 0;
         if (visual_sample && frame->width && frame->height) {
-            u32 rgb = 0, alpha = 0;
+            u32 rgb = 0, alpha = 0, rgb_sum = 0, rgb_peak = 0;
             u64 hash = 14695981039346656037ull;
             for (u32 y = 0; y < 8; ++y) for (u32 x = 0; x < 8; ++x) {
                 const auto* p = pixels + 4 * (u64((2*y+1)*frame->height/16) * frame->width +
                                               (2*x+1)*frame->width/16);
                 rgb += (p[0] | p[1] | p[2]) != 0;
                 alpha += p[3] != 0;
+                rgb_sum += u32(p[0]) + u32(p[1]) + u32(p[2]);
+                rgb_peak = std::max(rgb_peak, std::max({u32(p[0]), u32(p[1]), u32(p[2])}));
                 for (u32 k=0; k<3; ++k) { hash ^= p[k]; hash *= 1099511628211ull; }
             }
-            std::printf("GOW3_MALI_BLACK_SOURCE frame=%llu tick=%llu guest=%llx uid=%llu input=%ux%u output=%ux%u rgb=%u/64 alpha=%u/64 hash=%016llx\n",
+            std::printf("GOW3_MALI_BLACK_SOURCE frame=%llu tick=%llu guest=%llx uid=%llu input=%ux%u output=%ux%u rgb=%u/64 alpha=%u/64 hash=%016llx rgb_mean=%.2f rgb_peak=%u\n",
                 (unsigned long long)visual_sample, (unsigned long long)frame->ready_tick,
                 (unsigned long long)frame->mali_black_guest_address,
                 (unsigned long long)frame->mali_black_source_uid,
                 frame->mali_black_input_width, frame->mali_black_input_height,
-                frame->width, frame->height, rgb, alpha, (unsigned long long)hash);
+                frame->width, frame->height, rgb, alpha, (unsigned long long)hash,
+                double(rgb_sum) / 192.0, rgb_peak);
         }
         if (frame->mali_capture_frame) {
             const char* dir = std::getenv("GOW3_MALI_CAPTURE_DIR");

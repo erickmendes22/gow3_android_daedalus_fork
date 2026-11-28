@@ -141,6 +141,17 @@ void TextureCache::RetireReadbacks(bool refresh) {
         [this](auto& entry) {
             if (entry.valid) {
                 entry.payload.Invalidate();
+                if (mali_exact_readback_ranges && entry.size == 4) {
+                    static u64 exposure_samples = 0;
+                    const u64 n = ++exposure_samples;
+                    if (n <= 4 || (n & 255u) == 0) {
+                        u32 value{};
+                        std::memcpy(&value, entry.payload.mapped, sizeof(value));
+                        std::printf("GOW3_MALI_SMALL_READBACK addr=%llx tick=%llu raw=%08x count=%llu\n",
+                            (unsigned long long)entry.address, (unsigned long long)entry.tick,
+                            value, (unsigned long long)n);
+                    }
+                }
                 Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(entry.address),
                     entry.payload.mapped, entry.size);
                 if (entry.watched) WatchReadback<false>(entry.address, entry.size);
@@ -156,9 +167,12 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
     // PC b776be7: exact-byte image consumers must not wait for another image
     // sharing only the same tracking page. CPU accesses retain page protection.
+    // ImageRefresh also hashes guest virtual addresses. Unlike the resolved
+    // backing upload, a hash can fault on a different readback on that page.
+    // Keep page semantics there, and exact ranges only on paths that do not
+    // dereference the protected virtual view.
     const bool exact = ExactReadbackWaits() &&
-        (source == ReadbackSource::ImageRefresh || source == ReadbackSource::BufferForImage ||
-         source == ReadbackSource::ImageFree);
+        (source == ReadbackSource::BufferForImage || source == ReadbackSource::ImageFree);
     {
         std::scoped_lock lock{readback_mutex};
         // Stale mode, byte rule: God of War III writes every frame to the page that holds a

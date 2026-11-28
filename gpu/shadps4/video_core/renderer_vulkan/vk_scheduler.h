@@ -877,12 +877,19 @@ public:
     /// Runs `copy` on the recording thread in order with the commands (the thread spins for
     /// work anyway, so small copies cost no wakeup); WaitHostCopies() covers it.
     template <typename Func>
-    void RecordHostCopy(Func&& copy) {
-        Record([copy = std::forward<Func>(copy), this,
-                seq = ++host_copies_issued](vk::CommandBuffer) {
+    void RecordHostCopy(Func&& copy, bool resolved_backing = false) {
+        auto command = [copy = std::forward<Func>(copy), this,
+                        seq = ++host_copies_issued](vk::CommandBuffer) {
             copy();
             host_copies_done.store(seq, std::memory_order_release);
-        });
+        };
+        // A resolved shared-backing copy cannot fault into Vulkan and
+        // changes no descriptor, push constant, or dynamic state. It is
+        // still ordered and covered by WaitHostCopies before submission.
+        if (resolved_backing)
+            RecordBatchState(std::move(command));
+        else
+            Record(std::move(command));
     }
 
     /// gow3: runs `signal` once the guest memory copies issued so far are done, without

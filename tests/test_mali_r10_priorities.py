@@ -191,4 +191,19 @@ class R10Priorities(unittest.TestCase):
             src.write_text(fixture.replace("/* REAL_IMPLEMENTATION */",impl))
             subprocess.run([compiler,"-std=c11","-Wall","-Wextra","-Werror","-pthread",str(src),"-o",str(out)],check=True)
             subprocess.run([str(out)],check=True,timeout=10)
+    def test_r14_resolved_stream_and_hash_readback(self):
+        bc=(V.parent/"buffer_cache/buffer_cache.cpp").read_text()
+        source=C.split("bool TextureCache::ResolveReadbacks",1)[1].split("const auto resolve",1)[0]
+        self.assertIn("source == ReadbackSource::BufferForImage || source == ReadbackSource::ImageFree",source)
+        self.assertNotIn("source == ReadbackSource::ImageRefresh ||",source)
+        stream=bc.split("BufferCache::ObtainBuffer(",1)[1].split("BufferCache::ObtainBufferRanges",1)[0]
+        self.assertLess(stream.index("ResolveReadbacks("),stream.index("IsRegionGpuModified("))
+        self.assertLess(stream.index("IsRegionGpuModified("),stream.index("CopyResolvedImageBacking"))
+        self.assertIn("resolved_backing ? &RunResolvedImageCopy : &RunGuestCopy",stream)
+        self.assertIn("item.run == &RunResolvedImageCopy",bc)
+        host=H.split("void RecordHostCopy",1)[1].split("void SignalAfterHostCopies",1)[0]
+        self.assertIn("RecordBatchState(std::move(command))",host)
+        self.assertIn("host_copies_done.store",host)
+        self.assertIn("GOW3_MALI_SMALL_READBACK",C)
+        self.assertIn("rgb_mean=%.2f rgb_peak=%u",(V/"vk_presenter.cpp").read_text())
 if __name__=="__main__": unittest.main()

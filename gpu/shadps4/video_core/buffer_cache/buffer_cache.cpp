@@ -190,7 +190,8 @@ void BufferCache::RunResolvedImageCopy(const Gow3Copy::Item& item) {
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
     if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
-        scheduler.RecordHostCopy([item] { item.run(item); });
+        scheduler.RecordHostCopy([item] { item.run(item); },
+                                 item.run == &RunResolvedImageCopy);
         return;
     }
     Gow3Copy::QueueCopy(item);
@@ -382,6 +383,8 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
+        const bool resolved_backing = std::getenv("GOW3_ANDROID_PORT") &&
+            instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
         if (stats) {
             auto& region = Stats().regions[RegionKey(device_addr)];
             ++region.stream_count;
@@ -393,7 +396,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             !Gow3Toggle::Disabled(Gow3Toggle::DeferredStreamCopies)) {
             if (const auto offset = stream_buffer.Reserve(size, instance.UniformMinAlignment())) {
                 SmallGuestCopy({
-                    .run = &RunGuestCopy,
+                    .run = resolved_backing ? &RunResolvedImageCopy : &RunGuestCopy,
                     .context = this,
                     .source = device_addr,
                     .destination = reinterpret_cast<u64>(stream_buffer.mapped_data.data() + *offset),
@@ -404,7 +407,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             }
         }
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
-        memory->CopySparseMemory(device_addr, data, size);
+        if (resolved_backing)
+            memory->CopyResolvedImageBacking(device_addr, data, size);
+        else
+            memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
         return {&stream_buffer, offset};
     }
