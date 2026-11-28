@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <utility>
 #include <boost/container/small_vector.hpp>
 
@@ -194,24 +195,34 @@ GraphicsPipeline::GraphicsPipeline(
     }
 
     if (instance.IsUb2VrsSupported()) {
-        dynamic_states.push_back(vk::DynamicState::eFragmentShadingRateKHR);
-        const auto* ps = infos[u32(Shader::SwStage::Fragment)];
-        using A = Shader::IR::Attribute;
-        // Only opaque, single-sample fragment programs without pixel-position
-        // dependence, discard, depth/sample exports, or side effects.
-        ub2_vrs_shader_safe = ps && key.num_samples == 1 && key.num_color_attachments == 1 &&
-            key.mrt_mask == 1 && key.z_format != AmdGpu::DepthBuffer::ZFormat::Invalid &&
+        const auto stage = u32(Shader::SwStage::Fragment);
+        const auto* ps = infos[stage];
+        const auto type = GetUb2VrsFragmentClass(modules[stage]);
+        // Color-only, opaque triangle geometry; no mask/depth exports,
+        // discard, storage writes or subgroup-dependent fragment programs.
+        // FragCoord is allowed only in this scene geometry tier (VRS trades
+        // per-pixel shading fidelity for throughput). 1 keeps it native.
+        static const bool allow_position = [] {
+            const char* mode = std::getenv("GOW3_UB2_VRS");
+            return !mode || mode[0] != '1';
+        }();
+        ub2_vrs_shader_safe = ps && Ub2Vrs::AllowsCoarse(type, allow_position) &&
+            key.num_samples == 1 && key.num_color_attachments == 1 && key.mrt_mask == 1 &&
+            key.z_format != AmdGpu::DepthBuffer::ZFormat::Invalid &&
+            key.color_buffers[0].data_format == AmdGpu::DataFormat::Format8_8_8_8 &&
+            (key.color_buffers[0].num_format == AmdGpu::NumberFormat::Unorm ||
+             key.color_buffers[0].num_format == AmdGpu::NumberFormat::Srgb) &&
+            (key.prim_type == AmdGpu::PrimitiveType::TriangleList ||
+             key.prim_type == AmdGpu::PrimitiveType::TriangleStrip) &&
             key.logic_op == AmdGpu::ColorControl::LogicOp::Copy && !key.blend_controls[0].enable &&
             !key.motion_vectors && !sdata.multisampling.sampleShadingEnable &&
-            !ps->has_discard && !ps->has_storage_images && !ps->uses_dma &&
-            !ps->uses_lane_id && !ps->uses_group_quad && !ps->uses_group_shuffle &&
-            !ps->uses_group_ballot && !ps->uses_shader_clock &&
-            !ps->loads.GetAny(A::FragCoord) && !ps->loads.GetAny(A::SampleIndex) &&
-            !ps->loads.GetAny(A::PackedAncillary) && !ps->loads.GetAny(A::IsHelperInvocation) &&
-            !ps->stores.GetAny(A::Depth) && !ps->stores.GetAny(A::SampleMask) &&
-            !ps->stores.GetAny(A::StencilRef) &&
+            !ps->uses_dma &&
             std::ranges::none_of(ps->buffers, [](const auto& b) { return b.is_written; }) &&
             std::ranges::none_of(ps->images, [](const auto& i) { return i.is_written; });
+        // Native-rate pipelines bake 1x1 instead of requiring a dynamic
+        // vkCmdSetFragmentShadingRateKHR on every draw.
+        if (ub2_vrs_shader_safe)
+            dynamic_states.push_back(vk::DynamicState::eFragmentShadingRateKHR);
     }
 
     const vk::PipelineDynamicStateCreateInfo dynamic_info = {

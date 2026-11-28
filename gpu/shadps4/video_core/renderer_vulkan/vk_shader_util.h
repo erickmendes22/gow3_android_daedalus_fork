@@ -7,6 +7,7 @@
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#include "video_core/renderer_vulkan/ub2_vrs_policy.h"
 
 namespace Vulkan {
 
@@ -16,5 +17,6 @@ namespace Vulkan {
  * @param device The vulkan device handle
  */
 vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device);
+Ub2Vrs::FragmentClass GetUb2VrsFragmentClass(vk::ShaderModule module);
 
 } // namespace Vulkan

@@ -1254,10 +1254,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // gow3: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
-    const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
+    const bool upscaling = upscaler->Enabled();
+    const bool eligible_native_scene = upscaling && cb_descs[0].first && db_desc.first &&
         Gow3VerifiedNativeJitterTarget(texture_cache, cb_descs[0].first,
                                        db_desc.first, regs);
-    if (upscaler->Enabled() && db_desc.first &&
+    if (upscaling && db_desc.first &&
         (db_desc.first == camera_motion->Depth() || eligible_native_scene) &&
         (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
         draw_jitter = upscaler->Jitter();
@@ -1279,14 +1280,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
     const bool vrs_supported = instance.IsUb2VrsSupported();
-    const bool coarse = vrs_supported && pipeline->IsUb2VrsShaderSafe() &&
-        is_indexed && num_indices >= 24 && state.width >= 640 && state.height >= 360 &&
+    const bool vrs_dynamic = vrs_supported && pipeline->IsUb2VrsShaderSafe();
+    // Rasterization, depth and fixed-function stencil still operate at native
+    // coverage. Allow opaque read-only depth and fixed-function stencil, not
+    // screen-space quads, shader stencil/depth exports or coverage mutation.
+    const bool coarse = vrs_dynamic && num_indices >= 12 &&
+        state.width >= 640 && state.height >= 360 && !regs.IsClipDisabled() &&
         !is_display_draw && db_desc.first && state.depth_stencil_attachment.has_depth &&
-        regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
-        !regs.depth_control.stencil_enable && !attachment_feedback_loop &&
+        regs.depth_control.depth_enable && !regs.depth_render_control.depth_clear_enable &&
+        !regs.depth_render_control.stencil_clear_enable && !attachment_feedback_loop &&
         !pred.predicated && !square && !FrameCapture::Active();
     if (vrs_supported && Gow3Stats::enabled) {
         Gow3Stats::ub2_vrs_total.fetch_add(1, std::memory_order_relaxed);
+        if (vrs_dynamic) Gow3Stats::ub2_vrs_eligible.fetch_add(1, std::memory_order_relaxed);
         if (coarse) Gow3Stats::ub2_vrs_coarse.fetch_add(1, std::memory_order_relaxed);
     }
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
@@ -1299,12 +1305,12 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             }
         };
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
-        if (vrs_supported) Ub2SetShadingRate(cmdbuf, coarse);
+        if (vrs_dynamic) Ub2SetShadingRate(cmdbuf, coarse);
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         draw();
         if (square) [[unlikely]] {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, square);
-            if (vrs_supported) Ub2SetShadingRate(cmdbuf, false);
+            if (vrs_dynamic) Ub2SetShadingRate(cmdbuf, false);
             draw();
         }
         predication.EndDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
@@ -1416,10 +1422,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     push_data.yoffset *= target_scale[1];
     pipeline->BindResources(set_writes, push_data);
     draw_jitter = {};
-    const bool eligible_native_scene = cb_descs[0].first && db_desc.first &&
+    const bool upscaling = upscaler->Enabled();
+    const bool eligible_native_scene = upscaling && cb_descs[0].first && db_desc.first &&
         Gow3VerifiedNativeJitterTarget(texture_cache, cb_descs[0].first,
                                        db_desc.first, regs);
-    if (upscaler->Enabled() && db_desc.first &&
+    if (upscaling && db_desc.first &&
         (db_desc.first == camera_motion->Depth() || eligible_native_scene)) {
         draw_jitter = upscaler->Jitter();
     }
@@ -1438,8 +1445,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     const vk::Buffer counts = count_address != 0 ? count_buffer->Handle() : vk::Buffer{};
     const u64 counts_offset = count_address != 0 ? count_offset : 0;
     const bool vrs_supported = instance.IsUb2VrsSupported();
-    if (vrs_supported && Gow3Stats::enabled)
+    const bool vrs_dynamic = vrs_supported && pipeline->IsUb2VrsShaderSafe();
+    if (vrs_supported && Gow3Stats::enabled) {
         Gow3Stats::ub2_vrs_total.fetch_add(1, std::memory_order_relaxed);
+        if (vrs_dynamic) Gow3Stats::ub2_vrs_eligible.fetch_add(1, std::memory_order_relaxed);
+    }
     scheduler.Record([=, this](vk::CommandBuffer cmdbuf) {
         predication.BeginDraw(cmdbuf, zpass_query, pred.predicated, predicate_state);
         for (const vk::Pipeline bound : {handle, square}) {
@@ -1447,7 +1457,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
                 break;
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, bound);
-            if (vrs_supported) Ub2SetShadingRate(cmdbuf, false);
+            if (vrs_dynamic) Ub2SetShadingRate(cmdbuf, false);
             if (is_indexed) {
                 if (counts) {
                     cmdbuf.drawIndexedIndirectCount(args, args_offset, counts, counts_offset, max_count,
@@ -2453,6 +2463,13 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
 void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* prepared,
                               Shader::Backend::Bindings& binding, u32& write_index,
                               bool& barrier, bool on_helper) {
+    // The per-stage scratch below is only used by image descriptors.
+    // Stages with no images still bind all samplers, without clearing and
+    // initializing the texture scratch on the CPU's hot draw path.
+    if (stage.images.empty()) {
+        BindSamplers(stage, prepared, binding, write_index);
+        return;
+    }
     const u32 first_image_idx = image_infos.size();
     TextureSet* set_slot = nullptr;
     if (!on_helper && BindTexturesFromSet(stage, prepared, first_image_idx, barrier, set_slot)) {
@@ -2477,8 +2494,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
     // TextureSetMemo: what this call resolves, to remember when the set qualifies.
-    std::array<TextureSetEntry, TextureSet::MaxImages> resolved{};
+    // The direct Android path has no PreparedStage and cannot populate
+    // TextureSetMemo. Avoid constructing its 16-entry scratch on every bind.
+    std::optional<std::array<TextureSetEntry, TextureSet::MaxImages>> resolved;
     bool set_ok = set_slot != nullptr;
+    if (set_ok) resolved.emplace();
     // SampleSceneProxies: bindings that may read a reduced scene proxy instead of the native
     // image (normalized sampling only; see Shader::ImageResource::needs_native).
     boost::container::small_vector<bool, 16> binding_proxy_ok;
@@ -2644,8 +2664,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                 if (const auto proxy = scene_targets->SampleProxy(image, desc.view_info)) {
                     image.usage.texture = 1u;
                     image_infos.emplace_back(VK_NULL_HANDLE, proxy->view, proxy->layout);
-                    if (set_ok && binding_index < resolved.size()) {
-                        resolved[binding_index] = {image_id, proxy->view, image.backing,
+                    if (set_ok && binding_index < resolved->size()) {
+                        (*resolved)[binding_index] = {image_id, proxy->view, image.backing,
                                                    desc.view_info.range, true};
                     }
                     ++proxy_samples;
@@ -2693,8 +2713,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
                 upscaler->RedirectSampled(image_id, image_view.info, view, layout);
             }
             image_infos.emplace_back(VK_NULL_HANDLE, view, layout);
-            if (set_ok && binding_index < resolved.size()) {
-                resolved[binding_index] = {image_id, *image_view.image_view, image.backing,
+            if (set_ok && binding_index < resolved->size()) {
+                (*resolved)[binding_index] = {image_id, *image_view.image_view, image.backing,
                                            desc.view_info.range};
                 set_ok = !is_storage && !binding.force_general && !binding.is_target;
             }
@@ -2705,7 +2725,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         set_slot->generation = texture_cache.RegistryGeneration();
         set_slot->scene_generation = scene_targets->Generation();
         set_slot->count = static_cast<u32>(stage.images.size());
-        std::copy_n(resolved.begin(), set_slot->count, set_slot->entries.begin());
+        std::copy_n(resolved->begin(), set_slot->count, set_slot->entries.begin());
     } else if (set_slot) {
         set_slot->key = 0;
     }
