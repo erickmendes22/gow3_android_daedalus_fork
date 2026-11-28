@@ -227,4 +227,11 @@ class R10Priorities(unittest.TestCase):
         self.assertIn("unique_writes && last_graphics_unique_writes",S)
         self.assertIn("effective_state.width <= render_state.width",S)
         self.assertIn("!work_semaphore.IsFree(signal_value - MaxAndroidInFlightSubmissions)",S)
+    def test_r15_overlapping_image_transitions_are_ordered(self):
+        transit=RT.split("bool Runtime::Transit(",1)[1].split("Runtime::TransferMark::TransferMark",1)[0]
+        self.assertIn("p.image == n.image",transit)
+        self.assertIn("overlap(a.baseMipLevel",transit)
+        self.assertIn("overlap(a.baseArrayLayer",transit)
+        self.assertLess(transit.index("if (chained) FlushBarriers();"),transit.index("image_barriers.insert"))
+        self.assertIn("scheduler.TraceWork(12, addr",RT)
 if __name__=="__main__": unittest.main()

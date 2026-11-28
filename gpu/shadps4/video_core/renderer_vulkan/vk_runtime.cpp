@@ -801,7 +801,35 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
     // already-completed tick while this command still references its VkImage.
     image->tick_accessed_last = scheduler.CurrentTick();
     if (scene_targets) scene_targets->NativeAccess(*image, dst_access);
-    image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
+    // Vulkan barriers in a single dependency are not a sequential chain.
+    // Two transitions of the same overlapping subresource may therefore
+    // not be emitted together. Only take the slow path when this physical
+    // image already has a pending transition; ordinary disjoint barriers
+    // remain coalesced and read-after-read still elides.
+    const bool mali = instance.GetPhysicalDevice().getProperties().vendorID == 0x13B5;
+    const auto handle = image->GetImage();
+    if (mali && std::ranges::any_of(image_barriers, [handle](const auto& pending) {
+            return pending.image == handle;
+        })) {
+        VideoCore::Image::Barriers next;
+        image->GetBarriers(next, dst_layout, dst_access, dst_stage, subres_range);
+        const auto overlap = [](u32 a, u32 count_a, u32 b, u32 count_b) {
+            return u64(a) < u64(b) + count_b && u64(b) < u64(a) + count_a;
+        };
+        const bool chained = std::ranges::any_of(next, [&](const auto& n) {
+            return std::ranges::any_of(image_barriers, [&](const auto& p) {
+                const auto& a = p.subresourceRange;
+                const auto& b = n.subresourceRange;
+                return p.image == n.image && bool(a.aspectMask & b.aspectMask) &&
+                    overlap(a.baseMipLevel, a.levelCount, b.baseMipLevel, b.levelCount) &&
+                    overlap(a.baseArrayLayer, a.layerCount, b.baseArrayLayer, b.layerCount);
+            });
+        });
+        if (chained) FlushBarriers();
+        image_barriers.insert(image_barriers.end(), next.begin(), next.end());
+    } else {
+        image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
+    }
     // A coalesced transition may extend the previous barrier without
     // increasing the vector size. Never leave that dependency unflushed.
     return !image_barriers.empty();
@@ -1044,6 +1072,11 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
                       addr = src->info.guest_address, uid = src->image_uid, trace_bytes,
                       regions = scheduler.RecordData(download_copies)](vk::CommandBuffer cmdbuf) {
         scheduler.TraceWork(3, addr, uid, trace_bytes);
+        if (scheduler.SubmitHistoryEnabled() && trace_bytes > 64) {
+            for (const auto& r : regions)
+                scheduler.TraceWork(12, addr, (u64(r.imageExtent.width) << 32) | r.imageExtent.height,
+                    (u64(r.bufferRowLength) << 32) | r.bufferImageHeight);
+        }
         cmdbuf.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer,
                                  regions.size(), regions.data());
     });

@@ -51,7 +51,7 @@ public:
         u64 count{}, first_seq{}, last_seq{}, signature{};
         WorkItem first{}, last{};
     };
-    static constexpr size_t WorkKinds = 12;
+    static constexpr size_t WorkKinds = 13;
     struct ReadbackWaitContext {
         u64 address, size, source, tick, image_address, image_size, image_uid;
     };
