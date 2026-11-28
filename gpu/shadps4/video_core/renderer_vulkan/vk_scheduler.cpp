@@ -465,10 +465,6 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         return std::getenv("GOW3_ANDROID_PORT") != nullptr &&
                !(opt_out && opt_out[0] == '1');
     }();
-    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
-        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
-    }
-
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
     if (profiler_ctx) {
@@ -518,6 +514,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     };
 
     ImGui::Core::TextureManager::Submit();
+    // Keep the same in-flight cap and exact previously submitted tick, but
+    // overlap the recorder and staging work with GPU execution before waiting.
+    if (bounded_submit && signal_value > MaxAndroidInFlightSubmissions) {
+        work_semaphore.Wait(signal_value - MaxAndroidInFlightSubmissions);
+    }
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
