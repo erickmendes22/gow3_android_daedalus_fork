@@ -219,9 +219,23 @@ void Scheduler::WaitHostCopies() {
         Gow3Stats::WaitTimer timer{Gow3Stats::host_copies_wait_ns};
         Gow3Stats::host_copy_waits.fetch_add(1, std::memory_order_relaxed);
         KickRecording(true);
-        while (host_copies_done.load(std::memory_order_acquire) < host_copies_issued) {
+        const u64 target = host_copies_issued;
+#ifdef __ANDROID__
+        // As in TLOU, wait for the required copy sequence, not repeated CPU yields.
+        // Release/acquire ordering remains unchanged; the recorder notifies after copying.
+        for (unsigned spin = 0; spin < 32 &&
+             host_copies_done.load(std::memory_order_acquire) < target; ++spin) {
             std::this_thread::yield();
         }
+        for (u64 done = host_copies_done.load(std::memory_order_acquire); done < target;
+             done = host_copies_done.load(std::memory_order_acquire)) {
+            host_copies_done.wait(done, std::memory_order_acquire);
+        }
+#else
+        while (host_copies_done.load(std::memory_order_acquire) < target) {
+            std::this_thread::yield();
+        }
+#endif
     }
     Gow3Stats::WaitTimer timer{Gow3Stats::copy_threads_wait_ns};
     Gow3Copy::WaitAsync();
@@ -380,6 +394,13 @@ void Scheduler::PopPendingOperations() {
         return;
     }
     if (!work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
+#ifdef __ANDROID__
+        // A pending callback belonging to the current, unsubmitted command buffer
+        // cannot become ready as a result of a counter query.
+        if (pending_ops.front().gpu_tick >= work_semaphore.CurrentTick()) {
+            return;
+        }
+#endif
         if ((++pending_polls & 31) != 0 && !Gow3Toggle::Disabled(Gow3Toggle::PendingPollLimit)) {
             return;
         }
